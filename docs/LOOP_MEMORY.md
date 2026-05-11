@@ -301,3 +301,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:14:41Z
 
 - Post-round 5 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:14:42Z
+
+- Starting round 6 at 20260511T231442Z from HEAD `2774b83`.
+
+## Loop Event 2026-05-11T23:14:44Z
+
+- Pre-round 6 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:19:16Z
+
+- Task attempted: completed the first Milestone 4 function-scope slice by
+  adding explicit local/global scope coverage for user functions, parsing
+  `global` declarations as an unsupported statement with a stable runtime
+  diagnostic, adding shadowing and implicit-global-read tests, and adding
+  explicit native-codegen rejection coverage for `global`.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone4/function_local_scope.php`,
+  `tests/fixtures/milestone4/function_local_scope.stdout`,
+  `tests/fixtures/runtime_errors/implicit_global_read.*`,
+  `tests/fixtures/runtime_errors/unsupported_global.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test functions_and_scopes`
+  passed with 3 tests; `cargo test -p phpc --test runtime_errors` passed with
+  9 tests; `cargo test -p phpc --test runtime_error_cli` passed; `cargo test
+  -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone4` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4`
+  passed with 1 system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 9 fixtures; `cargo run -p phpc --
+  run tests/fixtures/milestone4/function_local_scope.php` printed the committed
+  scope-shadowing output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/unsupported_global.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/implicit_global_read.php` exited `1` with the
+  expected stable diagnostic; `tools/run-tests.sh` passed with 29 fixtures, 20
+  system PHP comparisons, and 9 `.phpc-only` skips.
+- Remaining semantic gaps: `global` imports are not implemented, top-level
+  variables are not visible inside functions unless passed as arguments, missing
+  local reads fail with the current stable undefined-variable runtime error
+  instead of PHP warning/`null` recovery, and default parameters, variadics,
+  references, closures, dynamic calls, named arguments, strict types, static
+  locals, recursion guards, and stack traces remain unsupported.
+- Next concrete task: add recursion coverage and a documented runtime guard for
+  runaway calls.
+- Checkpoint: pending `tools/checkpoint.sh "functions: separate local and global scopes"`
+  after the full suite passes.

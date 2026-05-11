@@ -50,6 +50,10 @@ pub enum Stmt {
         value: Option<Expr>,
         span: Span,
     },
+    Global {
+        names: Vec<String>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

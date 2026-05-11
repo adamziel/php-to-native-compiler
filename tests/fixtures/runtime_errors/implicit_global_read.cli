@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/implicit_global_read.php:4:12: undefined variable '$value'
+--- stderr end ---

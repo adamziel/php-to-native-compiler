@@ -74,6 +74,17 @@ fn emit_ir_rejects_array_assignment_until_native_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_global_declarations_until_scope_imports_exist() {
+    let error = emit_ir_source("<?php\nglobal $value;\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("global declarations"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_asm_through_available_native_toolchain() {
     let has_backend = ["clang", "llc", "cc"]
         .iter()

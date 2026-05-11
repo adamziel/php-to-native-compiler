@@ -45,6 +45,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn unsupported_global(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedGlobal {
+            reason: reason.into(),
+        })
+    }
+
     pub fn invalid_arithmetic(operation: ArithmeticOp, reason: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::InvalidArithmetic {
             operation,
@@ -100,6 +106,9 @@ pub enum RuntimeErrorKind {
     },
     UnsupportedCall {
         callable: String,
+        reason: String,
+    },
+    UnsupportedGlobal {
         reason: String,
     },
     InvalidArithmetic {
@@ -172,6 +181,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         ),
         RuntimeErrorKind::UnsupportedCall { callable, reason } => {
             format!("unsupported call {callable}: {reason}")
+        }
+        RuntimeErrorKind::UnsupportedGlobal { reason } => {
+            format!("unsupported global declaration: {reason}")
         }
         RuntimeErrorKind::InvalidArithmetic { operation, reason } => {
             format!("invalid arithmetic for {operation}: {reason}")

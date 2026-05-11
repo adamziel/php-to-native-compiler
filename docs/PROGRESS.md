@@ -75,6 +75,15 @@ Implemented:
   current array indexing and assignment subset.
 - Added explicit LLVM IR rejection paths and tests for arrays, array indexing,
   and array assignment until native lowering exists.
+- Added explicit local/global scope coverage for user functions: each
+  user-function call gets a fresh local scope, parameters and local assignments
+  shadow globals without mutating them, and plain reads of globals from inside
+  functions remain undefined-variable runtime errors unless passed as arguments.
+- Added parser support for `global` declarations as an explicit unsupported
+  statement and a stable runtime diagnostic for attempts to import globals into
+  function scope.
+- Added explicit LLVM IR rejection coverage for `global` declarations until
+  scope-import lowering exists.
 
 Tested:
 
@@ -85,17 +94,25 @@ Tested:
   passes.
 - `cargo test -p phpc --test runtime_errors` passes with 9 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 7 representative runtime error fixtures.
+  covering 9 representative runtime error fixtures.
+- `cargo test -p phpc --test functions_and_scopes` passes with 3 scope-focused
+  user-function tests.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
-- `cargo run -p phpc -- test` passes with 26 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
+  passes with rejection coverage for `global` declarations.
+- `cargo run -p phpc -- test` passes with 29 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 19 fixtures and skipping 7 `.phpc-only` fixtures.
+  installed, comparing 20 fixtures and skipping 9 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
   with 2 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/milestone4` passes with 1 function
+  scope fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
@@ -110,7 +127,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 7
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 9
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -120,6 +137,10 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only int and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/implicit_global_read.php:4:12: undefined variable '$value'`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_global.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_global.php:4:5: unsupported global declaration: importing globals into function scope is not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -160,8 +181,12 @@ Still fails:
   PHP `Throwable` objects, stack traces, warning/notice recovery, user error
   handlers, and preservation of partial stdout before a fatal runtime error are
   not implemented.
+- Function scope imports through `global` are not implemented. Function-local
+  reads of top-level variables still fail as undefined variables unless values
+  are passed as arguments; PHP's warning-and-`null` recovery for undefined local
+  variables is not modeled.
 
 Next:
 
-- Continue Milestone 4 by separating local and global scope behavior for user
-  functions, with tests for shadowing and unsupported `global`.
+- Continue Milestone 4 by adding recursion coverage and a documented runtime
+  guard for runaway calls.

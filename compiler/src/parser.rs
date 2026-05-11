@@ -35,6 +35,7 @@ impl Parser {
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
             TokenKind::Return => self.parse_return(),
+            TokenKind::Global => self.parse_global(),
             _ => self.parse_assignment_or_expression_statement(),
         }
     }
@@ -138,6 +139,26 @@ impl Parser {
         };
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after return")?;
         Ok(Stmt::Return { value, span })
+    }
+
+    fn parse_global(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Global, "expected 'global'")?
+            .span;
+        let mut names = Vec::new();
+
+        loop {
+            names.push(self.consume_variable("expected variable name after global")?);
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+        }
+
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after global declaration",
+        )?;
+        Ok(Stmt::Global { names, span })
     }
 
     fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {
@@ -524,6 +545,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Print => "print",
         TokenKind::Function => "function",
         TokenKind::Return => "return",
+        TokenKind::Global => "global",
         TokenKind::If => "if",
         TokenKind::Else => "else",
         TokenKind::While => "while",

@@ -133,6 +133,12 @@ impl Interpreter {
                 };
                 Ok(Flow::Return(value))
             }
+            Stmt::Global { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_global(
+                    "importing globals into function scope is not implemented",
+                ),
+            )),
         }
     }
 

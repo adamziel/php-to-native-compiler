@@ -22,6 +22,8 @@
 - function declarations
 - positional function calls
 - `return`
+- isolated local scopes for user-function calls; parameters and function-local
+  assignments can shadow global names without mutating them
 - short array literals: `[]`, `[value]`, and `[key => value]` for the currently
   supported expression subset
 - ordered arrays with integer and string keys
@@ -32,7 +34,8 @@
   `var_dump`, and `print_r`
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
-  unsupported array keys, undefined array keys, and invalid array access
+  unsupported array keys, undefined array keys, invalid array access, and
+  unsupported `global` declarations
 
 ## Partially Supported
 
@@ -70,7 +73,11 @@
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run` with
-  exact arity only. Default values and variadics are not implemented.
+  exact arity only. Each call gets a fresh local scope. Parameters and local
+  assignments shadow global variables without mutating them, and functions do
+  not import top-level variables implicitly. `global` declarations parse but
+  fail with a stable runtime error because global scope imports are not
+  implemented. Default values and variadics are not implemented.
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
   documented scalar/array subset only. `strlen` remains scalar-only and rejects
   arrays. `count` accepts arrays only. `isset` supports direct variable
@@ -116,6 +123,7 @@
 - objects/classes
 - includes/requires
 - variable variables
+- `global` declarations / importing top-level variables into function scope
 - dynamic function calls
 - `eval`
 - namespaces

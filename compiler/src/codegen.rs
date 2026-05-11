@@ -115,6 +115,10 @@ impl LlvmGenerator {
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
             )),
+            Stmt::Global { span, .. } => Err(self.unsupported(
+                *span,
+                "global declarations are not supported by LLVM IR emission yet",
+            )),
         }
     }
 
@@ -586,6 +590,10 @@ impl CGenerator {
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
+            )),
+            Stmt::Global { span, .. } => Err(self.unsupported(
+                *span,
+                "global declarations are not supported by assembly emission yet",
             )),
         }
     }

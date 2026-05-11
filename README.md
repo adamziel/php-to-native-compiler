@@ -38,13 +38,15 @@ subset:
 - loose scalar comparisons used by control flow
 - `if` / `else`
 - `while`
-- function declarations, calls, and `return`
+- function declarations, calls, `return`, and isolated local scopes for
+  user-function calls
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
 - builtins for the documented scalar/array subset: `strlen`, `isset`, `count`,
   `var_dump`, and `print_r`
-- stable runtime diagnostics for the currently covered runtime errors
+- stable runtime diagnostics for the currently covered runtime errors,
+  including unsupported `global` declarations
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

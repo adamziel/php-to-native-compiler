@@ -37,7 +37,7 @@ handled.
 
 ## Milestone 4: Functions and Scopes
 
-- [ ] Separate local and global scope behavior for user functions, with tests
+- [x] Separate local and global scope behavior for user functions, with tests
   for shadowing and unsupported `global`.
 - [ ] Add recursion coverage and a documented runtime guard for runaway calls.
 - [ ] Implement default parameters for user functions with parser, runtime, and

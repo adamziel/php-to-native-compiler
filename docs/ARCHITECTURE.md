@@ -18,6 +18,9 @@ PHP source
 
 Milestone 1 implements the lexer, parser, AST, a direct interpreter/runtime
 execution path, and a narrow LLVM IR text emitter for simple straight-line code.
+The interpreter runs top-level statements in a global scope and creates a fresh
+local scope for each user-function call; importing globals into function scope
+through `global` declarations is not implemented.
 
 ## Compiler Crate
 
