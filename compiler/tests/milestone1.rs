@@ -9,7 +9,7 @@ fn milestone1_fixtures_pass() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures");
     let summary = run_fixture_dir(&fixture_dir).unwrap();
     assert_eq!(summary.failed, 0, "{:#?}", summary.failures);
-    assert!(summary.passed >= 10);
+    assert!(summary.passed >= 12);
 }
 
 #[test]

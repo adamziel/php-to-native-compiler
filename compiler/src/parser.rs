@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt};
+use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
 
@@ -29,6 +29,7 @@ impl Parser {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
             TokenKind::Echo => self.parse_echo(),
+            TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
             TokenKind::Return => self.parse_return(),
@@ -79,6 +80,15 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after echo")?;
         Ok(Stmt::Echo { exprs, span })
+    }
+
+    fn parse_print(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Print, "expected 'print'")?
+            .span;
+        let expr = self.parse_expression()?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after print")?;
+        Ok(Stmt::Print { expr, span })
     }
 
     fn parse_if(&mut self) -> CompileResult<Stmt> {
@@ -260,7 +270,7 @@ impl Parser {
     }
 
     fn parse_multiplicative(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_primary()?;
+        let mut expr = self.parse_unary()?;
         loop {
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Star)) {
                 BinaryOp::Mul
@@ -269,7 +279,7 @@ impl Parser {
             } else {
                 break;
             };
-            let right = self.parse_primary()?;
+            let right = self.parse_unary()?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -279,6 +289,30 @@ impl Parser {
             };
         }
         Ok(expr)
+    }
+
+    fn parse_unary(&mut self) -> CompileResult<Expr> {
+        if self.match_token(|kind| matches!(kind, TokenKind::Minus)) {
+            let span = self.previous().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op: UnaryOp::Negate,
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
+        if self.match_token(|kind| matches!(kind, TokenKind::Bang)) {
+            let span = self.previous().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op: UnaryOp::Not,
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
+        self.parse_primary()
     }
 
     fn parse_primary(&mut self) -> CompileResult<Expr> {
@@ -377,6 +411,10 @@ impl Parser {
         &self.tokens[self.current]
     }
 
+    fn previous(&self) -> &Token {
+        &self.tokens[self.current - 1]
+    }
+
     fn error_at(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Parse, span.line, span.column, message)
     }
@@ -395,6 +433,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Float(_) => "float literal",
         TokenKind::StringLiteral(_) => "string literal",
         TokenKind::Echo => "echo",
+        TokenKind::Print => "print",
         TokenKind::Function => "function",
         TokenKind::Return => "return",
         TokenKind::If => "if",
@@ -414,6 +453,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Star => "*",
         TokenKind::Slash => "/",
         TokenKind::Dot => ".",
+        TokenKind::Bang => "!",
         TokenKind::Equal => "=",
         TokenKind::EqualEqual => "==",
         TokenKind::BangEqual => "!=",

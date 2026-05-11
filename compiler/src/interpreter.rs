@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use php_runtime::{Comparison, RuntimeError, RuntimeResult, Value};
 
-use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt};
+use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +85,11 @@ impl Interpreter {
                 }
                 Ok(Flow::Continue)
             }
+            Stmt::Print { expr, .. } => {
+                let value = self.evaluate(expr, scope)?;
+                self.stdout.push_str(&value.echo_string());
+                Ok(Flow::Continue)
+            }
             Stmt::Assign { name, expr, .. } => {
                 let value = self.evaluate(expr, scope)?;
                 scope.insert(name.clone(), value);
@@ -137,6 +142,10 @@ impl Interpreter {
             Expr::String(value, _) => Ok(Value::String(value.clone())),
             Expr::Variable(name, _) => Ok(scope.get(name).cloned().unwrap_or(Value::Null)),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
+            Expr::Unary { op, expr, span } => {
+                let value = self.evaluate(expr, scope)?;
+                self.apply_unary(*op, value, *span)
+            }
             Expr::Binary {
                 left,
                 op,
@@ -207,6 +216,15 @@ impl Interpreter {
             BinaryOp::Le => Ok(Value::Bool(left.php_cmp(&right, Comparison::Le))),
             BinaryOp::Gt => Ok(Value::Bool(left.php_cmp(&right, Comparison::Gt))),
             BinaryOp::Ge => Ok(Value::Bool(left.php_cmp(&right, Comparison::Ge))),
+        };
+
+        result.map_err(|error| runtime_error(span, error.message()))
+    }
+
+    fn apply_unary(&self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
+        let result: RuntimeResult<Value> = match op {
+            UnaryOp::Negate => value.php_negate(),
+            UnaryOp::Not => Ok(Value::Bool(!value.is_truthy())),
         };
 
         result.map_err(|error| runtime_error(span, error.message()))

@@ -21,6 +21,10 @@ pub enum Stmt {
         exprs: Vec<Expr>,
         span: Span,
     },
+    Print {
+        expr: Expr,
+        span: Span,
+    },
     Assign {
         name: String,
         expr: Expr,
@@ -75,6 +79,11 @@ pub enum Expr {
         right: Box<Expr>,
         span: Span,
     },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -87,9 +96,16 @@ impl Expr {
             | Expr::String(_, span)
             | Expr::Variable(_, span)
             | Expr::Call { span, .. }
-            | Expr::Binary { span, .. } => *span,
+            | Expr::Binary { span, .. }
+            | Expr::Unary { span, .. } => *span,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Negate,
+    Not,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -4,12 +4,15 @@
 
 - PHP opening tag `<?php`
 - `echo` statements with one or more comma-separated expressions
+- `print` statements
 - integer literals
 - float literals
 - single-quoted and double-quoted string literals with basic escapes
+- `null`, `true`, and `false`
 - variables
 - assignment statements
 - arithmetic: `+`, `-`, `*`, `/`
+- unary `-` and `!`
 - string concatenation: `.`
 - comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=`
 - `if` / `else`

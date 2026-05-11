@@ -89,6 +89,11 @@ impl LlvmGenerator {
                 }
                 Ok(())
             }
+            Stmt::Print { expr, .. } => {
+                let value = self.emit_expr(expr)?;
+                self.emit_echo(value);
+                Ok(())
+            }
             Stmt::Assign { name, expr, .. } => {
                 let value = self.emit_expr(expr)?;
                 self.variables.insert(name.clone(), value);
@@ -133,6 +138,10 @@ impl LlvmGenerator {
             Expr::Call { span, .. } => Err(self.unsupported(
                 *span,
                 "function calls are supported by phpc run but not LLVM IR emission yet",
+            )),
+            Expr::Unary { span, .. } => Err(self.unsupported(
+                *span,
+                "unary expressions are supported by phpc run but not LLVM IR emission yet",
             )),
             Expr::Binary {
                 left,
@@ -534,6 +543,11 @@ impl CGenerator {
                 }
                 Ok(())
             }
+            Stmt::Print { expr, .. } => {
+                let value = self.emit_expr(expr)?;
+                self.emit_echo(value);
+                Ok(())
+            }
             Stmt::Assign { name, expr, .. } => {
                 let value = self.emit_expr(expr)?;
                 self.variables.insert(name.clone(), value);
@@ -578,6 +592,10 @@ impl CGenerator {
             Expr::Call { span, .. } => Err(self.unsupported(
                 *span,
                 "function calls are supported by phpc run but not assembly emission yet",
+            )),
+            Expr::Unary { span, .. } => Err(self.unsupported(
+                *span,
+                "unary expressions are supported by phpc run but not assembly emission yet",
             )),
             Expr::Binary {
                 left,

@@ -22,11 +22,13 @@ Implemented:
 - Added Milestone 1 fixtures for echo, literals, variables, assignment,
   arithmetic, concatenation, `if`/`else`, `while`, function declaration, function
   call, and `return`.
+- Added a small Milestone 2 scalar slice: `print` statements, unary minus,
+  logical not, and fixtures for `null`/bool/string truthiness.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo run -p phpc -- test` passes with 10 fixture tests.
+- `cargo run -p phpc -- test` passes with 12 fixture tests.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -43,5 +45,5 @@ Still fails:
 
 Next:
 
-- Begin Milestone 2 by expanding scalar coercions, runtime errors, PHP behavior
-  comparison tests, and optional system PHP comparison mode.
+- Continue Milestone 2 by expanding scalar coercions, runtime errors, PHP
+  behavior comparison tests, and optional system PHP comparison mode.

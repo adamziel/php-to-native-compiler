@@ -102,6 +102,13 @@ impl Value {
         }
     }
 
+    pub fn php_negate(&self) -> RuntimeResult<Value> {
+        match self.to_number() {
+            Number::Int(value) => Ok(Value::Int(value.wrapping_neg())),
+            Number::Float(value) => Ok(Value::Float(-value)),
+        }
+    }
+
     pub fn php_concat(&self, other: &Value) -> Value {
         Value::String(format!("{}{}", self.echo_string(), other.echo_string()))
     }

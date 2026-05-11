@@ -16,6 +16,7 @@ pub enum TokenKind {
     Float(f64),
     StringLiteral(String),
     Echo,
+    Print,
     Function,
     Return,
     If,
@@ -35,6 +36,7 @@ pub enum TokenKind {
     Star,
     Slash,
     Dot,
+    Bang,
     Equal,
     EqualEqual,
     BangEqual,
@@ -113,7 +115,7 @@ impl<'a> Lexer<'a> {
                     if self.match_char('=') {
                         TokenKind::BangEqual
                     } else {
-                        return Err(self.error_at(span, "unexpected '!'"));
+                        TokenKind::Bang
                     }
                 }
                 '<' => {
@@ -324,6 +326,7 @@ impl<'a> Lexer<'a> {
 
         match text.as_str() {
             "echo" => TokenKind::Echo,
+            "print" => TokenKind::Print,
             "function" => TokenKind::Function,
             "return" => TokenKind::Return,
             "if" => TokenKind::If,
