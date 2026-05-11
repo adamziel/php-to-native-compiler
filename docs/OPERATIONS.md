@@ -76,6 +76,38 @@ Each round:
 The loop stops on test failure, runner failure, or checkpoint failure. It
 defaults to `MAX_ROUNDS=1` and never runs forever by default.
 
+## Infinite YOLO Loop
+
+For unattended continuation, run:
+
+```sh
+tools/codex-yolo-forever.sh
+```
+
+This script intentionally has no loop-level stop condition. It runs until the
+process is killed by the terminal, shell, OS, or external supervisor.
+
+Behavior:
+
+- generates a fresh prompt each round from current git status, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`
+- runs `codex exec --dangerously-bypass-approvals-and-sandbox`
+- runs `tools/run-tests.sh` before and after each Codex pass
+- calls `tools/checkpoint.sh` after a round only when the post-round test suite
+  passes
+- appends machine-readable-ish events to `docs/LOOP_MEMORY.md`
+- stores generated prompts and logs under `.codex-yolo/logs/`
+
+Useful environment variables:
+
+- `CODEX_BIN`: Codex executable name or path, default `codex`
+- `CODEX_YOLO_SLEEP_SECONDS`: sleep between rounds, default `10`
+- `CODEX_YOLO_MEMORY`: memory file path, default `docs/LOOP_MEMORY.md`
+- `CODEX_YOLO_LOG_DIR`: log directory, default `.codex-yolo/logs`
+
+The forever loop is intentionally aggressive. Use it only when you want the repo
+to keep changing without manual prompts.
+
 ## Done Means Done
 
 A feature is not complete unless all of these exist:

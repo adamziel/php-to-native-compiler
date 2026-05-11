@@ -63,3 +63,5 @@ Operational automation lives in `docs/OPERATIONS.md`.
   only if tests pass.
 - `tools/codex-loop.sh` runs a bounded Codex supervisor loop when
   `CODEX_RUNNER` is set.
+- `tools/codex-yolo-forever.sh` runs an infinite unattended yolo loop with
+  durable memory in `docs/LOOP_MEMORY.md`.

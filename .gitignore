@@ -1,7 +1,7 @@
 /target/
+.codex-yolo/
 **/*.rs.bk
 *.ll
 *.s
 *.o
 *.out
-

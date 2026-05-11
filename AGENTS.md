@@ -9,6 +9,7 @@ At the beginning of each session, read:
 - `docs/ARCHITECTURE.md`
 - `docs/SUPPORT.md`
 - `README.md`
+- `docs/LOOP_MEMORY.md` when running under unattended loop automation
 
 Engineering rules:
 
