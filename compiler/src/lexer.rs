@@ -241,6 +241,12 @@ impl<'a> Lexer<'a> {
     fn lex_variable(&mut self, span: Span) -> CompileResult<TokenKind> {
         let mut name = String::new();
         match self.peek() {
+            Some('$' | '{') => {
+                return Err(self.error_at(
+                    span,
+                    "unsupported variable variable: variable variables are not implemented",
+                ));
+            }
             Some(ch) if is_identifier_start(ch) => name.push(self.advance()),
             _ => return Err(self.error_at(span, "expected variable name after '$'")),
         }

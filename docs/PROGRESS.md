@@ -95,6 +95,13 @@ Implemented:
   parameters, variadic argument unpacking, references, anonymous functions,
   arrow functions, dynamic function calls, named arguments, and
   `declare(strict_types=1)`.
+- Added a materialized interpreter symbol table for top-level and function-local
+  scopes. Current static variable reads, writes, `isset($name)`, parameter
+  binding, default-parameter evaluation, and direct array write materialization
+  now route through named symbol-table APIs without changing static variable
+  behavior.
+- Added an explicit stable lex diagnostic, fixture coverage, and `phpc run` CLI
+  snapshot for unsupported variable-variable syntax such as `$$name`.
 
 Tested:
 
@@ -111,14 +118,20 @@ Tested:
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
   CLI snapshot test covering 6 representative unsupported function-feature
   fixtures.
+- `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
+  symbol-table unit tests.
+- `cargo test -p phpc --test dynamic_features` passes with static
+  symbol-table behavior and unsupported variable-variable diagnostic coverage.
+- `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
+  CLI snapshot test covering unsupported variable variables.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
-- `cargo run -p phpc -- test` passes with 38 fixture tests.
+- `cargo run -p phpc -- test` passes with 40 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 22 fixtures and skipping 16 `.phpc-only` fixtures.
+  installed, comparing 23 fixtures and skipping 17 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -127,11 +140,20 @@ Tested:
   scope/default-parameter fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
   with 3 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 1 static
+  symbol-table fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone5` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
   tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
   PHP comparisons skipped.
+- `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passes with 1 unsupported dynamic-feature fixture.
+- `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passes with 1 `.phpc-only` PHP
+  comparison skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
@@ -164,12 +186,16 @@ Tested:
   prints the committed recursive factorial output.
 - `cargo run -p phpc -- run tests/fixtures/milestone4/default_parameters.php`
   prints the committed default-parameter output.
+- `cargo run -p phpc -- run tests/fixtures/milestone5/symbol_table_static_variables.php`
+  prints the committed static symbol-table output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_named_argument.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_function_features/unsupported_named_argument.php:5:12: unsupported named argument: named arguments are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_strict_types.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_function_features/unsupported_strict_types.php:2:1: unsupported declare directive: strict_types is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.php`
+  exits 1 and reports `lex error at tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.php:3:1: unsupported variable variable: variable variables are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -222,8 +248,11 @@ Still fails:
   arrow functions, dynamic calls, named arguments, and `declare(strict_types=1)`
   now fail with explicit parse diagnostics; their PHP runtime semantics are not
   implemented.
+- Variable variables remain unsupported. `$$name` and `${...}` fail with the
+  current stable lex diagnostic instead of resolving a runtime-computed symbol
+  name, and dynamic symbol-table lookup from PHP values is not implemented.
 
 Next:
 
-- Continue Milestone 5 by introducing a materialized symbol table path for
-  future variable variables without changing current static variable behavior.
+- Continue Milestone 5 by designing include/require resolution rules and adding
+  explicit unsupported diagnostics before implementing execution.

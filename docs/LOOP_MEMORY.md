@@ -539,3 +539,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:35:37Z
 
 - Post-round 9 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:35:39Z
+
+- Starting round 10 at 20260511T233539Z from HEAD `bf02a0c`.
+
+## Loop Event 2026-05-11T23:35:42Z
+
+- Pre-round 10 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:40:39Z
+
+- Task attempted: introduced a materialized interpreter symbol table for
+  future variable-variable support without changing current static variable
+  behavior. Static variable reads, writes, `isset($name)`, parameter binding,
+  default-parameter evaluation, and direct array write materialization now route
+  through named symbol-table APIs. Added a stable lex diagnostic and CLI
+  snapshot for unsupported variable-variable syntax such as `$$name`.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/src/lexer.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/unsupported_dynamic_features_cli.rs`,
+  `tests/fixtures/milestone5/symbol_table_static_variables.php`,
+  `tests/fixtures/milestone5/symbol_table_static_variables.stdout`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc
+  interpreter::tests::symbol_table` passed with 3 focused symbol-table tests;
+  `cargo test -p phpc --test dynamic_features` passed; `cargo test -p phpc
+  --test unsupported_dynamic_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone5` passed with 1 fixture; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone5` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_dynamic_features` passed with 1 fixture; `cargo
+  run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passed with 1 `.phpc-only` PHP
+  comparison skipped; `cargo run -p phpc -- run
+  tests/fixtures/milestone5/symbol_table_static_variables.php` printed the
+  committed static symbol-table output; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.php`
+  exited `1` with the expected stable diagnostic; `tools/run-tests.sh` passed
+  with 40 fixtures, 23 system PHP comparisons, and 17 `.phpc-only` skips.
+- Remaining semantic gaps: variable variables still do not execute; `$$name`
+  and `${...}` fail with the current lex diagnostic instead of resolving a
+  runtime-computed symbol name. Dynamic symbol lookup from PHP values,
+  references, copy-on-write symbol containers, `global` imports, `GLOBALS`,
+  superglobals, and include/eval scope effects remain unsupported.
+- Next concrete task: design include/require resolution rules and add explicit
+  unsupported diagnostics before implementing execution.
+- Checkpoint: pending `tools/checkpoint.sh "runtime: add materialized symbol table"`
+  after the full suite passes.

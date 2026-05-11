@@ -9,7 +9,7 @@
 - float literals
 - single-quoted and double-quoted string literals with basic escapes
 - `null`, `true`, and `false`
-- variables
+- static variables backed by per-scope materialized symbol tables
 - assignment statements
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings
@@ -44,9 +44,17 @@
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, dynamic function
   calls through expressions, named arguments, and `declare(strict_types=1)`
+- explicit lex diagnostics for unsupported variable-variable syntax such as
+  `$$name` and `${...}`
 
 ## Partially Supported
 
+- Variable storage: top-level code and each user-function call use materialized
+  symbol tables keyed by variable name. Current static variable reads, writes,
+  `isset($name)`, parameter binding, default-parameter evaluation, and direct
+  array writes route through that symbol table path. Runtime lookup by a value
+  computed from PHP code is not implemented yet, so variable variables still do
+  not execute.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -148,7 +156,8 @@
 - references
 - objects/classes
 - includes/requires
-- variable variables
+- variable variables; `$$name` and `${...}` are rejected with a stable lex
+  diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
 - default parameter values outside the documented constant-expression subset
 - required parameters after default parameters

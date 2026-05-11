@@ -49,7 +49,7 @@ handled.
 
 ## Milestone 5+: Dynamic PHP
 
-- [ ] Introduce a materialized symbol table path for future variable variables
+- [x] Introduce a materialized symbol table path for future variable variables
   without changing current static variable behavior.
 - [ ] Design include/require resolution rules and add explicit unsupported
   diagnostics before implementing execution.

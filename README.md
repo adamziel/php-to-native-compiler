@@ -33,7 +33,7 @@ subset:
 
 - `echo`
 - integer, float, and string literals
-- variables and assignment
+- static variables and assignment through per-scope symbol tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons used by control flow
 - `if` / `else`
@@ -48,7 +48,8 @@ subset:
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unsupported `global` declarations and runaway recursion
-- stable parse diagnostics for unsupported function features including
+- stable lex/parse diagnostics for unsupported dynamic/function features
+  including variable variables,
   variadics, references, closures, dynamic calls, named arguments, and
   `declare(strict_types=1)`
 

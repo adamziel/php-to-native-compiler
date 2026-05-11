@@ -18,9 +18,9 @@ PHP source
 
 Milestone 1 implements the lexer, parser, AST, a direct interpreter/runtime
 execution path, and a narrow LLVM IR text emitter for simple straight-line code.
-The interpreter runs top-level statements in a global scope and creates a fresh
-local scope for each user-function call; importing globals into function scope
-through `global` declarations is not implemented.
+The interpreter runs top-level statements in a global symbol table and creates a
+fresh local symbol table for each user-function call; importing globals into
+function scope through `global` declarations is not implemented.
 
 ## Compiler Crate
 
@@ -89,7 +89,8 @@ documented architecture decision.
 Dynamic PHP features will be implemented as runtime fallback zones:
 
 - dynamic function calls use runtime lookup
-- variable variables use materialized symbol tables
+- variable variables use materialized symbol tables; current variable-variable
+  syntax is rejected with an explicit diagnostic before execution
 - dynamic includes use runtime include resolution
 - `eval` parses and executes in the caller scope
 

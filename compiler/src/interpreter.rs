@@ -29,7 +29,46 @@ struct Interpreter {
     stdout: String,
 }
 
-type Scope = HashMap<String, Value>;
+#[derive(Debug, Clone, Default)]
+struct SymbolTable {
+    // Static variables and future dynamic variable names share the same
+    // materialized storage path; current syntax only calls the static methods.
+    symbols: HashMap<String, Value>,
+}
+
+impl SymbolTable {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn read_static(&self, name: &str, span: Span) -> CompileResult<Value> {
+        self.read_named(name)
+            .cloned()
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(name)))
+    }
+
+    fn write_static(&mut self, name: &str, value: Value) {
+        self.write_named(name.to_string(), value);
+    }
+
+    fn is_set_static(&self, name: &str) -> bool {
+        matches!(self.read_named(name), Some(value) if !matches!(value, Value::Null))
+    }
+
+    fn array_slot_for_static_write(&mut self, name: &str) -> &mut Value {
+        self.symbols
+            .entry(name.to_string())
+            .or_insert_with(|| Value::Array(PhpArray::new()))
+    }
+
+    fn read_named(&self, name: &str) -> Option<&Value> {
+        self.symbols.get(name)
+    }
+
+    fn write_named(&mut self, name: String, value: Value) {
+        self.symbols.insert(name, value);
+    }
+}
 
 enum Flow {
     Continue,
@@ -60,7 +99,7 @@ impl Interpreter {
     }
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
-        let mut scope = Scope::new();
+        let mut scope = SymbolTable::new();
         match self.execute_statements(&program.statements, &mut scope)? {
             Flow::Continue | Flow::Return(_) => Ok(Execution {
                 stdout: self.stdout.clone(),
@@ -73,7 +112,7 @@ impl Interpreter {
     fn execute_statements(
         &mut self,
         statements: &[Stmt],
-        scope: &mut Scope,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
         for stmt in statements {
             match self.execute_statement(stmt, scope)? {
@@ -84,7 +123,7 @@ impl Interpreter {
         Ok(Flow::Continue)
     }
 
-    fn execute_statement(&mut self, stmt: &Stmt, scope: &mut Scope) -> CompileResult<Flow> {
+    fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
         match stmt {
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
@@ -146,17 +185,14 @@ impl Interpreter {
         }
     }
 
-    fn evaluate(&mut self, expr: &Expr, scope: &mut Scope) -> CompileResult<Value> {
+    fn evaluate(&mut self, expr: &Expr, scope: &mut SymbolTable) -> CompileResult<Value> {
         match expr {
             Expr::Null(_) => Ok(Value::Null),
             Expr::Bool(value, _) => Ok(Value::Bool(*value)),
             Expr::Int(value, _) => Ok(Value::Int(*value)),
             Expr::Float(value, _) => Ok(Value::Float(*value)),
             Expr::String(value, _) => Ok(Value::String(value.clone())),
-            Expr::Variable(name, span) => scope
-                .get(name)
-                .cloned()
-                .ok_or_else(|| runtime_error(*span, RuntimeError::undefined_variable(name))),
+            Expr::Variable(name, span) => scope.read_static(name, *span),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
                 target,
@@ -185,12 +221,12 @@ impl Interpreter {
         &mut self,
         target: &AssignTarget,
         expr: &Expr,
-        scope: &mut Scope,
+        scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         match target {
             AssignTarget::Variable { name, .. } => {
                 let value = self.evaluate(expr, scope)?;
-                scope.insert(name.clone(), value);
+                scope.write_static(name, value);
                 Ok(())
             }
             AssignTarget::ArrayIndex { name, index, span } => {
@@ -199,9 +235,7 @@ impl Interpreter {
                     None => None,
                 };
                 let value = self.evaluate(expr, scope)?;
-                let slot = scope
-                    .entry(name.clone())
-                    .or_insert_with(|| Value::Array(PhpArray::new()));
+                let slot = scope.array_slot_for_static_write(name);
 
                 if matches!(slot, Value::Null) {
                     *slot = Value::Array(PhpArray::new());
@@ -238,7 +272,7 @@ impl Interpreter {
         &mut self,
         items: &[ArrayItem],
         span: Span,
-        scope: &mut Scope,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let mut array = PhpArray::new();
 
@@ -269,7 +303,7 @@ impl Interpreter {
         target: &Expr,
         index: &Expr,
         span: Span,
-        scope: &mut Scope,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let target_value = self.evaluate(target, scope)?;
         let key = self.evaluate_array_key(index, scope)?;
@@ -291,7 +325,11 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_array_key(&mut self, expr: &Expr, scope: &mut Scope) -> CompileResult<ArrayKey> {
+    fn evaluate_array_key(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ArrayKey> {
         let key = self.evaluate(expr, scope)?;
         ArrayKey::from_value(&key).map_err(|error| runtime_error(expr.span(), error))
     }
@@ -301,7 +339,7 @@ impl Interpreter {
         name: &str,
         args: &[Expr],
         span: Span,
-        caller_scope: &mut Scope,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let key = name.to_ascii_lowercase();
         if key == "isset" {
@@ -342,7 +380,7 @@ impl Interpreter {
             ));
         }
 
-        let mut local_scope = Scope::new();
+        let mut local_scope = SymbolTable::new();
         for (index, param) in function.params.iter().enumerate() {
             let value = if let Some(arg) = args.get(index) {
                 self.evaluate(arg, caller_scope)?
@@ -351,10 +389,10 @@ impl Interpreter {
                     .default
                     .as_ref()
                     .expect("arity check ensures missing params have defaults");
-                let mut default_scope = Scope::new();
+                let mut default_scope = SymbolTable::new();
                 self.evaluate(default, &mut default_scope)?
             };
-            local_scope.insert(param.name.clone(), value);
+            local_scope.write_static(&param.name, value);
         }
 
         self.call_depth += 1;
@@ -424,7 +462,7 @@ impl Interpreter {
         &mut self,
         args: &[Expr],
         span: Span,
-        caller_scope: &mut Scope,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         if args.is_empty() {
             return Err(runtime_error(
@@ -435,10 +473,8 @@ impl Interpreter {
 
         for arg in args {
             match arg {
-                Expr::Variable(name, _) => match caller_scope.get(name) {
-                    Some(value) if !matches!(value, Value::Null) => {}
-                    _ => return Ok(Value::Bool(false)),
-                },
+                Expr::Variable(name, _) if caller_scope.is_set_static(name) => {}
+                Expr::Variable(_, _) => return Ok(Value::Bool(false)),
                 _ => {
                     return Err(runtime_error(
                         arg.span(),
@@ -606,4 +642,66 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
     }
     output.push_str(&format!("{padding})\n"));
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Phase;
+
+    #[test]
+    fn symbol_table_static_reads_and_writes_use_named_storage() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        symbols.write_static("name", Value::String("Ada".to_string()));
+
+        assert_eq!(
+            symbols.read_static("name", span).unwrap(),
+            Value::String("Ada".to_string())
+        );
+        assert!(symbols.is_set_static("name"));
+
+        symbols.write_static("name", Value::Null);
+
+        assert_eq!(symbols.read_static("name", span).unwrap(), Value::Null);
+        assert!(!symbols.is_set_static("name"));
+    }
+
+    #[test]
+    fn symbol_table_missing_static_read_keeps_undefined_variable_diagnostic() {
+        let symbols = SymbolTable::new();
+        let error = symbols
+            .read_static("missing", Span::new(4, 12))
+            .unwrap_err();
+
+        assert_eq!(error.phase, Phase::Runtime);
+        assert_eq!(error.line, 4);
+        assert_eq!(error.column, 12);
+        assert_eq!(error.message, "undefined variable '$missing'");
+    }
+
+    #[test]
+    fn symbol_table_array_write_slot_materializes_undefined_static_variable() {
+        let mut symbols = SymbolTable::new();
+
+        let slot = symbols.array_slot_for_static_write("items");
+        match slot {
+            Value::Array(array) => {
+                array.append(Value::String("first".to_string())).unwrap();
+            }
+            other => panic!("expected materialized array slot, got {other:?}"),
+        }
+
+        let value = symbols.read_static("items", Span::new(1, 1)).unwrap();
+        let Value::Array(array) = value else {
+            panic!("expected stored array");
+        };
+
+        assert_eq!(array.len(), 1);
+        assert_eq!(
+            array.get(0).cloned(),
+            Some(Value::String("first".to_string()))
+        );
+    }
 }
