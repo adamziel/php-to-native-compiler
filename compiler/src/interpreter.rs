@@ -167,6 +167,14 @@ impl Interpreter {
         caller_scope: &mut Scope,
     ) -> CompileResult<Value> {
         let key = name.to_ascii_lowercase();
+        if is_builtin(&key) {
+            let mut values = Vec::with_capacity(args.len());
+            for arg in args {
+                values.push(self.evaluate(arg, caller_scope)?);
+            }
+            return self.call_builtin(&key, values, span);
+        }
+
         let function = self
             .functions
             .get(&key)
@@ -194,6 +202,46 @@ impl Interpreter {
         match self.execute_statements(&function.body, &mut local_scope)? {
             Flow::Continue => Ok(Value::Null),
             Flow::Return(value) => Ok(value),
+        }
+    }
+
+    fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        match name {
+            "strlen" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Int(args[0].echo_string().as_bytes().len() as i64))
+            }
+            "isset" => Ok(Value::Bool(
+                args.iter().all(|value| !matches!(value, Value::Null)),
+            )),
+            "var_dump" => {
+                for value in &args {
+                    self.stdout.push_str(&format_var_dump(value));
+                }
+                Ok(Value::Null)
+            }
+            "print_r" => match args.as_slice() {
+                [value] => {
+                    self.stdout.push_str(&value.echo_string());
+                    Ok(Value::Bool(true))
+                }
+                [value, return_output] if return_output.is_truthy() => {
+                    Ok(Value::String(value.echo_string()))
+                }
+                [value, _] => {
+                    self.stdout.push_str(&value.echo_string());
+                    Ok(Value::Bool(true))
+                }
+                _ => Err(runtime_error(
+                    span,
+                    format!("print_r() expects 1 or 2 argument(s), got {}", args.len()),
+                )),
+            },
+            "count" => Err(runtime_error(
+                span,
+                "count() is reserved for array support and is not implemented for scalars",
+            )),
+            _ => unreachable!("is_builtin keeps this match exhaustive for callers"),
         }
     }
 
@@ -238,5 +286,33 @@ fn runtime_error(span: Span, message: impl Into<String>) -> Diagnostic {
 impl From<RuntimeError> for Diagnostic {
     fn from(value: RuntimeError) -> Self {
         Diagnostic::new(Phase::Runtime, 0, 0, value.message())
+    }
+}
+
+fn is_builtin(name: &str) -> bool {
+    matches!(name, "strlen" | "isset" | "var_dump" | "print_r" | "count")
+}
+
+fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> CompileResult<()> {
+    if args.len() == expected {
+        Ok(())
+    } else {
+        Err(runtime_error(
+            span,
+            format!(
+                "{name}() expects {expected} argument(s), got {}",
+                args.len()
+            ),
+        ))
+    }
+}
+
+fn format_var_dump(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL\n".to_string(),
+        Value::Bool(value) => format!("bool({})\n", if *value { "true" } else { "false" }),
+        Value::Int(value) => format!("int({value})\n"),
+        Value::Float(value) => format!("float({})\n", value),
+        Value::String(value) => format!("string({}) \"{}\"\n", value.len(), value),
     }
 }

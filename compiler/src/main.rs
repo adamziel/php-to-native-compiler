@@ -7,7 +7,7 @@ use php_compiler::codegen::{emit_assembly, emit_llvm_ir};
 use php_compiler::error::{CompileResult, Diagnostic, Phase};
 use php_compiler::interpreter::run_program;
 use php_compiler::parser::parse_source;
-use php_compiler::test_runner::run_fixture_dir;
+use php_compiler::test_runner::{run_fixture_dir_with_options, FixtureRunOptions};
 
 fn main() -> ExitCode {
     match real_main() {
@@ -89,20 +89,27 @@ fn command_run(args: &[String]) -> CompileResult<u8> {
 }
 
 fn command_test(args: &[String]) -> CompileResult<u8> {
-    let root = match args {
-        [] => PathBuf::from("tests/fixtures"),
-        [path] => PathBuf::from(path),
-        _ => {
+    let mut compare_php = false;
+    let mut root = None;
+
+    for arg in args {
+        if arg == "--compare-php" {
+            compare_php = true;
+        } else if root.is_none() {
+            root = Some(PathBuf::from(arg));
+        } else {
             return Err(Diagnostic::new(
                 Phase::Cli,
                 0,
                 0,
-                "usage: phpc test [fixture-dir]",
-            ))
+                "usage: phpc test [--compare-php] [fixture-dir]",
+            ));
         }
-    };
+    }
 
-    let summary = run_fixture_dir(&root)?;
+    let root = root.unwrap_or_else(|| PathBuf::from("tests/fixtures"));
+    let summary = run_fixture_dir_with_options(&root, FixtureRunOptions { compare_php })?;
+
     for failure in &summary.failures {
         eprintln!("{failure}");
     }
@@ -110,6 +117,12 @@ fn command_test(args: &[String]) -> CompileResult<u8> {
         "fixture tests: {} passed, {} failed",
         summary.passed, summary.failed
     );
+    if compare_php {
+        println!(
+            "system php comparison: {} compared, {} skipped",
+            summary.php_compared, summary.php_skipped
+        );
+    }
     Ok(if summary.failed == 0 { 0 } else { 1 })
 }
 
@@ -131,5 +144,5 @@ fn print_help() {
     println!("  phpc compile <input.php> --emit-ir");
     println!("  phpc compile <input.php> --emit-asm");
     println!("  phpc run <input.php>");
-    println!("  phpc test [fixture-dir]");
+    println!("  phpc test [--compare-php] [fixture-dir]");
 }

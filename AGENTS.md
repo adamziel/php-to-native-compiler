@@ -34,4 +34,5 @@ Current discipline:
 - `phpc run` may use the interpreter/runtime path for supported Milestone 1 syntax.
 - `phpc compile --emit-ir` and `--emit-asm` are intentionally narrower than `run`; they must reject unsupported lowering instead of emitting misleading native code.
 - Runtime values must remain PHP-shaped: boxed values first, ordered int/string keyed arrays later, references and copy-on-write added when implemented.
-
+- Operational automation is documented in `docs/OPERATIONS.md`; checkpoint
+  commits must go through `tools/checkpoint.sh`.

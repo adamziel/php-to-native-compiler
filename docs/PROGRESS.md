@@ -24,11 +24,31 @@ Implemented:
   call, and `return`.
 - Added a small Milestone 2 scalar slice: `print` statements, unary minus,
   logical not, and fixtures for `null`/bool/string truthiness.
+- Added optional `phpc test --compare-php [fixture-dir]` support. When system
+  `php` is installed it compares fixture stdout, stderr, and exit code against
+  `phpc run`; when `php` is absent it skips comparison and still runs committed
+  expected-output fixtures.
+- Added two narrow Milestone 2 scalar comparison fixtures for echo conversion,
+  truthiness, and numeric-string arithmetic. This does not mark broader
+  Milestone 2 support complete.
+- Added scalar builtin support for `strlen`, `isset`, `var_dump`, and `print_r`
+  with fixture coverage. Array/object behavior for these functions remains
+  unsupported.
+- Added operational automation: `tools/checkpoint.sh`, `tools/codex-loop.sh`,
+  `docs/OPERATIONS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/CODEX_LOOP_PROMPT.md`.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo run -p phpc -- test` passes with 12 fixture tests.
+- `cargo run -p phpc -- test` passes with 15 fixture tests.
+- `cargo run -p phpc -- test --compare-php` passes with system `php`
+  installed, comparing 15 fixtures.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
+  with system `php` installed, comparing 5 Milestone 2 fixtures.
+- `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
+  passes, reporting 5 PHP comparisons skipped.
+- `tools/run-tests.sh` passes and now includes optional system PHP comparison.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -45,5 +65,5 @@ Still fails:
 
 Next:
 
-- Continue Milestone 2 by expanding scalar coercions, runtime errors, PHP
-  behavior comparison tests, and optional system PHP comparison mode.
+- Continue Milestone 2 by expanding scalar coercions, runtime errors, and PHP
+  behavior comparison coverage.

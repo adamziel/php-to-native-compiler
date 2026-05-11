@@ -49,3 +49,13 @@ fixtures; use a blank final line when the expected program output should include
 a trailing newline.
 
 See `docs/SUPPORT.md` for the detailed support matrix.
+
+## Operations
+
+Operational automation lives in `docs/OPERATIONS.md`.
+
+- `tools/run-tests.sh` runs the full project test suite.
+- `tools/checkpoint.sh "message"` runs the suite and commits all current changes
+  only if tests pass.
+- `tools/codex-loop.sh` runs a bounded Codex supervisor loop when
+  `CODEX_RUNNER` is set.
