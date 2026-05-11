@@ -645,3 +645,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   calls and keep unresolved calls as explicit runtime errors.
 - Checkpoint: pending `tools/checkpoint.sh "dynamic: reject include require"`
   after the full suite passes.
+
+## Loop Event 2026-05-11T23:45:58Z
+
+- Codex round 11 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260511T234129Z-11.log`.
+
+## Loop Event 2026-05-11T23:46:00Z
+
+- Post-round 11 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:46:00Z
+
+- Post-round 11 tests passed; running checkpoint for this round.
