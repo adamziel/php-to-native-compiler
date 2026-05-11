@@ -11,7 +11,8 @@
 - `null`, `true`, and `false`
 - variables
 - assignment statements
-- arithmetic: `+`, `-`, `*`, `/`
+- arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
+  integers, floats, and well-formed numeric strings
 - unary `-` and `!`
 - string concatenation: `.`
 - comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=`
@@ -22,11 +23,14 @@
 - `return`
 - scalar builtins: `strlen`, `isset`, `var_dump`, and `print_r`
 - structured runtime errors for undefined variables, arity mismatches,
-  unsupported calls, and division by zero
+  unsupported calls, division by zero, and non-numeric string arithmetic
 
 ## Partially Supported
 
-- Type coercion: implemented for scalar arithmetic and truthiness only.
+- Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
+  and well-formed numeric strings with optional sign, decimal point, exponent,
+  and surrounding ASCII whitespace. Non-numeric strings fail with a stable
+  runtime error. Truthiness is implemented for current scalar values.
 - Equality: scalar equality is implemented; PHP's full comparison matrix is not.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
@@ -42,6 +46,11 @@
   safely check undefined variables; complex lvalues and expression operands are
   unsupported. Array/object formatting and PHP's complete warning behavior are
   not implemented.
+- Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
+  characters, such as `"10 apples"`, are rejected instead of warning and
+  continuing with the leading number. PHP's warning/notice recovery mode,
+  locale-sensitive numeric parsing, and exact integer-overflow promotion rules
+  are not implemented.
 
 ## Test Support
 

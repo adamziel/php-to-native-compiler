@@ -10,7 +10,7 @@ handled.
 - [x] Add structured runtime errors with stable messages and tests for at
   least undefined variables, arity mismatches, unsupported calls, and invalid
   arithmetic.
-- [ ] Complete scalar arithmetic coercion coverage for `Null`, `Bool`, numeric
+- [x] Complete scalar arithmetic coercion coverage for `Null`, `Bool`, numeric
   strings, non-numeric strings, `Int`, and `Float`; add fixture tests and
   document the remaining gaps from PHP's full coercion rules.
 - [ ] Add a scalar comparison behavior matrix for equality and relational

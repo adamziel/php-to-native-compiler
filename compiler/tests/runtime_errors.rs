@@ -52,6 +52,18 @@ fn invalid_arithmetic_has_stable_runtime_error() {
 }
 
 #[test]
+fn non_numeric_string_arithmetic_has_stable_runtime_error() {
+    let error = runtime_error("<?php\necho \"abc\" + 1;\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "invalid arithmetic for +: string is not numeric"
+    );
+}
+
+#[test]
 fn isset_can_check_undefined_variables_without_reading_them() {
     let execution = run_source("<?php\necho isset($missing);\n$x = 1;\necho isset($x);\n")
         .expect("isset should not throw for missing direct variables");

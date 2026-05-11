@@ -44,22 +44,33 @@ Implemented:
   variables.
 - Added `.phpc-only` fixture markers so project-specific runtime diagnostics can
   be exercised by the fixture runner without being compared to system PHP.
+- Completed a scalar arithmetic coercion slice for `null`, booleans, integers,
+  floats, and well-formed numeric strings, including signed, decimal, exponent,
+  and surrounding-whitespace numeric strings.
+- Changed non-numeric string arithmetic to fail with a structured invalid
+  arithmetic runtime error instead of silently coercing to zero.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p phpc --test runtime_errors` passes with 5 runtime error tests.
-- `cargo run -p phpc -- test` passes with 19 fixture tests.
+- `cargo test -p php_runtime` passes with 6 runtime unit tests.
+- `cargo test -p phpc --test runtime_errors` passes with 6 runtime error tests.
+- `cargo test -p phpc --test php_comparison` passes.
+- `cargo run -p phpc -- test` passes with 21 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 15 fixtures and skipping 4 `.phpc-only` fixtures.
+  installed, comparing 16 fixtures and skipping 5 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
-  with system `php` installed, comparing 5 Milestone 2 fixtures.
+  with system `php` installed, comparing 6 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
-  passes, reporting 5 PHP comparisons skipped.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 4
+  passes, reporting 6 PHP comparisons skipped.
+- `cargo run -p phpc -- test tests/fixtures/milestone2` passes with 6
+  Milestone 2 fixtures.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 5
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2:6: invalid arithmetic for +: string is not numeric`.
 - `tools/run-tests.sh` passes and now includes optional system PHP comparison.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -74,8 +85,12 @@ Still fails:
   `clang` nor `llc` is installed; the documented `cc -S` fallback is used.
 - LLVM/assembly lowering intentionally rejects functions, calls, control flow,
   comparisons, dynamic values, and unknown variables.
+- Leading numeric strings with trailing non-numeric characters, such as
+  `"10 apples"`, are rejected instead of warning and continuing with the leading
+  number. PHP's warning/notice recovery mode and exact integer-overflow
+  promotion rules remain unsupported.
 
 Next:
 
-- Continue Milestone 2 by expanding scalar coercions, runtime errors, and PHP
-  behavior comparison coverage.
+- Continue Milestone 2 with a scalar comparison behavior matrix for equality and
+  relational operators across implemented value types.

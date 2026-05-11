@@ -100,13 +100,21 @@ pub enum ArityExpectation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArithmeticOp {
+    Add,
+    Subtract,
+    Multiply,
     Divide,
+    Negate,
 }
 
 impl fmt::Display for ArithmeticOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ArithmeticOp::Add => write!(f, "+"),
+            ArithmeticOp::Subtract => write!(f, "-"),
+            ArithmeticOp::Multiply => write!(f, "*"),
             ArithmeticOp::Divide => write!(f, "/"),
+            ArithmeticOp::Negate => write!(f, "unary -"),
         }
     }
 }
@@ -197,29 +205,38 @@ impl Value {
     }
 
     pub fn php_add(&self, other: &Value) -> RuntimeResult<Value> {
-        match (self.to_number(), other.to_number()) {
+        match (
+            self.to_arithmetic_number(ArithmeticOp::Add)?,
+            other.to_arithmetic_number(ArithmeticOp::Add)?,
+        ) {
             (Number::Int(a), Number::Int(b)) => Ok(Value::Int(a.wrapping_add(b))),
             (a, b) => Ok(Value::Float(a.as_float() + b.as_float())),
         }
     }
 
     pub fn php_sub(&self, other: &Value) -> RuntimeResult<Value> {
-        match (self.to_number(), other.to_number()) {
+        match (
+            self.to_arithmetic_number(ArithmeticOp::Subtract)?,
+            other.to_arithmetic_number(ArithmeticOp::Subtract)?,
+        ) {
             (Number::Int(a), Number::Int(b)) => Ok(Value::Int(a.wrapping_sub(b))),
             (a, b) => Ok(Value::Float(a.as_float() - b.as_float())),
         }
     }
 
     pub fn php_mul(&self, other: &Value) -> RuntimeResult<Value> {
-        match (self.to_number(), other.to_number()) {
+        match (
+            self.to_arithmetic_number(ArithmeticOp::Multiply)?,
+            other.to_arithmetic_number(ArithmeticOp::Multiply)?,
+        ) {
             (Number::Int(a), Number::Int(b)) => Ok(Value::Int(a.wrapping_mul(b))),
             (a, b) => Ok(Value::Float(a.as_float() * b.as_float())),
         }
     }
 
     pub fn php_div(&self, other: &Value) -> RuntimeResult<Value> {
-        let left = self.to_number();
-        let right = other.to_number();
+        let left = self.to_arithmetic_number(ArithmeticOp::Divide)?;
+        let right = other.to_arithmetic_number(ArithmeticOp::Divide)?;
         if right.as_float() == 0.0 {
             return Err(RuntimeError::invalid_arithmetic(
                 ArithmeticOp::Divide,
@@ -228,13 +245,14 @@ impl Value {
         }
 
         match (left, right) {
+            (Number::Int(i64::MIN), Number::Int(-1)) => Ok(Value::Float(i64::MIN as f64 / -1.0)),
             (Number::Int(a), Number::Int(b)) if a % b == 0 => Ok(Value::Int(a / b)),
             (a, b) => Ok(Value::Float(a.as_float() / b.as_float())),
         }
     }
 
     pub fn php_negate(&self) -> RuntimeResult<Value> {
-        match self.to_number() {
+        match self.to_arithmetic_number(ArithmeticOp::Negate)? {
             Number::Int(value) => Ok(Value::Int(value.wrapping_neg())),
             Number::Float(value) => Ok(Value::Float(-value)),
         }
@@ -294,7 +312,20 @@ impl Value {
             Value::Bool(true) => Number::Int(1),
             Value::Int(value) => Number::Int(*value),
             Value::Float(value) => Number::Float(*value),
-            Value::String(value) => parse_numeric_string(value),
+            Value::String(value) => parse_numeric_string(value).unwrap_or(Number::Int(0)),
+        }
+    }
+
+    fn to_arithmetic_number(&self, operation: ArithmeticOp) -> RuntimeResult<Number> {
+        match self {
+            Value::Null => Ok(Number::Int(0)),
+            Value::Bool(false) => Ok(Number::Int(0)),
+            Value::Bool(true) => Ok(Number::Int(1)),
+            Value::Int(value) => Ok(Number::Int(*value)),
+            Value::Float(value) => Ok(Number::Float(*value)),
+            Value::String(value) => parse_numeric_string(value).ok_or_else(|| {
+                RuntimeError::invalid_arithmetic(operation, "string is not numeric")
+            }),
         }
     }
 }
@@ -323,21 +354,62 @@ impl Number {
     }
 }
 
-fn parse_numeric_string(value: &str) -> Number {
-    let trimmed = value.trim_start();
-    if trimmed.is_empty() {
-        return Number::Int(0);
+fn parse_numeric_string(value: &str) -> Option<Number> {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    if trimmed.is_empty() || !is_well_formed_numeric_string(trimmed) {
+        return None;
     }
 
-    if let Ok(parsed) = trimmed.parse::<i64>() {
-        return Number::Int(parsed);
+    let has_float_syntax = trimmed
+        .bytes()
+        .any(|byte| matches!(byte, b'.' | b'e' | b'E'));
+    if !has_float_syntax {
+        if let Ok(parsed) = trimmed.parse::<i64>() {
+            return Some(Number::Int(parsed));
+        }
     }
 
-    if let Ok(parsed) = trimmed.parse::<f64>() {
-        return Number::Float(parsed);
+    trimmed.parse::<f64>().ok().map(Number::Float)
+}
+
+fn is_well_formed_numeric_string(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+
+    if matches!(bytes.get(index), Some(b'+' | b'-')) {
+        index += 1;
     }
 
-    Number::Int(0)
+    let digits_before_decimal = consume_ascii_digits(bytes, &mut index);
+    if matches!(bytes.get(index), Some(b'.')) {
+        index += 1;
+        let digits_after_decimal = consume_ascii_digits(bytes, &mut index);
+        if digits_before_decimal == 0 && digits_after_decimal == 0 {
+            return false;
+        }
+    } else if digits_before_decimal == 0 {
+        return false;
+    }
+
+    if matches!(bytes.get(index), Some(b'e' | b'E')) {
+        index += 1;
+        if matches!(bytes.get(index), Some(b'+' | b'-')) {
+            index += 1;
+        }
+        if consume_ascii_digits(bytes, &mut index) == 0 {
+            return false;
+        }
+    }
+
+    index == bytes.len()
+}
+
+fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> usize {
+    let start = *index;
+    while matches!(bytes.get(*index), Some(b'0'..=b'9')) {
+        *index += 1;
+    }
+    *index - start
 }
 
 fn format_php_float(value: f64) -> String {
@@ -389,6 +461,104 @@ mod tests {
         assert_eq!(
             Value::Int(7).php_div(&Value::Int(2)).unwrap(),
             Value::Float(3.5)
+        );
+    }
+
+    #[test]
+    fn scalar_arithmetic_coerces_supported_scalar_operands() {
+        assert_eq!(Value::Null.php_add(&Value::Int(5)).unwrap(), Value::Int(5));
+        assert_eq!(
+            Value::Bool(false).php_mul(&Value::Int(9)).unwrap(),
+            Value::Int(0)
+        );
+        assert_eq!(
+            Value::Bool(true).php_div(&Value::Int(2)).unwrap(),
+            Value::Float(0.5)
+        );
+        assert_eq!(
+            Value::Int(2).php_add(&Value::Float(3.5)).unwrap(),
+            Value::Float(5.5)
+        );
+        assert_eq!(
+            Value::String(" 4 ".to_string())
+                .php_add(&Value::Int(1))
+                .unwrap(),
+            Value::Int(5)
+        );
+        assert_eq!(
+            Value::String("+5".to_string())
+                .php_sub(&Value::Int(2))
+                .unwrap(),
+            Value::Int(3)
+        );
+        assert_eq!(
+            Value::String("-6".to_string())
+                .php_mul(&Value::Int(2))
+                .unwrap(),
+            Value::Int(-12)
+        );
+        assert_eq!(
+            Value::String("3e2".to_string())
+                .php_div(&Value::Int(2))
+                .unwrap(),
+            Value::Float(150.0)
+        );
+        assert_eq!(
+            Value::String(".5".to_string())
+                .php_add(&Value::Float(0.25))
+                .unwrap(),
+            Value::Float(0.75)
+        );
+    }
+
+    #[test]
+    fn non_numeric_strings_fail_arithmetic_with_stable_errors() {
+        let error = Value::String("abc".to_string())
+            .php_add(&Value::Int(1))
+            .unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::Add,
+                reason: "string is not numeric".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for +: string is not numeric"
+        );
+
+        let error = Value::Int(1)
+            .php_mul(&Value::String(String::new()))
+            .unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::Multiply,
+                reason: "string is not numeric".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for *: string is not numeric"
+        );
+
+        let error = Value::String("10 apples".to_string())
+            .php_negate()
+            .unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::Negate,
+                reason: "string is not numeric".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for unary -: string is not numeric"
         );
     }
 
