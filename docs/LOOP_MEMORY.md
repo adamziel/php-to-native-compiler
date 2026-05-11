@@ -473,3 +473,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   references, closures, dynamic calls, named arguments, and strict types.
 - Checkpoint: pending `tools/checkpoint.sh "functions: add default parameters"`
   after the full suite passes.
+
+## Loop Event 2026-05-11T23:29:32Z
+
+- Codex round 8 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260511T232411Z-8.log`.
+
+## Loop Event 2026-05-11T23:29:34Z
+
+- Post-round 8 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:29:34Z
+
+- Post-round 8 tests passed; running checkpoint for this round.
