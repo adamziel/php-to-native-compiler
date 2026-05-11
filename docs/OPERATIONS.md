@@ -20,6 +20,8 @@ That currently runs:
 
 The PHP comparison command still passes when system `php` is absent; comparison
 counts are reported as skipped while committed fixture expectations still run.
+Fixtures with sibling `.phpc-only` marker files are also skipped by system PHP
+comparison while remaining covered by committed `phpc` expectations.
 
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.

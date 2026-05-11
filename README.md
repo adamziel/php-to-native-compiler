@@ -39,6 +39,8 @@ subset:
 - `if` / `else`
 - `while`
 - function declarations, calls, and `return`
+- scalar builtins: `strlen`, `isset`, `var_dump`, and `print_r`
+- stable runtime diagnostics for the currently covered runtime errors
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.
@@ -46,7 +48,9 @@ unsupported programs with a structured codegen error.
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`
 fixtures; use a blank final line when the expected program output should include
-a trailing newline.
+a trailing newline. Fixtures with a sibling `.phpc-only` marker are still tested
+by `phpc`, but are skipped by optional system PHP comparison when the project
+intentionally reports different diagnostics.
 
 See `docs/SUPPORT.md` for the detailed support matrix.
 

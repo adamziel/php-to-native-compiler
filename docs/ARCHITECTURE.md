@@ -44,6 +44,8 @@ Implemented now:
 - `Int`
 - `Float`
 - `String`
+- structured runtime error categories with stable diagnostic messages for the
+  currently supported runtime failures
 - PHP-ish echo conversion
 - PHP-ish truthiness for the implemented value types
 - basic arithmetic, comparison, and concatenation helpers
@@ -95,6 +97,10 @@ Fixture tests are stored as `.php` files with sibling `.stdout`, `.stderr`, and
 `.exit` files. The runner strips one final editor newline from `.stdout` and
 `.stderr` fixtures. A fixture that needs to assert an actual trailing newline
 should include a blank final line.
+
+When `phpc` intentionally differs from system PHP, a sibling `.phpc-only` marker
+keeps the fixture in the normal runner while skipping optional system PHP
+comparison.
 
 ## Extension Model
 

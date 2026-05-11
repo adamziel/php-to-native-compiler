@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use php_runtime::{Comparison, RuntimeError, RuntimeResult, Value};
+use php_runtime::{ArityExpectation, Comparison, RuntimeError, RuntimeResult, Value};
 
 use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
@@ -38,7 +38,7 @@ impl Interpreter {
                 if functions.contains_key(&key) {
                     return Err(runtime_error(
                         function.span,
-                        format!("function '{}' is already defined", function.name),
+                        RuntimeError::duplicate_function(callable_name(&function.name)),
                     ));
                 }
                 functions.insert(key, function.clone());
@@ -140,7 +140,10 @@ impl Interpreter {
             Expr::Int(value, _) => Ok(Value::Int(*value)),
             Expr::Float(value, _) => Ok(Value::Float(*value)),
             Expr::String(value, _) => Ok(Value::String(value.clone())),
-            Expr::Variable(name, _) => Ok(scope.get(name).cloned().unwrap_or(Value::Null)),
+            Expr::Variable(name, span) => scope
+                .get(name)
+                .cloned()
+                .ok_or_else(|| runtime_error(*span, RuntimeError::undefined_variable(name))),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
@@ -167,6 +170,17 @@ impl Interpreter {
         caller_scope: &mut Scope,
     ) -> CompileResult<Value> {
         let key = name.to_ascii_lowercase();
+        if key == "isset" {
+            return self.call_isset(args, span, caller_scope);
+        }
+
+        if key == "count" {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("count()", "arrays are not implemented"),
+            ));
+        }
+
         if is_builtin(&key) {
             let mut values = Vec::with_capacity(args.len());
             for arg in args {
@@ -175,20 +189,17 @@ impl Interpreter {
             return self.call_builtin(&key, values, span);
         }
 
-        let function = self
-            .functions
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| runtime_error(span, format!("undefined function '{name}'")))?;
+        let function = self.functions.get(&key).cloned().ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
+        })?;
 
         if args.len() != function.params.len() {
             return Err(runtime_error(
                 span,
-                format!(
-                    "function '{}' expects {} argument(s), got {}",
-                    function.name,
-                    function.params.len(),
-                    args.len()
+                RuntimeError::arity_mismatch(
+                    callable_name(&function.name),
+                    ArityExpectation::Exactly(function.params.len()),
+                    args.len(),
                 ),
             ));
         }
@@ -211,9 +222,6 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::Int(args[0].echo_string().as_bytes().len() as i64))
             }
-            "isset" => Ok(Value::Bool(
-                args.iter().all(|value| !matches!(value, Value::Null)),
-            )),
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -234,15 +242,49 @@ impl Interpreter {
                 }
                 _ => Err(runtime_error(
                     span,
-                    format!("print_r() expects 1 or 2 argument(s), got {}", args.len()),
+                    RuntimeError::arity_mismatch(
+                        "print_r()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
                 )),
             },
-            "count" => Err(runtime_error(
-                span,
-                "count() is reserved for array support and is not implemented for scalars",
-            )),
             _ => unreachable!("is_builtin keeps this match exhaustive for callers"),
         }
+    }
+
+    fn call_isset(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut Scope,
+    ) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("isset()", ArityExpectation::AtLeast(1), args.len()),
+            ));
+        }
+
+        for arg in args {
+            match arg {
+                Expr::Variable(name, _) => match caller_scope.get(name) {
+                    Some(value) if !matches!(value, Value::Null) => {}
+                    _ => return Ok(Value::Bool(false)),
+                },
+                _ => {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            "isset()",
+                            "only direct variable operands are supported",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Value::Bool(true))
     }
 
     fn apply_binary(
@@ -266,7 +308,7 @@ impl Interpreter {
             BinaryOp::Ge => Ok(Value::Bool(left.php_cmp(&right, Comparison::Ge))),
         };
 
-        result.map_err(|error| runtime_error(span, error.message()))
+        result.map_err(|error| runtime_error(span, error))
     }
 
     fn apply_unary(&self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
@@ -275,12 +317,12 @@ impl Interpreter {
             UnaryOp::Not => Ok(Value::Bool(!value.is_truthy())),
         };
 
-        result.map_err(|error| runtime_error(span, error.message()))
+        result.map_err(|error| runtime_error(span, error))
     }
 }
 
-fn runtime_error(span: Span, message: impl Into<String>) -> Diagnostic {
-    Diagnostic::new(Phase::Runtime, span.line, span.column, message)
+fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
+    Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
 impl From<RuntimeError> for Diagnostic {
@@ -290,7 +332,7 @@ impl From<RuntimeError> for Diagnostic {
 }
 
 fn is_builtin(name: &str) -> bool {
-    matches!(name, "strlen" | "isset" | "var_dump" | "print_r" | "count")
+    matches!(name, "strlen" | "var_dump" | "print_r")
 }
 
 fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> CompileResult<()> {
@@ -299,12 +341,17 @@ fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> Comp
     } else {
         Err(runtime_error(
             span,
-            format!(
-                "{name}() expects {expected} argument(s), got {}",
-                args.len()
+            RuntimeError::arity_mismatch(
+                callable_name(name),
+                ArityExpectation::Exactly(expected),
+                args.len(),
             ),
         ))
     }
+}
+
+fn callable_name(name: &str) -> String {
+    format!("{name}()")
 }
 
 fn format_var_dump(value: &Value) -> String {

@@ -46,13 +46,21 @@ pub fn run_fixture_dir_with_options(
     };
 
     for path in files {
-        match php_comparison {
+        let fixture_php_comparison = if php_comparison == PhpComparison::Enabled
+            && path.with_extension("phpc-only").exists()
+        {
+            PhpComparison::SkippedByFixture
+        } else {
+            php_comparison
+        };
+
+        match fixture_php_comparison {
             PhpComparison::Enabled => summary.php_compared += 1,
-            PhpComparison::Missing => summary.php_skipped += 1,
+            PhpComparison::Missing | PhpComparison::SkippedByFixture => summary.php_skipped += 1,
             PhpComparison::Disabled => {}
         }
 
-        let outcome = run_fixture(&path, php_comparison);
+        let outcome = run_fixture(&path, fixture_php_comparison);
         match outcome {
             Ok(()) => summary.passed += 1,
             Err(message) => {
@@ -74,6 +82,7 @@ enum PhpComparison {
     Disabled,
     Enabled,
     Missing,
+    SkippedByFixture,
 }
 
 impl PhpComparison {

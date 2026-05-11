@@ -7,7 +7,7 @@ handled.
 
 ## Milestone 2: Value Model and Runtime
 
-- [ ] Add structured runtime errors with stable messages and tests for at
+- [x] Add structured runtime errors with stable messages and tests for at
   least undefined variables, arity mismatches, unsupported calls, and invalid
   arithmetic.
 - [ ] Complete scalar arithmetic coercion coverage for `Null`, `Bool`, numeric

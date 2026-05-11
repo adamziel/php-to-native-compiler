@@ -4,18 +4,110 @@ pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeError {
+    kind: RuntimeErrorKind,
     message: String,
 }
 
 impl RuntimeError {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
+    pub fn undefined_variable(name: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UndefinedVariable { name: name.into() })
+    }
+
+    pub fn undefined_function(callable: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UndefinedFunction {
+            callable: callable.into(),
+        })
+    }
+
+    pub fn duplicate_function(callable: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::DuplicateFunction {
+            callable: callable.into(),
+        })
+    }
+
+    pub fn arity_mismatch(
+        callable: impl Into<String>,
+        expected: ArityExpectation,
+        actual: usize,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::ArityMismatch {
+            callable: callable.into(),
+            expected,
+            actual,
+        })
+    }
+
+    pub fn unsupported_call(callable: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedCall {
+            callable: callable.into(),
+            reason: reason.into(),
+        })
+    }
+
+    pub fn invalid_arithmetic(operation: ArithmeticOp, reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidArithmetic {
+            operation,
+            reason: reason.into(),
+        })
+    }
+
+    pub fn kind(&self) -> &RuntimeErrorKind {
+        &self.kind
     }
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    fn from_kind(kind: RuntimeErrorKind) -> Self {
+        let message = format_runtime_error(&kind);
+        Self { kind, message }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeErrorKind {
+    UndefinedVariable {
+        name: String,
+    },
+    UndefinedFunction {
+        callable: String,
+    },
+    DuplicateFunction {
+        callable: String,
+    },
+    ArityMismatch {
+        callable: String,
+        expected: ArityExpectation,
+        actual: usize,
+    },
+    UnsupportedCall {
+        callable: String,
+        reason: String,
+    },
+    InvalidArithmetic {
+        operation: ArithmeticOp,
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArityExpectation {
+    Exactly(usize),
+    AtLeast(usize),
+    Between { min: usize, max: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArithmeticOp {
+    Divide,
+}
+
+impl fmt::Display for ArithmeticOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArithmeticOp::Divide => write!(f, "/"),
+        }
     }
 }
 
@@ -26,6 +118,42 @@ impl fmt::Display for RuntimeError {
 }
 
 impl std::error::Error for RuntimeError {}
+
+fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
+    match kind {
+        RuntimeErrorKind::UndefinedVariable { name } => format!("undefined variable '${name}'"),
+        RuntimeErrorKind::UndefinedFunction { callable } => {
+            format!("undefined function {callable}")
+        }
+        RuntimeErrorKind::DuplicateFunction { callable } => {
+            format!("function {callable} is already defined")
+        }
+        RuntimeErrorKind::ArityMismatch {
+            callable,
+            expected,
+            actual,
+        } => format!(
+            "arity mismatch for {callable}: {}, got {actual}",
+            format_arity_expectation(*expected)
+        ),
+        RuntimeErrorKind::UnsupportedCall { callable, reason } => {
+            format!("unsupported call {callable}: {reason}")
+        }
+        RuntimeErrorKind::InvalidArithmetic { operation, reason } => {
+            format!("invalid arithmetic for {operation}: {reason}")
+        }
+    }
+}
+
+fn format_arity_expectation(expected: ArityExpectation) -> String {
+    match expected {
+        ArityExpectation::Exactly(count) => format!("expected {count} argument(s)"),
+        ArityExpectation::AtLeast(count) => format!("expected at least {count} argument(s)"),
+        ArityExpectation::Between { min, max } => {
+            format!("expected {min} to {max} argument(s)")
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -93,7 +221,10 @@ impl Value {
         let left = self.to_number();
         let right = other.to_number();
         if right.as_float() == 0.0 {
-            return Err(RuntimeError::new("Division by zero"));
+            return Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::Divide,
+                "division by zero",
+            ));
         }
 
         match (left, right) {
@@ -258,6 +389,41 @@ mod tests {
         assert_eq!(
             Value::Int(7).php_div(&Value::Int(2)).unwrap(),
             Value::Float(3.5)
+        );
+    }
+
+    #[test]
+    fn runtime_errors_keep_structured_kind_and_stable_message() {
+        let error = RuntimeError::arity_mismatch("strlen()", ArityExpectation::Exactly(1), 2);
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::ArityMismatch {
+                callable: "strlen()".to_string(),
+                expected: ArityExpectation::Exactly(1),
+                actual: 2,
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "arity mismatch for strlen(): expected 1 argument(s), got 2"
+        );
+    }
+
+    #[test]
+    fn division_by_zero_is_invalid_arithmetic() {
+        let error = Value::Int(1).php_div(&Value::Int(0)).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::Divide,
+                reason: "division by zero".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for /: division by zero"
         );
     }
 }
