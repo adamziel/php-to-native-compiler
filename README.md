@@ -52,7 +52,7 @@ subset:
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
-  including variable variables, include/require constructs,
+  including variable variables, include/require/eval constructs,
   variadics, references, closures, named arguments, and `declare(strict_types=1)`
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects

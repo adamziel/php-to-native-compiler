@@ -110,6 +110,10 @@ Implemented:
   and the documented callable builtin subset, keeps unresolved names as stable
   undefined-function runtime errors, rejects non-string callees with a stable
   unsupported-call runtime error, and still rejects native lowering explicitly.
+- Defined the first `eval` fallback boundary and added explicit stable parse
+  diagnostics, fixture coverage, and `phpc run` CLI snapshots for unsupported
+  direct `eval(...)` statement and expression forms. Eval execution remains
+  unsupported.
 
 Tested:
 
@@ -128,12 +132,12 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with static symbol-table
-  behavior, dynamic function lookup behavior, and unsupported
-  variable-variable/include/require diagnostic coverage.
+- `cargo test -p phpc --test dynamic_features` passes with 7 tests covering
+  static symbol-table behavior, dynamic function lookup behavior, and
+  unsupported variable-variable/include/require/eval diagnostic coverage.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
-  CLI snapshot test covering unsupported variable variables and include/require
-  constructs.
+  CLI snapshot test covering 7 unsupported variable-variable,
+  include/require, and eval fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
@@ -141,9 +145,9 @@ Tested:
   passes with rejection coverage for `global` declarations.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists`
   passes with rejection coverage for dynamic function calls.
-- `cargo run -p phpc -- test` passes with 47 fixture tests.
+- `cargo run -p phpc -- test` passes with 49 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 24 fixtures and skipping 23 `.phpc-only` fixtures.
+  installed, comparing 24 fixtures and skipping 25 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -162,9 +166,9 @@ Tested:
   tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
   PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
-  passes with 5 unsupported dynamic-feature fixtures.
+  passes with 7 unsupported dynamic-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_dynamic_features` passes with 5 `.phpc-only` PHP
+  tests/fixtures/unsupported_dynamic_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -216,6 +220,10 @@ Tested:
   exits 1 and reports `lex error at tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.php:3:1: unsupported variable variable: variable variables are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_require_once_expression.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_require_once_expression.php:2:7: unsupported require_once: include/require resolution and execution are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_eval.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval.php:2:1: unsupported eval: eval parsing and caller-scope execution are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2:11: unsupported eval: eval parsing and caller-scope execution are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -281,8 +289,14 @@ Still fails:
   includes, `phar://`, `_once` de-duplication, caller-scope file execution,
   included-file return values, and PHP's warning-vs-fatal recovery behavior are
   not implemented.
+- Eval execution remains unsupported. Direct `eval(...)` fails with a stable
+  parse diagnostic; eval-fragment parsing without `<?php`, caller-scope
+  execution, `return` values from evaluated code, diagnostics inside evaluated
+  strings, functions/classes declared from evaluated code, nested eval,
+  include/require inside eval, and exact PHP `ParseError`/warning behavior are
+  not implemented.
 
 Next:
 
-- Continue Milestone 5 by defining the `eval` fallback boundary: parser entry
-  point, caller scope behavior, diagnostics, and unsupported cases.
+- Continue Milestone 5 by sketching the minimal object/class metadata model
+  before adding syntax.

@@ -56,6 +56,6 @@ handled.
   diagnostics before implementing execution.
 - [x] Add runtime lookup infrastructure for dynamic function calls and keep
   unresolved calls as explicit runtime errors.
-- [ ] Define the `eval` fallback boundary: parser entry point, caller scope
+- [x] Define the `eval` fallback boundary: parser entry point, caller scope
   behavior, diagnostics, and unsupported cases.
 - [ ] Sketch the minimal object/class metadata model before adding syntax.

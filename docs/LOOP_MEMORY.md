@@ -729,3 +729,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:54:00Z
 
 - Post-round 12 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:54:02Z
+
+- Starting round 13 at 20260511T235402Z from HEAD `0fe210a`.
+
+## Loop Event 2026-05-11T23:54:03Z
+
+- Pre-round 13 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:56:48Z
+
+- Task attempted: defined the first `eval` fallback boundary and added explicit
+  unsupported diagnostics. Direct `eval(...)` is now reserved by the lexer,
+  rejected by the parser in statement and expression positions, documented as a
+  future caller-scope fallback zone, and covered by committed `phpc run` CLI
+  snapshots.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_eval.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  dynamic_features` passed with 7 tests; `cargo test -p phpc --test
+  unsupported_dynamic_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_dynamic_features` passed with 7 fixtures; `cargo
+  run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passed with 7 `.phpc-only`
+  skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_eval.php` exited `1`
+  with the expected parse diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php`
+  exited `1` with the expected parse diagnostic; `tools/run-tests.sh` passed
+  with 49 fixtures, 24 system PHP comparisons, and 25 `.phpc-only` skips.
+- Remaining semantic gaps: eval execution is not implemented. Eval-fragment
+  parsing without `<?php`, caller-scope execution, `return` values from
+  evaluated code, diagnostics inside evaluated strings, functions/classes
+  declared from evaluated code, nested eval, include/require inside eval,
+  references/copy-on-write interactions, `GLOBALS`/superglobals, namespaces/use
+  declarations, opcache behavior, and exact PHP `ParseError`/warning behavior
+  remain unsupported.
+- Next concrete task: sketch the minimal object/class metadata model before
+  adding syntax.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: reject eval"` after the
+  full suite passes.

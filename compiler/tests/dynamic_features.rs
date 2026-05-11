@@ -158,3 +158,33 @@ $ok = require_once 'bootstrap.php';
         assert_eq!(error.message, message);
     }
 }
+
+#[test]
+fn eval_constructs_are_rejected_with_stable_parse_errors() {
+    let cases = [
+        (
+            r#"<?php
+eval('echo "dynamic";');
+"#,
+            2,
+            1,
+        ),
+        (
+            r#"<?php
+$result = eval('return 1;');
+"#,
+            2,
+            11,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported eval: eval parsing and caller-scope execution are not implemented"
+        );
+    }
+}

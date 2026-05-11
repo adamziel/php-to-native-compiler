@@ -49,6 +49,7 @@
   and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
+- explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -68,6 +69,18 @@
   lookup, current-working-directory fallback, stream wrappers, URL includes,
   `phar://`, opcache behavior, autoload interaction, and PHP's exact
   warning-vs-fatal recovery behavior are not implemented.
+- Eval: direct `eval(...)` syntax is reserved by the lexer/parser and rejected
+  with a stable parse diagnostic. The planned first executable slice treats
+  `eval` as a language construct with one string-valued argument, parses that
+  string through an eval-fragment parser entry point that does not require a
+  `<?php` opening tag, executes the resulting statements in the caller's
+  current symbol table, and uses `return` inside the fragment as the expression
+  result. Eval execution, non-string eval arguments, exact `ParseError` object
+  semantics, diagnostics inside evaluated strings, functions/classes declared
+  by evaluated code, nested eval, include/require inside eval,
+  references/copy-on-write interactions, `GLOBALS`/superglobal behavior,
+  namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
+  recovery behavior are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -180,6 +193,8 @@
 - objects/classes
 - include/require execution; `include`, `include_once`, `require`, and
   `require_once` currently fail with stable parse diagnostics
+- `eval` execution; direct `eval(...)` currently fails with a stable parse
+  diagnostic
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
@@ -193,7 +208,6 @@
   `call_user_func`, and namespace/autoload-aware callable resolution
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
-- `eval`
 - namespaces
 - closures and arrow functions
 - configurable recursion/call-stack limits matching PHP deployments

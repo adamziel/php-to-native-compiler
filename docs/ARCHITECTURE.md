@@ -98,8 +98,9 @@ Dynamic PHP features will be implemented as runtime fallback zones:
 
 Only the string-valued dynamic function lookup slice is executable today.
 Variable-variable execution, include/require execution, and `eval` remain design
-boundaries. Array/object callables, method calls, first-class callable syntax,
-and namespace/autoload-aware callable resolution are still outside the
+boundaries; direct `eval(...)` syntax is reserved and rejected with a stable
+parse diagnostic. Array/object callables, method calls, first-class callable
+syntax, and namespace/autoload-aware callable resolution are still outside the
 implemented dynamic-call subset.
 
 ## Include/Require Resolution Design
@@ -126,6 +127,32 @@ Initial unsupported include/require behavior remains: `include_path` lookup,
 current-working-directory fallback, stream wrappers, `phar://`, URL includes,
 autoload interaction, opcache behavior, cycle detection beyond `_once`
 de-duplication, and PHP's warning-vs-fatal recovery details.
+
+## Eval Fallback Design
+
+`eval` is reserved by the lexer/parser today and rejected with a stable parse
+diagnostic before execution. The first executable `eval` slice should use these
+rules:
+
+- parse direct `eval(<expr>)` as a special language construct, not as an
+  ordinary function or dynamic callable
+- require exactly one argument and evaluate that argument in the caller scope
+- accept only string-valued code for the first slice
+- parse the evaluated string with a dedicated eval-fragment parser entry point
+  that reads a statement list without requiring a `<?php` opening tag
+- execute the resulting statements against the caller's current symbol table, so
+  assignments affect the same local or top-level scope that called `eval`
+- let `return` inside the evaluated fragment produce the `eval(...)` expression
+  value; falling off the end should produce `null`
+- keep native lowering rejecting `eval` until parser re-entry, source mapping,
+  caller-scope effects, and return behavior have explicit lowering support
+
+Initial unsupported eval behavior remains: non-string eval arguments, exact
+`ParseError` object semantics, source mapping for diagnostics inside evaluated
+strings, functions/classes declared from evaluated code, nested eval,
+include/require inside eval, references/copy-on-write interactions,
+`GLOBALS`/superglobal behavior, namespaces/use declarations, opcache behavior,
+and PHP's exact warning/fatal recovery details.
 
 ## Fixture Tests
 

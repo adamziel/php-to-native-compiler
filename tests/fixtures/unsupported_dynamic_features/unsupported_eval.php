@@ -1,0 +1,2 @@
+<?php
+eval('echo "dynamic";');

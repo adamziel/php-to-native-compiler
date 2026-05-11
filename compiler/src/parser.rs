@@ -32,6 +32,7 @@ impl Parser {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
             TokenKind::Declare => self.parse_unsupported_declare(),
+            TokenKind::Eval => self.parse_unsupported_eval(),
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
@@ -123,6 +124,13 @@ impl Parser {
             span,
             "unsupported declare directive: strict_types is not implemented",
         ))
+    }
+
+    fn parse_unsupported_eval(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Eval, "expected 'eval'")?
+            .span;
+        Err(self.error_at(span, unsupported_eval_message()))
     }
 
     fn parse_unsupported_include_or_require(&mut self) -> CompileResult<Stmt> {
@@ -495,6 +503,7 @@ impl Parser {
                 token.span,
                 "unsupported closure: arrow functions are not implemented",
             )),
+            TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_require_message("include")))
             }
@@ -722,6 +731,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Return => "return",
         TokenKind::Global => "global",
         TokenKind::Declare => "declare",
+        TokenKind::Eval => "eval",
         TokenKind::Include => "include",
         TokenKind::IncludeOnce => "include_once",
         TokenKind::Require => "require",
@@ -772,4 +782,8 @@ fn include_require_name(kind: &TokenKind) -> Option<&'static str> {
 
 fn unsupported_include_require_message(construct: &str) -> String {
     format!("unsupported {construct}: include/require resolution and execution are not implemented")
+}
+
+fn unsupported_eval_message() -> &'static str {
+    "unsupported eval: eval parsing and caller-scope execution are not implemented"
 }
