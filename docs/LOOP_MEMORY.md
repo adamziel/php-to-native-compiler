@@ -218,3 +218,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   indexed writes in the interpreter with fixture CLI coverage.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add ordered values and literals"`
   after the full suite passes.
+
+## Loop Event 2026-05-11T23:07:19Z
+
+- Codex round 4 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260511T225651Z-4.log`.
+
+## Loop Event 2026-05-11T23:07:21Z
+
+- Post-round 4 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:07:21Z
+
+- Post-round 4 tests passed; running checkpoint for this round.
