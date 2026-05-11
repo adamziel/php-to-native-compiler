@@ -51,7 +51,7 @@ handled.
 
 - [x] Introduce a materialized symbol table path for future variable variables
   without changing current static variable behavior.
-- [ ] Design include/require resolution rules and add explicit unsupported
+- [x] Design include/require resolution rules and add explicit unsupported
   diagnostics before implementing execution.
 - [ ] Add runtime lookup infrastructure for dynamic function calls and keep
   unresolved calls as explicit runtime errors.

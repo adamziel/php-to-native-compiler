@@ -38,6 +38,9 @@ impl Parser {
             TokenKind::While => self.parse_while(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
+            kind if include_require_name(kind).is_some() => {
+                self.parse_unsupported_include_or_require()
+            }
             _ => self.parse_assignment_or_expression_statement(),
         }
     }
@@ -120,6 +123,13 @@ impl Parser {
             span,
             "unsupported declare directive: strict_types is not implemented",
         ))
+    }
+
+    fn parse_unsupported_include_or_require(&mut self) -> CompileResult<Stmt> {
+        let token = self.advance().clone();
+        let construct =
+            include_require_name(&token.kind).expect("caller checks include/require keyword");
+        Err(self.error_at(token.span, unsupported_include_require_message(construct)))
     }
 
     fn parse_echo(&mut self) -> CompileResult<Stmt> {
@@ -482,6 +492,20 @@ impl Parser {
                 token.span,
                 "unsupported closure: arrow functions are not implemented",
             )),
+            TokenKind::Include => {
+                Err(self.error_at(token.span, unsupported_include_require_message("include")))
+            }
+            TokenKind::IncludeOnce => Err(self.error_at(
+                token.span,
+                unsupported_include_require_message("include_once"),
+            )),
+            TokenKind::Require => {
+                Err(self.error_at(token.span, unsupported_include_require_message("require")))
+            }
+            TokenKind::RequireOnce => Err(self.error_at(
+                token.span,
+                unsupported_include_require_message("require_once"),
+            )),
             TokenKind::Ampersand => Err(self.error_at(
                 token.span,
                 "unsupported reference expression: references are not implemented",
@@ -687,6 +711,10 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Return => "return",
         TokenKind::Global => "global",
         TokenKind::Declare => "declare",
+        TokenKind::Include => "include",
+        TokenKind::IncludeOnce => "include_once",
+        TokenKind::Require => "require",
+        TokenKind::RequireOnce => "require_once",
         TokenKind::If => "if",
         TokenKind::Else => "else",
         TokenKind::While => "while",
@@ -719,4 +747,18 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Greater => ">",
         TokenKind::GreaterEqual => ">=",
     }
+}
+
+fn include_require_name(kind: &TokenKind) -> Option<&'static str> {
+    match kind {
+        TokenKind::Include => Some("include"),
+        TokenKind::IncludeOnce => Some("include_once"),
+        TokenKind::Require => Some("require"),
+        TokenKind::RequireOnce => Some("require_once"),
+        _ => None,
+    }
+}
+
+fn unsupported_include_require_message(construct: &str) -> String {
+    format!("unsupported {construct}: include/require resolution and execution are not implemented")
 }

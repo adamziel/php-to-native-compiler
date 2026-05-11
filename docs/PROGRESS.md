@@ -102,6 +102,10 @@ Implemented:
   behavior.
 - Added an explicit stable lex diagnostic, fixture coverage, and `phpc run` CLI
   snapshot for unsupported variable-variable syntax such as `$$name`.
+- Designed the first include/require resolution boundary and added explicit
+  stable parse diagnostics, fixture coverage, and `phpc run` CLI snapshots for
+  unsupported `include`, `include_once`, `require`, and `require_once`
+  constructs.
 
 Tested:
 
@@ -121,17 +125,19 @@ Tested:
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
   symbol-table unit tests.
 - `cargo test -p phpc --test dynamic_features` passes with static
-  symbol-table behavior and unsupported variable-variable diagnostic coverage.
+  symbol-table behavior and unsupported variable-variable/include/require
+  diagnostic coverage.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
-  CLI snapshot test covering unsupported variable variables.
+  CLI snapshot test covering unsupported variable variables and include/require
+  constructs.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
-- `cargo run -p phpc -- test` passes with 40 fixture tests.
+- `cargo run -p phpc -- test` passes with 44 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 23 fixtures and skipping 17 `.phpc-only` fixtures.
+  installed, comparing 23 fixtures and skipping 21 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -150,10 +156,10 @@ Tested:
   tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
   PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
-  passes with 1 unsupported dynamic-feature fixture.
+  passes with 5 unsupported dynamic-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_dynamic_features` passes with 1 `.phpc-only` PHP
-  comparison skipped.
+  tests/fixtures/unsupported_dynamic_features` passes with 5 `.phpc-only` PHP
+  comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
@@ -196,6 +202,8 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_function_features/unsupported_strict_types.php:2:1: unsupported declare directive: strict_types is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.php`
   exits 1 and reports `lex error at tests/fixtures/unsupported_dynamic_features/unsupported_variable_variable.php:3:1: unsupported variable variable: variable variables are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_require_once_expression.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_require_once_expression.php:2:7: unsupported require_once: include/require resolution and execution are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -251,8 +259,14 @@ Still fails:
 - Variable variables remain unsupported. `$$name` and `${...}` fail with the
   current stable lex diagnostic instead of resolving a runtime-computed symbol
   name, and dynamic symbol-table lookup from PHP values is not implemented.
+- Include/require execution remains unsupported. `include`, `include_once`,
+  `require`, and `require_once` fail with stable parse diagnostics; include
+  path lookup, current-working-directory fallback, stream wrappers, URL
+  includes, `phar://`, `_once` de-duplication, caller-scope file execution,
+  included-file return values, and PHP's warning-vs-fatal recovery behavior are
+  not implemented.
 
 Next:
 
-- Continue Milestone 5 by designing include/require resolution rules and adding
-  explicit unsupported diagnostics before implementing execution.
+- Continue Milestone 5 by adding runtime lookup infrastructure for dynamic
+  function calls while keeping unresolved calls as explicit runtime errors.

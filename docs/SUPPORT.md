@@ -44,6 +44,8 @@
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, dynamic function
   calls through expressions, named arguments, and `declare(strict_types=1)`
+- explicit parse diagnostics for unsupported include/require syntax:
+  `include`, `include_once`, `require`, and `require_once`
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -55,6 +57,14 @@
   array writes route through that symbol table path. Runtime lookup by a value
   computed from PHP code is not implemented yet, so variable variables still do
   not execute.
+- Include/require: `include`, `include_once`, `require`, and `require_once`
+  are reserved by the lexer/parser and rejected with stable parse diagnostics.
+  The planned first executable slice resolves string paths relative to the
+  including file, executes included files in caller scope, and tracks `_once`
+  files by canonical absolute path when possible. Execution, include-path
+  lookup, current-working-directory fallback, stream wrappers, URL includes,
+  `phar://`, opcache behavior, autoload interaction, and PHP's exact
+  warning-vs-fatal recovery behavior are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -155,7 +165,8 @@
 - string offset access
 - references
 - objects/classes
-- includes/requires
+- include/require execution; `include`, `include_once`, `require`, and
+  `require_once` currently fail with stable parse diagnostics
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

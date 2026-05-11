@@ -601,3 +601,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:41:27Z
 
 - Post-round 10 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:41:29Z
+
+- Starting round 11 at 20260511T234129Z from HEAD `274d0fa`.
+
+## Loop Event 2026-05-11T23:41:31Z
+
+- Pre-round 11 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:49:58Z
+
+- Task attempted: designed the first include/require resolution boundary and
+  added explicit unsupported diagnostics for `include`, `include_once`,
+  `require`, and `require_once`. The lexer now reserves those constructs, the
+  parser rejects statement and expression forms with stable parse diagnostics,
+  and unsupported dynamic-feature fixtures record committed `phpc run` CLI
+  snapshots.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_include.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_include_once.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_require.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_require_once_expression.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test dynamic_features` passed
+  with 3 tests; `cargo test -p phpc --test unsupported_dynamic_features_cli`
+  passed; `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with 5 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passed with 5 `.phpc-only`
+  PHP comparisons skipped; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_require_once_expression.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 44 fixtures, 23 system PHP comparisons, and 21 `.phpc-only`
+  skips.
+- Remaining semantic gaps: include/require execution is not implemented.
+  Include path lookup, current-working-directory fallback, stream wrappers, URL
+  includes, `phar://`, `_once` de-duplication, caller-scope file execution,
+  included-file return values, opcache/autoload interactions, and PHP's exact
+  warning-vs-fatal recovery behavior remain unsupported.
+- Next concrete task: add runtime lookup infrastructure for dynamic function
+  calls and keep unresolved calls as explicit runtime errors.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: reject include require"`
+  after the full suite passes.

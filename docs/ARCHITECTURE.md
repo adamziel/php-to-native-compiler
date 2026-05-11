@@ -94,7 +94,32 @@ Dynamic PHP features will be implemented as runtime fallback zones:
 - dynamic includes use runtime include resolution
 - `eval` parses and executes in the caller scope
 
-None of those features are implemented yet.
+Executable semantics for those features are not implemented yet.
+
+## Include/Require Resolution Design
+
+`include`, `include_once`, `require`, and `require_once` are reserved by the
+lexer/parser today and rejected with stable parse diagnostics before execution.
+The first executable include/require slice should use these rules:
+
+- the interpreter carries the current file path, process working directory, and
+  include stack in runtime execution context
+- only paths that evaluate to PHP strings are accepted at first
+- absolute paths resolve directly
+- relative paths resolve against the directory of the file containing the
+  include/require expression
+- `include_once` and `require_once` de-duplicate by canonical absolute path when
+  the filesystem can canonicalize the target, and by normalized absolute path
+  otherwise
+- included files execute in the caller scope and may return a value through
+  PHP's `return` statement
+- native lowering rejects include/require until file loading, scope effects,
+  and return-value behavior have explicit lowering support
+
+Initial unsupported include/require behavior remains: `include_path` lookup,
+current-working-directory fallback, stream wrappers, `phar://`, URL includes,
+autoload interaction, opcache behavior, cycle detection beyond `_once`
+de-duplication, and PHP's warning-vs-fatal recovery details.
 
 ## Fixture Tests
 

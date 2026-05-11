@@ -1,6 +1,12 @@
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
+fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Parse);
+    error
+}
+
 fn lex_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Lex);
@@ -46,4 +52,49 @@ $$name = "dynamic";
         error.message,
         "unsupported variable variable: variable variables are not implemented"
     );
+}
+
+#[test]
+fn include_require_constructs_are_rejected_with_stable_parse_errors() {
+    let cases = [
+        (
+            r#"<?php
+include 'config.php';
+"#,
+            2,
+            1,
+            "unsupported include: include/require resolution and execution are not implemented",
+        ),
+        (
+            r#"<?php
+include_once 'config.php';
+"#,
+            2,
+            1,
+            "unsupported include_once: include/require resolution and execution are not implemented",
+        ),
+        (
+            r#"<?php
+require 'bootstrap.php';
+"#,
+            2,
+            1,
+            "unsupported require: include/require resolution and execution are not implemented",
+        ),
+        (
+            r#"<?php
+$ok = require_once 'bootstrap.php';
+"#,
+            2,
+            7,
+            "unsupported require_once: include/require resolution and execution are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
 }

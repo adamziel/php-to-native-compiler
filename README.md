@@ -49,7 +49,7 @@ subset:
 - stable runtime diagnostics for the currently covered runtime errors,
   including unsupported `global` declarations and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
-  including variable variables,
+  including variable variables, include/require constructs,
   variadics, references, closures, dynamic calls, named arguments, and
   `declare(strict_types=1)`
 
