@@ -426,3 +426,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:24:09Z
 
 - Post-round 7 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:24:11Z
+
+- Starting round 8 at 20260511T232411Z from HEAD `98c1e8d`.
+
+## Loop Event 2026-05-11T23:24:13Z
+
+- Pre-round 8 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:28:42Z
+
+- Task attempted: implemented Milestone 4 default parameters for user
+  functions over a documented constant-expression subset. Function parameters
+  now carry optional default expressions, parser validation rejects
+  non-constant defaults and required parameters after defaults, user-function
+  calls accept the required-to-total arity range, omitted arguments bind to
+  defaults, and arity errors report the supported range.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone4/default_parameters.php`,
+  `tests/fixtures/milestone4/default_parameters.stdout`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  functions_and_scopes` passed with 8 tests; `cargo test -p phpc --test
+  runtime_errors` passed with 10 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone4` passed with 3 fixtures; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone4` passed with 3 system PHP
+  comparisons; `cargo run -p phpc -- run
+  tests/fixtures/milestone4/default_parameters.php` printed the committed
+  default-parameter output; `cargo test -p phpc --test milestone1
+  emit_ir_rejects_global_declarations_until_scope_imports_exist` passed;
+  `tools/run-tests.sh` passed with 32 fixtures, 22 system PHP comparisons, and
+  10 `.phpc-only` skips.
+- Remaining semantic gaps: default parameter support is limited to trailing
+  defaults over the documented constant-expression subset. Variables, function
+  calls, and indexed reads in default values are rejected by the parser.
+  Required parameters after defaults are rejected instead of modeling PHP's
+  deprecation and implicit-required behavior. Default expression runtime
+  failures use stable project diagnostics rather than PHP `Throwable` objects
+  and stack traces. Variadics, references, closures, dynamic calls, named
+  arguments, strict types, static locals, and `global` imports remain
+  unsupported.
+- Next concrete task: document unsupported function features: variadics,
+  references, closures, dynamic calls, named arguments, and strict types.
+- Checkpoint: pending `tools/checkpoint.sh "functions: add default parameters"`
+  after the full suite passes.

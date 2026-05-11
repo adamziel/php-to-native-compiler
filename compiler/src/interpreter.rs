@@ -320,12 +320,13 @@ impl Interpreter {
             runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
         })?;
 
-        if args.len() != function.params.len() {
+        let required_params = required_param_count(&function);
+        if args.len() < required_params || args.len() > function.params.len() {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
                     callable_name(&function.name),
-                    ArityExpectation::Exactly(function.params.len()),
+                    arity_expectation(required_params, function.params.len()),
                     args.len(),
                 ),
             ));
@@ -342,9 +343,18 @@ impl Interpreter {
         }
 
         let mut local_scope = Scope::new();
-        for (param, arg) in function.params.iter().zip(args) {
-            let value = self.evaluate(arg, caller_scope)?;
-            local_scope.insert(param.clone(), value);
+        for (index, param) in function.params.iter().enumerate() {
+            let value = if let Some(arg) = args.get(index) {
+                self.evaluate(arg, caller_scope)?
+            } else {
+                let default = param
+                    .default
+                    .as_ref()
+                    .expect("arity check ensures missing params have defaults");
+                let mut default_scope = Scope::new();
+                self.evaluate(default, &mut default_scope)?
+            };
+            local_scope.insert(param.name.clone(), value);
         }
 
         self.call_depth += 1;
@@ -504,6 +514,25 @@ fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> Comp
                 args.len(),
             ),
         ))
+    }
+}
+
+fn required_param_count(function: &FunctionDecl) -> usize {
+    function
+        .params
+        .iter()
+        .filter(|param| param.default.is_none())
+        .count()
+}
+
+fn arity_expectation(required: usize, total: usize) -> ArityExpectation {
+    if required == total {
+        ArityExpectation::Exactly(total)
+    } else {
+        ArityExpectation::Between {
+            min: required,
+            max: total,
+        }
     }
 }
 

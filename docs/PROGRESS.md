@@ -87,6 +87,9 @@ Implemented:
 - Added recursive user-function execution coverage and a fixed 128-frame
   user-function call-depth guard for runaway recursion, with a stable runtime
   diagnostic and committed CLI snapshot.
+- Added parser and interpreter support for trailing default parameter values in
+  user functions over the documented constant-expression subset, including
+  required-to-total arity diagnostics and scalar/array default fixture coverage.
 
 Tested:
 
@@ -98,24 +101,24 @@ Tested:
 - `cargo test -p phpc --test runtime_errors` passes with 10 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
   covering 10 representative runtime error fixtures.
-- `cargo test -p phpc --test functions_and_scopes` passes with 4 scope-focused
-  user-function tests.
+- `cargo test -p phpc --test functions_and_scopes` passes with 8
+  user-function scope/default-parameter tests.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
-- `cargo run -p phpc -- test` passes with 31 fixture tests.
+- `cargo run -p phpc -- test` passes with 32 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 21 fixtures and skipping 10 `.phpc-only` fixtures.
+  installed, comparing 22 fixtures and skipping 10 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
   with 2 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone4` passes with 2 function
-  scope fixture.
+- `cargo run -p phpc -- test tests/fixtures/milestone4` passes with 3 function
+  scope/default-parameter fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
-  with 2 system PHP comparisons.
+  with 3 system PHP comparisons.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
@@ -146,6 +149,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_global.php:4:5: unsupported global declaration: importing globals into function scope is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/milestone4/recursive_factorial.php`
   prints the committed recursive factorial output.
+- `cargo run -p phpc -- run tests/fixtures/milestone4/default_parameters.php`
+  prints the committed default-parameter output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
@@ -193,9 +198,13 @@ Still fails:
   are passed as arguments; PHP's warning-and-`null` recovery for undefined local
   variables is not modeled. Recursive calls use a fixed 128-frame
   user-function guard rather than PHP's native stack or memory exhaustion
-  behavior, and the guard is not configurable.
+  behavior, and the guard is not configurable. Default parameter support is
+  limited to trailing defaults over the documented constant-expression subset;
+  non-constant defaults and required parameters after defaults are rejected by
+  the parser.
 
 Next:
 
-- Continue Milestone 4 by implementing default parameters for user functions
-  with parser, runtime, and fixture coverage.
+- Continue Milestone 4 by documenting unsupported function features including
+  variadics, references, closures, dynamic calls, named arguments, and strict
+  types.

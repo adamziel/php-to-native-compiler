@@ -21,6 +21,8 @@
 - `while`
 - function declarations
 - positional function calls
+- trailing default parameter values for user functions over the documented
+  constant-expression subset
 - recursive user-function calls up to a fixed 128-frame user-function call-depth
   guard
 - `return`
@@ -74,16 +76,24 @@
   array assignment are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
-- Function calls: user-defined positional calls are supported in `phpc run` with
-  exact arity only. Each call gets a fresh local scope. Parameters and local
-  assignments shadow global variables without mutating them, and functions do
-  not import top-level variables implicitly. `global` declarations parse but
-  fail with a stable runtime error because global scope imports are not
-  implemented. Recursive user-function calls are supported until the fixed
-  128-frame user-function call-depth guard is reached. That guard is a
+- Function calls: user-defined positional calls are supported in `phpc run`.
+  Required parameters and trailing default parameter values are supported.
+  Defaults may use the current constant-expression subset: `null`, booleans,
+  integers, floats, strings, short arrays with supported keys, unary
+  expressions, and binary expressions over those values. Omitted arguments bind
+  to their defaults; calls outside the supported required-to-total arity range
+  fail with a stable arity diagnostic. Each call gets a fresh local scope.
+  Parameters and local assignments shadow global variables without mutating
+  them, and functions do not import top-level variables implicitly. `global`
+  declarations parse but fail with a stable runtime error because global scope
+  imports are not implemented. Recursive user-function calls are supported until
+  the fixed 128-frame user-function call-depth guard is reached. That guard is a
   project-specific runtime diagnostic, not PHP's native stack or memory
   exhaustion behavior; it is not configurable and does not produce stack
-  traces. Default values and variadics are not implemented.
+  traces. Non-constant defaults such as variables, calls, and indexed reads are
+  rejected by the parser. Required parameters after default parameters are also
+  rejected instead of modeling PHP's deprecation and implicit-required behavior.
+  Variadics are not implemented.
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
   documented scalar/array subset only. `strlen` remains scalar-only and rejects
   arrays. `count` accepts arrays only. `isset` supports direct variable
@@ -130,6 +140,8 @@
 - includes/requires
 - variable variables
 - `global` declarations / importing top-level variables into function scope
+- default parameter values outside the documented constant-expression subset
+- required parameters after default parameters
 - dynamic function calls
 - `eval`
 - namespaces

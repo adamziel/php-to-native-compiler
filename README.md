@@ -38,8 +38,9 @@ subset:
 - loose scalar comparisons used by control flow
 - `if` / `else`
 - `while`
-- function declarations, positional and recursive calls up to the documented
-  guard, `return`, and isolated local scopes for user-function calls
+- function declarations, positional calls with trailing default parameter
+  values, recursive calls up to the documented guard, `return`, and isolated
+  local scopes for user-function calls
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset

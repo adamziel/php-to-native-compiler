@@ -80,8 +80,15 @@ impl AssignTarget {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
     pub name: String,
-    pub params: Vec<String>,
+    pub params: Vec<FunctionParam>,
     pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionParam {
+    pub name: String,
+    pub default: Option<Expr>,
     pub span: Span,
 }
 

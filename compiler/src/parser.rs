@@ -1,5 +1,6 @@
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp,
+    ArrayItem, AssignTarget, BinaryOp, Expr, FunctionDecl, FunctionParam, Program, Span, Stmt,
+    UnaryOp,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -48,10 +49,30 @@ impl Parser {
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
 
         let mut params = Vec::new();
+        let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
-                let param = self.consume_variable("expected parameter name")?;
-                params.push(param);
+                let (name, span) = self.consume_variable_with_span("expected parameter name")?;
+                let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                    saw_default = true;
+                    let expr = self.parse_expression()?;
+                    self.ensure_supported_default_expr(&expr)?;
+                    Some(expr)
+                } else {
+                    if saw_default {
+                        return Err(self.error_at(
+                            span,
+                            "required parameter cannot follow a default parameter in the current subset",
+                        ));
+                    }
+                    None
+                };
+
+                params.push(FunctionParam {
+                    name,
+                    default,
+                    span,
+                });
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                     break;
                 }
@@ -471,6 +492,34 @@ impl Parser {
         Ok(Expr::Array { items, span })
     }
 
+    fn ensure_supported_default_expr(&self, expr: &Expr) -> CompileResult<()> {
+        match expr {
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _) => Ok(()),
+            Expr::Array { items, .. } => {
+                for item in items {
+                    if let Some(key) = &item.key {
+                        self.ensure_supported_default_expr(key)?;
+                    }
+                    self.ensure_supported_default_expr(&item.value)?;
+                }
+                Ok(())
+            }
+            Expr::Unary { expr, .. } => self.ensure_supported_default_expr(expr),
+            Expr::Binary { left, right, .. } => {
+                self.ensure_supported_default_expr(left)?;
+                self.ensure_supported_default_expr(right)
+            }
+            Expr::Variable(_, _) | Expr::Index { .. } | Expr::Call { .. } => Err(self.error_at(
+                expr.span(),
+                "default parameter values only support constant expressions in the current subset",
+            )),
+        }
+    }
+
     fn consume_identifier(&mut self, message: &str) -> CompileResult<String> {
         let token = self.advance().clone();
         match token.kind {
@@ -480,9 +529,14 @@ impl Parser {
     }
 
     fn consume_variable(&mut self, message: &str) -> CompileResult<String> {
+        self.consume_variable_with_span(message)
+            .map(|(name, _span)| name)
+    }
+
+    fn consume_variable_with_span(&mut self, message: &str) -> CompileResult<(String, Span)> {
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Variable(name) => Ok(name),
+            TokenKind::Variable(name) => Ok((name, token.span)),
             _ => Err(self.error_at(token.span, message)),
         }
     }
