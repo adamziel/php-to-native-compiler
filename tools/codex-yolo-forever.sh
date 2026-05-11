@@ -13,7 +13,6 @@ cd "$repo_root" || exit 1
 
 memory_file="${CODEX_YOLO_MEMORY:-$repo_root/docs/LOOP_MEMORY.md}"
 log_dir="${CODEX_YOLO_LOG_DIR:-$repo_root/.codex-yolo/logs}"
-sleep_seconds="${CODEX_YOLO_SLEEP_SECONDS:-10}"
 codex_bin="${CODEX_BIN:-codex}"
 test_script="$repo_root/tools/run-tests.sh"
 checkpoint_script="$repo_root/tools/checkpoint.sh"
@@ -123,5 +122,4 @@ while :; do
   fi
 
   round=$((round + 1))
-  sleep "$sleep_seconds"
 done

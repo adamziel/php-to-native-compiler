@@ -101,7 +101,6 @@ Behavior:
 Useful environment variables:
 
 - `CODEX_BIN`: Codex executable name or path, default `codex`
-- `CODEX_YOLO_SLEEP_SECONDS`: sleep between rounds, default `10`
 - `CODEX_YOLO_MEMORY`: memory file path, default `docs/LOOP_MEMORY.md`
 - `CODEX_YOLO_LOG_DIR`: log directory, default `.codex-yolo/logs`
 
