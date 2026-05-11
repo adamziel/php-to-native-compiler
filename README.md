@@ -35,7 +35,7 @@ subset:
 - integer, float, and string literals
 - variables and assignment
 - `+`, `-`, `*`, `/`, `.`
-- comparisons used by control flow
+- loose scalar comparisons used by control flow
 - `if` / `else`
 - `while`
 - function declarations, calls, and `return`

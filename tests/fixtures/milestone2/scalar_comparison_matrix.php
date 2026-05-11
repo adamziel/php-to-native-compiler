@@ -1,0 +1,119 @@
+<?php
+function bit($value) {
+    if ($value) {
+        return "1";
+    }
+    return "0";
+}
+
+function row($label, $left, $right) {
+    echo $label, ":",
+        bit($left == $right),
+        bit($left != $right),
+        bit($left < $right),
+        bit($left <= $right),
+        bit($left > $right),
+        bit($left >= $right),
+        "\n";
+}
+
+row("null|null", null, null);
+row("null|false", null, false);
+row("null|true", null, true);
+row("null|int0", null, 0);
+row("null|int1", null, 1);
+row("null|float1_5", null, 1.5);
+row("null|empty", null, "");
+row("null|str0", null, "0");
+row("null|str1_5", null, "1.5");
+row("null|strabc", null, "abc");
+row("false|null", false, null);
+row("false|false", false, false);
+row("false|true", false, true);
+row("false|int0", false, 0);
+row("false|int1", false, 1);
+row("false|float1_5", false, 1.5);
+row("false|empty", false, "");
+row("false|str0", false, "0");
+row("false|str1_5", false, "1.5");
+row("false|strabc", false, "abc");
+row("true|null", true, null);
+row("true|false", true, false);
+row("true|true", true, true);
+row("true|int0", true, 0);
+row("true|int1", true, 1);
+row("true|float1_5", true, 1.5);
+row("true|empty", true, "");
+row("true|str0", true, "0");
+row("true|str1_5", true, "1.5");
+row("true|strabc", true, "abc");
+row("int0|null", 0, null);
+row("int0|false", 0, false);
+row("int0|true", 0, true);
+row("int0|int0", 0, 0);
+row("int0|int1", 0, 1);
+row("int0|float1_5", 0, 1.5);
+row("int0|empty", 0, "");
+row("int0|str0", 0, "0");
+row("int0|str1_5", 0, "1.5");
+row("int0|strabc", 0, "abc");
+row("int1|null", 1, null);
+row("int1|false", 1, false);
+row("int1|true", 1, true);
+row("int1|int0", 1, 0);
+row("int1|int1", 1, 1);
+row("int1|float1_5", 1, 1.5);
+row("int1|empty", 1, "");
+row("int1|str0", 1, "0");
+row("int1|str1_5", 1, "1.5");
+row("int1|strabc", 1, "abc");
+row("float1_5|null", 1.5, null);
+row("float1_5|false", 1.5, false);
+row("float1_5|true", 1.5, true);
+row("float1_5|int0", 1.5, 0);
+row("float1_5|int1", 1.5, 1);
+row("float1_5|float1_5", 1.5, 1.5);
+row("float1_5|empty", 1.5, "");
+row("float1_5|str0", 1.5, "0");
+row("float1_5|str1_5", 1.5, "1.5");
+row("float1_5|strabc", 1.5, "abc");
+row("empty|null", "", null);
+row("empty|false", "", false);
+row("empty|true", "", true);
+row("empty|int0", "", 0);
+row("empty|int1", "", 1);
+row("empty|float1_5", "", 1.5);
+row("empty|empty", "", "");
+row("empty|str0", "", "0");
+row("empty|str1_5", "", "1.5");
+row("empty|strabc", "", "abc");
+row("str0|null", "0", null);
+row("str0|false", "0", false);
+row("str0|true", "0", true);
+row("str0|int0", "0", 0);
+row("str0|int1", "0", 1);
+row("str0|float1_5", "0", 1.5);
+row("str0|empty", "0", "");
+row("str0|str0", "0", "0");
+row("str0|str1_5", "0", "1.5");
+row("str0|strabc", "0", "abc");
+row("str1_5|null", "1.5", null);
+row("str1_5|false", "1.5", false);
+row("str1_5|true", "1.5", true);
+row("str1_5|int0", "1.5", 0);
+row("str1_5|int1", "1.5", 1);
+row("str1_5|float1_5", "1.5", 1.5);
+row("str1_5|empty", "1.5", "");
+row("str1_5|str0", "1.5", "0");
+row("str1_5|str1_5", "1.5", "1.5");
+row("str1_5|strabc", "1.5", "abc");
+row("strabc|null", "abc", null);
+row("strabc|false", "abc", false);
+row("strabc|true", "abc", true);
+row("strabc|int0", "abc", 0);
+row("strabc|int1", "abc", 1);
+row("strabc|float1_5", "abc", 1.5);
+row("strabc|empty", "abc", "");
+row("strabc|str0", "abc", "0");
+row("strabc|str1_5", "abc", "1.5");
+row("strabc|strabc", "abc", "abc");

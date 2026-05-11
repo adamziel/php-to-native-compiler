@@ -15,7 +15,8 @@
   integers, floats, and well-formed numeric strings
 - unary `-` and `!`
 - string concatenation: `.`
-- comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current scalar
+  values (`null`, booleans, integers, floats, and strings)
 - `if` / `else`
 - `while`
 - function declarations
@@ -31,7 +32,12 @@
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
   runtime error. Truthiness is implemented for current scalar values.
-- Equality: scalar equality is implemented; PHP's full comparison matrix is not.
+- Scalar comparisons: loose equality and relational operators are implemented
+  for the current scalar values using PHP 8-style behavior for booleans,
+  numeric strings, non-numeric strings, empty strings, `null`, integers, and
+  floats. This is not PHP's full comparison matrix: strict identity operators,
+  arrays, objects, resources, and edge cases around `NAN`/`INF` and
+  PHP-version-specific float string precision are not covered.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet.

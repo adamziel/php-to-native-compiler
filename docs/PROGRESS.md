@@ -49,22 +49,30 @@ Implemented:
   and surrounding-whitespace numeric strings.
 - Changed non-numeric string arithmetic to fail with a structured invalid
   arithmetic runtime error instead of silently coercing to zero.
+- Added a PHP 8-style scalar comparison matrix for `==`, `!=`, `<`, `<=`, `>`,
+  and `>=` across the implemented scalar value types, including `null`,
+  booleans, integers, floats, empty strings, numeric strings, and non-numeric
+  strings.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 6 runtime unit tests.
+- `cargo test -p php_runtime` passes with 7 runtime unit tests.
+- `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
+  passes.
 - `cargo test -p phpc --test runtime_errors` passes with 6 runtime error tests.
 - `cargo test -p phpc --test php_comparison` passes.
-- `cargo run -p phpc -- test` passes with 21 fixture tests.
+- `cargo run -p phpc -- test` passes with 22 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 16 fixtures and skipping 5 `.phpc-only` fixtures.
+  installed, comparing 17 fixtures and skipping 5 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
-  with system `php` installed, comparing 6 Milestone 2 fixtures.
+  with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
-  passes, reporting 6 PHP comparisons skipped.
-- `cargo run -p phpc -- test tests/fixtures/milestone2` passes with 6
+  passes, reporting 7 PHP comparisons skipped.
+- `cargo run -p phpc -- test tests/fixtures/milestone2` passes with 7
   Milestone 2 fixtures.
+- `cargo run -p phpc -- run tests/fixtures/milestone2/scalar_comparison_matrix.php`
+  prints the committed 100-row scalar comparison matrix.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 5
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
@@ -89,8 +97,11 @@ Still fails:
   `"10 apples"`, are rejected instead of warning and continuing with the leading
   number. PHP's warning/notice recovery mode and exact integer-overflow
   promotion rules remain unsupported.
+- Scalar comparisons do not implement strict identity (`===`, `!==`), arrays,
+  objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
+  float string precision.
 
 Next:
 
-- Continue Milestone 2 with a scalar comparison behavior matrix for equality and
-  relational operators across implemented value types.
+- Continue Milestone 2 by adding explicit CLI exercises for representative
+  runtime errors and recording their stdout, stderr, and exit behavior.

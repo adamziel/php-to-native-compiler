@@ -13,7 +13,7 @@ handled.
 - [x] Complete scalar arithmetic coercion coverage for `Null`, `Bool`, numeric
   strings, non-numeric strings, `Int`, and `Float`; add fixture tests and
   document the remaining gaps from PHP's full coercion rules.
-- [ ] Add a scalar comparison behavior matrix for equality and relational
+- [x] Add a scalar comparison behavior matrix for equality and relational
   operators across implemented value types, with runtime tests and fixture CLI
   coverage.
 - [x] Complete optional system PHP comparison mode for the fixture runner,

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt;
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
@@ -263,56 +264,54 @@ impl Value {
     }
 
     pub fn php_eq(&self, other: &Value) -> bool {
-        match (self, other) {
-            (Value::Null, Value::Null) => true,
-            (Value::Bool(_), _) | (_, Value::Bool(_)) => self.is_truthy() == other.is_truthy(),
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Float(a), Value::Float(b)) => a == b,
-            (Value::Int(a), Value::Float(b)) => (*a as f64) == *b,
-            (Value::Float(a), Value::Int(b)) => *a == (*b as f64),
-            (Value::String(a), Value::String(b)) => a == b,
-            (Value::String(_), Value::Int(_))
-            | (Value::String(_), Value::Float(_))
-            | (Value::Int(_), Value::String(_))
-            | (Value::Float(_), Value::String(_)) => {
-                self.to_number().as_float() == other.to_number().as_float()
-            }
-            (Value::Null, _) | (_, Value::Null) => self.is_truthy() == other.is_truthy(),
-        }
+        self.php_cmp(other, Comparison::Eq)
     }
 
     pub fn php_cmp(&self, other: &Value, op: Comparison) -> bool {
-        let ordering = match (self, other) {
-            (Value::String(a), Value::String(b)) => a.partial_cmp(b),
-            _ => self
-                .to_number()
-                .as_float()
-                .partial_cmp(&other.to_number().as_float()),
-        };
-
-        match (ordering, op) {
-            (Some(std::cmp::Ordering::Less), Comparison::Lt | Comparison::Le | Comparison::Ne) => {
-                true
-            }
-            (Some(std::cmp::Ordering::Equal), Comparison::Eq | Comparison::Le | Comparison::Ge) => {
-                true
-            }
-            (
-                Some(std::cmp::Ordering::Greater),
-                Comparison::Gt | Comparison::Ge | Comparison::Ne,
-            ) => true,
+        match (self.php_ordering(other), op) {
+            (Some(Ordering::Less), Comparison::Lt | Comparison::Le | Comparison::Ne) => true,
+            (Some(Ordering::Equal), Comparison::Eq | Comparison::Le | Comparison::Ge) => true,
+            (Some(Ordering::Greater), Comparison::Gt | Comparison::Ge | Comparison::Ne) => true,
+            (None, Comparison::Ne) => true,
             _ => false,
         }
     }
 
-    fn to_number(&self) -> Number {
+    fn php_ordering(&self, other: &Value) -> Option<Ordering> {
+        match (self, other) {
+            (Value::Bool(_), _) | (_, Value::Bool(_)) => {
+                Some(self.is_truthy().cmp(&other.is_truthy()))
+            }
+            (Value::Null, Value::Null) => Some(Ordering::Equal),
+            (Value::Null, Value::String(right)) => compare_binary_strings("", right),
+            (Value::String(left), Value::Null) => compare_binary_strings(left, ""),
+            (Value::Null, _) => compare_numbers(Number::Int(0), other.numeric_value()?),
+            (_, Value::Null) => compare_numbers(self.numeric_value()?, Number::Int(0)),
+            (Value::String(left), Value::String(right)) => compare_php_strings(left, right),
+            (Value::String(left), Value::Int(right)) => {
+                compare_string_and_number(left, Number::Int(*right))
+            }
+            (Value::String(left), Value::Float(right)) => {
+                compare_string_and_number(left, Number::Float(*right))
+            }
+            (Value::Int(left), Value::String(right)) => {
+                compare_number_and_string(Number::Int(*left), right)
+            }
+            (Value::Float(left), Value::String(right)) => {
+                compare_number_and_string(Number::Float(*left), right)
+            }
+            _ => compare_numbers(self.numeric_value()?, other.numeric_value()?),
+        }
+    }
+
+    fn numeric_value(&self) -> Option<Number> {
         match self {
-            Value::Null => Number::Int(0),
-            Value::Bool(false) => Number::Int(0),
-            Value::Bool(true) => Number::Int(1),
-            Value::Int(value) => Number::Int(*value),
-            Value::Float(value) => Number::Float(*value),
-            Value::String(value) => parse_numeric_string(value).unwrap_or(Number::Int(0)),
+            Value::Int(value) => Some(Number::Int(*value)),
+            Value::Float(value) => Some(Number::Float(*value)),
+            Value::Null => Some(Number::Int(0)),
+            Value::Bool(false) => Some(Number::Int(0)),
+            Value::Bool(true) => Some(Number::Int(1)),
+            Value::String(value) => parse_numeric_string(value),
         }
     }
 
@@ -340,6 +339,7 @@ pub enum Comparison {
     Ge,
 }
 
+#[derive(Debug, Clone, Copy)]
 enum Number {
     Int(i64),
     Float(f64),
@@ -352,6 +352,47 @@ impl Number {
             Number::Float(value) => *value,
         }
     }
+
+    fn to_php_string(self) -> String {
+        match self {
+            Number::Int(value) => value.to_string(),
+            Number::Float(value) => format_php_float(value),
+        }
+    }
+}
+
+fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => Some(left.cmp(&right)),
+        (left, right) => left.as_float().partial_cmp(&right.as_float()),
+    }
+}
+
+fn compare_php_strings(left: &str, right: &str) -> Option<Ordering> {
+    match (parse_numeric_string(left), parse_numeric_string(right)) {
+        (Some(left), Some(right)) => compare_numbers(left, right),
+        _ => compare_binary_strings(left, right),
+    }
+}
+
+fn compare_number_and_string(left: Number, right: &str) -> Option<Ordering> {
+    if let Some(right) = parse_numeric_string(right) {
+        compare_numbers(left, right)
+    } else {
+        compare_binary_strings(&left.to_php_string(), right)
+    }
+}
+
+fn compare_string_and_number(left: &str, right: Number) -> Option<Ordering> {
+    if let Some(left) = parse_numeric_string(left) {
+        compare_numbers(left, right)
+    } else {
+        compare_binary_strings(left, &right.to_php_string())
+    }
+}
+
+fn compare_binary_strings(left: &str, right: &str) -> Option<Ordering> {
+    Some(left.as_bytes().cmp(right.as_bytes()))
 }
 
 fn parse_numeric_string(value: &str) -> Option<Number> {
@@ -595,5 +636,73 @@ mod tests {
             error.message(),
             "invalid arithmetic for /: division by zero"
         );
+    }
+
+    #[test]
+    fn scalar_comparison_matrix_matches_php_8_scalar_subset() {
+        let labels = [
+            "null", "false", "true", "int0", "int1", "float1_5", "empty", "str0", "str1_5",
+            "strabc",
+        ];
+        let expected = [
+            "100101 100101 011100 100101 011100 011100 100101 011100 011100 011100",
+            "100101 100101 011100 100101 011100 011100 100101 100101 011100 011100",
+            "010011 010011 100101 010011 100101 100101 010011 010011 100101 100101",
+            "100101 100101 011100 100101 011100 011100 010011 100101 011100 011100",
+            "010011 010011 100101 010011 100101 011100 010011 010011 011100 011100",
+            "010011 010011 100101 010011 010011 100101 010011 010011 100101 011100",
+            "100101 100101 011100 011100 011100 011100 100101 011100 011100 011100",
+            "010011 100101 011100 100101 011100 011100 010011 100101 011100 011100",
+            "010011 010011 100101 010011 010011 100101 010011 010011 100101 011100",
+            "010011 010011 100101 010011 010011 010011 010011 010011 010011 100101",
+        ];
+
+        for (row_index, left_label) in labels.iter().enumerate() {
+            let expected_row: Vec<&str> = expected[row_index].split_whitespace().collect();
+            for (column_index, right_label) in labels.iter().enumerate() {
+                let left = comparison_matrix_value(left_label);
+                let right = comparison_matrix_value(right_label);
+                let actual = comparison_bits(&left, &right);
+                assert_eq!(
+                    actual, expected_row[column_index],
+                    "comparison matrix mismatch for {left_label} vs {right_label}",
+                );
+                assert_eq!(
+                    left.php_eq(&right),
+                    actual.starts_with('1'),
+                    "php_eq mismatch for {left_label} vs {right_label}",
+                );
+            }
+        }
+    }
+
+    fn comparison_matrix_value(label: &str) -> Value {
+        match label {
+            "null" => Value::Null,
+            "false" => Value::Bool(false),
+            "true" => Value::Bool(true),
+            "int0" => Value::Int(0),
+            "int1" => Value::Int(1),
+            "float1_5" => Value::Float(1.5),
+            "empty" => Value::String(String::new()),
+            "str0" => Value::String("0".to_string()),
+            "str1_5" => Value::String("1.5".to_string()),
+            "strabc" => Value::String("abc".to_string()),
+            _ => panic!("unknown comparison matrix label {label}"),
+        }
+    }
+
+    fn comparison_bits(left: &Value, right: &Value) -> String {
+        [
+            Comparison::Eq,
+            Comparison::Ne,
+            Comparison::Lt,
+            Comparison::Le,
+            Comparison::Gt,
+            Comparison::Ge,
+        ]
+        .iter()
+        .map(|op| if left.php_cmp(right, *op) { '1' } else { '0' })
+        .collect()
     }
 }

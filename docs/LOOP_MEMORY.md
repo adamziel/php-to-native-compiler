@@ -70,3 +70,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T22:46:01Z
 
 - Post-round 1 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T22:46:03Z
+
+- Starting round 2 at 20260511T224603Z from HEAD `d7ef45c`.
+
+## Loop Event 2026-05-11T22:46:05Z
+
+- Pre-round 2 test exit code: `0`.
+
+## Loop Event 2026-05-11T22:52:25Z
+
+- Task attempted: added a PHP 8-style scalar comparison behavior matrix for
+  `==`, `!=`, `<`, `<=`, `>`, and `>=` across implemented scalar values:
+  `null`, booleans, integers, floats, empty strings, numeric strings, and
+  non-numeric strings.
+- Files changed: `runtime/src/lib.rs`,
+  `tests/fixtures/milestone2/scalar_comparison_matrix.php`,
+  `tests/fixtures/milestone2/scalar_comparison_matrix.stdout`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
+  passed; `cargo test -p php_runtime` passed with 7 runtime unit tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone2` passed with 7
+  fixtures; `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2`
+  passed with 7 system PHP comparisons; `cargo run -p phpc -- run
+  tests/fixtures/milestone2/scalar_comparison_matrix.php` printed the
+  committed 100-row matrix; `PATH=/nonexistent ./target/debug/phpc test
+  --compare-php tests/fixtures/milestone2` passed with 7 PHP comparisons
+  skipped; `tools/run-tests.sh` passed with 22 fixtures, 17 system PHP
+  comparisons, and 5 `.phpc-only` skips.
+- Remaining semantic gaps: strict identity operators (`===`, `!==`), arrays,
+  objects, resources, and comparison edge cases around `NAN`/`INF` and
+  PHP-version-specific float string precision are unsupported. Leading numeric
+  strings with trailing non-numeric text are still rejected for arithmetic
+  instead of warning and continuing.
+- Next concrete task: add explicit CLI exercises for representative runtime
+  errors and record their stdout, stderr, and exit behavior.
+- Checkpoint: pending `tools/checkpoint.sh "runtime: add scalar comparison matrix"`
+  after the full suite passes.
