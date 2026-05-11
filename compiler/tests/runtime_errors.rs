@@ -1,4 +1,5 @@
 use php_compiler::error::Phase;
+use php_compiler::interpreter::MAX_USER_FUNCTION_CALL_DEPTH;
 use php_compiler::run_source;
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
@@ -102,4 +103,26 @@ fn isset_can_check_undefined_variables_without_reading_them() {
         .expect("isset should not throw for missing direct variables");
 
     assert_eq!(execution.stdout, "1");
+}
+
+#[test]
+fn runaway_user_function_recursion_hits_stable_depth_guard() {
+    let error = runtime_error(
+        r#"<?php
+function loop($n) {
+    return loop($n + 1);
+}
+echo loop(0);
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        format!(
+            "maximum user function call depth exceeded for loop(): limit {}",
+            MAX_USER_FUNCTION_CALL_DEPTH
+        )
+    );
 }

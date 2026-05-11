@@ -39,7 +39,7 @@ handled.
 
 - [x] Separate local and global scope behavior for user functions, with tests
   for shadowing and unsupported `global`.
-- [ ] Add recursion coverage and a documented runtime guard for runaway calls.
+- [x] Add recursion coverage and a documented runtime guard for runaway calls.
 - [ ] Implement default parameters for user functions with parser, runtime, and
   fixture coverage.
 - [x] Add the first small builtin function set with documented signatures,

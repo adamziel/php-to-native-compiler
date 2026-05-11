@@ -69,3 +69,22 @@ echo read_global();
         "unsupported global declaration: importing globals into function scope is not implemented"
     );
 }
+
+#[test]
+fn recursive_user_functions_can_return_values() {
+    let execution = run_source(
+        r#"<?php
+function factorial($n) {
+    if ($n <= 1) {
+        return 1;
+    }
+    return $n * factorial($n - 1);
+}
+echo factorial(5), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "120\n");
+    assert_eq!(execution.exit_code, 0);
+}

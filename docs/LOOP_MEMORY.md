@@ -364,3 +364,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:19:50Z
 
 - Post-round 6 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:19:52Z
+
+- Starting round 7 at 20260511T231951Z from HEAD `b68c316`.
+
+## Loop Event 2026-05-11T23:19:53Z
+
+- Pre-round 7 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:22:51Z
+
+- Task attempted: completed the Milestone 4 recursion slice by adding recursive
+  user-function execution coverage, a fixed 128-frame user-function call-depth
+  guard for runaway recursion, and stable runtime diagnostics with committed
+  `phpc run` CLI snapshots.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `compiler/tests/runtime_errors.rs`,
+  `tests/fixtures/milestone4/recursive_factorial.php`,
+  `tests/fixtures/milestone4/recursive_factorial.stdout`,
+  `tests/fixtures/runtime_errors/runaway_recursion.php`,
+  `tests/fixtures/runtime_errors/runaway_recursion.stderr`,
+  `tests/fixtures/runtime_errors/runaway_recursion.exit`,
+  `tests/fixtures/runtime_errors/runaway_recursion.phpc-only`,
+  `tests/fixtures/runtime_errors/runaway_recursion.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round so far: `cargo test -p php_runtime
+  call_depth_errors_keep_structured_kind_and_stable_message` passed;
+  `cargo test -p phpc --test functions_and_scopes
+  recursive_user_functions_can_return_values` passed; `cargo test -p phpc
+  --test runtime_errors runaway_user_function_recursion_hits_stable_depth_guard`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone4` passed with 2
+  fixtures; `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4`
+  passed with 2 system PHP comparisons; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 10 fixtures; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone4/recursive_factorial.php` printed `120`; `cargo run
+  -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php` exited
+  `1` with the expected stable diagnostic; `tools/run-tests.sh` passed with 31
+  fixtures, 21 system PHP comparisons, and 10 `.phpc-only` skips.
+- Remaining semantic gaps: the recursion guard is a fixed project limit, not
+  PHP's native stack or memory exhaustion behavior; it is not configurable and
+  does not produce stack traces. Function default parameters, variadics,
+  references, closures, dynamic calls, named arguments, strict types, static
+  locals, `global` imports, PHP warning/notice recovery, and preservation of
+  partial stdout before fatal runtime errors remain unsupported.
+- Next concrete task: implement default parameters for user functions with
+  parser, runtime, and fixture coverage.
+- Checkpoint: pending `tools/checkpoint.sh "functions: add recursion guard"`
+  after the full suite passes.

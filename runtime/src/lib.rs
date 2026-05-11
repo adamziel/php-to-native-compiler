@@ -51,6 +51,13 @@ impl RuntimeError {
         })
     }
 
+    pub fn call_depth_exceeded(callable: impl Into<String>, limit: usize) -> Self {
+        Self::from_kind(RuntimeErrorKind::CallDepthExceeded {
+            callable: callable.into(),
+            limit,
+        })
+    }
+
     pub fn invalid_arithmetic(operation: ArithmeticOp, reason: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::InvalidArithmetic {
             operation,
@@ -110,6 +117,10 @@ pub enum RuntimeErrorKind {
     },
     UnsupportedGlobal {
         reason: String,
+    },
+    CallDepthExceeded {
+        callable: String,
+        limit: usize,
     },
     InvalidArithmetic {
         operation: ArithmeticOp,
@@ -184,6 +195,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::UnsupportedGlobal { reason } => {
             format!("unsupported global declaration: {reason}")
+        }
+        RuntimeErrorKind::CallDepthExceeded { callable, limit } => {
+            format!("maximum user function call depth exceeded for {callable}: limit {limit}")
         }
         RuntimeErrorKind::InvalidArithmetic { operation, reason } => {
             format!("invalid arithmetic for {operation}: {reason}")
@@ -867,6 +881,23 @@ mod tests {
         assert_eq!(
             error.message(),
             "arity mismatch for strlen(): expected 1 argument(s), got 2"
+        );
+    }
+
+    #[test]
+    fn call_depth_errors_keep_structured_kind_and_stable_message() {
+        let error = RuntimeError::call_depth_exceeded("loop()", 128);
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::CallDepthExceeded {
+                callable: "loop()".to_string(),
+                limit: 128,
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "maximum user function call depth exceeded for loop(): limit 128"
         );
     }
 

@@ -84,35 +84,38 @@ Implemented:
   function scope.
 - Added explicit LLVM IR rejection coverage for `global` declarations until
   scope-import lowering exists.
+- Added recursive user-function execution coverage and a fixed 128-frame
+  user-function call-depth guard for runaway recursion, with a stable runtime
+  diagnostic and committed CLI snapshot.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 11 runtime unit tests.
+- `cargo test -p php_runtime` passes with 12 runtime unit tests.
 - `cargo test -p php_runtime array_` passes with 4 focused array value tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
-- `cargo test -p phpc --test runtime_errors` passes with 9 runtime error tests.
+- `cargo test -p phpc --test runtime_errors` passes with 10 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 9 representative runtime error fixtures.
-- `cargo test -p phpc --test functions_and_scopes` passes with 3 scope-focused
+  covering 10 representative runtime error fixtures.
+- `cargo test -p phpc --test functions_and_scopes` passes with 4 scope-focused
   user-function tests.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
-- `cargo run -p phpc -- test` passes with 29 fixture tests.
+- `cargo run -p phpc -- test` passes with 31 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 20 fixtures and skipping 9 `.phpc-only` fixtures.
+  installed, comparing 21 fixtures and skipping 10 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
   with 2 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone4` passes with 1 function
+- `cargo run -p phpc -- test tests/fixtures/milestone4` passes with 2 function
   scope fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
@@ -127,7 +130,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 9
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 10
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -141,6 +144,10 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/implicit_global_read.php:4:12: undefined variable '$value'`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_global.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_global.php:4:5: unsupported global declaration: importing globals into function scope is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/milestone4/recursive_factorial.php`
+  prints the committed recursive factorial output.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -184,9 +191,11 @@ Still fails:
 - Function scope imports through `global` are not implemented. Function-local
   reads of top-level variables still fail as undefined variables unless values
   are passed as arguments; PHP's warning-and-`null` recovery for undefined local
-  variables is not modeled.
+  variables is not modeled. Recursive calls use a fixed 128-frame
+  user-function guard rather than PHP's native stack or memory exhaustion
+  behavior, and the guard is not configurable.
 
 Next:
 
-- Continue Milestone 4 by adding recursion coverage and a documented runtime
-  guard for runaway calls.
+- Continue Milestone 4 by implementing default parameters for user functions
+  with parser, runtime, and fixture coverage.

@@ -21,6 +21,8 @@
 - `while`
 - function declarations
 - positional function calls
+- recursive user-function calls up to a fixed 128-frame user-function call-depth
+  guard
 - `return`
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
@@ -35,7 +37,7 @@
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   unsupported array keys, undefined array keys, invalid array access, and
-  unsupported `global` declarations
+  unsupported `global` declarations, and runaway user-function recursion
 
 ## Partially Supported
 
@@ -66,7 +68,7 @@
   CLI snapshots that record exit code, stdout, and stderr for undefined
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, division by zero, and
-  non-numeric string arithmetic.
+  non-numeric string arithmetic, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, and
   array assignment are rejected with explicit codegen errors.
@@ -77,7 +79,11 @@
   assignments shadow global variables without mutating them, and functions do
   not import top-level variables implicitly. `global` declarations parse but
   fail with a stable runtime error because global scope imports are not
-  implemented. Default values and variadics are not implemented.
+  implemented. Recursive user-function calls are supported until the fixed
+  128-frame user-function call-depth guard is reached. That guard is a
+  project-specific runtime diagnostic, not PHP's native stack or memory
+  exhaustion behavior; it is not configurable and does not produce stack
+  traces. Default values and variadics are not implemented.
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
   documented scalar/array subset only. `strlen` remains scalar-only and rejects
   arrays. `count` accepts arrays only. `isset` supports direct variable
@@ -128,6 +134,7 @@
 - `eval`
 - namespaces
 - closures
+- configurable recursion/call-stack limits matching PHP deployments
 - exceptions
 - traits/interfaces
 - generators

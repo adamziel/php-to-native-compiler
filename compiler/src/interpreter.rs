@@ -9,6 +9,8 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
+pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 128;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
     pub stdout: String,
@@ -23,6 +25,7 @@ pub fn run_program(program: &Program) -> CompileResult<Execution> {
 
 struct Interpreter {
     functions: HashMap<String, FunctionDecl>,
+    call_depth: usize,
     stdout: String,
 }
 
@@ -51,6 +54,7 @@ impl Interpreter {
 
         Ok(Self {
             functions,
+            call_depth: 0,
             stdout: String::new(),
         })
     }
@@ -327,13 +331,27 @@ impl Interpreter {
             ));
         }
 
+        if self.call_depth >= MAX_USER_FUNCTION_CALL_DEPTH {
+            return Err(runtime_error(
+                span,
+                RuntimeError::call_depth_exceeded(
+                    callable_name(&function.name),
+                    MAX_USER_FUNCTION_CALL_DEPTH,
+                ),
+            ));
+        }
+
         let mut local_scope = Scope::new();
         for (param, arg) in function.params.iter().zip(args) {
             let value = self.evaluate(arg, caller_scope)?;
             local_scope.insert(param.clone(), value);
         }
 
-        match self.execute_statements(&function.body, &mut local_scope)? {
+        self.call_depth += 1;
+        let flow = self.execute_statements(&function.body, &mut local_scope);
+        self.call_depth -= 1;
+
+        match flow? {
             Flow::Continue => Ok(Value::Null),
             Flow::Return(value) => Ok(value),
         }
