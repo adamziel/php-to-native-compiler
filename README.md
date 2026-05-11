@@ -1,0 +1,51 @@
+# PHP-to-Native Compiler
+
+This project is an experimental PHP-to-native compiler implemented in stable Rust.
+It is intentionally small and honest: implemented features are tested, unsupported
+features are documented, and native code generation starts with LLVM IR text.
+
+## Build
+
+```sh
+cargo build
+```
+
+## CLI
+
+```sh
+cargo run -p phpc -- run examples/hello.php
+cargo run -p phpc -- compile examples/hello.php --emit-ir
+cargo run -p phpc -- compile examples/hello.php --emit-asm
+cargo run -p phpc -- test
+```
+
+The installed binary name is `phpc`.
+
+`--emit-asm` prefers `clang` or `llc` for LLVM IR assembly emission. If neither
+tool exists, it currently falls back to generating equivalent narrow-subset C and
+running `cc -S`; this is a real assembly path, but it is documented as a
+temporary bootstrap fallback rather than the long-term backend.
+
+## Current Status
+
+Milestone 1 is in progress. The interpreter/runtime path supports a small PHP
+subset:
+
+- `echo`
+- integer, float, and string literals
+- variables and assignment
+- `+`, `-`, `*`, `/`, `.`
+- comparisons used by control flow
+- `if` / `else`
+- `while`
+- function declarations, calls, and `return`
+
+LLVM IR emission currently supports a smaller straight-line subset and rejects
+unsupported programs with a structured codegen error.
+
+Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
+files, the test runner strips one final newline from `.stdout` and `.stderr`
+fixtures; use a blank final line when the expected program output should include
+a trailing newline.
+
+See `docs/SUPPORT.md` for the detailed support matrix.
