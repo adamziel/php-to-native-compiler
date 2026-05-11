@@ -32,13 +32,25 @@ fn user_function_arity_mismatch_has_stable_runtime_error() {
 
 #[test]
 fn unsupported_builtin_call_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho count($missing);\n");
+    let error = runtime_error("<?php\necho count(1);\n");
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call count(): arrays are not implemented"
+        "unsupported call count(): only arrays are supported"
+    );
+}
+
+#[test]
+fn unsupported_array_key_has_stable_runtime_error() {
+    let error = runtime_error("<?php\n$items = [true => \"yes\"];\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 11);
+    assert_eq!(
+        error.message,
+        "invalid array key: bool keys are not supported; only int and string keys are implemented"
     );
 }
 

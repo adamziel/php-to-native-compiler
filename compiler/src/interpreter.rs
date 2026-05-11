@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
-use php_runtime::{ArityExpectation, Comparison, RuntimeError, RuntimeResult, Value};
+use php_runtime::{
+    ArityExpectation, ArrayKey, Comparison, PhpArray, RuntimeError, RuntimeResult, Value,
+};
 
-use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
+use crate::ast::{ArrayItem, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,6 +146,7 @@ impl Interpreter {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| runtime_error(*span, RuntimeError::undefined_variable(name))),
+            Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
@@ -162,6 +165,42 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_array(
+        &mut self,
+        items: &[ArrayItem],
+        span: Span,
+        scope: &mut Scope,
+    ) -> CompileResult<Value> {
+        let mut array = PhpArray::new();
+
+        for item in items {
+            let key = match &item.key {
+                Some(expr) => {
+                    let key = self.evaluate(expr, scope)?;
+                    Some(
+                        ArrayKey::from_value(&key)
+                            .map_err(|error| runtime_error(expr.span(), error))?,
+                    )
+                }
+                None => None,
+            };
+            let value = self.evaluate(&item.value, scope)?;
+
+            match key {
+                Some(key) => {
+                    array.insert(key, value);
+                }
+                None => {
+                    array
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+            }
+        }
+
+        Ok(Value::Array(array))
+    }
+
     fn call_function(
         &mut self,
         name: &str,
@@ -172,13 +211,6 @@ impl Interpreter {
         let key = name.to_ascii_lowercase();
         if key == "isset" {
             return self.call_isset(args, span, caller_scope);
-        }
-
-        if key == "count" {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call("count()", "arrays are not implemented"),
-            ));
         }
 
         if is_builtin(&key) {
@@ -220,7 +252,23 @@ impl Interpreter {
         match name {
             "strlen" => {
                 expect_arity(name, &args, 1, span)?;
+                if matches!(&args[0], Value::Array(_)) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call("strlen()", "arrays are not supported"),
+                    ));
+                }
                 Ok(Value::Int(args[0].echo_string().as_bytes().len() as i64))
+            }
+            "count" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(value) => Ok(Value::Int(value.len() as i64)),
+                    _ => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call("count()", "only arrays are supported"),
+                    )),
+                }
             }
             "var_dump" => {
                 for value in &args {
@@ -230,14 +278,14 @@ impl Interpreter {
             }
             "print_r" => match args.as_slice() {
                 [value] => {
-                    self.stdout.push_str(&value.echo_string());
+                    self.stdout.push_str(&format_print_r(value));
                     Ok(Value::Bool(true))
                 }
                 [value, return_output] if return_output.is_truthy() => {
-                    Ok(Value::String(value.echo_string()))
+                    Ok(Value::String(format_print_r(value)))
                 }
                 [value, _] => {
-                    self.stdout.push_str(&value.echo_string());
+                    self.stdout.push_str(&format_print_r(value));
                     Ok(Value::Bool(true))
                 }
                 _ => Err(runtime_error(
@@ -332,7 +380,7 @@ impl From<RuntimeError> for Diagnostic {
 }
 
 fn is_builtin(name: &str) -> bool {
-    matches!(name, "strlen" | "var_dump" | "print_r")
+    matches!(name, "strlen" | "count" | "var_dump" | "print_r")
 }
 
 fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> CompileResult<()> {
@@ -355,11 +403,69 @@ fn callable_name(name: &str) -> String {
 }
 
 fn format_var_dump(value: &Value) -> String {
+    format_var_dump_with_indent(value, 0)
+}
+
+fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
+    let padding = "  ".repeat(indent);
     match value {
-        Value::Null => "NULL\n".to_string(),
-        Value::Bool(value) => format!("bool({})\n", if *value { "true" } else { "false" }),
-        Value::Int(value) => format!("int({value})\n"),
-        Value::Float(value) => format!("float({})\n", value),
-        Value::String(value) => format!("string({}) \"{}\"\n", value.len(), value),
+        Value::Null => format!("{padding}NULL\n"),
+        Value::Bool(value) => format!("{padding}bool({})\n", if *value { "true" } else { "false" }),
+        Value::Int(value) => format!("{padding}int({value})\n"),
+        Value::Float(value) => format!("{padding}float({})\n", value),
+        Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
+        Value::Array(value) => {
+            let mut output = format!("{padding}array({}) {{\n", value.len());
+            for entry in value.entries() {
+                output.push_str(&format!(
+                    "{padding}  [{}]=>\n",
+                    format_var_dump_key(&entry.key)
+                ));
+                output.push_str(&format_var_dump_with_indent(&entry.value, indent + 1));
+            }
+            output.push_str(&format!("{padding}}}\n"));
+            output
+        }
     }
+}
+
+fn format_var_dump_key(key: &ArrayKey) -> String {
+    match key {
+        ArrayKey::Int(value) => value.to_string(),
+        ArrayKey::String(value) => format!("\"{value}\""),
+    }
+}
+
+fn format_print_r(value: &Value) -> String {
+    format_print_r_with_indent(value, 0)
+}
+
+fn format_print_r_with_indent(value: &Value, indent: usize) -> String {
+    match value {
+        Value::Array(array) => format_print_r_array(array, indent),
+        _ => value.echo_string(),
+    }
+}
+
+fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
+    let padding = "    ".repeat(indent);
+    let child_padding = "    ".repeat(indent + 1);
+    let mut output = String::new();
+
+    output.push_str("Array\n");
+    output.push_str(&format!("{padding}(\n"));
+    for entry in array.entries() {
+        output.push_str(&format!("{child_padding}[{}] => ", entry.key.display_key()));
+        match &entry.value {
+            Value::Array(value) => {
+                output.push_str(&format_print_r_array(value, indent + 1));
+            }
+            value => {
+                output.push_str(&value.echo_string());
+                output.push('\n');
+            }
+        }
+    }
+    output.push_str(&format!("{padding})\n"));
+    output
 }

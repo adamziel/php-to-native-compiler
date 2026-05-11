@@ -52,6 +52,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn invalid_array_key(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidArrayKey {
+            reason: reason.into(),
+        })
+    }
+
     pub fn kind(&self) -> &RuntimeErrorKind {
         &self.kind
     }
@@ -88,6 +94,9 @@ pub enum RuntimeErrorKind {
     },
     InvalidArithmetic {
         operation: ArithmeticOp,
+        reason: String,
+    },
+    InvalidArrayKey {
         reason: String,
     },
 }
@@ -151,6 +160,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         RuntimeErrorKind::InvalidArithmetic { operation, reason } => {
             format!("invalid arithmetic for {operation}: {reason}")
         }
+        RuntimeErrorKind::InvalidArrayKey { reason } => {
+            format!("invalid array key: {reason}")
+        }
     }
 }
 
@@ -165,12 +177,199 @@ fn format_arity_expectation(expected: ArityExpectation) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct PhpArray {
+    entries: Vec<ArrayEntry>,
+    next_auto_index: i64,
+    auto_index_exhausted: bool,
+}
+
+impl PhpArray {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            next_auto_index: 0,
+            auto_index_exhausted: false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn entries(&self) -> &[ArrayEntry] {
+        &self.entries
+    }
+
+    pub fn get(&self, key: impl Into<ArrayKey>) -> Option<&Value> {
+        let key = key.into().normalized();
+        self.entries
+            .iter()
+            .find(|entry| entry.key == key)
+            .map(|entry| &entry.value)
+    }
+
+    pub fn insert(&mut self, key: impl Into<ArrayKey>, value: Value) -> ArrayKey {
+        let key = key.into().normalized();
+        self.bump_next_auto_index(&key);
+
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == key) {
+            entry.value = value;
+            return key;
+        }
+
+        self.entries.push(ArrayEntry {
+            key: key.clone(),
+            value,
+        });
+        key
+    }
+
+    pub fn append(&mut self, value: Value) -> RuntimeResult<ArrayKey> {
+        if self.auto_index_exhausted {
+            return Err(RuntimeError::invalid_array_key(
+                "cannot append after maximum integer key",
+            ));
+        }
+
+        let key = ArrayKey::Int(self.next_auto_index);
+        self.insert(key.clone(), value);
+        Ok(key)
+    }
+
+    fn bump_next_auto_index(&mut self, key: &ArrayKey) {
+        let ArrayKey::Int(value) = key else {
+            return;
+        };
+        if *value < 0 || self.auto_index_exhausted || *value < self.next_auto_index {
+            return;
+        }
+
+        match value.checked_add(1) {
+            Some(next) => self.next_auto_index = next,
+            None => self.auto_index_exhausted = true,
+        }
+    }
+}
+
+impl Default for PhpArray {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayEntry {
+    pub key: ArrayKey,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArrayKey {
+    Int(i64),
+    String(String),
+}
+
+impl ArrayKey {
+    pub fn int(value: i64) -> Self {
+        Self::Int(value)
+    }
+
+    pub fn string(value: impl Into<String>) -> Self {
+        normalize_string_key(value.into())
+    }
+
+    pub fn from_value(value: &Value) -> RuntimeResult<Self> {
+        match value {
+            Value::Int(value) => Ok(Self::Int(*value)),
+            Value::String(value) => Ok(Self::string(value.clone())),
+            other => Err(RuntimeError::invalid_array_key(format!(
+                "{} keys are not supported; only int and string keys are implemented",
+                other.type_name()
+            ))),
+        }
+    }
+
+    pub fn display_key(&self) -> String {
+        match self {
+            ArrayKey::Int(value) => value.to_string(),
+            ArrayKey::String(value) => value.clone(),
+        }
+    }
+
+    fn normalized(self) -> Self {
+        match self {
+            ArrayKey::String(value) => normalize_string_key(value),
+            key => key,
+        }
+    }
+}
+
+impl From<i64> for ArrayKey {
+    fn from(value: i64) -> Self {
+        Self::Int(value)
+    }
+}
+
+impl From<String> for ArrayKey {
+    fn from(value: String) -> Self {
+        Self::string(value)
+    }
+}
+
+impl From<&str> for ArrayKey {
+    fn from(value: &str) -> Self {
+        Self::string(value)
+    }
+}
+
+fn normalize_string_key(value: String) -> ArrayKey {
+    if is_php_integer_array_key(&value) {
+        if let Ok(parsed) = value.parse::<i64>() {
+            return ArrayKey::Int(parsed);
+        }
+    }
+
+    ArrayKey::String(value)
+}
+
+fn is_php_integer_array_key(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+
+    let (negative, digits) = if bytes[0] == b'-' {
+        if bytes.len() == 1 {
+            return false;
+        }
+        (true, &bytes[1..])
+    } else {
+        (false, bytes)
+    };
+
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return false;
+    }
+
+    if digits == b"0" {
+        return !negative;
+    }
+
+    digits[0] != b'0'
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),
     Int(i64),
     Float(f64),
     String(String),
+    Array(PhpArray),
 }
 
 impl Value {
@@ -181,6 +380,7 @@ impl Value {
             Value::Int(_) => "int",
             Value::Float(_) => "float",
             Value::String(_) => "string",
+            Value::Array(_) => "array",
         }
     }
 
@@ -192,6 +392,7 @@ impl Value {
             Value::Int(value) => value.to_string(),
             Value::Float(value) => format_php_float(*value),
             Value::String(value) => value.clone(),
+            Value::Array(_) => "Array".to_string(),
         }
     }
 
@@ -202,6 +403,7 @@ impl Value {
             Value::Int(value) => *value != 0,
             Value::Float(value) => *value != 0.0,
             Value::String(value) => !value.is_empty() && value != "0",
+            Value::Array(value) => !value.is_empty(),
         }
     }
 
@@ -282,6 +484,7 @@ impl Value {
             (Value::Bool(_), _) | (_, Value::Bool(_)) => {
                 Some(self.is_truthy().cmp(&other.is_truthy()))
             }
+            (Value::Array(_), _) | (_, Value::Array(_)) => None,
             (Value::Null, Value::Null) => Some(Ordering::Equal),
             (Value::Null, Value::String(right)) => compare_binary_strings("", right),
             (Value::String(left), Value::Null) => compare_binary_strings(left, ""),
@@ -312,6 +515,7 @@ impl Value {
             Value::Bool(false) => Some(Number::Int(0)),
             Value::Bool(true) => Some(Number::Int(1)),
             Value::String(value) => parse_numeric_string(value),
+            Value::Array(_) => None,
         }
     }
 
@@ -325,6 +529,10 @@ impl Value {
             Value::String(value) => parse_numeric_string(value).ok_or_else(|| {
                 RuntimeError::invalid_arithmetic(operation, "string is not numeric")
             }),
+            Value::Array(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "arrays are not numeric",
+            )),
         }
     }
 }
@@ -704,5 +912,113 @@ mod tests {
         .iter()
         .map(|op| if left.php_cmp(right, *op) { '1' } else { '0' })
         .collect()
+    }
+
+    #[test]
+    fn array_string_keys_normalize_like_php_integer_keys() {
+        let cases = [
+            ("0", ArrayKey::Int(0)),
+            ("8", ArrayKey::Int(8)),
+            ("-8", ArrayKey::Int(-8)),
+            ("9223372036854775807", ArrayKey::Int(i64::MAX)),
+            ("08", ArrayKey::String("08".to_string())),
+            ("+8", ArrayKey::String("+8".to_string())),
+            ("-0", ArrayKey::String("-0".to_string())),
+            ("00", ArrayKey::String("00".to_string())),
+            ("8.0", ArrayKey::String("8.0".to_string())),
+            (
+                "9223372036854775808",
+                ArrayKey::String("9223372036854775808".to_string()),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(ArrayKey::string(input), expected, "array key {input}");
+        }
+    }
+
+    #[test]
+    fn array_preserves_insertion_order_and_updates_normalized_keys() {
+        let mut array = PhpArray::new();
+
+        assert_eq!(
+            array.insert("2", Value::String("two".to_string())),
+            ArrayKey::Int(2)
+        );
+        assert_eq!(
+            array.insert("02", Value::String("zero two".to_string())),
+            ArrayKey::String("02".to_string())
+        );
+        assert_eq!(
+            array.insert(1, Value::String("one".to_string())),
+            ArrayKey::Int(1)
+        );
+        assert_eq!(
+            array.insert("2", Value::String("two updated".to_string())),
+            ArrayKey::Int(2)
+        );
+
+        let entries = array.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::Int(2));
+        assert_eq!(entries[0].value, Value::String("two updated".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(
+            array.get("2"),
+            Some(&Value::String("two updated".to_string()))
+        );
+        assert_eq!(
+            array.get("02"),
+            Some(&Value::String("zero two".to_string()))
+        );
+    }
+
+    #[test]
+    fn array_append_uses_next_non_negative_integer_key() {
+        let mut array = PhpArray::new();
+
+        array.insert(-2, Value::String("negative".to_string()));
+        assert_eq!(
+            array.append(Value::String("first".to_string())).unwrap(),
+            ArrayKey::Int(0)
+        );
+        array.insert(5, Value::String("five".to_string()));
+        assert_eq!(
+            array.append(Value::String("six".to_string())).unwrap(),
+            ArrayKey::Int(6)
+        );
+
+        let keys: Vec<ArrayKey> = array
+            .entries()
+            .iter()
+            .map(|entry| entry.key.clone())
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ArrayKey::Int(-2),
+                ArrayKey::Int(0),
+                ArrayKey::Int(5),
+                ArrayKey::Int(6),
+            ]
+        );
+    }
+
+    #[test]
+    fn non_int_string_array_keys_fail_with_stable_error() {
+        let error = ArrayKey::from_value(&Value::Bool(true)).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArrayKey {
+                reason: "bool keys are not supported; only int and string keys are implemented"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid array key: bool keys are not supported; only int and string keys are implemented"
+        );
     }
 }

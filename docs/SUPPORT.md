@@ -22,12 +22,24 @@
 - function declarations
 - positional function calls
 - `return`
-- scalar builtins: `strlen`, `isset`, `var_dump`, and `print_r`
+- short array literals: `[]`, `[value]`, and `[key => value]` for the currently
+  supported expression subset
+- ordered arrays with integer and string keys
+- builtins for the documented scalar/array subset: `strlen`, `isset`, `count`,
+  `var_dump`, and `print_r`
 - structured runtime errors for undefined variables, arity mismatches,
-  unsupported calls, division by zero, and non-numeric string arithmetic
+  unsupported calls, division by zero, non-numeric string arithmetic, and
+  unsupported array keys
 
 ## Partially Supported
 
+- Arrays: array values preserve insertion order and normalize string keys that
+  are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
+  Strings with leading zeroes, leading `+`, decimal points, exponent notation,
+  or integer overflow stay string keys. Duplicate normalized keys update the
+  existing slot without moving it. Keyless literal entries append at the next
+  non-negative integer key. Array truthiness, `count`, `print_r`, and
+  `var_dump` are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -42,24 +54,32 @@
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet. Representative runtime errors are covered by committed `phpc run`
   CLI snapshots that record exit code, stdout, and stderr for undefined
-  variables, user-function arity mismatches, unsupported `count()` calls,
-  division by zero, and non-numeric string arithmetic.
+  variables, user-function arity mismatches, unsupported scalar `count()` calls,
+  unsupported array keys, division by zero, and non-numeric string arithmetic.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run` with
   exact arity only. Default values and variadics are not implemented.
-- Builtins: `strlen`, `isset`, `var_dump`, and `print_r` are implemented only
-  for current scalar values. `isset` supports direct variable operands and can
-  safely check undefined variables; complex lvalues and expression operands are
-  unsupported. Array/object formatting and PHP's complete warning behavior are
-  not implemented.
+- Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
+  documented scalar/array subset only. `strlen` remains scalar-only and rejects
+  arrays. `count` accepts arrays only. `isset` supports direct variable
+  operands and can safely check undefined variables; complex lvalues and
+  expression operands are unsupported. Object formatting and PHP's complete
+  warning behavior are not implemented.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
+- Array gaps: indexed reads, indexed writes, `$array[] = ...`, `unset`, `foreach`,
+  long `array()` syntax, destructuring, spread, references, copy-on-write
+  containers, and object/resource keys are not implemented. Array literal keys
+  are currently limited to values that evaluate to integers or strings; PHP's
+  boolean, null, float, object, and resource key coercions are rejected with a
+  stable runtime error. Negative-key auto-index behavior is not claimed beyond
+  the current non-negative allocator.
 
 ## Test Support
 
@@ -79,7 +99,7 @@
 
 ## Unsupported
 
-- arrays
+- array indexing and array assignment syntax
 - references
 - objects/classes
 - includes/requires
@@ -92,7 +112,7 @@
 - traits/interfaces
 - generators
 - attributes
-- PHP standard library beyond documented scalar builtins
+- PHP standard library beyond documented builtins
 - Zend extension loading
 - WordPress compatibility
 - PHP's warning-and-continue behavior for undefined variables; plain reads fail

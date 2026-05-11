@@ -44,15 +44,16 @@ Implemented now:
 - `Int`
 - `Float`
 - `String`
+- ordered PHP arrays with integer/string keys
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
 - PHP-ish truthiness for the implemented value types
 - basic arithmetic, comparison, and concatenation helpers
+- key normalization for array strings that are valid decimal integers
 
 Planned runtime values:
 
-- ordered PHP arrays with int/string keys
 - objects and class metadata
 - resources
 - references

@@ -1,2 +1,2 @@
-runtime error at 2:6: unsupported call count(): arrays are not implemented
+runtime error at 2:6: unsupported call count(): only arrays are supported
 

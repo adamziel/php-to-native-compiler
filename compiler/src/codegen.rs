@@ -129,6 +129,10 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
+            Expr::Array { span, .. } => Err(self.unsupported(
+                *span,
+                "arrays are supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -583,6 +587,10 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
+            Expr::Array { span, .. } => Err(self.unsupported(
+                *span,
+                "arrays are supported by phpc run but not assembly emission yet",
+            )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,

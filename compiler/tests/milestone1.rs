@@ -45,6 +45,13 @@ fn emit_ir_rejects_unsupported_control_flow() {
 }
 
 #[test]
+fn emit_ir_rejects_arrays_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\necho [1];\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(error.message.contains("arrays"), "{}", error.message);
+}
+
+#[test]
 fn emit_asm_through_available_native_toolchain() {
     let has_backend = ["clang", "llc", "cc"]
         .iter()

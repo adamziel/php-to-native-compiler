@@ -61,6 +61,12 @@ pub struct FunctionDecl {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ArrayItem {
+    pub key: Option<Expr>,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Null(Span),
     Bool(bool, Span),
@@ -68,6 +74,10 @@ pub enum Expr {
     Float(f64, Span),
     String(String, Span),
     Variable(String, Span),
+    Array {
+        items: Vec<ArrayItem>,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -95,6 +105,7 @@ impl Expr {
             | Expr::Float(_, span)
             | Expr::String(_, span)
             | Expr::Variable(_, span)
+            | Expr::Array { span, .. }
             | Expr::Call { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. } => *span,

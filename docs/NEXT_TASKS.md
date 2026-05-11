@@ -24,15 +24,15 @@ handled.
 
 ## Milestone 3: Arrays
 
-- [ ] Implement an ordered PHP array value in `php_runtime` with int/string key
+- [x] Implement an ordered PHP array value in `php_runtime` with int/string key
   normalization tests.
-- [ ] Parse and interpret short array literals `[]` and `[key => value]` for the
+- [x] Parse and interpret short array literals `[]` and `[key => value]` for the
   supported scalar expression subset.
 - [ ] Implement array append, indexed reads, and indexed writes in the
   interpreter with fixture CLI coverage.
-- [ ] Document unsupported array behavior, including references, nested
+- [x] Document unsupported array behavior, including references, nested
   copy-on-write containers, destructuring, spread, and complex key coercions.
-- [ ] Add a small native-codegen rejection test proving arrays fail with an
+- [x] Add a small native-codegen rejection test proving arrays fail with an
   explicit codegen error until lowering exists.
 
 ## Milestone 4: Functions and Scopes

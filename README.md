@@ -39,7 +39,9 @@ subset:
 - `if` / `else`
 - `while`
 - function declarations, calls, and `return`
-- scalar builtins: `strlen`, `isset`, `var_dump`, and `print_r`
+- short array literals with integer/string keys
+- builtins for the documented scalar/array subset: `strlen`, `isset`, `count`,
+  `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects

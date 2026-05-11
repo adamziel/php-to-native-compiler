@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
+use crate::ast::{ArrayItem, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
 
@@ -325,6 +325,7 @@ impl Parser {
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::LBracket => self.parse_array_literal(token.span),
             TokenKind::Identifier(name) => {
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let mut args = Vec::new();
@@ -353,6 +354,39 @@ impl Parser {
                 format!("expected expression, found {}", token_name(&other)),
             )),
         }
+    }
+
+    fn parse_array_literal(&mut self, span: Span) -> CompileResult<Expr> {
+        let mut items = Vec::new();
+        if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+            return Ok(Expr::Array { items, span });
+        }
+
+        loop {
+            let first = self.parse_expression()?;
+            let item = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+                ArrayItem {
+                    key: Some(first),
+                    value: self.parse_expression()?,
+                }
+            } else {
+                ArrayItem {
+                    key: None,
+                    value: first,
+                }
+            };
+            items.push(item);
+
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                break;
+            }
+        }
+
+        self.consume_keyword(TokenKind::RBracket, "expected ']' after array literal")?;
+        Ok(Expr::Array { items, span })
     }
 
     fn consume_identifier(&mut self, message: &str) -> CompileResult<String> {
@@ -446,6 +480,8 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::RParen => ")",
         TokenKind::LBrace => "{",
         TokenKind::RBrace => "}",
+        TokenKind::LBracket => "[",
+        TokenKind::RBracket => "]",
         TokenKind::Semicolon => ";",
         TokenKind::Comma => ",",
         TokenKind::Plus => "+",
@@ -455,6 +491,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Dot => ".",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",
+        TokenKind::FatArrow => "=>",
         TokenKind::EqualEqual => "==",
         TokenKind::BangEqual => "!=",
         TokenKind::Less => "<",

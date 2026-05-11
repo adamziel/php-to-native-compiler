@@ -29,6 +29,8 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     Semicolon,
     Comma,
     Plus,
@@ -38,6 +40,7 @@ pub enum TokenKind {
     Dot,
     Bang,
     Equal,
+    FatArrow,
     EqualEqual,
     BangEqual,
     Less,
@@ -97,6 +100,8 @@ impl<'a> Lexer<'a> {
                 ')' => TokenKind::RParen,
                 '{' => TokenKind::LBrace,
                 '}' => TokenKind::RBrace,
+                '[' => TokenKind::LBracket,
+                ']' => TokenKind::RBracket,
                 ';' => TokenKind::Semicolon,
                 ',' => TokenKind::Comma,
                 '+' => TokenKind::Plus,
@@ -107,6 +112,8 @@ impl<'a> Lexer<'a> {
                 '=' => {
                     if self.match_char('=') {
                         TokenKind::EqualEqual
+                    } else if self.match_char('>') {
+                        TokenKind::FatArrow
                     } else {
                         TokenKind::Equal
                     }

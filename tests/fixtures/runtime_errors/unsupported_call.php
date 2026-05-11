@@ -1,2 +1,2 @@
 <?php
-echo count($missing);
+echo count(1);

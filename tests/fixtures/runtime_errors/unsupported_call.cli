@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/unsupported_call.php:2:6: unsupported call count(): arrays are not implemented
+runtime error at tests/fixtures/runtime_errors/unsupported_call.php:2:6: unsupported call count(): only arrays are supported
 --- stderr end ---
