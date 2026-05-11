@@ -48,6 +48,9 @@ subset:
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unsupported `global` declarations and runaway recursion
+- stable parse diagnostics for unsupported function features including
+  variadics, references, closures, dynamic calls, named arguments, and
+  `declare(strict_types=1)`
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

@@ -44,7 +44,7 @@ handled.
   fixture coverage.
 - [x] Add the first small builtin function set with documented signatures,
   errors, tests, and CLI examples.
-- [ ] Document unsupported function features: variadics, references, closures,
+- [x] Document unsupported function features: variadics, references, closures,
   dynamic calls, named arguments, and strict types.
 
 ## Milestone 5+: Dynamic PHP

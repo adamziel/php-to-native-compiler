@@ -18,8 +18,10 @@ pub enum TokenKind {
     Echo,
     Print,
     Function,
+    Fn,
     Return,
     Global,
+    Declare,
     If,
     Else,
     While,
@@ -39,6 +41,9 @@ pub enum TokenKind {
     Star,
     Slash,
     Dot,
+    Ellipsis,
+    Ampersand,
+    Colon,
     Bang,
     Equal,
     FatArrow,
@@ -109,7 +114,19 @@ impl<'a> Lexer<'a> {
                 '-' => TokenKind::Minus,
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
-                '.' => TokenKind::Dot,
+                '.' => {
+                    if self.match_char('.') {
+                        if self.match_char('.') {
+                            TokenKind::Ellipsis
+                        } else {
+                            return Err(self.error_at(span, "unexpected '..'"));
+                        }
+                    } else {
+                        TokenKind::Dot
+                    }
+                }
+                '&' => TokenKind::Ampersand,
+                ':' => TokenKind::Colon,
                 '=' => {
                     if self.match_char('=') {
                         TokenKind::EqualEqual
@@ -336,8 +353,10 @@ impl<'a> Lexer<'a> {
             "echo" => TokenKind::Echo,
             "print" => TokenKind::Print,
             "function" => TokenKind::Function,
+            "fn" => TokenKind::Fn,
             "return" => TokenKind::Return,
             "global" => TokenKind::Global,
+            "declare" => TokenKind::Declare,
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
             "while" => TokenKind::While,

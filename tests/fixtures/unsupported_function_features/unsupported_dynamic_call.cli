@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_function_features/unsupported_dynamic_call.php:3:11: unsupported dynamic function call: calls through expressions are not implemented
+--- stderr end ---

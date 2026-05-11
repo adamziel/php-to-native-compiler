@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_function_features/unsupported_reference_parameter.php:2:17: unsupported reference parameter: references are not implemented
+--- stderr end ---

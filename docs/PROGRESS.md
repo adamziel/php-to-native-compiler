@@ -90,6 +90,11 @@ Implemented:
 - Added parser and interpreter support for trailing default parameter values in
   user functions over the documented constant-expression subset, including
   required-to-total arity diagnostics and scalar/array default fixture coverage.
+- Added explicit parser diagnostics, unit tests, fixture coverage, and
+  `phpc run` CLI snapshots for unsupported function features: variadic
+  parameters, variadic argument unpacking, references, anonymous functions,
+  arrow functions, dynamic function calls, named arguments, and
+  `declare(strict_types=1)`.
 
 Tested:
 
@@ -101,16 +106,19 @@ Tested:
 - `cargo test -p phpc --test runtime_errors` passes with 10 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
   covering 10 representative runtime error fixtures.
-- `cargo test -p phpc --test functions_and_scopes` passes with 8
+- `cargo test -p phpc --test functions_and_scopes` passes with 18
   user-function scope/default-parameter tests.
+- `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
+  CLI snapshot test covering 6 representative unsupported function-feature
+  fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
-- `cargo run -p phpc -- test` passes with 32 fixture tests.
+- `cargo run -p phpc -- test` passes with 38 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 22 fixtures and skipping 10 `.phpc-only` fixtures.
+  installed, comparing 22 fixtures and skipping 16 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -119,6 +127,11 @@ Tested:
   scope/default-parameter fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
   with 3 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
+  passes with 6 unsupported function-feature fixtures.
+- `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
+  PHP comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
@@ -153,6 +166,10 @@ Tested:
   prints the committed default-parameter output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_named_argument.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_function_features/unsupported_named_argument.php:5:12: unsupported named argument: named arguments are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_strict_types.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_function_features/unsupported_strict_types.php:2:1: unsupported declare directive: strict_types is not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -201,10 +218,12 @@ Still fails:
   behavior, and the guard is not configurable. Default parameter support is
   limited to trailing defaults over the documented constant-expression subset;
   non-constant defaults and required parameters after defaults are rejected by
-  the parser.
+  the parser. Variadic parameters, argument unpacking, references, closures and
+  arrow functions, dynamic calls, named arguments, and `declare(strict_types=1)`
+  now fail with explicit parse diagnostics; their PHP runtime semantics are not
+  implemented.
 
 Next:
 
-- Continue Milestone 4 by documenting unsupported function features including
-  variadics, references, closures, dynamic calls, named arguments, and strict
-  types.
+- Continue Milestone 5 by introducing a materialized symbol table path for
+  future variable variables without changing current static variable behavior.

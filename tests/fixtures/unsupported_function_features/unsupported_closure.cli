@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_function_features/unsupported_closure.php:2:7: unsupported closure: anonymous functions are not implemented
+--- stderr end ---

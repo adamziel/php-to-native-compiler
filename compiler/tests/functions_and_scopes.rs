@@ -197,3 +197,183 @@ function invalid($first = 1, $second) {
         "required parameter cannot follow a default parameter in the current subset"
     );
 }
+
+#[test]
+fn variadic_parameters_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+function collect(...$items) {
+    return count($items);
+}
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 18);
+    assert_eq!(
+        error.message,
+        "unsupported variadic parameter: variadics are not implemented"
+    );
+}
+
+#[test]
+fn reference_parameters_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+function mutate(&$value) {
+    return $value;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 17);
+    assert_eq!(
+        error.message,
+        "unsupported reference parameter: references are not implemented"
+    );
+}
+
+#[test]
+fn reference_returns_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+function &identity($value) {
+    return $value;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "unsupported reference return: returning functions by reference is not implemented"
+    );
+}
+
+#[test]
+fn reference_expressions_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+$value = 1;
+$alias =& $value;
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 9);
+    assert_eq!(
+        error.message,
+        "unsupported reference expression: references are not implemented"
+    );
+}
+
+#[test]
+fn closures_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+$fn = function ($value) {
+    return $value;
+};
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "unsupported closure: anonymous functions are not implemented"
+    );
+}
+
+#[test]
+fn arrow_functions_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+$fn = fn($value) => $value;
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "unsupported closure: arrow functions are not implemented"
+    );
+}
+
+#[test]
+fn dynamic_function_calls_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+$name = "strlen";
+echo $name("abc");
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 11);
+    assert_eq!(
+        error.message,
+        "unsupported dynamic function call: calls through expressions are not implemented"
+    );
+}
+
+#[test]
+fn variadic_argument_unpacking_is_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+function first($value) {
+    return $value;
+}
+$items = [1];
+echo first(...$items);
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported argument unpacking: variadic calls are not implemented"
+    );
+}
+
+#[test]
+fn named_arguments_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+function greet($name) {
+    return $name;
+}
+echo greet(name: "Ada");
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported named argument: named arguments are not implemented"
+    );
+}
+
+#[test]
+fn strict_types_declare_is_rejected_with_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+declare(strict_types=1);
+function identity($value) {
+    return $value;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported declare directive: strict_types is not implemented"
+    );
+}

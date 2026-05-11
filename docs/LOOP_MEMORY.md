@@ -485,3 +485,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:29:34Z
 
 - Post-round 8 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:29:35Z
+
+- Starting round 9 at 20260511T232935Z from HEAD `2776c53`.
+
+## Loop Event 2026-05-11T23:29:37Z
+
+- Pre-round 9 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:34:07Z
+
+- Task attempted: completed the Milestone 4 unsupported function-feature
+  documentation slice by adding explicit parser diagnostics for variadic
+  parameters, variadic argument unpacking, reference parameters/returns and
+  reference expressions, anonymous functions, arrow functions, dynamic function
+  calls through expressions, named arguments, and `declare(strict_types=1)`.
+- Files changed so far: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/unsupported_function_features_cli.rs`,
+  `tests/fixtures/unsupported_function_features/*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test functions_and_scopes` passed
+  with 18 tests; `cargo test -p phpc --test unsupported_function_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 6 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 6 PHP comparisons
+  skipped; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_function_features/unsupported_named_argument.php`
+  exited `1` with the expected parse diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_function_features/unsupported_strict_types.php`
+  exited `1` with the expected parse diagnostic; `tools/run-tests.sh` passed
+  with 38 fixtures, 22 system PHP comparisons, and 16 `.phpc-only` skips.
+- Remaining semantic gaps: variadics, references, closures and arrow functions,
+  dynamic calls, named arguments, strict type mode, parameter/return type
+  declarations, static locals, magic function constants, and PHP's full
+  function-call/type-enforcement semantics are still unsupported.
+- Next concrete task: introduce a materialized symbol table path for future
+  variable variables without changing current static variable behavior.
+- Checkpoint: pending `tools/checkpoint.sh "functions: document unsupported features"`
+  after the full suite passes.

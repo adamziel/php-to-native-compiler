@@ -40,6 +40,10 @@
   unsupported calls, division by zero, non-numeric string arithmetic, and
   unsupported array keys, undefined array keys, invalid array access, and
   unsupported `global` declarations, and runaway user-function recursion
+- explicit parse diagnostics for unsupported function syntax: variadic
+  parameters, variadic argument unpacking, reference parameters/returns,
+  reference expressions, anonymous functions, arrow functions, dynamic function
+  calls through expressions, named arguments, and `declare(strict_types=1)`
 
 ## Partially Supported
 
@@ -93,7 +97,13 @@
   traces. Non-constant defaults such as variables, calls, and indexed reads are
   rejected by the parser. Required parameters after default parameters are also
   rejected instead of modeling PHP's deprecation and implicit-required behavior.
-  Variadics are not implemented.
+  Variadic parameters and argument unpacking, reference parameters/returns,
+  reference expressions, anonymous functions, arrow functions, dynamic function
+  calls through expressions, named arguments, and `declare(strict_types=1)` are
+  rejected with stable parse diagnostics. The project does not implement any
+  runtime semantics for those features yet. Parameter type declarations, return
+  type declarations, nullable/union/intersection types, static locals, and
+  magic function constants are also unsupported.
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
   documented scalar/array subset only. `strlen` remains scalar-only and rejects
   arrays. `count` accepts arrays only. `isset` supports direct variable
@@ -142,10 +152,15 @@
 - `global` declarations / importing top-level variables into function scope
 - default parameter values outside the documented constant-expression subset
 - required parameters after default parameters
+- variadic parameters and variadic argument unpacking
+- reference parameters, reference returns, reference assignments, and
+  by-reference calls
 - dynamic function calls
+- named arguments
+- `declare(strict_types=1)` and PHP type declaration enforcement
 - `eval`
 - namespaces
-- closures
+- closures and arrow functions
 - configurable recursion/call-stack limits matching PHP deployments
 - exceptions
 - traits/interfaces

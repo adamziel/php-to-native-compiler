@@ -31,6 +31,7 @@ impl Parser {
     fn parse_statement(&mut self) -> CompileResult<Stmt> {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
+            TokenKind::Declare => self.parse_unsupported_declare(),
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
@@ -45,6 +46,13 @@ impl Parser {
         let start = self
             .consume_keyword(TokenKind::Function, "expected 'function'")?
             .span;
+        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
+            let span = self.advance().span;
+            return Err(self.error_at(
+                span,
+                "unsupported reference return: returning functions by reference is not implemented",
+            ));
+        }
         let name = self.consume_identifier("expected function name")?;
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
 
@@ -52,6 +60,20 @@ impl Parser {
         let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
+                if self.check(|kind| matches!(kind, TokenKind::Ellipsis)) {
+                    let span = self.advance().span;
+                    return Err(self.error_at(
+                        span,
+                        "unsupported variadic parameter: variadics are not implemented",
+                    ));
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
+                    let span = self.advance().span;
+                    return Err(self.error_at(
+                        span,
+                        "unsupported reference parameter: references are not implemented",
+                    ));
+                }
                 let (name, span) = self.consume_variable_with_span("expected parameter name")?;
                 let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                     saw_default = true;
@@ -88,6 +110,16 @@ impl Parser {
             body,
             span: start,
         }))
+    }
+
+    fn parse_unsupported_declare(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Declare, "expected 'declare'")?
+            .span;
+        Err(self.error_at(
+            span,
+            "unsupported declare directive: strict_types is not implemented",
+        ))
     }
 
     fn parse_echo(&mut self) -> CompileResult<Stmt> {
@@ -396,23 +428,36 @@ impl Parser {
     fn parse_postfix(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_primary()?;
 
-        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-            let bracket_span = self.previous().span;
-            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+        loop {
+            if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+                let bracket_span = self.previous().span;
+                if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                    return Err(self.error_at(
+                        bracket_span,
+                        "cannot use [] for reading; append syntax is only supported in assignments",
+                    ));
+                }
+
+                let index = self.parse_expression()?;
+                self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+                let span = expr.span();
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                    span,
+                };
+                continue;
+            }
+
+            if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                let span = self.peek().span;
                 return Err(self.error_at(
-                    bracket_span,
-                    "cannot use [] for reading; append syntax is only supported in assignments",
+                    span,
+                    "unsupported dynamic function call: calls through expressions are not implemented",
                 ));
             }
 
-            let index = self.parse_expression()?;
-            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
-            let span = expr.span();
-            expr = Expr::Index {
-                target: Box::new(expr),
-                index: Box::new(index),
-                span,
-            };
+            break;
         }
 
         Ok(expr)
@@ -429,11 +474,24 @@ impl Parser {
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LBracket => self.parse_array_literal(token.span),
+            TokenKind::Function => Err(self.error_at(
+                token.span,
+                "unsupported closure: anonymous functions are not implemented",
+            )),
+            TokenKind::Fn => Err(self.error_at(
+                token.span,
+                "unsupported closure: arrow functions are not implemented",
+            )),
+            TokenKind::Ampersand => Err(self.error_at(
+                token.span,
+                "unsupported reference expression: references are not implemented",
+            )),
             TokenKind::Identifier(name) => {
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let mut args = Vec::new();
                 if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
                     loop {
+                        self.reject_unsupported_call_argument_syntax()?;
                         args.push(self.parse_expression()?);
                         if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                             break;
@@ -490,6 +548,27 @@ impl Parser {
 
         self.consume_keyword(TokenKind::RBracket, "expected ']' after array literal")?;
         Ok(Expr::Array { items, span })
+    }
+
+    fn reject_unsupported_call_argument_syntax(&self) -> CompileResult<()> {
+        let token = self.peek();
+        match &token.kind {
+            TokenKind::Ellipsis => Err(self.error_at(
+                token.span,
+                "unsupported argument unpacking: variadic calls are not implemented",
+            )),
+            TokenKind::Ampersand => Err(self.error_at(
+                token.span,
+                "unsupported reference argument: references are not implemented",
+            )),
+            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
+                Err(self.error_at(
+                    token.span,
+                    "unsupported named argument: named arguments are not implemented",
+                ))
+            }
+            _ => Ok(()),
+        }
     }
 
     fn ensure_supported_default_expr(&self, expr: &Expr) -> CompileResult<()> {
@@ -574,6 +653,12 @@ impl Parser {
         &self.tokens[self.current]
     }
 
+    fn peek_next(&self) -> &Token {
+        self.tokens
+            .get(self.current + 1)
+            .unwrap_or_else(|| self.peek())
+    }
+
     fn previous(&self) -> &Token {
         &self.tokens[self.current - 1]
     }
@@ -598,8 +683,10 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Echo => "echo",
         TokenKind::Print => "print",
         TokenKind::Function => "function",
+        TokenKind::Fn => "fn",
         TokenKind::Return => "return",
         TokenKind::Global => "global",
+        TokenKind::Declare => "declare",
         TokenKind::If => "if",
         TokenKind::Else => "else",
         TokenKind::While => "while",
@@ -619,6 +706,9 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Star => "*",
         TokenKind::Slash => "/",
         TokenKind::Dot => ".",
+        TokenKind::Ellipsis => "...",
+        TokenKind::Ampersand => "&",
+        TokenKind::Colon => ":",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",
         TokenKind::FatArrow => "=>",
