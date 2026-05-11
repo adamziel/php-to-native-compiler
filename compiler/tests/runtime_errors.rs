@@ -55,6 +55,27 @@ fn unsupported_array_key_has_stable_runtime_error() {
 }
 
 #[test]
+fn undefined_array_key_has_stable_runtime_error() {
+    let error = runtime_error("<?php\n$items = [];\necho $items[0];\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, "undefined array key 0");
+}
+
+#[test]
+fn array_offset_write_requires_array_compatible_target() {
+    let error = runtime_error("<?php\n$value = 1;\n$value[] = 2;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot write offset on int"
+    );
+}
+
+#[test]
 fn invalid_arithmetic_has_stable_runtime_error() {
     let error = runtime_error("<?php\necho 1 / 0;\n");
 

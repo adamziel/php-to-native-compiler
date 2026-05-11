@@ -25,11 +25,14 @@
 - short array literals: `[]`, `[value]`, and `[key => value]` for the currently
   supported expression subset
 - ordered arrays with integer and string keys
+- array indexed reads: `$array[$key]` for existing integer/string keyed array
+  entries
+- direct variable array writes: `$array[$key] = ...` and `$array[] = ...`
 - builtins for the documented scalar/array subset: `strlen`, `isset`, `count`,
   `var_dump`, and `print_r`
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
-  unsupported array keys
+  unsupported array keys, undefined array keys, and invalid array access
 
 ## Partially Supported
 
@@ -37,8 +40,12 @@
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
   or integer overflow stay string keys. Duplicate normalized keys update the
-  existing slot without moving it. Keyless literal entries append at the next
-  non-negative integer key. Array truthiness, `count`, `print_r`, and
+  existing slot without moving it. Keyless literal entries and `$array[] = ...`
+  writes append at the next non-negative integer key. Direct variable offset
+  writes update existing array variables, and writes to undefined or `null`
+  variables materialize an array. Existing-key reads return the stored value.
+  Missing-key reads fail with a stable runtime error instead of PHP's
+  warning-and-`null` recovery. Array truthiness, `count`, `print_r`, and
   `var_dump` are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
@@ -55,9 +62,11 @@
   mode yet. Representative runtime errors are covered by committed `phpc run`
   CLI snapshots that record exit code, stdout, and stderr for undefined
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
-  unsupported array keys, division by zero, and non-numeric string arithmetic.
+  unsupported array keys, undefined array keys, division by zero, and
+  non-numeric string arithmetic.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions.
+  with statically lowerable scalar expressions. Arrays, array indexing, and
+  array assignment are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run` with
@@ -65,21 +74,23 @@
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
   documented scalar/array subset only. `strlen` remains scalar-only and rejects
   arrays. `count` accepts arrays only. `isset` supports direct variable
-  operands and can safely check undefined variables; complex lvalues and
-  expression operands are unsupported. Object formatting and PHP's complete
-  warning behavior are not implemented.
+  operands and can safely check undefined variables; array offsets, complex
+  lvalues, and expression operands are unsupported. Object formatting and PHP's
+  complete warning behavior are not implemented.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
-- Array gaps: indexed reads, indexed writes, `$array[] = ...`, `unset`, `foreach`,
-  long `array()` syntax, destructuring, spread, references, copy-on-write
-  containers, and object/resource keys are not implemented. Array literal keys
-  are currently limited to values that evaluate to integers or strings; PHP's
-  boolean, null, float, object, and resource key coercions are rejected with a
-  stable runtime error. Negative-key auto-index behavior is not claimed beyond
-  the current non-negative allocator.
+- Array gaps: nested indexed writes, complex assignment lvalues, `$array[]` as
+  a read expression, string offset access, `unset`, `foreach`, long `array()`
+  syntax, destructuring, spread, references, copy-on-write containers, and
+  object/resource keys are not implemented. Array keys are currently limited to
+  values that evaluate to integers or strings; PHP's boolean, null, float,
+  object, and resource key coercions are rejected with a stable runtime error.
+  Writes to existing non-array scalar variables other than `null` are rejected
+  instead of following PHP's full automatic conversion behavior. Negative-key
+  auto-index behavior is not claimed beyond the current non-negative allocator.
 
 ## Test Support
 
@@ -99,7 +110,8 @@
 
 ## Unsupported
 
-- array indexing and array assignment syntax
+- nested/complex array assignment lvalues
+- string offset access
 - references
 - objects/classes
 - includes/requires

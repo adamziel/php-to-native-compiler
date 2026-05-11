@@ -28,7 +28,7 @@ handled.
   normalization tests.
 - [x] Parse and interpret short array literals `[]` and `[key => value]` for the
   supported scalar expression subset.
-- [ ] Implement array append, indexed reads, and indexed writes in the
+- [x] Implement array append, indexed reads, and indexed writes in the
   interpreter with fixture CLI coverage.
 - [x] Document unsupported array behavior, including references, nested
   copy-on-write containers, destructuring, spread, and complex key coercions.

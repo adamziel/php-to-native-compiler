@@ -26,7 +26,7 @@ pub enum Stmt {
         span: Span,
     },
     Assign {
-        name: String,
+        target: AssignTarget,
         expr: Expr,
         span: Span,
     },
@@ -53,6 +53,27 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AssignTarget {
+    Variable {
+        name: String,
+        span: Span,
+    },
+    ArrayIndex {
+        name: String,
+        index: Option<Expr>,
+        span: Span,
+    },
+}
+
+impl AssignTarget {
+    pub fn span(&self) -> Span {
+        match self {
+            AssignTarget::Variable { span, .. } | AssignTarget::ArrayIndex { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
     pub name: String,
     pub params: Vec<String>,
@@ -76,6 +97,11 @@ pub enum Expr {
     Variable(String, Span),
     Array {
         items: Vec<ArrayItem>,
+        span: Span,
+    },
+    Index {
+        target: Box<Expr>,
+        index: Box<Expr>,
         span: Span,
     },
     Call {
@@ -106,6 +132,7 @@ impl Expr {
             | Expr::String(_, span)
             | Expr::Variable(_, span)
             | Expr::Array { span, .. }
+            | Expr::Index { span, .. }
             | Expr::Call { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. } => *span,

@@ -4,7 +4,9 @@ use php_runtime::{
     ArityExpectation, ArrayKey, Comparison, PhpArray, RuntimeError, RuntimeResult, Value,
 };
 
-use crate::ast::{ArrayItem, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
+use crate::ast::{
+    ArrayItem, AssignTarget, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp,
+};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,9 +94,8 @@ impl Interpreter {
                 self.stdout.push_str(&value.echo_string());
                 Ok(Flow::Continue)
             }
-            Stmt::Assign { name, expr, .. } => {
-                let value = self.evaluate(expr, scope)?;
-                scope.insert(name.clone(), value);
+            Stmt::Assign { target, expr, .. } => {
+                self.execute_assignment(target, expr, scope)?;
                 Ok(Flow::Continue)
             }
             Stmt::Expr { expr, .. } => {
@@ -147,6 +148,11 @@ impl Interpreter {
                 .cloned()
                 .ok_or_else(|| runtime_error(*span, RuntimeError::undefined_variable(name))),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => self.evaluate_array_index(target, index, *span, scope),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
@@ -165,6 +171,59 @@ impl Interpreter {
         }
     }
 
+    fn execute_assignment(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        scope: &mut Scope,
+    ) -> CompileResult<()> {
+        match target {
+            AssignTarget::Variable { name, .. } => {
+                let value = self.evaluate(expr, scope)?;
+                scope.insert(name.clone(), value);
+                Ok(())
+            }
+            AssignTarget::ArrayIndex { name, index, span } => {
+                let key = match index {
+                    Some(index) => Some(self.evaluate_array_key(index, scope)?),
+                    None => None,
+                };
+                let value = self.evaluate(expr, scope)?;
+                let slot = scope
+                    .entry(name.clone())
+                    .or_insert_with(|| Value::Array(PhpArray::new()));
+
+                if matches!(slot, Value::Null) {
+                    *slot = Value::Array(PhpArray::new());
+                }
+
+                match slot {
+                    Value::Array(array) => match key {
+                        Some(key) => {
+                            array.insert(key, value);
+                        }
+                        None => {
+                            array
+                                .append(value)
+                                .map_err(|error| runtime_error(*span, error))?;
+                        }
+                    },
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_array_access(format!(
+                                "cannot write offset on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                }
+
+                Ok(())
+            }
+        }
+    }
+
     fn evaluate_array(
         &mut self,
         items: &[ArrayItem],
@@ -175,13 +234,7 @@ impl Interpreter {
 
         for item in items {
             let key = match &item.key {
-                Some(expr) => {
-                    let key = self.evaluate(expr, scope)?;
-                    Some(
-                        ArrayKey::from_value(&key)
-                            .map_err(|error| runtime_error(expr.span(), error))?,
-                    )
-                }
+                Some(expr) => Some(self.evaluate_array_key(expr, scope)?),
                 None => None,
             };
             let value = self.evaluate(&item.value, scope)?;
@@ -199,6 +252,38 @@ impl Interpreter {
         }
 
         Ok(Value::Array(array))
+    }
+
+    fn evaluate_array_index(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        span: Span,
+        scope: &mut Scope,
+    ) -> CompileResult<Value> {
+        let target_value = self.evaluate(target, scope)?;
+        let key = self.evaluate_array_key(index, scope)?;
+
+        match target_value {
+            Value::Array(array) => array.get(key.clone()).cloned().ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()),
+                )
+            }),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot read offset from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn evaluate_array_key(&mut self, expr: &Expr, scope: &mut Scope) -> CompileResult<ArrayKey> {
+        let key = self.evaluate(expr, scope)?;
+        ArrayKey::from_value(&key).map_err(|error| runtime_error(expr.span(), error))
     }
 
     fn call_function(

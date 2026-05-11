@@ -62,12 +62,19 @@ Implemented:
   keyless append allocation for array literals.
 - Added parser and interpreter support for short array literals `[]`, `[value]`,
   and `[key => value]` over the supported expression subset.
+- Added parser and interpreter support for array indexed reads, direct variable
+  indexed writes, and direct variable append writes over the current ordered
+  array value model.
+- Added write materialization for undefined and `null` array variables in the
+  supported direct-variable array assignment subset.
 - Added array-aware `count`, `print_r`, and `var_dump` behavior for the current
   ordered array value model. `strlen` remains scalar-only and rejects arrays.
 - Added stable invalid-array-key diagnostics for array literal keys that do not
   evaluate to integers or strings.
-- Added an explicit LLVM IR rejection path and test for arrays until native
-  lowering exists.
+- Added stable undefined-array-key and invalid-array-access diagnostics for the
+  current array indexing and assignment subset.
+- Added explicit LLVM IR rejection paths and tests for arrays, array indexing,
+  and array assignment until native lowering exists.
 
 Tested:
 
@@ -76,30 +83,34 @@ Tested:
 - `cargo test -p php_runtime array_` passes with 4 focused array value tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
-- `cargo test -p phpc --test runtime_errors` passes with 7 runtime error tests.
+- `cargo test -p phpc --test runtime_errors` passes with 9 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 6 representative runtime error fixtures.
+  covering 7 representative runtime error fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
-- `cargo test -p phpc --test milestone1 emit_ir_rejects_arrays_until_native_lowering_exists`
-  passes.
-- `cargo run -p phpc -- test` passes with 24 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
+  rejection coverage for array literals, array indexing, and array assignment.
+- `cargo run -p phpc -- test` passes with 26 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 18 fixtures and skipping 6 `.phpc-only` fixtures.
-- `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 1 array
-  fixture.
+  installed, comparing 19 fixtures and skipping 7 `.phpc-only` fixtures.
+- `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
+  fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
 - `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone2`
   passes, reporting 7 PHP comparisons skipped.
+- `PATH=/nonexistent ./target/debug/phpc test --compare-php tests/fixtures/milestone3`
+  passes, reporting 2 PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/milestone2` passes with 7
   Milestone 2 fixtures.
 - `cargo run -p phpc -- run tests/fixtures/milestone2/scalar_comparison_matrix.php`
   prints the committed 100-row scalar comparison matrix.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_literals.php`
   prints the committed array literal/count/print_r/truthiness output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 6
+- `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
+  prints the committed array append/indexed read/indexed write output.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 7
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -107,8 +118,13 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2:6: invalid arithmetic for +: string is not numeric`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only int and string keys are implemented`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
+- `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
+  exits 1 with an explicit array codegen rejection before emitting misleading
+  native code.
 - `tools/run-tests.sh` passes and now includes optional system PHP comparison.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -130,11 +146,16 @@ Still fails:
 - Scalar comparisons do not implement strict identity (`===`, `!==`), arrays,
   objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
   float string precision.
-- Arrays do not implement indexed reads, indexed writes, `$array[] = ...`,
-  `unset`, `foreach`, long `array()` syntax, destructuring, spread, references,
-  copy-on-write containers, object/resource keys, or PHP's full boolean/null/
-  float key coercion rules. Negative-key auto-index behavior is not claimed
-  beyond the current non-negative allocator.
+- Arrays do not implement nested indexed writes, complex assignment lvalues,
+  `$array[]` as a read expression, string offset access, `unset`, `foreach`,
+  long `array()` syntax, destructuring, spread, references, copy-on-write
+  containers, object/resource keys, or PHP's full boolean/null/float key
+  coercion rules. Missing array-key reads fail with a stable runtime error
+  instead of PHP's warning-and-`null` recovery. Writes to existing non-array
+  scalar variables other than `null` are rejected instead of following PHP's
+  full automatic conversion behavior. Negative-key auto-index behavior is not
+  claimed beyond the current non-negative allocator, and arrays still reject
+  native lowering.
 - Runtime errors abort the current `phpc run` command with a stable diagnostic;
   PHP `Throwable` objects, stack traces, warning/notice recovery, user error
   handlers, and preservation of partial stdout before a fatal runtime error are
@@ -142,5 +163,5 @@ Still fails:
 
 Next:
 
-- Continue Milestone 3 by implementing array append assignment, indexed reads,
-  and indexed writes in the interpreter with fixture CLI coverage.
+- Continue Milestone 4 by separating local and global scope behavior for user
+  functions, with tests for shadowing and unsupported `global`.

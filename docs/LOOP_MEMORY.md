@@ -230,3 +230,62 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:07:21Z
 
 - Post-round 4 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:07:23Z
+
+- Starting round 5 at 20260511T230723Z from HEAD `4b78f07`.
+
+## Loop Event 2026-05-11T23:07:25Z
+
+- Pre-round 5 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:18:42Z
+
+- Task attempted: implemented the next Milestone 3 array slice: parsed and
+  interpreted direct array indexed reads, direct variable indexed writes, and
+  direct variable append writes. Added undefined/`null` write materialization
+  for the supported write subset, stable diagnostics for missing array keys and
+  invalid array access, fixture coverage, and explicit native-codegen rejection
+  for array indexing/assignment.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/runtime_errors.rs`,
+  `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone3/array_indexing.php`,
+  `tests/fixtures/milestone3/array_indexing.stdout`,
+  `tests/fixtures/runtime_errors/undefined_array_key.php`,
+  `tests/fixtures/runtime_errors/undefined_array_key.stderr`,
+  `tests/fixtures/runtime_errors/undefined_array_key.exit`,
+  `tests/fixtures/runtime_errors/undefined_array_key.phpc-only`,
+  `tests/fixtures/runtime_errors/undefined_array_key.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test runtime_errors` passed with
+  9 runtime error tests; `cargo test -p phpc --test milestone1
+  emit_ir_rejects_array` passed with array literal/indexing/assignment codegen
+  rejection coverage; `cargo test -p php_runtime array_` passed with 4 focused
+  array value tests; `cargo run -p phpc -- test tests/fixtures/milestone3`
+  passed with 2 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone3` passed with 2 system PHP comparisons; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 7 fixtures;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  run tests/fixtures/milestone3/array_indexing.php` printed the committed array
+  indexing output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/undefined_array_key.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone3/array_indexing.php --emit-ir` exited `1` with an
+  explicit array codegen rejection; `PATH=/nonexistent ./target/debug/phpc test
+  --compare-php tests/fixtures/milestone3` passed with 2 PHP comparisons
+  skipped; `tools/run-tests.sh` passed with 26 fixtures, 19 system PHP
+  comparisons, and 7 `.phpc-only` skips.
+- Remaining semantic gaps: nested indexed writes, complex assignment lvalues,
+  `$array[]` as a read expression, string offset access, `isset($array[key])`,
+  `unset`, `foreach`, long `array()` syntax, destructuring, spread, references,
+  copy-on-write containers, object/resource keys, PHP's full key coercion
+  rules, missing-key warning/`null` recovery, and automatic conversion for
+  existing non-array scalar write targets other than `null` are unsupported.
+  Arrays, array indexing, and array assignment still reject native lowering.
+- Next concrete task: separate local and global scope behavior for user
+  functions, with tests for shadowing and unsupported `global`.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add indexed reads and writes"`
+  after the full suite passes.

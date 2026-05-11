@@ -40,6 +40,8 @@ subset:
 - `while`
 - function declarations, calls, and `return`
 - short array literals with integer/string keys
+- array indexed reads, indexed writes, and append writes for the documented
+  direct-variable array subset
 - builtins for the documented scalar/array subset: `strlen`, `isset`, `count`,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors

@@ -58,6 +58,16 @@ impl RuntimeError {
         })
     }
 
+    pub fn undefined_array_key(key: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UndefinedArrayKey { key: key.into() })
+    }
+
+    pub fn invalid_array_access(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidArrayAccess {
+            reason: reason.into(),
+        })
+    }
+
     pub fn kind(&self) -> &RuntimeErrorKind {
         &self.kind
     }
@@ -97,6 +107,12 @@ pub enum RuntimeErrorKind {
         reason: String,
     },
     InvalidArrayKey {
+        reason: String,
+    },
+    UndefinedArrayKey {
+        key: String,
+    },
+    InvalidArrayAccess {
         reason: String,
     },
 }
@@ -162,6 +178,12 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::InvalidArrayKey { reason } => {
             format!("invalid array key: {reason}")
+        }
+        RuntimeErrorKind::UndefinedArrayKey { key } => {
+            format!("undefined array key {key}")
+        }
+        RuntimeErrorKind::InvalidArrayAccess { reason } => {
+            format!("invalid array access: {reason}")
         }
     }
 }
@@ -297,6 +319,13 @@ impl ArrayKey {
         match self {
             ArrayKey::Int(value) => value.to_string(),
             ArrayKey::String(value) => value.clone(),
+        }
+    }
+
+    pub fn diagnostic_key(&self) -> String {
+        match self {
+            ArrayKey::Int(value) => value.to_string(),
+            ArrayKey::String(value) => format!("\"{value}\""),
         }
     }
 

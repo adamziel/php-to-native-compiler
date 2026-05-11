@@ -1,0 +1,20 @@
+zero
+one updated
+two
+three
+zero two
+Ada
+6
+created
+indexed
+from null
+Array
+(
+    [0] => zero
+    [1] => one updated
+    [2] => two
+    [3] => three
+    [02] => zero two
+    [name] => Ada
+)
+

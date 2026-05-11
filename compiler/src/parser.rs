@@ -1,4 +1,6 @@
-use crate::ast::{ArrayItem, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp};
+use crate::ast::{
+    ArrayItem, AssignTarget, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp,
+};
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
 
@@ -33,8 +35,7 @@ impl Parser {
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
             TokenKind::Return => self.parse_return(),
-            TokenKind::Variable(_) if self.peek_next_is_equal() => self.parse_assignment(),
-            _ => self.parse_expression_statement(),
+            _ => self.parse_assignment_or_expression_statement(),
         }
     }
 
@@ -139,16 +140,51 @@ impl Parser {
         Ok(Stmt::Return { value, span })
     }
 
-    fn parse_assignment(&mut self) -> CompileResult<Stmt> {
+    fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {
+        if let Some(stmt) = self.try_parse_assignment_statement()? {
+            return Ok(stmt);
+        }
+
+        self.parse_expression_statement()
+    }
+
+    fn try_parse_assignment_statement(&mut self) -> CompileResult<Option<Stmt>> {
+        if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            return Ok(None);
+        }
+
+        let saved = self.current;
+        let target = self.parse_assignment_target()?;
+        if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            self.current = saved;
+            return Ok(None);
+        }
+
+        let span = target.span();
+        let expr = self.parse_expression()?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
+        Ok(Some(Stmt::Assign { target, expr, span }))
+    }
+
+    fn parse_assignment_target(&mut self) -> CompileResult<AssignTarget> {
         let token = self.advance().clone();
         let (name, span) = match token.kind {
             TokenKind::Variable(name) => (name, token.span),
-            _ => unreachable!("caller checks assignment start"),
+            _ => unreachable!("caller checks assignment target start"),
         };
-        self.consume_keyword(TokenKind::Equal, "expected '=' in assignment")?;
-        let expr = self.parse_expression()?;
-        self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
-        Ok(Stmt::Assign { name, expr, span })
+
+        if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            let index = if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                None
+            } else {
+                let index = self.parse_expression()?;
+                self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+                Some(index)
+            };
+            return Ok(AssignTarget::ArrayIndex { name, index, span });
+        }
+
+        Ok(AssignTarget::Variable { name, span })
     }
 
     fn parse_expression_statement(&mut self) -> CompileResult<Stmt> {
@@ -312,7 +348,32 @@ impl Parser {
             });
         }
 
-        self.parse_primary()
+        self.parse_postfix()
+    }
+
+    fn parse_postfix(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_primary()?;
+
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            let bracket_span = self.previous().span;
+            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(
+                    bracket_span,
+                    "cannot use [] for reading; append syntax is only supported in assignments",
+                ));
+            }
+
+            let index = self.parse_expression()?;
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+            let span = expr.span();
+            expr = Expr::Index {
+                target: Box::new(expr),
+                index: Box::new(index),
+                span,
+            };
+        }
+
+        Ok(expr)
     }
 
     fn parse_primary(&mut self) -> CompileResult<Expr> {
@@ -424,13 +485,6 @@ impl Parser {
 
     fn check(&self, predicate: impl FnOnce(&TokenKind) -> bool) -> bool {
         predicate(&self.peek().kind)
-    }
-
-    fn peek_next_is_equal(&self) -> bool {
-        self.tokens
-            .get(self.current + 1)
-            .map(|token| matches!(token.kind, TokenKind::Equal))
-            .unwrap_or(false)
     }
 
     fn advance(&mut self) -> &Token {

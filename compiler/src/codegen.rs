@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::ast::{BinaryOp, Expr, Program, Span, Stmt};
+use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
@@ -94,11 +94,7 @@ impl LlvmGenerator {
                 self.emit_echo(value);
                 Ok(())
             }
-            Stmt::Assign { name, expr, .. } => {
-                let value = self.emit_expr(expr)?;
-                self.variables.insert(name.clone(), value);
-                Ok(())
-            }
+            Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::Expr { expr, .. } => {
                 self.emit_expr(expr)?;
                 Ok(())
@@ -133,6 +129,10 @@ impl LlvmGenerator {
                 *span,
                 "arrays are supported by phpc run but not LLVM IR emission yet",
             )),
+            Expr::Index { span, .. } => Err(self.unsupported(
+                *span,
+                "array indexing is supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -157,6 +157,20 @@ impl LlvmGenerator {
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
             }
+        }
+    }
+
+    fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        match target {
+            AssignTarget::Variable { name, .. } => {
+                let value = self.emit_expr(expr)?;
+                self.variables.insert(name.clone(), value);
+                Ok(())
+            }
+            AssignTarget::ArrayIndex { span, .. } => Err(self.unsupported(
+                *span,
+                "array assignment is supported by phpc run but not LLVM IR emission yet",
+            )),
         }
     }
 
@@ -552,11 +566,7 @@ impl CGenerator {
                 self.emit_echo(value);
                 Ok(())
             }
-            Stmt::Assign { name, expr, .. } => {
-                let value = self.emit_expr(expr)?;
-                self.variables.insert(name.clone(), value);
-                Ok(())
-            }
+            Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::Expr { expr, .. } => {
                 self.emit_expr(expr)?;
                 Ok(())
@@ -591,6 +601,10 @@ impl CGenerator {
                 *span,
                 "arrays are supported by phpc run but not assembly emission yet",
             )),
+            Expr::Index { span, .. } => Err(self.unsupported(
+                *span,
+                "array indexing is supported by phpc run but not assembly emission yet",
+            )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -615,6 +629,20 @@ impl CGenerator {
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
             }
+        }
+    }
+
+    fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        match target {
+            AssignTarget::Variable { name, .. } => {
+                let value = self.emit_expr(expr)?;
+                self.variables.insert(name.clone(), value);
+                Ok(())
+            }
+            AssignTarget::ArrayIndex { span, .. } => Err(self.unsupported(
+                *span,
+                "array assignment is supported by phpc run but not assembly emission yet",
+            )),
         }
     }
 
