@@ -19,7 +19,7 @@ handled.
 - [x] Complete optional system PHP comparison mode for the fixture runner,
   including docs, progress notes, and gating so the suite still passes when
   `php` is not installed.
-- [ ] Add explicit CLI exercises for representative runtime errors and record
+- [x] Add explicit CLI exercises for representative runtime errors and record
   their stdout, stderr, and exit behavior.
 
 ## Milestone 3: Arrays

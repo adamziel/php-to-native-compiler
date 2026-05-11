@@ -121,3 +121,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T22:53:22Z
 
 - Post-round 2 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T22:53:24Z
+
+- Starting round 3 at 20260511T225324Z from HEAD `f940788`.
+
+## Loop Event 2026-05-11T22:53:26Z
+
+- Pre-round 3 test exit code: `0`.
+
+## Loop Event 2026-05-11T22:55:53Z
+
+- Task attempted: added explicit `phpc run` CLI snapshots for representative
+  runtime errors, recording exit code, stdout, and stderr for undefined
+  variables, user-function arity mismatches, unsupported `count()` calls,
+  division by zero, and non-numeric string arithmetic.
+- Files changed: `compiler/tests/runtime_error_cli.rs`,
+  `tests/fixtures/runtime_errors/arity_mismatch.cli`,
+  `tests/fixtures/runtime_errors/invalid_arithmetic.cli`,
+  `tests/fixtures/runtime_errors/non_numeric_string_arithmetic.cli`,
+  `tests/fixtures/runtime_errors/undefined_variable.cli`,
+  `tests/fixtures/runtime_errors/unsupported_call.cli`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test runtime_error_cli` passed;
+  `tools/run-tests.sh` passed with 22 fixtures, 17 system PHP comparisons, and
+  5 `.phpc-only` skips.
+- Remaining semantic gaps: runtime errors are stable diagnostics, not PHP
+  `Throwable` objects; stack traces, warning/notice recovery, user error
+  handlers, and preservation of partial stdout before a fatal runtime error are
+  unsupported.
+- Next concrete task: implement an ordered PHP array value in `php_runtime` with
+  int/string key normalization tests.
+- Checkpoint: pending `tools/checkpoint.sh "runtime: add CLI error snapshots"`
+  after the full suite passes.

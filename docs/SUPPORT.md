@@ -40,7 +40,10 @@
   PHP-version-specific float string precision are not covered.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
-  mode yet.
+  mode yet. Representative runtime errors are covered by committed `phpc run`
+  CLI snapshots that record exit code, stdout, and stderr for undefined
+  variables, user-function arity mismatches, unsupported `count()` calls,
+  division by zero, and non-numeric string arithmetic.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -97,5 +100,8 @@
   supported presence check
 - PHP `Throwable`/`Error` objects, stack traces, recoverable warnings, notices,
   and user error handlers
+- Preserving partial stdout emitted before a runtime failure; the current
+  runtime-error path aborts the command with a diagnostic instead of modeling
+  PHP's output buffering and fatal-error behavior
 
 Unsupported code should fail with an explicit parse, runtime, or codegen error.

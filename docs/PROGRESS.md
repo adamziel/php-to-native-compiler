@@ -44,6 +44,10 @@ Implemented:
   variables.
 - Added `.phpc-only` fixture markers so project-specific runtime diagnostics can
   be exercised by the fixture runner without being compared to system PHP.
+- Added explicit `phpc run` CLI snapshots for representative runtime errors,
+  recording process exit code, stdout, and stderr for undefined variables,
+  user-function arity mismatches, unsupported `count()` calls, division by zero,
+  and non-numeric string arithmetic.
 - Completed a scalar arithmetic coercion slice for `null`, booleans, integers,
   floats, and well-formed numeric strings, including signed, decimal, exponent,
   and surrounding-whitespace numeric strings.
@@ -61,6 +65,8 @@ Tested:
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
 - `cargo test -p phpc --test runtime_errors` passes with 6 runtime error tests.
+- `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
+  covering 5 representative runtime error fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo run -p phpc -- test` passes with 22 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
@@ -100,8 +106,12 @@ Still fails:
 - Scalar comparisons do not implement strict identity (`===`, `!==`), arrays,
   objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
   float string precision.
+- Runtime errors abort the current `phpc run` command with a stable diagnostic;
+  PHP `Throwable` objects, stack traces, warning/notice recovery, user error
+  handlers, and preservation of partial stdout before a fatal runtime error are
+  not implemented.
 
 Next:
 
-- Continue Milestone 2 by adding explicit CLI exercises for representative
-  runtime errors and recording their stdout, stderr, and exit behavior.
+- Continue Milestone 3 by implementing an ordered PHP array value in
+  `php_runtime` with int/string key normalization tests.

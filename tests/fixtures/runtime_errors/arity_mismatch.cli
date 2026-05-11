@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/arity_mismatch.php:5:6: arity mismatch for identity(): expected 1 argument(s), got 0
+--- stderr end ---
