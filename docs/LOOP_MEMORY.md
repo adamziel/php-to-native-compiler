@@ -527,3 +527,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   variable variables without changing current static variable behavior.
 - Checkpoint: pending `tools/checkpoint.sh "functions: document unsupported features"`
   after the full suite passes.
+
+## Loop Event 2026-05-11T23:35:35Z
+
+- Codex round 9 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260511T232935Z-9.log`.
+
+## Loop Event 2026-05-11T23:35:37Z
+
+- Post-round 9 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:35:37Z
+
+- Post-round 9 tests passed; running checkpoint for this round.
