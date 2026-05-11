@@ -657,3 +657,63 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:46:00Z
 
 - Post-round 11 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:46:02Z
+
+- Starting round 12 at 20260511T234602Z from HEAD `cd26615`.
+
+## Loop Event 2026-05-11T23:46:04Z
+
+- Pre-round 12 test exit code: `0`.
+
+## Loop Event 2026-05-11T23:53:03Z
+
+- Task attempted: added runtime lookup infrastructure for dynamic function
+  calls through string-valued expressions. Dynamic calls now parse as runtime
+  calls, resolve case-insensitively to user-defined functions or the documented
+  callable builtin subset, and keep unresolved names and non-string callees as
+  stable runtime errors. Native lowering still rejects function calls.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone5/dynamic_function_lookup.*`,
+  `tests/fixtures/runtime_errors/undefined_dynamic_function.*`,
+  `tests/fixtures/runtime_errors/invalid_dynamic_callable.*`,
+  `tests/fixtures/unsupported_function_features/unsupported_arrow_function.*`,
+  removed the obsolete
+  `tests/fixtures/unsupported_function_features/unsupported_dynamic_call.*`,
+  and updated `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test dynamic_features` passed
+  with 6 tests; `cargo test -p phpc --test functions_and_scopes` passed with
+  17 tests; `cargo test -p phpc --test milestone1` passed with 10 tests;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo test -p phpc
+  --test unsupported_function_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone5` passed with 2 fixtures; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone5` passed with 2 system PHP
+  comparisons; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 12 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 6 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 6 `.phpc-only`
+  skips; `cargo run -p phpc -- run
+  tests/fixtures/milestone5/dynamic_function_lookup.php` printed the committed
+  dynamic lookup output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/undefined_dynamic_function.php` exited `1`
+  with the expected stable undefined-function diagnostic; `cargo run -p phpc
+  -- run tests/fixtures/runtime_errors/invalid_dynamic_callable.php` exited
+  `1` with the expected stable unsupported-call diagnostic; `tools/run-tests.sh`
+  passed with 47 fixtures, 24 system PHP comparisons, and 23 `.phpc-only`
+  skips.
+- Remaining semantic gaps: dynamic calls are limited to string-valued function
+  names resolving to current user functions or callable builtins (`strlen`,
+  `count`, `var_dump`, and `print_r`). Dynamic access to `isset`, array
+  callables, object/method callables, first-class callable syntax,
+  `call_user_func`, namespace-qualified callable resolution, autoload
+  interaction, named arguments, argument unpacking, references, and native
+  lowering are unsupported.
+- Next concrete task: define the `eval` fallback boundary: parser entry point,
+  caller scope behavior, diagnostics, and unsupported cases.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add function lookup"`
+  after the full suite passes.

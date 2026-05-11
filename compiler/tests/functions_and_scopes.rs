@@ -304,23 +304,6 @@ $fn = fn($value) => $value;
 }
 
 #[test]
-fn dynamic_function_calls_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
-        r#"<?php
-$name = "strlen";
-echo $name("abc");
-"#,
-    );
-
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 11);
-    assert_eq!(
-        error.message,
-        "unsupported dynamic function call: calls through expressions are not implemented"
-    );
-}
-
-#[test]
 fn variadic_argument_unpacking_is_rejected_with_stable_parse_error() {
     let error = parse_error(
         r#"<?php

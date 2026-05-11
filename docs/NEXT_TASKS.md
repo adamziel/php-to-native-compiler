@@ -45,7 +45,8 @@ handled.
 - [x] Add the first small builtin function set with documented signatures,
   errors, tests, and CLI examples.
 - [x] Document unsupported function features: variadics, references, closures,
-  dynamic calls, named arguments, and strict types.
+  named arguments, strict types, and dynamic-call gaps outside the current
+  string-name lookup subset.
 
 ## Milestone 5+: Dynamic PHP
 
@@ -53,7 +54,7 @@ handled.
   without changing current static variable behavior.
 - [x] Design include/require resolution rules and add explicit unsupported
   diagnostics before implementing execution.
-- [ ] Add runtime lookup infrastructure for dynamic function calls and keep
+- [x] Add runtime lookup infrastructure for dynamic function calls and keep
   unresolved calls as explicit runtime errors.
 - [ ] Define the `eval` fallback boundary: parser entry point, caller scope
   behavior, diagnostics, and unsupported cases.

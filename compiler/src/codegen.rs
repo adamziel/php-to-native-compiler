@@ -143,7 +143,7 @@ impl LlvmGenerator {
                     format!("variable '${name}' is not known in LLVM lowering"),
                 )
             }),
-            Expr::Call { span, .. } => Err(self.unsupported(
+            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 "function calls are supported by phpc run but not LLVM IR emission yet",
             )),
@@ -619,7 +619,7 @@ impl CGenerator {
                     format!("variable '${name}' is not known in assembly lowering"),
                 )
             }),
-            Expr::Call { span, .. } => Err(self.unsupported(
+            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 "function calls are supported by phpc run but not assembly emission yet",
             )),

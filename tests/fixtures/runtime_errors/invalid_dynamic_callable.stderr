@@ -1,0 +1,2 @@
+runtime error at 3:6: unsupported call dynamic function call: callable expression must evaluate to string, got int
+

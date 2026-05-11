@@ -120,6 +120,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    DynamicCall {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+        span: Span,
+    },
     Binary {
         left: Box<Expr>,
         op: BinaryOp,
@@ -145,6 +150,7 @@ impl Expr {
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
             | Expr::Call { span, .. }
+            | Expr::DynamicCall { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. } => *span,
         }

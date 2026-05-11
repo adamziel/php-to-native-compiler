@@ -93,8 +93,7 @@ Implemented:
 - Added explicit parser diagnostics, unit tests, fixture coverage, and
   `phpc run` CLI snapshots for unsupported function features: variadic
   parameters, variadic argument unpacking, references, anonymous functions,
-  arrow functions, dynamic function calls, named arguments, and
-  `declare(strict_types=1)`.
+  arrow functions, named arguments, and `declare(strict_types=1)`.
 - Added a materialized interpreter symbol table for top-level and function-local
   scopes. Current static variable reads, writes, `isset($name)`, parameter
   binding, default-parameter evaluation, and direct array write materialization
@@ -106,6 +105,11 @@ Implemented:
   stable parse diagnostics, fixture coverage, and `phpc run` CLI snapshots for
   unsupported `include`, `include_once`, `require`, and `require_once`
   constructs.
+- Added runtime lookup infrastructure for dynamic function calls through
+  string-valued expressions. The current slice resolves user-defined functions
+  and the documented callable builtin subset, keeps unresolved names as stable
+  undefined-function runtime errors, rejects non-string callees with a stable
+  unsupported-call runtime error, and still rejects native lowering explicitly.
 
 Tested:
 
@@ -116,17 +120,17 @@ Tested:
   passes.
 - `cargo test -p phpc --test runtime_errors` passes with 10 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 10 representative runtime error fixtures.
-- `cargo test -p phpc --test functions_and_scopes` passes with 18
+  covering 12 representative runtime error fixtures.
+- `cargo test -p phpc --test functions_and_scopes` passes with 17
   user-function scope/default-parameter tests.
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
   CLI snapshot test covering 6 representative unsupported function-feature
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with static
-  symbol-table behavior and unsupported variable-variable/include/require
-  diagnostic coverage.
+- `cargo test -p phpc --test dynamic_features` passes with static symbol-table
+  behavior, dynamic function lookup behavior, and unsupported
+  variable-variable/include/require diagnostic coverage.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
   CLI snapshot test covering unsupported variable variables and include/require
   constructs.
@@ -135,9 +139,11 @@ Tested:
   rejection coverage for array literals, array indexing, and array assignment.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
-- `cargo run -p phpc -- test` passes with 44 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists`
+  passes with rejection coverage for dynamic function calls.
+- `cargo run -p phpc -- test` passes with 47 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 23 fixtures and skipping 21 `.phpc-only` fixtures.
+  installed, comparing 24 fixtures and skipping 23 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -146,10 +152,10 @@ Tested:
   scope/default-parameter fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
   with 3 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 1 static
-  symbol-table fixture.
+- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 2 static
+  symbol-table and dynamic-function fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone5` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -174,7 +180,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 10
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 12
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -194,6 +200,12 @@ Tested:
   prints the committed default-parameter output.
 - `cargo run -p phpc -- run tests/fixtures/milestone5/symbol_table_static_variables.php`
   prints the committed static symbol-table output.
+- `cargo run -p phpc -- run tests/fixtures/milestone5/dynamic_function_lookup.php`
+  prints the committed dynamic user-function and builtin lookup output.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_dynamic_function.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_dynamic_function.php:3:6: undefined function missing()`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/invalid_dynamic_callable.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/invalid_dynamic_callable.php:3:6: unsupported call dynamic function call: callable expression must evaluate to string, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_named_argument.php`
@@ -253,9 +265,13 @@ Still fails:
   limited to trailing defaults over the documented constant-expression subset;
   non-constant defaults and required parameters after defaults are rejected by
   the parser. Variadic parameters, argument unpacking, references, closures and
-  arrow functions, dynamic calls, named arguments, and `declare(strict_types=1)`
-  now fail with explicit parse diagnostics; their PHP runtime semantics are not
-  implemented.
+  arrow functions, named arguments, and `declare(strict_types=1)` now fail with
+  explicit parse diagnostics; their PHP runtime semantics are not implemented.
+  Dynamic function calls are limited to string-valued function names resolving
+  to current user functions or the documented callable builtins; array/object
+  callables, method calls, first-class callable syntax, `call_user_func`,
+  namespace-qualified callable resolution, autoload interaction, and dynamic
+  access to language constructs such as `isset` are unsupported.
 - Variable variables remain unsupported. `$$name` and `${...}` fail with the
   current stable lex diagnostic instead of resolving a runtime-computed symbol
   name, and dynamic symbol-table lookup from PHP values is not implemented.
@@ -268,5 +284,5 @@ Still fails:
 
 Next:
 
-- Continue Milestone 5 by adding runtime lookup infrastructure for dynamic
-  function calls while keeping unresolved calls as explicit runtime errors.
+- Continue Milestone 5 by defining the `eval` fallback boundary: parser entry
+  point, caller scope behavior, diagnostics, and unsupported cases.

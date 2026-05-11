@@ -459,12 +459,15 @@ impl Parser {
                 continue;
             }
 
-            if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                let span = self.peek().span;
-                return Err(self.error_at(
+            if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+                let span = expr.span();
+                let args = self.parse_call_arguments_after_open()?;
+                expr = Expr::DynamicCall {
+                    callee: Box::new(expr),
+                    args,
                     span,
-                    "unsupported dynamic function call: calls through expressions are not implemented",
-                ));
+                };
+                continue;
             }
 
             break;
@@ -512,17 +515,7 @@ impl Parser {
             )),
             TokenKind::Identifier(name) => {
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
-                let mut args = Vec::new();
-                if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
-                    loop {
-                        self.reject_unsupported_call_argument_syntax()?;
-                        args.push(self.parse_expression()?);
-                        if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                            break;
-                        }
-                    }
-                }
-                self.consume_keyword(TokenKind::RParen, "expected ')' after arguments")?;
+                let args = self.parse_call_arguments_after_open()?;
                 Ok(Expr::Call {
                     name,
                     args,
@@ -574,6 +567,21 @@ impl Parser {
         Ok(Expr::Array { items, span })
     }
 
+    fn parse_call_arguments_after_open(&mut self) -> CompileResult<Vec<Expr>> {
+        let mut args = Vec::new();
+        if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
+            loop {
+                self.reject_unsupported_call_argument_syntax()?;
+                args.push(self.parse_expression()?);
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
+                }
+            }
+        }
+        self.consume_keyword(TokenKind::RParen, "expected ')' after arguments")?;
+        Ok(args)
+    }
+
     fn reject_unsupported_call_argument_syntax(&self) -> CompileResult<()> {
         let token = self.peek();
         match &token.kind {
@@ -616,7 +624,10 @@ impl Parser {
                 self.ensure_supported_default_expr(left)?;
                 self.ensure_supported_default_expr(right)
             }
-            Expr::Variable(_, _) | Expr::Index { .. } | Expr::Call { .. } => Err(self.error_at(
+            Expr::Variable(_, _)
+            | Expr::Index { .. }
+            | Expr::Call { .. }
+            | Expr::DynamicCall { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
             )),

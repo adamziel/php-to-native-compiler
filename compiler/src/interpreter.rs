@@ -29,6 +29,12 @@ struct Interpreter {
     stdout: String,
 }
 
+#[derive(Debug, Clone)]
+enum Callable {
+    Builtin(String),
+    User(FunctionDecl),
+}
+
 #[derive(Debug, Clone, Default)]
 struct SymbolTable {
     // Static variables and future dynamic variable names share the same
@@ -200,6 +206,9 @@ impl Interpreter {
                 span,
             } => self.evaluate_array_index(target, index, *span, scope),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
+            Expr::DynamicCall { callee, args, span } => {
+                self.call_dynamic_function(callee, args, *span, scope)
+            }
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
@@ -346,18 +355,73 @@ impl Interpreter {
             return self.call_isset(args, span, caller_scope);
         }
 
-        if is_builtin(&key) {
-            let mut values = Vec::with_capacity(args.len());
-            for arg in args {
-                values.push(self.evaluate(arg, caller_scope)?);
+        self.call_named_function(name, args, span, caller_scope)
+    }
+
+    fn call_dynamic_function(
+        &mut self,
+        callee: &Expr,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let callee_value = self.evaluate(callee, caller_scope)?;
+        let name = match callee_value {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "dynamic function call",
+                        format!(
+                            "callable expression must evaluate to string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
             }
-            return self.call_builtin(&key, values, span);
+        };
+
+        self.call_named_function(&name, args, span, caller_scope)
+    }
+
+    fn call_named_function(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match self.lookup_function(name).ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
+        })? {
+            Callable::Builtin(key) => {
+                let mut values = Vec::with_capacity(args.len());
+                for arg in args {
+                    values.push(self.evaluate(arg, caller_scope)?);
+                }
+                self.call_builtin(&key, values, span)
+            }
+            Callable::User(function) => self.call_user_function(function, args, span, caller_scope),
+        }
+    }
+
+    fn lookup_function(&self, name: &str) -> Option<Callable> {
+        let key = name.to_ascii_lowercase();
+        if is_builtin(&key) {
+            return Some(Callable::Builtin(key));
         }
 
-        let function = self.functions.get(&key).cloned().ok_or_else(|| {
-            runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
-        })?;
+        self.functions.get(&key).cloned().map(Callable::User)
+    }
 
+    fn call_user_function(
+        &mut self,
+        function: FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
         let required_params = required_param_count(&function);
         if args.len() < required_params || args.len() > function.params.len() {
             return Err(runtime_error(

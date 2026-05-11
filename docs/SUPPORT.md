@@ -21,6 +21,8 @@
 - `while`
 - function declarations
 - positional function calls
+- dynamic function calls through string-valued expressions that resolve to the
+  documented callable builtin subset or user-defined functions
 - trailing default parameter values for user functions over the documented
   constant-expression subset
 - recursive user-function calls up to a fixed 128-frame user-function call-depth
@@ -38,12 +40,13 @@
   `var_dump`, and `print_r`
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
-  unsupported array keys, undefined array keys, invalid array access, and
-  unsupported `global` declarations, and runaway user-function recursion
+  undefined functions, non-string dynamic function callees, unsupported array
+  keys, undefined array keys, invalid array access, unsupported `global`
+  declarations, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
-  reference expressions, anonymous functions, arrow functions, dynamic function
-  calls through expressions, named arguments, and `declare(strict_types=1)`
+  reference expressions, anonymous functions, arrow functions, named arguments,
+  and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit lex diagnostics for unsupported variable-variable syntax such as
@@ -91,43 +94,53 @@
   mode yet. Representative runtime errors are covered by committed `phpc run`
   CLI snapshots that record exit code, stdout, and stderr for undefined
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
-  unsupported array keys, undefined array keys, division by zero, and
-  non-numeric string arithmetic, and runaway user-function recursion.
+  unsupported array keys, undefined array keys, unresolved dynamic function
+  names, non-string dynamic function callees, division by zero, non-numeric
+  string arithmetic, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, and
   array assignment are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
-  Required parameters and trailing default parameter values are supported.
-  Defaults may use the current constant-expression subset: `null`, booleans,
-  integers, floats, strings, short arrays with supported keys, unary
+  Dynamic function calls are supported only when the callee expression evaluates
+  to a string that case-insensitively resolves to a user-defined function or to
+  one of the documented callable builtins: `strlen`, `count`, `var_dump`, or
+  `print_r`. Unresolved names fail with a stable undefined-function runtime
+  error, and non-string callees fail with a stable unsupported-call runtime
+  error. Required parameters and trailing default parameter values are
+  supported. Defaults may use the current constant-expression subset: `null`,
+  booleans, integers, floats, strings, short arrays with supported keys, unary
   expressions, and binary expressions over those values. Omitted arguments bind
   to their defaults; calls outside the supported required-to-total arity range
-  fail with a stable arity diagnostic. Each call gets a fresh local scope.
-  Parameters and local assignments shadow global variables without mutating
-  them, and functions do not import top-level variables implicitly. `global`
-  declarations parse but fail with a stable runtime error because global scope
-  imports are not implemented. Recursive user-function calls are supported until
-  the fixed 128-frame user-function call-depth guard is reached. That guard is a
-  project-specific runtime diagnostic, not PHP's native stack or memory
-  exhaustion behavior; it is not configurable and does not produce stack
-  traces. Non-constant defaults such as variables, calls, and indexed reads are
-  rejected by the parser. Required parameters after default parameters are also
-  rejected instead of modeling PHP's deprecation and implicit-required behavior.
-  Variadic parameters and argument unpacking, reference parameters/returns,
-  reference expressions, anonymous functions, arrow functions, dynamic function
-  calls through expressions, named arguments, and `declare(strict_types=1)` are
-  rejected with stable parse diagnostics. The project does not implement any
-  runtime semantics for those features yet. Parameter type declarations, return
-  type declarations, nullable/union/intersection types, static locals, and
-  magic function constants are also unsupported.
+  fail with a stable arity diagnostic. Each user-function call gets a fresh
+  local scope. Parameters and local assignments shadow global variables without
+  mutating them, and functions do not import top-level variables implicitly.
+  `global` declarations parse but fail with a stable runtime error because
+  global scope imports are not implemented. Recursive user-function calls are
+  supported until the fixed 128-frame user-function call-depth guard is reached.
+  That guard is a project-specific runtime diagnostic, not PHP's native stack or
+  memory exhaustion behavior; it is not configurable and does not produce stack
+  traces. Non-constant defaults such as variables, calls, dynamic calls, and
+  indexed reads are rejected by the parser. Required parameters after default
+  parameters are also rejected instead of modeling PHP's deprecation and
+  implicit-required behavior. Variadic parameters and argument unpacking,
+  reference parameters/returns, reference expressions, anonymous functions,
+  arrow functions, named arguments, and `declare(strict_types=1)` are rejected
+  with stable parse diagnostics. The project does not implement any runtime
+  semantics for those features yet. Parameter type declarations, return type
+  declarations, nullable/union/intersection types, static locals, magic function
+  constants, array callables, object/method callables, first-class callable
+  syntax, `call_user_func`, namespace-qualified callable resolution, and
+  autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
   documented scalar/array subset only. `strlen` remains scalar-only and rejects
   arrays. `count` accepts arrays only. `isset` supports direct variable
   operands and can safely check undefined variables; array offsets, complex
-  lvalues, and expression operands are unsupported. Object formatting and PHP's
-  complete warning behavior are not implemented.
+  lvalues, and expression operands are unsupported. Because `isset` is modeled
+  as a special static form, it is not available through dynamic function
+  lookup. Object formatting and PHP's complete warning behavior are not
+  implemented.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -175,7 +188,9 @@
 - variadic parameters and variadic argument unpacking
 - reference parameters, reference returns, reference assignments, and
   by-reference calls
-- dynamic function calls
+- dynamic callables outside the string function-name subset, including array
+  callables, object/method callables, first-class callable syntax,
+  `call_user_func`, and namespace/autoload-aware callable resolution
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - `eval`

@@ -88,13 +88,19 @@ documented architecture decision.
 
 Dynamic PHP features will be implemented as runtime fallback zones:
 
-- dynamic function calls use runtime lookup
+- dynamic function calls use runtime lookup; the first implemented slice accepts
+  string-valued callees that resolve to the documented callable builtin subset
+  or user-defined functions
 - variable variables use materialized symbol tables; current variable-variable
   syntax is rejected with an explicit diagnostic before execution
-- dynamic includes use runtime include resolution
-- `eval` parses and executes in the caller scope
+- dynamic includes will use runtime include resolution
+- `eval` will parse and execute in the caller scope
 
-Executable semantics for those features are not implemented yet.
+Only the string-valued dynamic function lookup slice is executable today.
+Variable-variable execution, include/require execution, and `eval` remain design
+boundaries. Array/object callables, method calls, first-class callable syntax,
+and namespace/autoload-aware callable resolution are still outside the
+implemented dynamic-call subset.
 
 ## Include/Require Resolution Design
 

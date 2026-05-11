@@ -7,6 +7,12 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Runtime);
+    error
+}
+
 fn lex_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Lex);
@@ -35,6 +41,60 @@ echo $name, "\n";
 
     assert_eq!(execution.stdout, "1\nAda-static\nlocal-scope\nAda\n");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_function_calls_use_runtime_lookup_for_string_callees() {
+    let execution = run_source(
+        r#"<?php
+function greet($name, $suffix = "!") {
+    return "hello " . $name . $suffix;
+}
+$call = "greet";
+echo $call("Ada"), "\n";
+$upper = "GREET";
+echo $upper("Lin", "."), "\n";
+$length = "strlen";
+echo $length("native"), "\n";
+$counter = "count";
+echo $counter(["a", "b"]), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello Ada!\nhello Lin.\n6\n2\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unresolved_dynamic_function_name_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+$call = "missing";
+echo $call();
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, "undefined function missing()");
+}
+
+#[test]
+fn dynamic_function_callee_must_be_string_in_current_subset() {
+    let error = runtime_error(
+        r#"<?php
+$call = 123;
+echo $call();
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call dynamic function call: callable expression must evaluate to string, got int"
+    );
 }
 
 #[test]
