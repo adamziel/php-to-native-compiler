@@ -98,13 +98,32 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   syntax is rejected with an explicit diagnostic before execution
 - dynamic includes will use runtime include resolution
 - `eval` will parse and execute in the caller scope
+- namespaces and imports will need namespace-aware name resolution before they
+  can affect function, class, or dynamic callable lookup
 
 Only the string-valued dynamic function lookup slice is executable today.
 Variable-variable execution, include/require execution, and `eval` remain design
 boundaries; direct `eval(...)` syntax is reserved and rejected with a stable
-parse diagnostic. Array/object callables, method calls, first-class callable
-syntax, and namespace/autoload-aware callable resolution are still outside the
-implemented dynamic-call subset.
+parse diagnostic. Namespace declarations and top-level `use` import
+declarations are also reserved and rejected with stable parse diagnostics.
+Array/object callables, method calls, first-class callable syntax, and
+namespace/autoload-aware callable resolution are still outside the implemented
+dynamic-call subset.
+
+## Namespace/Import Boundary
+
+`namespace` declarations and top-level `use` declarations are reserved by the
+lexer/parser today and rejected with stable parse diagnostics before execution.
+The first executable namespace/import slice should define how declared
+functions, classes, dynamic function lookup, object instantiation, and error
+messages store and resolve fully qualified names.
+
+Initial unsupported namespace/import behavior remains: bracketed namespace
+blocks, global namespace blocks, multiple namespaces in one file, subnamespace
+separators in executable names, qualified and fully qualified function/class
+references, aliased imports, grouped imports, function imports, constant
+imports, trait `use` execution, autoload interaction, and namespace-aware
+native lowering.
 
 ## Object/Class Boundary
 

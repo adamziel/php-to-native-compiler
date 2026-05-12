@@ -32,6 +32,8 @@ impl Parser {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
             TokenKind::Class => self.parse_class(),
+            TokenKind::Namespace => self.parse_unsupported_namespace(),
+            TokenKind::Use => self.parse_unsupported_use(),
             TokenKind::Declare => self.parse_unsupported_declare(),
             TokenKind::Eval => self.parse_unsupported_eval(),
             TokenKind::Echo => self.parse_echo(),
@@ -247,6 +249,18 @@ impl Parser {
             span,
             "unsupported declare directive: strict_types is not implemented",
         ))
+    }
+
+    fn parse_unsupported_namespace(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Namespace, "expected 'namespace'")?
+            .span;
+        Err(self.error_at(span, unsupported_namespace_message()))
+    }
+
+    fn parse_unsupported_use(&mut self) -> CompileResult<Stmt> {
+        let span = self.consume_keyword(TokenKind::Use, "expected 'use'")?.span;
+        Err(self.error_at(span, unsupported_use_message()))
     }
 
     fn parse_unsupported_eval(&mut self) -> CompileResult<Stmt> {
@@ -979,6 +993,8 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Implements => "implements",
         TokenKind::Return => "return",
         TokenKind::Global => "global",
+        TokenKind::Namespace => "namespace",
+        TokenKind::Use => "use",
         TokenKind::Declare => "declare",
         TokenKind::Eval => "eval",
         TokenKind::Include => "include",
@@ -1006,6 +1022,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Dot => ".",
         TokenKind::ObjectOperator => "->",
         TokenKind::DoubleColon => "::",
+        TokenKind::Backslash => "\\",
         TokenKind::Ellipsis => "...",
         TokenKind::Ampersand => "&",
         TokenKind::Colon => ":",
@@ -1039,6 +1056,14 @@ fn unsupported_eval_message() -> &'static str {
     "unsupported eval: eval parsing and caller-scope execution are not implemented"
 }
 
+fn unsupported_namespace_message() -> &'static str {
+    "unsupported namespace declaration: namespace-aware name resolution is not implemented"
+}
+
+fn unsupported_use_message() -> &'static str {
+    "unsupported use declaration: namespace imports are not implemented"
+}
+
 fn unsupported_class_expression_message() -> &'static str {
     "unsupported class expression: anonymous classes are not implemented"
 }
@@ -1057,6 +1082,7 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
         TokenKind::Implements => {
             "unsupported interface implementation: implements is not implemented".to_string()
         }
+        TokenKind::Use => "unsupported trait use: traits are not implemented".to_string(),
         _ => format!("expected class member, found {}", token_name(kind)),
     }
 }

@@ -29,6 +29,8 @@ pub enum TokenKind {
     Implements,
     Return,
     Global,
+    Namespace,
+    Use,
     Declare,
     Eval,
     Include,
@@ -56,6 +58,7 @@ pub enum TokenKind {
     Dot,
     ObjectOperator,
     DoubleColon,
+    Backslash,
     Ellipsis,
     Ampersand,
     Colon,
@@ -154,6 +157,7 @@ impl<'a> Lexer<'a> {
                         TokenKind::Colon
                     }
                 }
+                '\\' => TokenKind::Backslash,
                 '=' => {
                     if self.match_char('=') {
                         TokenKind::EqualEqual
@@ -397,6 +401,8 @@ impl<'a> Lexer<'a> {
             "implements" => TokenKind::Implements,
             "return" => TokenKind::Return,
             "global" => TokenKind::Global,
+            "namespace" => TokenKind::Namespace,
+            "use" => TokenKind::Use,
             "declare" => TokenKind::Declare,
             "eval" => TokenKind::Eval,
             "include" => TokenKind::Include,

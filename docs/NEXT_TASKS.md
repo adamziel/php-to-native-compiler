@@ -73,5 +73,8 @@ handled.
   method, and class constant syntax such as `ClassName::$prop`,
   `ClassName::method()`, and `ClassName::CONST` before implementing static
   member storage or dispatch.
-- [ ] Add explicit parse diagnostics for unsupported namespace and `use`
+- [x] Add explicit parse diagnostics for unsupported namespace and `use`
   declaration syntax before namespace-aware name resolution or imports exist.
+- [ ] Add explicit parse diagnostics for unsupported namespace-qualified
+  function and class names such as `App\fn()` and `new App\Box()` before
+  namespace-aware name resolution exists.

@@ -114,6 +114,9 @@ Implemented:
   diagnostics, fixture coverage, and `phpc run` CLI snapshots for unsupported
   direct `eval(...)` statement and expression forms. Eval execution remains
   unsupported.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
+  CLI snapshots for unsupported namespace declarations and top-level `use`
+  import declarations before namespace-aware name resolution or imports exist.
 - Added the first internal object/class metadata sketch in `php_runtime`:
   ordered class tables with stable `ClassId` handles, class/property/method
   metadata, visibility flags, instance/static flags, duplicate
@@ -176,12 +179,13 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with 7 tests covering
+- `cargo test -p phpc --test dynamic_features` passes with 8 tests covering
   static symbol-table behavior, dynamic function lookup behavior, and
-  unsupported variable-variable/include/require/eval diagnostic coverage.
+  unsupported variable-variable/include/require/eval/namespace/use diagnostic
+  coverage.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
-  CLI snapshot test covering 7 unsupported variable-variable,
-  include/require, and eval fixtures.
+  CLI snapshot test covering 9 unsupported variable-variable,
+  include/require, eval, namespace, and use fixtures.
 - `cargo test -p phpc --test object_model` passes with 9 tests covering class
   metadata registration, minimal object instantiation, duplicate metadata
   diagnostics, undefined-class diagnostics, constructor rejection, public
@@ -202,9 +206,9 @@ Tested:
   passes with rejection coverage for object instantiation.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_object_property`
   passes with rejection coverage for object property reads and writes.
-- `cargo run -p phpc -- test` passes with 66 fixture tests.
+- `cargo run -p phpc -- test` passes with 68 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 28 fixtures and skipping 38 `.phpc-only` fixtures.
+  installed, comparing 28 fixtures and skipping 40 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -224,9 +228,9 @@ Tested:
   tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
   PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
-  passes with 7 unsupported dynamic-feature fixtures.
+  passes with 9 unsupported dynamic-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_dynamic_features` passes with 7 `.phpc-only` PHP
+  tests/fixtures/unsupported_dynamic_features` passes with 9 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
   passes with 7 unsupported object/class fixtures.
@@ -307,6 +311,10 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval.php:2:1: unsupported eval: eval parsing and caller-scope execution are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2:11: unsupported eval: eval parsing and caller-scope execution are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_namespace.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace.php:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.php:2:1: unsupported use declaration: namespace imports are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_anonymous_class.php`
@@ -399,6 +407,13 @@ Still fails:
   strings, functions/classes declared from evaluated code, nested eval,
   include/require inside eval, and exact PHP `ParseError`/warning behavior are
   not implemented.
+- Namespace execution and imports remain unsupported. `namespace` declarations
+  and top-level `use` import declarations fail with stable parse diagnostics;
+  bracketed namespace blocks, global namespace blocks, multiple namespaces in
+  one file, namespace separators in executable names, qualified and fully
+  qualified function/class references, aliases, grouped imports, function
+  imports, constant imports, trait `use` execution, autoload interaction, and
+  namespace-aware native lowering are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
@@ -415,5 +430,5 @@ Still fails:
 Next:
 
 - Continue Milestone 5+ by adding explicit parse diagnostics for unsupported
-  namespace and `use` declaration syntax before namespace-aware name resolution
-  or imports exist.
+  namespace-qualified function and class names before namespace-aware name
+  resolution exists.

@@ -1193,3 +1193,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:47:03Z
 
 - Post-round 19 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:47:05Z
+
+- Starting round 20 at 20260512T004705Z from HEAD `90c3deb`.
+
+## Loop Event 2026-05-12T00:47:07Z
+
+- Pre-round 20 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:50:28Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  namespace declarations and top-level `use` import declarations before
+  namespace-aware name resolution or imports exist. The lexer now reserves
+  `namespace` and `use` and tokenizes namespace separators so qualified
+  declarations reach the parser diagnostic instead of failing as unknown
+  characters.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_namespace.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test dynamic_features` passed
+  with 8 tests; `cargo test -p phpc --test unsupported_dynamic_features_cli`
+  passed; `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with 9 fixtures; `cargo fmt --check` passed; direct `phpc run`
+  exercises for `unsupported_namespace.php` and `unsupported_use_declaration.php`
+  each exited `1` with the expected stable parse diagnostic; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`
+  passed with 9 `.phpc-only` skips; `tools/run-tests.sh` passed with 68
+  fixtures, 28 system PHP comparisons, and 40 `.phpc-only` skips.
+- Remaining semantic gaps: namespace execution and imports are unsupported,
+  including bracketed namespace blocks, global namespace blocks, multiple
+  namespaces in one file, namespace separators in executable names, qualified
+  and fully qualified function/class references, aliases, grouped imports,
+  function imports, constant imports, trait `use` execution, autoload
+  interaction, and namespace-aware native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  namespace-qualified function and class names such as `App\fn()` and
+  `new App\Box()` before namespace-aware name resolution exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject namespace and use declarations"`
+  after the full suite passes.

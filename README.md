@@ -58,9 +58,10 @@ subset:
   `global` declarations, and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
-  variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  object method calls, dynamic property names, anonymous classes, and
-  unsupported class forms, static member access, and class constants
+  namespace and `use` declarations, variadics, references, closures, named
+  arguments, `declare(strict_types=1)`, object method calls, dynamic property
+  names, anonymous classes, and unsupported class forms, static member access,
+  and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

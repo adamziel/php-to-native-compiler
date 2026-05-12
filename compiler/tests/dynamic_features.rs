@@ -188,3 +188,50 @@ $result = eval('return 1;');
         );
     }
 }
+
+#[test]
+fn namespace_and_use_declarations_are_rejected_with_stable_parse_errors() {
+    let cases = [
+        (
+            r#"<?php
+namespace App\Demo;
+"#,
+            2,
+            1,
+            "unsupported namespace declaration: namespace-aware name resolution is not implemented",
+        ),
+        (
+            r#"<?php
+namespace App\Demo {
+    echo "blocked";
+}
+"#,
+            2,
+            1,
+            "unsupported namespace declaration: namespace-aware name resolution is not implemented",
+        ),
+        (
+            r#"<?php
+use App\Demo\Service;
+"#,
+            2,
+            1,
+            "unsupported use declaration: namespace imports are not implemented",
+        ),
+        (
+            r#"<?php
+use function App\Demo\make_service;
+"#,
+            2,
+            1,
+            "unsupported use declaration: namespace imports are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
