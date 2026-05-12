@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/null_coalescing_object_assignment_non_object.php:7:1: invalid property access: cannot write property $value on int
+--- stderr end ---

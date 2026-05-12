@@ -18,6 +18,9 @@ fn null_coalescing_cli_snapshots_match_committed_outputs() {
     fixtures.extend(cli_snapshot_fixtures(
         &workspace_root.join("tests/fixtures/milestone128"),
     ));
+    fixtures.extend(cli_snapshot_fixtures(
+        &workspace_root.join("tests/fixtures/milestone129"),
+    ));
 
     fixtures.sort();
     assert!(

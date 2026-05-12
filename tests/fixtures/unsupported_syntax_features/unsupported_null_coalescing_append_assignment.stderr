@@ -1,2 +1,2 @@
-parse error at 2:10: unsupported null coalescing assignment: only direct variable and direct array-offset targets are implemented
+parse error at 2:10: unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented
 

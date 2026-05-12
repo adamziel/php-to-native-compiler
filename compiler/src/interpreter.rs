@@ -769,13 +769,42 @@ impl Interpreter {
                 *span,
                 RuntimeError::unsupported_call("??=", "append-offset targets are not implemented"),
             )),
-            AssignTarget::Property { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "??=",
-                    "object-property targets are not implemented",
-                ),
-            )),
+            AssignTarget::Property {
+                object,
+                property,
+                span,
+            } => {
+                let should_assign = match scope.read_named(object) {
+                    Some(Value::Object(object)) => object
+                        .read_public_property_for_isset(property)
+                        .map(|value| match value {
+                            Some(value) => matches!(value, Value::Null),
+                            None => true,
+                        })
+                        .map_err(|error| runtime_error(*span, error))?,
+                    Some(_) | None => true,
+                };
+
+                if should_assign {
+                    let value = self.evaluate(expr, scope)?;
+                    let slot = scope.object_slot_for_static_write(object, *span)?;
+
+                    match slot {
+                        Value::Object(object) => object
+                            .write_public_property(property, value)
+                            .map_err(|error| runtime_error(*span, error)),
+                        other => Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot write property ${property} on {}",
+                                other.type_name()
+                            )),
+                        )),
+                    }?;
+                }
+
+                Ok(())
+            }
         }
     }
 

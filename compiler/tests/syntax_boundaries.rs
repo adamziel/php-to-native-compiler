@@ -286,10 +286,7 @@ fn unsupported_chained_null_coalescing_has_stable_parse_error() {
 
 #[test]
 fn unsupported_null_coalescing_assignment_targets_have_stable_parse_errors() {
-    let cases = [
-        ("<?php\n$items[] ??= 'fallback';\n", 2, 10),
-        ("<?php\n$box->value ??= 'fallback';\n", 2, 13),
-    ];
+    let cases = [("<?php\n$items[] ??= 'fallback';\n", 2, 10)];
 
     for (source, line, column) in cases {
         let error = parse_error(source);
@@ -297,7 +294,7 @@ fn unsupported_null_coalescing_assignment_targets_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported null coalescing assignment: only direct variable and direct array-offset targets are implemented"
+            "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented"
         );
     }
 }

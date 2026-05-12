@@ -2736,13 +2736,12 @@ Still fails:
   static variables: `$name ??= expr` evaluates and stores the right-hand
   expression only when the variable is undefined or `null`, and preserves
   existing non-null values including `false`, `0`, and `""` without evaluating
-  the fallback. Fixture and CLI snapshot coverage record the behavior, parser
-  coverage keeps array-offset and object-property `??=` targets on an explicit
-  unsupported diagnostic, and LLVM IR emission rejects `??=` explicitly until
-  native null-aware assignment lowering exists. Array-offset/object-property
-  `??=` targets, dynamic lvalues, expression-position assignment results,
-  references/copy-on-write, exact native error objects, and native lowering
-  remain unsupported.
+  the fallback. Fixture and CLI snapshot coverage record the behavior, and
+  LLVM IR emission rejects `??=` explicitly until native null-aware assignment
+  lowering exists. Array-offset and object-property targets were added in
+  later narrow slices; dynamic lvalues, expression-position assignment
+  results, references/copy-on-write, exact native error objects, and native
+  lowering remain unsupported.
 - Extended null coalescing assignment with direct array-offset targets:
   `$array[$key] ??= expr` evaluates and stores the right-hand expression only
   when the direct array variable is undefined or `null`, the key is missing, or
@@ -2750,16 +2749,29 @@ Still fails:
   and `""` are preserved without evaluating the fallback. Undefined and `null`
   target variables materialize as arrays, existing non-array targets fail with
   the current stable invalid-array-access diagnostic, fixture and CLI snapshot
-  coverage record both success and non-array behavior, append-offset and
-  object-property `??=` targets remain explicit parse diagnostics, and LLVM IR
-  emission still rejects `??=` explicitly until native null-aware assignment
-  lowering exists. Append offsets, nested offsets/properties, object-property
-  assignment, dynamic lvalues, expression-position assignment results,
-  references/copy-on-write, exact native error objects, and native lowering
-  remain unsupported.
+  coverage record both success and non-array behavior, and LLVM IR emission
+  still rejects `??=` explicitly until native null-aware assignment lowering
+  exists. Object-property targets were added in a later narrow slice. Append
+  offsets, nested offsets/properties, dynamic lvalues, expression-position
+  assignment results, references/copy-on-write, exact native error objects,
+  and native lowering remain unsupported.
+- Extended null coalescing assignment with direct public object-property
+  targets: `$object->property ??= expr` evaluates and stores the right-hand
+  expression only when an existing declared public property slot is `null`,
+  and preserves existing non-null values including `false`, `0`, and `""`
+  without evaluating the fallback. Missing property names, undefined object
+  variables, and non-object targets fail with stable runtime diagnostics
+  instead of materializing dynamic properties or objects. Fixture and CLI
+  snapshot coverage record the success path and the stable runtime errors, and
+  LLVM IR emission still rejects `??=` explicitly until native null-aware
+  assignment lowering exists. Append offsets, nested offsets/properties,
+  dynamic property names, non-public visibility context, magic methods,
+  dynamic lvalues, expression-position assignment results,
+  references/copy-on-write, exact native error objects, preservation of partial
+  stdout before fatal runtime errors, and native lowering remain unsupported.
 
 Next:
 
-- Pick the next small syntax or value-model gap from `docs/NEXT_TASKS.md`,
-  keeping unsupported edges explicit until executable behavior is tested
-  if the object model is not ready for null-aware property reads.
+- Add the next explicit assignment-expression boundary so expression-position
+  assignment forms fail with stable diagnostics until assignment expressions
+  have tested value semantics.

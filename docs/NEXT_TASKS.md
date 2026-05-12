@@ -1225,9 +1225,18 @@ handled.
 
 ## Milestone 129: Null Coalescing Object Assignment Follow-up
 
-- [ ] Implement direct public object-property `$object->property ??= expr` over
+- [x] Implement direct public object-property `$object->property ??= expr` over
   the current minimal object value model, including undefined/null/missing
   property behavior, lazy fallback assignment, non-object target behavior,
   fixture CLI coverage, documentation, native-codegen rejection, and named gaps
   for dynamic property names, non-public visibility context, magic methods,
   references/copy-on-write, exact native error objects, and native lowering.
+
+## Milestone 130: Assignment Expression Boundary
+
+- [ ] Add explicit parse diagnostics for expression-position assignment forms
+  such as `($name = expr)` and `($name ??= expr)` before assignment expressions
+  are executable values, including parser coverage, fixture CLI coverage,
+  documentation, native-codegen parse-boundary behavior, and named gaps for
+  assignment result values, chained assignments, lvalue evaluation order,
+  references/copy-on-write, and exact native error objects.

@@ -1,0 +1,1 @@
+phpc does not implement dynamic property creation; missing object properties in ??= fail with a stable diagnostic after the lazy fallback is evaluated.

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/null_coalescing_object_assignment_missing_property.php:10:1: undefined property Box::$missing
+--- stderr end ---

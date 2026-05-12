@@ -929,9 +929,9 @@ impl Parser {
                 let span = target.span();
                 match &target {
                     AssignTarget::Variable { .. }
-                    | AssignTarget::ArrayIndex { index: Some(_), .. } => {}
-                    AssignTarget::ArrayIndex { index: None, .. }
-                    | AssignTarget::Property { .. } => {
+                    | AssignTarget::ArrayIndex { index: Some(_), .. }
+                    | AssignTarget::Property { .. } => {}
+                    AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
                             unsupported_null_coalescing_assignment_message(),
@@ -2090,7 +2090,7 @@ fn unsupported_null_coalescing_message() -> &'static str {
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
-    "unsupported null coalescing assignment: only direct variable and direct array-offset targets are implemented"
+    "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

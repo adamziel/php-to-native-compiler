@@ -10625,3 +10625,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:36:38Z
 
 - Post-round 19 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:37:02Z
+
+- Starting round 20 at 20260512T233702Z from HEAD `9778d3c`.
+
+## Loop Event 2026-05-12T23:37:15Z
+
+- Pre-round 20 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:43:54Z
+
+- Task attempted: implemented direct public object-property null coalescing
+  assignment for `$object->property ??= expr` over the current minimal object
+  value model. The supported slice lazily initializes existing declared public
+  `null` property slots, preserves existing non-null values including falsey
+  values, and keeps missing properties, undefined targets, and non-object
+  targets on stable runtime diagnostics instead of materializing dynamic
+  properties or objects.
+- Files changed: `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/null_coalescing.rs`,
+  `compiler/tests/null_coalescing_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone129/null_coalescing_object_assignment.*`,
+  `tests/fixtures/runtime_errors/null_coalescing_object_assignment_*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing_append_assignment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test null_coalescing` passed;
+  `cargo test -p phpc --test null_coalescing_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo test -p phpc --test syntax_boundaries unsupported_null_coalescing_assignment_targets_have_stable_parse_errors`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone129` passed with
+  1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone129` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 145 fixtures;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 19 fixtures; an initial `tools/run-tests.sh` run failed on a
+  `.stderr` fixture newline convention and was fixed; the final
+  `tools/run-tests.sh` passed with 357 fixtures, 128 system PHP comparisons,
+  and 229 skips.
+- Remaining semantic gaps: object-property `??=` only writes existing declared
+  public properties on existing object values. Append offsets, nested
+  offsets/properties, dynamic property names, non-public visibility context,
+  magic methods, dynamic lvalues, expression-position assignment results,
+  references/copy-on-write, exact native error objects, preservation of partial
+  stdout before fatal runtime errors, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for expression-position
+  assignment forms such as `($name = expr)` and `($name ??= expr)` before
+  assignment expressions have executable value semantics.
+- Known-good tag: not created; this is a narrow null-aware assignment
+  follow-up, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add object property null coalescing assignment"`.

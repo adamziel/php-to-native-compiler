@@ -208,6 +208,121 @@ echo $numeric_keys[2];
 }
 
 #[test]
+fn null_coalescing_assignment_handles_direct_object_properties_lazily() {
+    let source = r#"<?php
+class Box {
+    public $value;
+    public $nullable;
+    public $kept;
+    public $flag;
+    public $zero;
+    public $empty;
+}
+
+function fallback($label, $value) {
+    echo $label, "\n";
+    return $value;
+}
+
+$box = new Box();
+$box->value ??= fallback("value-called", "object-value");
+echo $box->value, "\n";
+
+$box->nullable = null;
+$box->nullable ??= fallback("null-called", "null-value");
+echo $box->nullable, "\n";
+
+$box->kept = "kept-value";
+$box->kept ??= fallback("kept-called", "replacement");
+echo $box->kept, "\n";
+
+$box->flag = false;
+$box->flag ??= fallback("false-called", true);
+if ($box->flag === false) {
+    echo "false-kept\n";
+}
+
+$box->zero = 0;
+$box->zero ??= fallback("zero-called", 9);
+if ($box->zero === 0) {
+    echo "zero-kept\n";
+}
+
+$box->empty = "";
+$box->empty ??= fallback("empty-called", "replacement");
+if ($box->empty === "") {
+    echo "empty-string-kept";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "value-called\nobject-value\nnull-called\nnull-value\nkept-value\nfalse-kept\nzero-kept\nempty-string-kept"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn null_coalescing_assignment_rejects_missing_object_properties_after_lazy_fallback() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public $value;
+}
+function fallback() {
+    echo "missing-called\n";
+    return "fallback";
+}
+$box = new Box();
+$box->missing ??= fallback();
+"#,
+    );
+
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined property Box::$missing");
+}
+
+#[test]
+fn null_coalescing_assignment_rejects_undefined_object_targets_after_lazy_fallback() {
+    let error = runtime_error(
+        r#"<?php
+function fallback() {
+    echo "undefined-target-called\n";
+    return "fallback";
+}
+$missing_box->value ??= fallback();
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined variable '$missing_box'");
+}
+
+#[test]
+fn null_coalescing_assignment_rejects_non_object_property_targets_after_lazy_fallback() {
+    let error = runtime_error(
+        r#"<?php
+function fallback() {
+    echo "non-object-called\n";
+    return "fallback";
+}
+$number = 42;
+$number->value ??= fallback();
+"#,
+    );
+
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: cannot write property $value on int"
+    );
+}
+
+#[test]
 fn null_coalescing_assignment_rejects_non_array_offset_targets() {
     let error = runtime_error("<?php\n$value = 42;\n$value[\"key\"] ??= 'fallback';\n");
 
@@ -266,7 +381,7 @@ fn emit_ir_rejects_null_coalescing_assignment_until_native_lowering_exists() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "null coalescing assignment is supported by phpc run for direct variables and direct array offsets but not LLVM IR emission yet"
+        "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 
@@ -279,6 +394,19 @@ fn emit_ir_rejects_array_offset_null_coalescing_assignment_until_native_lowering
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "null coalescing assignment is supported by phpc run for direct variables and direct array offsets but not LLVM IR emission yet"
+        "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_null_coalescing_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$box->name ??= 'fallback';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }

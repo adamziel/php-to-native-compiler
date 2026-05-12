@@ -1,0 +1,1 @@
+phpc does not materialize objects for ??=; undefined object-property targets fail with a stable diagnostic after the lazy fallback is evaluated.

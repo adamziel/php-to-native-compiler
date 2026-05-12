@@ -1,0 +1,1 @@
+phpc keeps object-property ??= limited to existing object values; non-object targets fail with a stable diagnostic after the lazy fallback is evaluated.

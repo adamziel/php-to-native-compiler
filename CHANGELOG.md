@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Implemented direct public object-property `??=` for
+  `$object->property ??= expr`, including lazy initialization of existing
+  declared public null slots, preservation of falsey non-null values, stable
+  diagnostics for missing properties, undefined targets, and non-object
+  targets, fixture/CLI coverage, documentation, and native-codegen rejection.
 - Implemented direct array-offset `??=` for `$array[$key] ??= expr`, including
   lazy fallback assignment for missing/null slots, materialization of
   undefined/null target arrays, non-array target diagnostics, fixture/CLI
