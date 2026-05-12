@@ -2461,8 +2461,12 @@ Still fails:
   expressions before class/interface relationship checks exist. Inheritance,
   interface implementation checks, namespace-aware class names, autoloading,
   exact PHP `Error` objects, and native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported `ClassName::class`
+  expressions before class-name constant resolution exists. Namespaces,
+  aliases/imports, magic class names such as `self`/`parent`/`static`,
+  autoloading, exact PHP behavior, and native lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics for unsupported `ClassName::class`
-  expressions before class-name constant resolution exists.
+- Continue the next small object/class boundary from `docs/NEXT_TASKS.md`.

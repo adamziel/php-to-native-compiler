@@ -889,7 +889,7 @@ handled.
 
 ## Milestone 93: Class Name Constant Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported `ClassName::class`
+- [x] Add explicit parse diagnostics for unsupported `ClassName::class`
   expressions before class-name constant resolution exists, including parser
   coverage, fixture CLI coverage, documentation, and named gaps for namespaces,
   aliases/imports, magic class names, autoloading, exact PHP behavior, and

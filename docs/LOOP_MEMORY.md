@@ -8548,3 +8548,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:17:13Z
 
 - Post-round 41 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:17:23Z
+
+- Starting round 42 at 20260512T191723Z from HEAD `3a6075a`.
+
+## Loop Event 2026-05-12T19:17:31Z
+
+- Pre-round 42 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:21:53Z
+
+- Task attempted: completed Milestone 93 by adding an explicit unsupported
+  `ClassName::class` parse boundary before class-name constant resolution
+  exists. The parser now distinguishes lowercase keyword-form `::class` and
+  uppercase identifier-form `::CLASS` from ordinary class constant access,
+  object parser regression coverage includes both spellings, and
+  unsupported-object fixture coverage includes a committed `phpc run` CLI
+  snapshot.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_name_constant.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with 26 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 26 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_class_name_constant.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt --
+  --check` passed; `git diff --check` passed; `tools/run-tests.sh` passed
+  with 285 fixtures, 106 system PHP comparisons, and 179 skips.
+- Remaining semantic gaps: class-name constant resolution remains unsupported,
+  including namespaces, aliases/imports, magic class names such as
+  `self`/`parent`/`static`, autoloading, exact PHP behavior, and native
+  lowering.
+- Next concrete task: continue the next small object/class boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject unsupported class name constants"`
+  after the full suite passes.

@@ -573,6 +573,22 @@ echo $box INSTANCEOF Box;
         ),
         (
             r#"<?php
+echo Box::class;
+"#,
+            2,
+            9,
+            "unsupported class name constant: ::class resolution is not implemented",
+        ),
+        (
+            r#"<?php
+echo Box::CLASS;
+"#,
+            2,
+            9,
+            "unsupported class name constant: ::class resolution is not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,

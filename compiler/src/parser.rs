@@ -1376,6 +1376,9 @@ impl Parser {
                 operator_span,
                 "unsupported static property access: static property storage is not implemented",
             )),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
+                Err(self.error_at(operator_span, unsupported_class_name_constant_message()))
+            }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                 Err(self.error_at(
                     operator_span,
@@ -1386,10 +1389,9 @@ impl Parser {
                 operator_span,
                 "unsupported class constant access: class constants are not implemented",
             )),
-            TokenKind::Class => Err(self.error_at(
-                operator_span,
-                "unsupported class constant access: class constants and ::class are not implemented",
-            )),
+            TokenKind::Class => {
+                Err(self.error_at(operator_span, unsupported_class_name_constant_message()))
+            }
             _ => Err(self.error_at(
                 operator_span,
                 format!(
@@ -2063,6 +2065,10 @@ fn unsupported_clone_message() -> &'static str {
 
 fn unsupported_instanceof_message() -> &'static str {
     "unsupported instanceof expression: class/interface relationship checks are not implemented"
+}
+
+fn unsupported_class_name_constant_message() -> &'static str {
+    "unsupported class name constant: ::class resolution is not implemented"
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {
