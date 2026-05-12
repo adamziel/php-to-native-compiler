@@ -272,7 +272,14 @@ handled.
 
 ## Milestone 19: Array Counting Builtins
 
-- [ ] Implement `array_count_values($array)` for the current ordered array
+- [x] Implement `array_count_values($array)` for the current ordered array
   value model, including integer/string value counting, non-array and
   unsupported-value diagnostics, fixture CLI coverage, documentation, and
   explicit native-codegen rejection.
+
+## Milestone 20: Array Filtering Builtins
+
+- [ ] Implement `array_filter($array)` without a callback over the current
+  ordered array value model, including falsey-value removal, key preservation,
+  non-array diagnostics, fixture CLI coverage, documentation, callback
+  unsupported gaps, and explicit native-codegen rejection.

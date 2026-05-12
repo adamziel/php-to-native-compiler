@@ -3923,3 +3923,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:39:26Z
 
 - Post-round 62 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:39:30Z
+
+- Starting round 63 at 20260512T053930Z from HEAD `2214e80`.
+
+## Loop Event 2026-05-12T05:39:34Z
+
+- Pre-round 63 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:46:21Z
+
+- Task attempted: implemented `array_count_values($array)` for the current
+  ordered array value model. The supported slice counts integer and string
+  source values using the current string-key normalization rules, stores
+  integer occurrence counts as result values, preserves first counted-key
+  position while incrementing duplicate counts, supports string-valued dynamic
+  calls, and reports stable diagnostics for non-array arguments and unsupported
+  non-int/string source values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_count_values.rs`,
+  `compiler/tests/array_counting_builtins_cli.rs`,
+  `tests/fixtures/milestone19/array_count_values.*`,
+  `tests/fixtures/runtime_errors/array_count_values_non_array.*`,
+  `tests/fixtures/runtime_errors/array_count_values_unsupported_value.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo test -p php_runtime
+  array_count_values` passed with 2 focused runtime tests; `cargo test -p
+  phpc --test array_count_values` passed with 4 compiler tests; `cargo test -p
+  phpc --test array_counting_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone19` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone19` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 51 fixtures; `cargo fmt --check` passed; `cargo test -p
+  php_runtime array_` passed with 28 focused array tests; `cargo run -p phpc
+  -- compile tests/fixtures/milestone19/array_count_values.php --emit-ir`
+  exited `1` with an explicit native-lowering rejection; `cargo run -p phpc --
+  test` passed with 143 fixtures; `cargo run -p phpc -- test --compare-php`
+  passed with 58 system PHP comparisons and 85 `.phpc-only` skips;
+  `tools/run-tests.sh` passed with 143 fixtures, 58 system PHP comparisons,
+  and 85 `.phpc-only` skips.
+- Remaining semantic gaps: `array_count_values` is limited to arrays whose
+  source values are integers or strings. Unsupported `null`, bool, float,
+  array, object, future resource, and reference values fail with a stable
+  project diagnostic instead of PHP's warning-and-skip behavior. References,
+  copy-on-write containers, exact native warning/`TypeError` objects, resource
+  values, and native lowering remain unsupported.
+- Next concrete task: implement `array_filter($array)` without a callback over
+  the current ordered array value model, including falsey-value removal, key
+  preservation, non-array diagnostics, fixture CLI coverage, documentation,
+  callback unsupported gaps, and explicit native-codegen rejection.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_count_values builtin"`
+  after the full suite passes.

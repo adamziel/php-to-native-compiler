@@ -1040,6 +1040,22 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_count_values" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => array
+                        .count_values()
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_count_values()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1457,6 +1473,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_merge"
             | "array_flip"
             | "array_fill_keys"
+            | "array_count_values"
             | "in_array"
             | "array_search"
             | "var_dump"

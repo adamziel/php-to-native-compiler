@@ -574,6 +574,22 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn count_values(&self) -> RuntimeResult<Self> {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let key = array_count_values_key_from_value(&entry.value)?;
+            if let Some(count_entry) = array.entries.iter_mut().find(|entry| entry.key == key) {
+                let Value::Int(count) = &mut count_entry.value else {
+                    unreachable!("array_count_values stores integer counts")
+                };
+                *count = count.checked_add(1).expect("array value count fits in i64");
+            } else {
+                array.insert(key, Value::Int(1));
+            }
+        }
+        Ok(array)
+    }
+
     fn merge_entries_from(&mut self, source: &Self) {
         for entry in &source.entries {
             match &entry.key {
@@ -717,6 +733,20 @@ fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
             "array_fill_keys()",
             format!(
                 "key values must be int or string in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+fn array_count_values_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+    match value {
+        Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::String(value) => Ok(ArrayKey::string(value.clone())),
+        other => Err(RuntimeError::unsupported_call(
+            "array_count_values()",
+            format!(
+                "values must be int or string in the current subset, got {}",
                 other.type_name()
             ),
         )),
@@ -2582,6 +2612,61 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_count_values_counts_int_string_values_and_normalizes_keys() {
+        let mut array = PhpArray::new();
+
+        array.insert("first", Value::String("name".to_string()));
+        array.insert(5, Value::String("2".to_string()));
+        array.insert("two", Value::Int(2));
+        array.insert("02", Value::String("02".to_string()));
+        array.append(Value::Int(-1)).unwrap();
+        array.insert("dup-string", Value::String("name".to_string()));
+        array.insert("dup-int", Value::Int(2));
+
+        let mut counted = array.count_values().unwrap();
+        let entries = counted.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::Int(2));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::Int(3));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::Int(1));
+        assert_eq!(entries[3].key, ArrayKey::Int(-1));
+        assert_eq!(entries[3].value, Value::Int(1));
+        assert_eq!(
+            counted.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(3)
+        );
+        assert_eq!(
+            array.get("dup-string"),
+            Some(&Value::String("name".to_string())),
+            "array_count_values must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_count_values_rejects_unsupported_value_types() {
+        let mut array = PhpArray::new();
+        array.insert("ok", Value::String("name".to_string()));
+        array.insert("bad", Value::Bool(true));
+
+        let error = array.count_values().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_count_values()".to_string(),
+                reason: "values must be int or string in the current subset, got bool".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_count_values(): values must be int or string in the current subset, got bool"
         );
     }
 
