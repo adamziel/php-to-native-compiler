@@ -5817,3 +5817,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   slice with variadic replacement arrays.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_replace"` after
   the full suite passes.
+
+## Loop Event 2026-05-12T11:17:37Z
+
+- Codex round 91 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T110418Z-91.log`.
+
+## Loop Event 2026-05-12T11:17:43Z
+
+- Post-round 91 test exit code: `0`.
+
+## Loop Event 2026-05-12T11:17:43Z
+
+- Post-round 91 tests passed; running checkpoint for this round.
