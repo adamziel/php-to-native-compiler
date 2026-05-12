@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; ARRAY_FILTER_USE_BOTH mode is not implemented.
+Project-specific stable runtime diagnostic for unsupported array_filter mode flags.

@@ -6395,3 +6395,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T13:41:13Z
 
 - Post-round 4 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T13:41:19Z
+
+- Starting round 5 at 20260512T134119Z from HEAD `43db921`.
+
+## Loop Event 2026-05-12T13:41:26Z
+
+- Pre-round 5 test exit code: `0`.
+
+## Loop Event 2026-05-12T13:55:34Z
+
+- Task attempted: implemented `array_filter($array, $callback, 1)` for the
+  current string-valued value/key callback subset. The supported slice invokes
+  callbacks with value first and integer/string key second, preserves original
+  keys for truthy callback results, works through string-valued dynamic calls
+  to `array_filter`, keeps `null` callbacks on the existing falsey filter path
+  for valid integer mode flags, and updates invalid mode diagnostics now that
+  mode `1` is supported.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone56/array_filter_use_both.php`,
+  `tests/fixtures/milestone56/array_filter_use_both.stdout`,
+  `tests/fixtures/milestone56/array_filter_use_both.cli`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.php`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.stderr`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.cli`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.phpc-only`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test array_filter` passed with
+  12 tests; `cargo test -p phpc --test array_filtering_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone56` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone56` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 104 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone56/array_filter_use_both.php` printed the committed
+  output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_filter_mode_unsupported.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 233
+  fixtures, 95 system PHP comparisons, and 138 `.phpc-only` skips.
+- Remaining semantic gaps: named `ARRAY_FILTER_USE_KEY` and
+  `ARRAY_FILTER_USE_BOTH` constants are still unsupported because bare global
+  constant resolution does not exist yet. `array_filter` still rejects mode
+  flags outside integer `0`, `1`, and `2`, non-int mode coercions such as
+  `false`, array/object callables, closures, first-class callables, method
+  calls, references, copy-on-write containers, exact native `TypeError`
+  objects, resource values, object handle identity preservation, and native
+  lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported bare
+  global constants such as `ARRAY_FILTER_USE_BOTH` before implementing constant
+  resolution.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_filter value-key mode"`
+  after the full suite passes.

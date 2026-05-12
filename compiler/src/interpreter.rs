@@ -47,6 +47,7 @@ enum Callable {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArrayFilterMode {
     Value,
+    Both,
     Key,
 }
 
@@ -1845,19 +1846,15 @@ impl Interpreter {
     fn array_filter_mode(mode: &Value, span: Span) -> CompileResult<ArrayFilterMode> {
         match mode {
             Value::Int(0) => Ok(ArrayFilterMode::Value),
+            Value::Int(1) => Ok(ArrayFilterMode::Both),
             Value::Int(2) => Ok(ArrayFilterMode::Key),
-            Value::Int(1) => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_filter()",
-                    "ARRAY_FILTER_USE_BOTH mode is not supported in the current subset",
-                ),
-            )),
             Value::Int(value) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_filter()",
-                    format!("mode flag must be integer 0 or 2 in the current subset, got {value}"),
+                    format!(
+                        "mode flag must be integer 0, 1, or 2 in the current subset, got {value}"
+                    ),
                 ),
             )),
             other => Err(runtime_error(
@@ -1865,7 +1862,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "array_filter()",
                     format!(
-                        "mode flag must be integer 0 or 2 in the current subset, got {}",
+                        "mode flag must be integer 0, 1, or 2 in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
@@ -1904,11 +1901,14 @@ impl Interpreter {
 
         let mut filtered = PhpArray::new();
         for entry in array.entries() {
-            let argument = match mode {
-                ArrayFilterMode::Value => entry.value.clone(),
-                ArrayFilterMode::Key => value_from_array_key(&entry.key),
+            let arguments = match mode {
+                ArrayFilterMode::Value => vec![entry.value.clone()],
+                ArrayFilterMode::Both => {
+                    vec![entry.value.clone(), value_from_array_key(&entry.key)]
+                }
+                ArrayFilterMode::Key => vec![value_from_array_key(&entry.key)],
             };
-            let result = self.call_callable_with_values(callable.clone(), vec![argument], span)?;
+            let result = self.call_callable_with_values(callable.clone(), arguments, span)?;
             if result.is_truthy() {
                 filtered.insert(entry.key.clone(), entry.value.clone());
             }

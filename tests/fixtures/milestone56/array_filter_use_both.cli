@@ -1,0 +1,19 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => short
+    [1] => 5
+    [2] => 02
+)
+3|Ada|Linus|zero-two
+after
+3|zero-two
+Array
+(
+    [0] => space
+)
+1|1
+--- stdout end ---
+stderr:
+--- stderr end ---

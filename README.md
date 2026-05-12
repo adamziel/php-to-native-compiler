@@ -94,8 +94,9 @@ subset:
   callback subset, `array_filter` without a callback, with a `null` callback,
   and with string-valued value-only callbacks, including explicit integer mode
   flag `0` for those value-only paths, plus string-valued key-only callbacks
-  through integer mode flag `2`, `array_map` over the current one-array
-  null-callback identity, variadic null-callback zip, and variadic
+  through integer mode flag `2` and string-valued value/key callbacks through
+  integer mode flag `1`, `array_map` over the current one-array null-callback
+  identity, variadic null-callback zip, and variadic
   string-callback subset with one-array key preservation and multi-array
   reindexing,
   `in_array` and `array_search` including strict scalar searches, `var_dump`,

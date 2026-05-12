@@ -584,9 +584,17 @@ handled.
 
 ## Milestone 56: Array Filtering Key/Value Mode
 
-- [ ] Implement integer mode flag `1`/`ARRAY_FILTER_USE_BOTH` behavior for
+- [x] Implement integer mode flag `1`/`ARRAY_FILTER_USE_BOTH` behavior for
   `array_filter($array, $callback, 1)` over the current string-valued callback
   subset, including callback invocation with value and key arguments, fixture
   CLI coverage, documentation, and explicit gaps for named constants,
   array/object callables, closures, references/copy-on-write, exact native
   `TypeError` objects, and native lowering.
+
+## Milestone 57: Global Constant Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported bare global constants such
+  as `ARRAY_FILTER_USE_BOTH` before implementing constant resolution, including
+  parser coverage, fixture CLI coverage, documentation, and named unsupported
+  gaps for user-defined constants, extension constants, namespaces, and native
+  lowering.

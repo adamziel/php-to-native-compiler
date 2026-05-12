@@ -119,8 +119,8 @@
   operands, unsupported non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string or unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
-  `array_filter` callbacks, unsupported key/value or invalid `array_filter`
-  mode flags, non-array `array_map` operands, non-string or unresolved
+  `array_filter` callbacks, invalid `array_filter` mode flags, non-array
+  `array_map` operands, non-string or unresolved
   `array_map` callbacks,
   non-array variadic `array_map` operands,
   non-array `in_array`/`array_search` haystacks,
@@ -378,10 +378,11 @@
   supplied initial value for empty arrays when present, and are available
   through string-valued dynamic calls to `array_reduce`.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
-  and `array_filter($array, null, 0)` accept arrays only, remove values that
-  are falsey under the current PHP-shaped truthiness rules, preserve the
-  original integer/string keys and insertion order of kept entries, and are
-  available through string-valued dynamic function calls.
+  and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`, or
+  `2` accept arrays only, remove values that are falsey under the current
+  PHP-shaped truthiness rules, preserve the original integer/string keys and
+  insertion order of kept entries, and are available through string-valued
+  dynamic function calls.
   `array_filter($array, $callback)` accepts callbacks that evaluate to string
   function names resolving to current user functions or callable builtins,
   invokes the callback once per value in insertion order with the value as the
@@ -391,6 +392,9 @@
   `array_filter($array, $callback, 2)` invokes the same string-valued callback
   subset once per entry with the current integer or string key as the only
   argument, preserving keys whose callback result is truthy.
+  `array_filter($array, $callback, 1)` invokes that callback subset once per
+  entry with the value and then the current integer or string key as
+  arguments, preserving keys whose callback result is truthy.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array of
@@ -430,8 +434,8 @@
   `array_reduce` in the current string-callback form with optional initial
   values,
   `array_filter` in the current no-callback, null-callback, value-only
-  string-callback, and key-only string-callback forms, including explicit
-  integer mode flags `0` and `2`,
+  string-callback, key-only string-callback, and value/key string-callback
+  forms, including explicit integer mode flags `0`, `1`, and `2`,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic string-callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
@@ -520,8 +524,7 @@
   operands, unsupported non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string and unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
-  `array_filter` callbacks, unsupported key/value or invalid `array_filter`
-  mode flags,
+  `array_filter` callbacks, invalid `array_filter` mode flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
   callbacks, non-array variadic `array_map` operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
@@ -837,11 +840,12 @@
   object handle identity preservation, resource values, and native lowering
   are not implemented.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
-  and `array_filter($array, null, 0)` accept arrays only, remove `null`,
-  `false`, zero integers and floats, empty strings, string `"0"`, and empty
-  arrays using the current `Value::is_truthy` rules, preserve the original
-  integer/string keys and insertion order of kept entries, and are available
-  through string-valued dynamic function calls.
+  and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`, or
+  `2` accept arrays only, remove `null`, `false`, zero integers and floats,
+  empty strings, string `"0"`, and empty arrays using the current
+  `Value::is_truthy` rules, preserve the original integer/string keys and
+  insertion order of kept entries, and are available through string-valued
+  dynamic function calls.
   `array_filter($array, $callback)` accepts callback expressions that evaluate
   to string function names resolving to current user functions or callable
   builtins, invokes the callback with the value only, keeps entries whose
@@ -851,12 +855,15 @@
   dynamic function name. `array_filter($array, $callback, 2)` invokes that
   same string-valued callback subset with each entry's current integer or
   string key as the only argument and preserves original keys for entries
-  whose callback result is truthy. Non-string non-null callback values fail with a
-  stable diagnostic, and unresolved callback names fail with the current
-  undefined-function diagnostic. Array/object callables, closures, first-class
-  callables, method calls, key/value callback mode through integer flag `1`,
-  named `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants, integer mode
-  flags outside `0`, `1`, and `2`, non-int mode coercions such as `false`,
+  whose callback result is truthy. `array_filter($array, $callback, 1)`
+  invokes the same string-valued callback subset with the value and then the
+  current integer or string key as arguments, preserving original keys for
+  entries whose callback result is truthy. Non-string non-null callback values
+  fail with a stable diagnostic, and unresolved callback names fail with the
+  current undefined-function diagnostic. Array/object callables, closures,
+  first-class callables, method calls, named
+  `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants, integer mode flags
+  outside `0`, `1`, and `2`, non-int mode coercions such as `false`,
   references,
   copy-on-write containers, exact native `TypeError` objects, object handle
   identity preservation, resource values, and native lowering are not
@@ -944,8 +951,8 @@
   unsupported values, `array_product` PHP warning recovery for unsupported
   values, `array_reduce` callback forms outside the current
   string function-name subset, and `array_filter` callback forms outside the
-  current null-callback, value-only string function-name, and key-only string
-  function-name subset plus key/value mode, and `array_map`
+  current null-callback, value-only string function-name, key-only string
+  function-name, and value/key string function-name modes, and `array_map`
   callback forms outside current null-callback and string-valued function-name
   forms are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
@@ -1134,10 +1141,10 @@
   identity preservation, resource values, exact native `TypeError` objects, and
   native lowering
 - `array_filter` callbacks outside `null` and string-valued
-  user-function/callable-builtin names, key/value callback mode through integer
-  flag `1`, named `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants,
-  integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
-  `false`, reference/copy-on-write behavior, object handle identity
+  user-function/callable-builtin names, named
+  `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants, integer mode flags
+  outside `0`, `1`, and `2`, non-int mode coercions such as `false`,
+  reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
 - `array_map` array/object callables, closures, first-class callables, method
@@ -1145,6 +1152,8 @@
   resource values, exact native `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
+- bare global constant resolution, including built-in constants such as
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions
