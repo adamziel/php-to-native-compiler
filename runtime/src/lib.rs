@@ -734,9 +734,17 @@ impl PhpArray {
     }
 
     pub fn diff_keys_with(&self, right: &Self) -> Self {
+        self.diff_keys_with_all([right])
+    }
+
+    pub fn diff_keys_with_all<'a>(&self, others: impl IntoIterator<Item = &'a Self>) -> Self {
+        let others = others.into_iter().collect::<Vec<_>>();
         let mut array = Self::new();
         for entry in &self.entries {
-            if !right.contains_key(entry.key.clone()) {
+            if others
+                .iter()
+                .all(|other| !other.contains_key(entry.key.clone()))
+            {
                 array.insert(entry.key.clone(), entry.value.clone());
             }
         }
@@ -3493,6 +3501,58 @@ mod tests {
         assert!(
             right.contains_key("extra"),
             "array_diff_key must not mutate the right array"
+        );
+    }
+
+    #[test]
+    fn array_diff_key_can_compare_against_variadic_arrays() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(5, Value::String("five".to_string()));
+        left.insert("2", Value::String("two".to_string()));
+        left.insert("02", Value::String("zero two".to_string()));
+        left.insert(-1, Value::String("negative".to_string()));
+        left.insert("drop", Value::String("drop".to_string()));
+        left.insert(8, Value::String("eight".to_string()));
+        left.insert("keep", Value::String("keep".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.insert("name", Value::Bool(true));
+        right.insert("5", Value::Bool(true));
+        right.insert(2, Value::Bool(true));
+        right.insert(-1, Value::Bool(true));
+
+        let mut third = PhpArray::new();
+        third.insert("02", Value::Bool(true));
+        third.insert("drop", Value::Bool(true));
+
+        let mut fourth = PhpArray::new();
+        fourth.insert(9, Value::Bool(true));
+
+        let mut diffed = left.diff_keys_with_all([&right, &third, &fourth]);
+        let entries = diffed.entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::Int(8));
+        assert_eq!(entries[0].value, Value::String("eight".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("keep".to_string()));
+        assert_eq!(entries[1].value, Value::String("keep".to_string()));
+        assert_eq!(
+            diffed.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(9)
+        );
+        assert_eq!(
+            left.get("drop"),
+            Some(&Value::String("drop".to_string())),
+            "array_diff_key must not mutate the left array"
+        );
+        assert!(
+            third.contains_key("drop"),
+            "array_diff_key must not mutate variadic operands"
+        );
+        assert!(
+            fourth.contains_key(9),
+            "array_diff_key must not mutate later variadic operands"
         );
     }
 

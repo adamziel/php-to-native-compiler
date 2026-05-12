@@ -1,0 +1,30 @@
+exit: 0
+stdout:
+Array
+(
+    [8] => eight
+    [keep] => keep
+)
+2
+eight|keep
+after
+Array
+(
+    [name] => Ada
+    [1] => one
+    [2] => two
+    [02] => zero two
+    [-1] => negative
+    [drop] => drop
+    [8] => eight
+    [keep] => keep
+    [9] => next
+)
+eight|keep
+Array
+(
+)
+0
+done--- stdout end ---
+stderr:
+--- stderr end ---

@@ -457,8 +457,17 @@ handled.
 
 ## Milestone 41: Array Key Difference Variadic Follow-ups
 
-- [ ] Extend `array_diff_key` beyond the current two-array slice with variadic
+- [x] Extend `array_diff_key` beyond the current two-array slice with variadic
   array operands, including differences against all subsequent arrays,
   non-array variadic operand diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for references/copy-on-write, exact native `TypeError`
+  objects, object/resource values, and native lowering.
+
+## Milestone 42: Array Value Difference Builtins
+
+- [ ] Implement `array_diff($left, $right)` over the current scalar value
+  subset, including first-array key/value preservation for values absent from
+  the second array, non-array diagnostics, unsupported non-scalar comparison
+  diagnostics, fixture CLI coverage, documentation, and explicit gaps for
+  variadic operands, references/copy-on-write, exact native `TypeError`
   objects, object/resource values, and native lowering.
