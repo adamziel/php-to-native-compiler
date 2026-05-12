@@ -1920,3 +1920,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   unsupported diagnostics for complex lvalues.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_key_exists builtin"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T01:48:30Z
+
+- Codex round 32 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T014322Z-32.log`.
+
+## Loop Event 2026-05-12T01:48:32Z
+
+- Post-round 32 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:48:32Z
+
+- Post-round 32 tests passed; running checkpoint for this round.
