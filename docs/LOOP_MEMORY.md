@@ -10211,4 +10211,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   expressions before expression-form branching exists.
 - Known-good tag: not created; this is a narrow syntax boundary, not a major
   verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "syntax: add exception boundary"`.
+- Checkpoint: `2156d80 syntax: add exception boundary`.
