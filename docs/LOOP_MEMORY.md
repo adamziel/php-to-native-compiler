@@ -10152,5 +10152,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   unwinding exist.
 - Known-good tag: not created; this is a narrow syntax boundary, not a major
   verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "objects: add object property unset boundary"`
-  after the full suite passes.
+- Checkpoint: `bdfde11 objects: add object property unset boundary`.
