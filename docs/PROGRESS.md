@@ -2397,8 +2397,13 @@ Still fails:
   interface parsing or implementation execution exists. Interface constants,
   method signatures, inheritance, namespace-aware interfaces,
   class/interface type names, and native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture coverage,
+  and `phpc run` CLI snapshot for unsupported `enum` declarations before enum
+  parsing or case/value execution exists. Unit enums, backed enums, cases,
+  values, methods, interface implementations, namespace-aware enums, exact PHP
+  parse/error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics for unsupported `enum` declarations before
-  enum parsing or case/value execution exists.
+- Add explicit parse diagnostics for unsupported `abstract`, `final`, and
+  `readonly` class modifiers before modifier-aware class parsing exists.

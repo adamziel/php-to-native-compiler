@@ -7962,3 +7962,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:11:01Z
 
 - Post-round 30 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:11:11Z
+
+- Starting round 31 at 20260512T181111Z from HEAD `8a7a7b1`.
+
+## Loop Event 2026-05-12T18:11:19Z
+
+- Pre-round 31 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:16:51Z
+
+- Task attempted: completed Milestone 82 by adding an explicit unsupported
+  `enum` declaration boundary. The lexer now reserves `enum`, the parser
+  rejects top-level and nested enum declarations with a stable parse diagnostic
+  before enum parsing or case/value execution exists, and unsupported
+  object/class coverage includes a committed `phpc run` CLI snapshot.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_enum_declaration.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 10 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 10 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_enum_declaration.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt -- --check`
+  passed; `tools/run-tests.sh` passed with 269 fixtures, 106 system PHP
+  comparisons, and 163 skips.
+- Remaining semantic gaps: enum declarations, unit enum cases, backed enum
+  values, enum methods, enum interface implementations, namespace-aware enums,
+  exact PHP parse/error objects, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `abstract`, `final`, and `readonly` class modifiers before modifier-aware
+  class parsing exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject enum declarations"`
+  after the full suite passes.

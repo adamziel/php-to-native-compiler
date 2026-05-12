@@ -42,6 +42,7 @@ impl Parser {
             TokenKind::Class => self.parse_class(),
             TokenKind::Interface => self.parse_unsupported_interface_declaration(),
             TokenKind::Trait => self.parse_unsupported_trait_declaration(),
+            TokenKind::Enum => self.parse_unsupported_enum_declaration(),
             TokenKind::Namespace => self.parse_unsupported_namespace(),
             TokenKind::Use => self.parse_unsupported_use(),
             TokenKind::Declare => self.parse_unsupported_declare(),
@@ -220,6 +221,13 @@ impl Parser {
             .consume_keyword(TokenKind::Interface, "expected 'interface'")?
             .span;
         Err(self.error_at(span, unsupported_interface_declaration_message()))
+    }
+
+    fn parse_unsupported_enum_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Enum, "expected 'enum'")?
+            .span;
+        Err(self.error_at(span, unsupported_enum_declaration_message()))
     }
 
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
@@ -681,6 +689,11 @@ impl Parser {
                         self.error_at(self.peek().span, unsupported_trait_declaration_message())
                     );
                 }
+                if self.check(|kind| matches!(kind, TokenKind::Enum)) {
+                    return Err(
+                        self.error_at(self.peek().span, unsupported_enum_declaration_message())
+                    );
+                }
                 statements.push(self.parse_statement()?);
             }
             Ok(statements)
@@ -925,6 +938,11 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
                     return Err(
                         self.error_at(self.peek().span, unsupported_trait_declaration_message())
+                    );
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Enum)) {
+                    return Err(
+                        self.error_at(self.peek().span, unsupported_enum_declaration_message())
                     );
                 }
                 statements.push(self.parse_statement()?);
@@ -1711,6 +1729,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Class => "class",
         TokenKind::Interface => "interface",
         TokenKind::Trait => "trait",
+        TokenKind::Enum => "enum",
         TokenKind::New => "new",
         TokenKind::Public => "public",
         TokenKind::Protected => "protected",
@@ -1951,6 +1970,10 @@ fn unsupported_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: interface parsing and implementation execution are not implemented"
 }
 
+fn unsupported_enum_declaration_message() -> &'static str {
+    "unsupported enum declaration: enum parsing and case/value execution are not implemented"
+}
+
 fn unsupported_method_call_message() -> &'static str {
     "unsupported method call: method dispatch is not implemented"
 }
@@ -1968,6 +1991,7 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
         TokenKind::Use => "unsupported trait use: traits are not implemented".to_string(),
         TokenKind::Interface => unsupported_interface_declaration_message().to_string(),
         TokenKind::Trait => unsupported_trait_declaration_message().to_string(),
+        TokenKind::Enum => unsupported_enum_declaration_message().to_string(),
         _ => format!("expected class member, found {}", token_name(kind)),
     }
 }

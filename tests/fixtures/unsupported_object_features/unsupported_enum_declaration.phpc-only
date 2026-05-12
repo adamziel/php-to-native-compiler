@@ -1,0 +1,1 @@
+phpc intentionally rejects enum declarations before enum parsing or case/value execution exists.

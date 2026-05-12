@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an explicit unsupported `enum` declaration boundary with parser
+  regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `interface` declaration boundary with parser
   regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `trait` declaration boundary with parser

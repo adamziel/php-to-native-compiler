@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_enum_declaration.php:2:1: unsupported enum declaration: enum parsing and case/value execution are not implemented
+--- stderr end ---

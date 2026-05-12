@@ -331,6 +331,16 @@ interface Logger {
         ),
         (
             r#"<?php
+enum Status {
+    case Draft;
+}
+"#,
+            2,
+            1,
+            "unsupported enum declaration: enum parsing and case/value execution are not implemented",
+        ),
+        (
+            r#"<?php
 if (true) {
     trait NestedTrait {}
 }
@@ -348,6 +358,16 @@ if (true) {
             3,
             5,
             "unsupported interface declaration: interface parsing and implementation execution are not implemented",
+        ),
+        (
+            r#"<?php
+if (true) {
+    enum NestedStatus {}
+}
+"#,
+            3,
+            5,
+            "unsupported enum declaration: enum parsing and case/value execution are not implemented",
         ),
         (
             r#"<?php

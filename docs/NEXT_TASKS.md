@@ -801,7 +801,15 @@ handled.
 
 ## Milestone 82: Enum Declaration Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported `enum` declarations before
+- [x] Add explicit parse diagnostics for unsupported `enum` declarations before
   enum parsing or case/value execution exists, including parser coverage,
   fixture CLI coverage, documentation, and named gaps for backed enums, unit
   enums, methods, interfaces, namespace-aware enums, and native lowering.
+
+## Milestone 83: Class Modifier Boundaries
+
+- [ ] Add explicit parse diagnostics for unsupported `abstract`, `final`, and
+  `readonly` class modifiers before modifier-aware class parsing exists,
+  including parser coverage, fixture CLI coverage, documentation, and named
+  gaps for abstract methods/classes, final inheritance restrictions, readonly
+  classes/properties, namespace-aware classes, and native lowering.
