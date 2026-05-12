@@ -7790,3 +7790,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   add the next narrow, testable milestone before continuing feature work.
 - Checkpoint: pending `tools/checkpoint.sh "parser: tighten __TRAIT__ magic constant boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T17:52:09Z
+
+- Codex round 27 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T174612Z-27.log`.
+
+## Loop Event 2026-05-12T17:52:23Z
+
+- Post-round 27 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:52:23Z
+
+- Post-round 27 tests passed; running checkpoint for this round.
