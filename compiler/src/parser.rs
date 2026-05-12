@@ -1325,7 +1325,7 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
-                    return self.reject_unsupported_static_member_access();
+                    return self.reject_unsupported_static_member_access(Some(&name));
                 }
                 if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
                     return Ok(Expr::GlobalConstant {
@@ -1352,7 +1352,7 @@ impl Parser {
                 ))
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
-                self.reject_unsupported_static_member_access()
+                self.reject_unsupported_static_member_access(Some("static"))
             }
             TokenKind::LParen => {
                 let expr = self.parse_expression()?;
@@ -1366,10 +1366,16 @@ impl Parser {
         }
     }
 
-    fn reject_unsupported_static_member_access(&mut self) -> CompileResult<Expr> {
+    fn reject_unsupported_static_member_access(
+        &mut self,
+        receiver: Option<&str>,
+    ) -> CompileResult<Expr> {
         let operator_span = self
             .consume_keyword(TokenKind::DoubleColon, "expected '::'")?
             .span;
+        if receiver.is_some_and(is_magic_static_receiver) {
+            return Err(self.error_at(operator_span, unsupported_magic_static_receiver_message()));
+        }
         let member = self.peek();
         match &member.kind {
             TokenKind::Variable(_) => Err(self.error_at(
@@ -2069,6 +2075,17 @@ fn unsupported_instanceof_message() -> &'static str {
 
 fn unsupported_class_name_constant_message() -> &'static str {
     "unsupported class name constant: ::class resolution is not implemented"
+}
+
+fn unsupported_magic_static_receiver_message() -> &'static str {
+    "unsupported magic static receiver: self, parent, and static resolution is not implemented"
+}
+
+fn is_magic_static_receiver(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "self" | "parent" | "static"
+    )
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {

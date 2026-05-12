@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added an explicit unsupported magic static receiver boundary for `self::`,
+  `parent::`, and `static::`, with parser regression coverage, fixture
+  coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `ClassName::class` boundary with parser
   regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `instanceof` expression boundary with parser

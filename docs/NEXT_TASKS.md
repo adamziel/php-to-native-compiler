@@ -894,3 +894,12 @@ handled.
   coverage, fixture CLI coverage, documentation, and named gaps for namespaces,
   aliases/imports, magic class names, autoloading, exact PHP behavior, and
   native lowering.
+
+## Milestone 94: Magic Static Receiver Boundary
+
+- [x] Add explicit parse diagnostics for unsupported magic static receivers
+  such as `self::`, `parent::`, and `static::` before class-context,
+  parent-class, or late-static-binding resolution exists, including parser
+  coverage, fixture CLI coverage, documentation, and named gaps for static
+  property storage, static method dispatch, class constants, inheritance, exact
+  PHP `Error` objects, and native lowering.

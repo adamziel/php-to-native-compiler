@@ -202,8 +202,9 @@
   declarations, class constant declarations,
   unsupported `$this` usage, unsupported `clone` expressions, unsupported
   `instanceof` expressions, unsupported `ClassName::class` expressions,
-  anonymous class expressions, method calls, dynamic property names, static
-  property access, static method calls, and class constant access
+  unsupported magic static receivers such as `self::`, `parent::`, and
+  `static::`, anonymous class expressions, method calls, dynamic property
+  names, static property access, static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -275,13 +276,16 @@
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions fail with a stable parse diagnostic before
-  class-name constant resolution exists. Method dispatch, dynamic property
-  names, `$this` object context binding, visibility enforcement for non-public
-  properties, static storage, class constants, object handle aliasing/identity,
-  shallow/deep clone property copying, `__clone`, inheritance/interface
-  relationship checks, namespace/autoload-aware class resolution, aliases and
-  imports for class names, exact PHP `Error` objects, and native object
-  lowering are not implemented.
+  class-name constant resolution exists. Magic static receivers such as
+  `self::`, `parent::`, and `static::` fail with a stable parse diagnostic
+  before class-context, parent-class, or late-static-binding resolution exists.
+  Method dispatch, dynamic property names, `$this` object context binding,
+  visibility enforcement for non-public properties, static storage, class
+  constants, object handle aliasing/identity, shallow/deep clone property
+  copying, `__clone`, inheritance/interface relationship checks,
+  namespace/autoload-aware class resolution, aliases and imports for class
+  names, exact PHP `Error` objects, and native object lowering are not
+  implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -1187,8 +1191,9 @@
   one declaration, per-property defaults in multi-property declarations,
   class constant declarations, constants, `$this` object context binding, and
   anonymous classes
-- static property access, static method calls, class constant access, and
-  class-name constant access through `::`
+- static property access, static method calls, class constant access,
+  class-name constant access, and magic static receivers such as `self::`,
+  `parent::`, and `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

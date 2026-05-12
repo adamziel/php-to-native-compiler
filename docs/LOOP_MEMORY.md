@@ -8603,3 +8603,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:22:49Z
 
 - Post-round 42 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:22:57Z
+
+- Starting round 43 at 20260512T192256Z from HEAD `c32b4cb`.
+
+## Loop Event 2026-05-12T19:23:04Z
+
+- Pre-round 43 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:31:00Z
+
+- Task attempted: completed Milestone 94 by adding an explicit unsupported
+  magic static receiver parse boundary for `self::`, `parent::`, and
+  `static::` before class-context, parent-class, or late-static-binding
+  resolution exists. The parser now reports a receiver-specific stable
+  diagnostic before falling through to generic static property/method/class
+  constant diagnostics, parser regression coverage includes all three receiver
+  spellings, and unsupported-object fixture coverage includes a committed
+  `phpc run` CLI snapshot.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_magic_static_receiver.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run so far: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with 27 fixtures;
+  `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_magic_static_receiver.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt --
+  --check` passed; `git diff --check` passed; `tools/run-tests.sh` passed
+  with 286 fixtures, 106 system PHP comparisons, and 180 skips.
+- Remaining semantic gaps: magic static receiver execution remains
+  unsupported, including class-context resolution for `self`, parent-class
+  resolution for `parent`, late static binding for `static`, static property
+  storage, static method dispatch, class constants, inheritance, exact PHP
+  `Error` objects, and native lowering.
+- Next concrete task: continue the next small object/class boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject unsupported magic static receivers"`
+  after the full suite passes.

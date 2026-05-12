@@ -589,6 +589,30 @@ echo Box::CLASS;
         ),
         (
             r#"<?php
+self::$value;
+"#,
+            2,
+            5,
+            "unsupported magic static receiver: self, parent, and static resolution is not implemented",
+        ),
+        (
+            r#"<?php
+parent::make();
+"#,
+            2,
+            7,
+            "unsupported magic static receiver: self, parent, and static resolution is not implemented",
+        ),
+        (
+            r#"<?php
+static::class;
+"#,
+            2,
+            7,
+            "unsupported magic static receiver: self, parent, and static resolution is not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,

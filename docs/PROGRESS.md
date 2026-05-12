@@ -2466,6 +2466,12 @@ Still fails:
   expressions before class-name constant resolution exists. Namespaces,
   aliases/imports, magic class names such as `self`/`parent`/`static`,
   autoloading, exact PHP behavior, and native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported magic static
+  receivers such as `self::`, `parent::`, and `static::` before class-context,
+  parent-class, or late-static-binding resolution exists. Static property
+  storage, static method dispatch, class constants, inheritance, exact PHP
+  `Error` objects, and native lowering remain unsupported.
 
 Next:
 

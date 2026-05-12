@@ -1,0 +1,1 @@
+phpc intentionally rejects self/parent/static static receiver syntax before magic static resolution exists.
