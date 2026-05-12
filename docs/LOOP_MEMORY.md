@@ -10269,5 +10269,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   conditional expressions before expression-form branching exists.
 - Known-good tag: not created; this is a narrow syntax boundary, not a major
   verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "syntax: add match expression boundary"`
-  after the full suite passes.
+- Checkpoint: `fd25fe1 syntax: add match expression boundary`.
