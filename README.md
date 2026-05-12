@@ -66,9 +66,9 @@ subset:
   variable/array-offset subset
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
   `empty`, `count`, `array_key_exists`, `array_key_first`, `array_key_last`,
-  `array_values`, `array_keys`, including loose and strict scalar search-value
-  filtering, `array_reverse` with default reindexing and boolean preserve-key
-  behavior, `array_slice($array, $offset)`,
+  `array_is_list`, `array_values`, `array_keys`, including loose and strict
+  scalar search-value filtering, `array_reverse` with default reindexing and
+  boolean preserve-key behavior, `array_slice($array, $offset)`,
   `array_slice($array, $offset, $length)`, and null-length
   `array_slice($array, $offset, null)` with default integer-key reindexing
   and string-key preservation, plus boolean preserve-key mode for

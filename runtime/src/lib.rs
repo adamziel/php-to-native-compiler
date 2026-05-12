@@ -493,6 +493,13 @@ impl PhpArray {
             .unwrap_or(Value::Null)
     }
 
+    pub fn is_list(&self) -> bool {
+        self.entries
+            .iter()
+            .enumerate()
+            .all(|(index, entry)| entry.key == ArrayKey::Int(index as i64))
+    }
+
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -2263,6 +2270,56 @@ mod tests {
         int_last.insert("02", Value::String("zero two".to_string()));
         int_last.insert("2", Value::String("two".to_string()));
         assert_eq!(int_last.last_key_value(), Value::Int(2));
+    }
+
+    #[test]
+    fn array_is_list_detects_zero_based_integer_keys_in_insertion_order() {
+        let empty = PhpArray::new();
+        assert!(empty.is_list());
+
+        let mut list = PhpArray::new();
+        list.append(Value::String("zero".to_string())).unwrap();
+        list.append(Value::String("one".to_string())).unwrap();
+        assert!(list.is_list());
+
+        let mut normalized = PhpArray::new();
+        normalized.insert("0", Value::String("zero".to_string()));
+        normalized.insert("1", Value::String("one".to_string()));
+        assert!(normalized.is_list());
+
+        let mut out_of_order = PhpArray::new();
+        out_of_order.insert(1, Value::String("one".to_string()));
+        out_of_order.insert(0, Value::String("zero".to_string()));
+        assert!(!out_of_order.is_list());
+
+        let mut gap = PhpArray::new();
+        gap.insert(0, Value::String("zero".to_string()));
+        gap.insert(2, Value::String("two".to_string()));
+        assert!(!gap.is_list());
+
+        let mut string_key = PhpArray::new();
+        string_key.insert(0, Value::String("zero".to_string()));
+        string_key.insert("01", Value::String("one".to_string()));
+        assert!(!string_key.is_list());
+
+        let mut negative_key = PhpArray::new();
+        negative_key.insert(-1, Value::String("negative".to_string()));
+        negative_key.insert(0, Value::String("zero".to_string()));
+        assert!(!negative_key.is_list());
+
+        let mut after_unset = PhpArray::new();
+        after_unset
+            .append(Value::String("zero".to_string()))
+            .unwrap();
+        after_unset
+            .append(Value::String("one".to_string()))
+            .unwrap();
+        after_unset
+            .append(Value::String("two".to_string()))
+            .unwrap();
+        after_unset.remove(1);
+        assert!(!after_unset.is_list());
+        assert!(after_unset.values_reindexed().is_list());
     }
 
     #[test]

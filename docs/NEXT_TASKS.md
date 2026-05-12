@@ -406,9 +406,18 @@ handled.
 
 ## Milestone 35: Array List Introspection
 
-- [ ] Implement `array_is_list($array)` over the current ordered
+- [x] Implement `array_is_list($array)` over the current ordered
   integer/string key model, including empty-array true behavior, exact
   zero-based consecutive integer-key detection, string-key false behavior,
   non-array diagnostics, fixture CLI coverage, documentation, and explicit
   gaps for references/copy-on-write, exact native `TypeError` objects, and
   native lowering.
+
+## Milestone 36: Array Padding Builtin
+
+- [ ] Implement `array_pad($array, $length, $value)` over the current ordered
+  integer/string key model, including positive right-padding, negative
+  left-padding, no-op behavior when the requested size is not larger than the
+  input, non-array/non-int diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for references/copy-on-write, exact native `ValueError` and
+  `TypeError` objects, and native lowering.

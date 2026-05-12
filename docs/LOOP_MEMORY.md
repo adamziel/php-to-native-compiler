@@ -4946,3 +4946,64 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T08:08:22Z
 
 - Post-round 78 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T08:08:27Z
+
+- Starting round 79 at 20260512T080827Z from HEAD `9abeb1a`.
+
+## Loop Event 2026-05-12T08:08:31Z
+
+- Pre-round 79 test exit code: `0`.
+
+## Loop Event 2026-05-12T08:20:33Z
+
+- Task attempted: implemented `array_is_list($array)` over the current ordered
+  integer/string key model. The supported slice returns true for empty arrays
+  and arrays whose entries have exact ordered integer keys `0..n-1`, uses the
+  existing numeric string key normalization for keys like `"0"`, returns false
+  for gaps, string keys such as `"01"`, negative keys, and out-of-order
+  integer keys, supports string-valued dynamic calls, and reports a stable
+  diagnostic for non-array operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_is_list.rs`,
+  `compiler/tests/array_list_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone35/array_is_list.php`,
+  `tests/fixtures/milestone35/array_is_list.stdout`,
+  `tests/fixtures/milestone35/array_is_list.cli`,
+  `tests/fixtures/runtime_errors/array_is_list_non_array.php`,
+  `tests/fixtures/runtime_errors/array_is_list_non_array.stderr`,
+  `tests/fixtures/runtime_errors/array_is_list_non_array.exit`,
+  `tests/fixtures/runtime_errors/array_is_list_non_array.cli`,
+  `tests/fixtures/runtime_errors/array_is_list_non_array.phpc-only`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` applied formatting after the first
+  `cargo fmt --all --check` found a formatting-only diff; final
+  `cargo fmt --all --check` passed; `git diff --check` passed;
+  `cargo test -p php_runtime array_is_list` passed with 1 focused runtime
+  test; `cargo test -p php_runtime` passed with 51 runtime unit tests;
+  `cargo test -p php_runtime array_` passed with 36 focused array tests;
+  `cargo test -p phpc --test array_is_list` passed with 3 tests;
+  `cargo test -p phpc --test array_list_introspection_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone35` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone35` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 68 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone35/array_is_list.php` printed the committed output;
+  `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_is_list_non_array.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone35/array_is_list.php --emit-ir` exited `1` with the
+  current explicit array native-lowering rejection; `tools/run-tests.sh` passed
+  with 176 fixtures, 74 system PHP comparisons, and 102 `.phpc-only` skips.
+- Remaining semantic gaps: `array_is_list` is limited to the current ordered
+  integer/string key model and does not model references, copy-on-write
+  container behavior, exact native `TypeError` objects, resource values, or
+  native lowering.
+- Next concrete task: implement `array_pad($array, $length, $value)` over the
+  current ordered integer/string key model while keeping exact native
+  `ValueError`/`TypeError` objects, references, copy-on-write behavior, and
+  native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_is_list builtin"`
+  after the full suite passes.

@@ -73,8 +73,8 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
-  `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
+  `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
+  `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
   `print_r`; `print_r` can render current minimal object values
@@ -84,7 +84,8 @@
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
-  non-array `array_reverse` operands, non-bool `array_reverse` preserve-key
+  non-array `array_is_list` operands, non-array `array_reverse` operands,
+  non-bool `array_reverse` preserve-key
   flag values, non-array `array_slice` operands, non-int `array_slice`
   offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
   preserve-key flag values, non-array `array_chunk` operands,
@@ -233,6 +234,11 @@
   calls. `array_key_first($array)` returns the first inserted integer or string
   key as an `int` or `string`, and `array_key_last($array)` returns the last
   inserted integer or string key. Both return `null` for an empty array and are
+  available through string-valued dynamic function calls. `array_is_list($array)`
+  returns true for empty arrays and arrays whose entries are ordered with exact
+  integer keys `0..n-1`; numeric string keys such as `"0"` participate through
+  the current array-key normalization, while string keys such as `"01"`, gaps,
+  negative keys, and out-of-order integer keys return false. It is also
   available through string-valued dynamic function calls. `array_values($array)`
   returns a new ordered array containing the original values in insertion order
   with integer keys starting at zero.
@@ -325,8 +331,8 @@
   `int` or `string` value to the direct key loop variable. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
+  `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_filter` in the current
   no-callback and string-callback forms, `array_map` in the current one-array
   null-callback identity form, variadic null-callback zip form, and one-array
@@ -384,7 +390,8 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_key_first`
-  or `array_key_last` operands, non-array `array_values` operands, non-array
+  or `array_key_last` operands, non-array `array_is_list` operands,
+  non-array `array_values` operands, non-array
   `array_keys` operands, unsupported `array_keys` search-value comparisons,
   non-bool `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-bool
@@ -422,8 +429,8 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
-  `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
+  `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
+  `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, or
   `print_r`.
@@ -455,8 +462,8 @@
   syntax, `call_user_func`, namespace-qualified callable resolution, and
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
-  `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_slice`, `array_chunk`, `array_merge`,
+  `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_merge`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_filter`,
   `array_map`, `in_array`, `array_search`, `var_dump`, and `print_r` cover
   the documented scalar/array/object subset.
@@ -472,7 +479,14 @@
   `array_key_last($array)` accept arrays only, return the first or last
   inserted integer or string key as an `int` or `string`, return `null` for
   empty arrays, and are also available through string-valued dynamic function
-  calls. `array_values($array)` accepts arrays
+  calls. `array_is_list($array)` accepts arrays only, returns true for empty
+  arrays and entries whose keys are exactly ordered integer keys `0..n-1`, and
+  returns false for gaps, negative keys, string keys, and out-of-order integer
+  keys. Numeric string keys that normalize to integer keys use the current
+  array-key normalization before the list check. It is also available through
+  string-valued dynamic function calls. Exact native `TypeError` objects,
+  references, copy-on-write containers, and native lowering are not
+  implemented. `array_values($array)` accepts arrays
   only, preserves value insertion order, and returns a new ordered array
   reindexed with integer keys `0..n-1`; it is also available through
   string-valued dynamic function calls. `array_keys($array)` accepts arrays
@@ -635,8 +649,8 @@
   values use the current PHP truthiness rules. Nested array offsets, object
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
-  `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
+  `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
   `in_array`, `array_search`, and both current `foreach` array forms follow
   the current by-value model; PHP
@@ -772,8 +786,8 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
-- `array_key_first`/`array_key_last` exact native `TypeError` objects,
-  reference/copy-on-write container behavior, and native lowering
+- `array_key_first`/`array_key_last`/`array_is_list` exact native `TypeError`
+  objects, reference/copy-on-write container behavior, and native lowering
 - `array_keys` filtering over array, object, resource, or reference search
   values or array values, plus non-bool strict-flag coercion
 - `in_array` and `array_search` strict-mode searches involving
