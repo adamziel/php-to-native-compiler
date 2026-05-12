@@ -10487,4 +10487,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   either an explicit stable boundary or a direct-variable executable slice.
 - Known-good tag: not created; this is a narrow expression follow-up, not a
   major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "syntax: add object property null coalescing"`.
+- Checkpoint: `1f1fe02 syntax: add object property null coalescing`.
