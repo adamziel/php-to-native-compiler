@@ -1,0 +1,2 @@
+runtime error at 4:10: unsupported call is_subclass_of(): class name argument must be string in the current subset, got int
+

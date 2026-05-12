@@ -2538,8 +2538,17 @@ Still fails:
   types. Inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, and native lowering
   remain unsupported.
+- Added `is_subclass_of($object_or_class, $class_name[, $allow_string])` as a
+  no-inheritance class relationship boundary. The supported path accepts
+  current object values and string first arguments, considers string first
+  arguments only when `allow_string` is true, validates string class names and
+  boolean allow-string flags, returns false for exact-class, missing-class, and
+  no-parent metadata cases, works through string-valued dynamic calls, and has
+  fixture CLI coverage. Inheritance, interfaces, traits, aliases/imports,
+  namespace-aware names, autoloading, exact native `TypeError` behavior, and
+  native lowering remain unsupported.
 
 Next:
 
-- Continue with the `is_subclass_of($object_or_class, $class_name[,
-  $allow_string])` boundary from `docs/NEXT_TASKS.md`.
+- Continue with the next small object/class metadata boundary from
+  `docs/NEXT_TASKS.md`.

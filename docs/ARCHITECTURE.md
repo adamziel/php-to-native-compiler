@@ -175,6 +175,10 @@ and does not trigger autoloading in the current subset.
 `property_exists($object_or_class, $property)` checks the same declared
 property metadata for current object values or string class names, with
 case-sensitive property names and no autoload side effects.
+`is_a($object_or_class, $class_name[, $allow_string])` performs exact-class
+identity checks against the current metadata table. `is_subclass_of(...)`
+shares the same argument boundary, but because inheritance metadata is not
+represented yet it returns false for exact-class and no-parent cases.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

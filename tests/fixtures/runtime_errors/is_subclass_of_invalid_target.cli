@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/is_subclass_of_invalid_target.php:2:10: unsupported call is_subclass_of(): object_or_class argument must be object or string, got int
+--- stderr end ---

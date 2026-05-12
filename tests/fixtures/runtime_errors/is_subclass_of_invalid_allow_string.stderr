@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call is_subclass_of(): allow_string argument must be bool in the current subset, got int
+

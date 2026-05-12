@@ -9165,3 +9165,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:21:03Z
 
 - Post-round 52 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:21:14Z
+
+- Starting round 53 at 20260512T202114Z from HEAD `70c1768`.
+
+## Loop Event 2026-05-12T20:21:27Z
+
+- Pre-round 53 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:26:38Z
+
+- Task attempted: completed Milestone 104 by adding
+  `is_subclass_of($object_or_class, $class_name[, $allow_string])` as the
+  current no-inheritance class relationship boundary. The supported slice
+  accepts current object values and string first arguments, considers string
+  first arguments only when `allow_string` is true, validates string class
+  names and boolean allow-string flags, returns false for exact-class,
+  missing-class, and no-parent metadata cases, and works through
+  string-valued dynamic calls.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone104/is_subclass_of.*`,
+  `tests/fixtures/runtime_errors/is_subclass_of_invalid_target.*`,
+  `tests/fixtures/runtime_errors/is_subclass_of_invalid_class_name.*`,
+  `tests/fixtures/runtime_errors/is_subclass_of_invalid_allow_string.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  is_subclass_of` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone104` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone104` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 125 fixtures; `cargo fmt` passed; `git diff --check` passed;
+  `tools/run-tests.sh` passed with 308 fixtures, 114 system PHP comparisons,
+  and 194 skips.
+- Remaining semantic gaps: `is_subclass_of` does not model inheritance,
+  interfaces, traits, aliases/imports, namespace-aware names, autoloading,
+  default `$this` behavior, exact native `TypeError` objects, or native
+  lowering.
+- Next concrete task: complete Milestone 105,
+  `get_parent_class($object_or_class)` over the current no-inheritance class
+  metadata.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add is_subclass_of boundary"` after the full
+  suite passes.

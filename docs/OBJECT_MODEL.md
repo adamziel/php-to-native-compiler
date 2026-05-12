@@ -15,7 +15,9 @@ The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
 $allow_string])` as an exact-class metadata check, without inheritance or
-interface relationship traversal.
+interface relationship traversal. `is_subclass_of($object_or_class,
+$class_name[, $allow_string])` now validates the same relationship-check
+boundary and returns false for the current no-inheritance metadata model.
 
 ## Runtime Metadata
 
@@ -53,6 +55,10 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity using case-insensitive class metadata lookup; string first
   arguments are considered only when `allow_string` is true;
+- `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts
+  current object values and string first arguments, with string first
+  arguments considered only when `allow_string` is true, and returns false
+  because the current metadata records no parent/interface relationships;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -93,9 +99,9 @@ Native lowering rejects class declarations, object instantiation, object
 property reads, and object property writes until metadata, object allocation,
 property slots, and dispatch have explicit lowering support.
 Native lowering also rejects `method_exists` through the current function-call
-boundary until class metadata lookup has native support. `is_a` is rejected
-through the same function-call boundary until class relationship lookup has
-native support.
+boundary until class metadata lookup has native support. `is_a` and
+`is_subclass_of` are rejected through the same function-call boundary until
+class relationship lookup has native support.
 
 ## Unsupported Edge Cases
 
@@ -113,5 +119,6 @@ identity/handle aliasing, object comparisons, object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
 operands, complex object-property `isset` operands, static member execution
 through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
-interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
-exact native `TypeError` behavior, and native lowering.
+`is_subclass_of` inheritance/interface traversal, interfaces, traits,
+aliases/imports, namespace-aware class names, autoloading, exact native
+`TypeError` behavior, and native lowering.

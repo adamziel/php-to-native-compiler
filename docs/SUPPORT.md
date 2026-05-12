@@ -104,8 +104,8 @@
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `is_a`, `var_dump`, and
-  `print_r`;
+  `class_exists`, `property_exists`, `method_exists`, `is_a`,
+  `is_subclass_of`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -115,8 +115,10 @@
   string class names, `method_exists` checks case-insensitive declared method
   metadata for current object values or string class names, `is_a` checks
   exact class identity over current object values or string class names when
-  `allow_string` is true, and `print_r` can render current minimal object
-  values
+  `allow_string` is true, `is_subclass_of` returns false for the current
+  no-inheritance metadata model after validating the supported object/string
+  and class-name argument boundary, and `print_r` can render current minimal
+  object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -318,7 +320,13 @@
   names resolve to the same declared class. A false or omitted `allow_string`
   flag makes string first arguments return false. Missing source or target
   class names return false, and string-valued dynamic calls to `is_a` use the
-  same path. Static member expressions through `::`,
+  same path.
+  `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts the
+  current object/string first-argument subset and string class names, considers
+  string first arguments only when `allow_string` is true, returns false for
+  exact-class, missing-class, and no-parent cases because inheritance metadata
+  is not represented yet, and is available through string-valued dynamic calls.
+  Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
@@ -642,6 +650,8 @@
   targets, non-public property access, non-object `get_class` operands,
   non-string `class_exists` names, non-bool `class_exists` autoload flags,
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
+  non-object/non-string `is_subclass_of` first arguments, non-string
+  `is_subclass_of` class names, non-bool `is_subclass_of` allow_string flags,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -652,7 +662,7 @@
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `property_exists(...)`, `method_exists(...)`,
-  `is_a(...)`,
+  `is_a(...)`, `is_subclass_of(...)`,
   `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
   rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -669,8 +679,8 @@
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `is_a`, `var_dump`, or
-  `print_r`.
+  `class_exists`, `property_exists`, `method_exists`, `is_a`,
+  `is_subclass_of`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -742,8 +752,8 @@
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
-  `method_exists`, `is_a`, `var_dump`, and `print_r` cover the documented
-  scalar/array/object subset.
+  `method_exists`, `is_a`, `is_subclass_of`, `var_dump`, and `print_r` cover
+  the documented scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -759,6 +769,9 @@
   case-insensitive method names. `is_a($object_or_class, $class_name[,
   $allow_string])` checks exact class identity over current object values, and
   over string class names only when `allow_string` is true.
+  `is_subclass_of($object_or_class, $class_name[, $allow_string])` validates
+  current object/string relationship-check arguments and returns false for the
+  current no-inheritance metadata model.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -1405,6 +1418,9 @@
 - `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, and native lowering
+- `is_subclass_of` inheritance, interfaces, traits, aliases/imports,
+  namespace-aware names, autoloading, exact native `TypeError` behavior, and
+  native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase

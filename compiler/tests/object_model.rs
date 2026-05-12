@@ -491,6 +491,78 @@ fn is_a_requires_string_class_name_and_bool_allow_string_arguments() {
 }
 
 #[test]
+fn is_subclass_of_reports_false_without_inheritance_metadata() {
+    let source = r#"<?php
+class Box {}
+class Crate {}
+
+$box = new box();
+if (!is_subclass_of($box, "Box")) {
+    echo "object:exact-false\n";
+}
+if (!is_subclass_of($box, "Crate")) {
+    echo "object:other-false\n";
+}
+if (!is_subclass_of("Box", "Box")) {
+    echo "string:default-false\n";
+}
+if (!is_subclass_of("BOX", "box", true)) {
+    echo "string:allowed-exact-false\n";
+}
+if (!is_subclass_of("Missing", "Box", true)) {
+    echo "missing-source:false\n";
+}
+if (!is_subclass_of($box, "Missing")) {
+    echo "missing-target:false\n";
+}
+$call = "is_subclass_of";
+if (!$call($box, "BOX")) {
+    echo "dynamic:false\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object:exact-false\nobject:other-false\nstring:default-false\nstring:allowed-exact-false\nmissing-source:false\nmissing-target:false\ndynamic:false\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn is_subclass_of_requires_supported_argument_types() {
+    let source_error = runtime_error("<?php\nvar_dump(is_subclass_of(42, \"Box\"));\n");
+
+    assert_eq!(source_error.line, 2);
+    assert_eq!(source_error.column, 10);
+    assert_eq!(
+        source_error.message,
+        "unsupported call is_subclass_of(): object_or_class argument must be object or string, got int"
+    );
+
+    let class_error = runtime_error(
+        "<?php\nclass Box {}\n$box = new Box();\nvar_dump(is_subclass_of($box, 42));\n",
+    );
+
+    assert_eq!(class_error.line, 4);
+    assert_eq!(class_error.column, 10);
+    assert_eq!(
+        class_error.message,
+        "unsupported call is_subclass_of(): class name argument must be string in the current subset, got int"
+    );
+
+    let allow_string_error =
+        runtime_error("<?php\nvar_dump(is_subclass_of(\"Box\", \"Box\", 1));\n");
+
+    assert_eq!(allow_string_error.line, 2);
+    assert_eq!(allow_string_error.column, 10);
+    assert_eq!(
+        allow_string_error.message,
+        "unsupported call is_subclass_of(): allow_string argument must be bool in the current subset, got int"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -578,6 +650,20 @@ fn emit_ir_rejects_method_exists_until_native_object_lowering_exists() {
 fn emit_ir_rejects_is_a_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\necho is_a(\"Box\", \"Box\", true);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_is_subclass_of_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\necho is_subclass_of(\"Box\", \"Box\", true);\n")
+            .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

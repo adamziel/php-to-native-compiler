@@ -2138,6 +2138,74 @@ impl Interpreter {
                     ),
                 )),
             },
+            "is_subclass_of" => match args.as_slice() {
+                [Value::Object(_), Value::String(_class_name)] => Ok(Value::Bool(false)),
+                [Value::String(_object_or_class), Value::String(_class_name)] => {
+                    Ok(Value::Bool(false))
+                }
+                [Value::Object(_), Value::String(_class_name), Value::Bool(_allow_string)] => {
+                    Ok(Value::Bool(false))
+                }
+                [Value::String(_object_or_class), Value::String(_class_name), Value::Bool(_allow_string)] => Ok(Value::Bool(false)),
+                [other, Value::String(_), Value::Bool(_)] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_subclass_of()",
+                        format!(
+                            "object_or_class argument must be object or string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [_, other, Value::Bool(_)] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_subclass_of()",
+                        format!(
+                            "class name argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [other, Value::String(_)] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_subclass_of()",
+                        format!(
+                            "object_or_class argument must be object or string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_subclass_of()",
+                        format!(
+                            "class name argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [_, _, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_subclass_of()",
+                        format!(
+                            "allow_string argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "is_subclass_of()",
+                        ArityExpectation::Between { min: 2, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2842,6 +2910,7 @@ fn is_builtin(name: &str) -> bool {
             | "property_exists"
             | "method_exists"
             | "is_a"
+            | "is_subclass_of"
             | "var_dump"
             | "print_r"
     )

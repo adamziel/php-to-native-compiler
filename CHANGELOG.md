@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `is_subclass_of($object_or_class, $class_name[, $allow_string])` as a
+  no-inheritance metadata boundary that validates supported arguments, returns
+  false for current exact-class/no-parent cases, and has runtime, fixture, and
+  CLI snapshot coverage.
 - Added `property_exists($object_or_class, $property)` for current object
   values and declared class metadata, with runtime coverage, fixture coverage,
   and `phpc run` CLI snapshots.
