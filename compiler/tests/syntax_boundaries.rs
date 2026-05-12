@@ -60,23 +60,6 @@ unset($box->name);
         ),
         (
             r#"<?php
-$value = 1;
-$other = 2;
-unset($value, $other);
-"#,
-            4,
-            13,
-        ),
-        (
-            r#"<?php
-$items = ["name" => "Ada"];
-unset($items["name"], $items["city"]);
-"#,
-            3,
-            21,
-        ),
-        (
-            r#"<?php
 $items = [[1]];
 unset($items[0][0]);
 "#,
@@ -99,7 +82,7 @@ UNSET($items[]);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented"
+            "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented"
         );
     }
 }

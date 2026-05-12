@@ -1,6 +1,6 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
-    ClassVisibility, Expr, FunctionDecl, FunctionParam, Program, Span, Stmt, UnaryOp,
+    ClassVisibility, Expr, FunctionDecl, FunctionParam, Program, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -481,6 +481,30 @@ impl Parser {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after unset")?;
 
+        let mut targets = Vec::new();
+        loop {
+            targets.push(self.parse_unset_target()?);
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+        }
+
+        self.consume_keyword(TokenKind::RParen, "expected ')' after unset operand")?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after unset")?;
+
+        if targets.len() == 1 {
+            return match targets.pop().expect("single unset target exists") {
+                UnsetTarget::Variable { name, .. } => Ok(Stmt::UnsetVariable { name, span }),
+                UnsetTarget::ArrayIndex { name, index, .. } => {
+                    Ok(Stmt::UnsetArrayIndex { name, index, span })
+                }
+            };
+        }
+
+        Ok(Stmt::UnsetMany { targets, span })
+    }
+
+    fn parse_unset_target(&mut self) -> CompileResult<UnsetTarget> {
         let token = self.advance().clone();
         let (name, target_span) = match token.kind {
             TokenKind::Variable(name) => (name, token.span),
@@ -488,13 +512,11 @@ impl Parser {
         };
 
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-            if self.check(|kind| matches!(kind, TokenKind::RParen)) {
-                self.advance();
-                self.consume_keyword(TokenKind::Semicolon, "expected ';' after unset")?;
-                return Ok(Stmt::UnsetVariable { name, span });
-            }
-            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                return Err(self.error_at(self.previous().span, unsupported_unset_message()));
+            if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+                return Ok(UnsetTarget::Variable {
+                    name,
+                    span: target_span,
+                });
             }
             return Err(self.error_at(target_span, unsupported_unset_message()));
         }
@@ -509,14 +531,15 @@ impl Parser {
         if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
             return Err(self.error_at(self.peek().span, unsupported_unset_message()));
         }
-        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-            return Err(self.error_at(self.previous().span, unsupported_unset_message()));
+        if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+            return Err(self.error_at(self.peek().span, unsupported_unset_message()));
         }
 
-        self.consume_keyword(TokenKind::RParen, "expected ')' after unset operand")?;
-        self.consume_keyword(TokenKind::Semicolon, "expected ';' after unset")?;
-
-        Ok(Stmt::UnsetArrayIndex { name, index, span })
+        Ok(UnsetTarget::ArrayIndex {
+            name,
+            index,
+            span: target_span,
+        })
     }
 
     fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {
@@ -1324,7 +1347,7 @@ fn unsupported_long_array_literal_message() -> &'static str {
 }
 
 fn unsupported_unset_message() -> &'static str {
-    "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented"
+    "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented"
 }
 
 fn unsupported_foreach_expression_message() -> &'static str {

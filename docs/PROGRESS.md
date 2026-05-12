@@ -209,8 +209,8 @@ Implemented:
   literals are implemented.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
   snapshots for unsupported broader `unset(...)` forms before direct variable
-  removal was implemented. The remaining unsupported forms are property,
-  multiple-operand, append-offset, and nested/complex removal.
+  removal was implemented. The unsupported forms still excluded from execution
+  are property, append-offset, and nested/complex removal.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported `foreach (...)` syntax before array/object
   iteration is implemented.
@@ -265,9 +265,15 @@ Implemented:
   materialized symbol table. Existing symbols are removed from the current
   top-level or function-local scope, undefined names are no-ops, later plain
   reads use the existing undefined-variable diagnostic, fixture CLI coverage
-  records current-scope and local-scope behavior, property/multiple/
-  append-offset/nested unset forms remain explicit parse diagnostics, and
+  records current-scope and local-scope behavior, property/append-offset/nested
+  unset forms remain explicit parse diagnostics, and
   native lowering rejects variable unset explicitly.
+- Implemented multiple-operand `unset(...)` over the currently supported direct
+  variable and direct array-offset operands. Operands execute left to right,
+  array-offset key expressions are evaluated in operand order, missing
+  variables and missing array keys remain no-ops, unsupported property,
+  append-offset, and nested unset forms remain explicit parse diagnostics, and
+  native lowering rejects multiple-operand unset explicitly.
 
 Tested:
 
@@ -326,6 +332,9 @@ Tested:
   behavior, undefined-name no-op behavior, current-scope function-local
   behavior, reassignment after unset, and the later-read undefined-variable
   diagnostic.
+- `cargo test -p phpc --test multiple_unset` passes with multiple-operand
+  direct variable/array-offset unset behavior and left-to-right array key
+  expression evaluation coverage.
 - `cargo test -p phpc --test array_mutation_cli` passes with 1 CLI snapshot
   test covering the Milestone 9 array mutation fixtures.
 - `cargo test -p phpc --test array_isset` passes with direct array-offset
@@ -378,9 +387,12 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_variable_unset_until_native_lowering_exists`
   passes with rejection coverage for direct variable unset before native
   symbol-table mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 107 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
+  passes with rejection coverage for multiple-operand unset before native
+  symbol-table/array-offset mutation lowering exists.
+- `cargo run -p phpc -- test` passes with 108 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 41 fixtures and skipping 66 `.phpc-only` fixtures.
+  installed, comparing 42 fixtures and skipping 66 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -406,8 +418,10 @@ Tested:
   `foreach` fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone8` passes
   with 2 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone9` passes with 2 array
+- `cargo run -p phpc -- test tests/fixtures/milestone9` passes with 3 array
   mutation fixtures.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
+  with 3 system PHP comparisons.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
   with 2 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
@@ -535,7 +549,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php:2:10: unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_unset.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:21: unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:13: unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:20: unsupported foreach: destructuring loop targets are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_for.php`
@@ -570,6 +584,8 @@ Tested:
   prints the committed direct array-offset `unset` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone9/variable_unset.php`
   prints the committed direct variable `unset` output.
+- `cargo run -p phpc -- run tests/fixtures/milestone9/multiple_unset.php`
+  prints the committed multiple-operand `unset` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/foreach_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/foreach_non_array.php:2:1: invalid foreach: can only iterate arrays in the current subset, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unset_non_array.php`
@@ -625,7 +641,7 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone9/variable_unset.php --emit-ir`
   exits 1 with an explicit `variable unset` codegen rejection before emitting
   misleading native code.
-- `tools/run-tests.sh` passes with 107 fixtures, 41 system PHP comparisons,
+- `tools/run-tests.sh` passes with 108 fixtures, 42 system PHP comparisons,
   and 66 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -648,11 +664,10 @@ Still fails:
   objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
   float string precision.
 - Arrays do not implement long `array(...)` literal execution; direct syntax
-  now fails with a stable parse diagnostic before execution. `unset(...)` is
-  limited to single direct variable statements and single direct array-offset
-  statements on direct variables; object property removal, multiple operands,
-  append-offset unset, and nested/complex unset operands fail with stable parse
-  diagnostics.
+  now fails with a stable parse diagnostic before execution. `unset(...)`
+  operands are limited to direct variables and direct array-offset operands on
+  direct variables; object property removal, append-offset unset, and
+  nested/complex unset operands fail with stable parse diagnostics.
   `for (...)` fails with a stable parse diagnostic before C-style loops exist,
   `do ... while` fails with a stable parse diagnostic before post-condition
   loops exist, and `switch (...)` fails with a stable parse diagnostic before
@@ -688,7 +703,9 @@ Still fails:
   native lowering for function calls.
   Direct variable `unset` removes only the current top-level or function-local
   symbol-table entry; it does not implement dynamic variable names, `$GLOBALS`,
-  superglobal behavior, references, or copy-on-write alias effects.
+  superglobal behavior, references, or copy-on-write alias effects. Multiple
+  supported `unset(...)` operands execute left to right, but each operand is
+  still limited to the current direct-variable/direct-array-offset subset.
   Direct array-offset `unset` treats undefined and `null` targets as no-ops
   but does not model PHP's warning for undefined variables; existing non-array
   targets fail with a stable project diagnostic instead of PHP's exact
@@ -759,7 +776,7 @@ Still fails:
 
 Next:
 
-- Implement multiple-operand `unset(...)` over the currently supported direct
-  variable and direct array-offset operands, including left-to-right behavior,
-  fixture CLI coverage, documentation, and explicit native-codegen rejection
-  while property, append-offset, and nested unset forms remain unsupported.
+- Implement long `array(...)` literals as an alias for the current short-array
+  literal subset, including keyed entries, fixture CLI coverage, documentation,
+  and explicit unsupported gaps for references, spread, and unsupported key
+  coercions.

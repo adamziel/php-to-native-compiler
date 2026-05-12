@@ -11,7 +11,8 @@
 - `null`, `true`, and `false`
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
-  current scope and treats undefined names as no-ops
+  current scope and treats undefined names as no-ops; `unset(...)` may include
+  multiple supported operands and executes them left to right
 - assignment statements
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings
@@ -52,7 +53,8 @@
   entries
 - direct variable array writes: `$array[$key] = ...` and `$array[] = ...`
 - direct array offset removal: `unset($array[$key])` for direct array
-  variables over the current integer/string key subset
+  variables over the current integer/string key subset; multiple supported
+  `unset(...)` operands execute left to right
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)`
   iteration in insertion order over a snapshot of the current array entries
 - `isset($array[$key])` for direct array-variable offset operands over the
@@ -113,8 +115,9 @@
   evaluation, and direct array writes route through that symbol table path.
   Direct `unset($name)` removes the current-scope symbol and treats missing
   names as no-ops; later plain reads use the existing undefined-variable
-  diagnostic. Runtime lookup by a value computed from PHP code is not
-  implemented yet, so variable variables still do not execute.
+  diagnostic. Multiple supported `unset(...)` operands run left to right.
+  Runtime lookup by a value computed from PHP code is not implemented yet, so
+  variable variables still do not execute.
 - Include/require: `include`, `include_once`, `require`, and `require_once`
   are reserved by the lexer/parser and rejected with stable parse diagnostics.
   The planned first executable slice resolves string paths relative to the
@@ -182,8 +185,9 @@
   Direct `unset($array[$key])` removes matching entries from existing arrays,
   preserves the insertion order of remaining entries, does not rewind the next
   append key, treats missing keys as no-ops, and treats undefined or `null`
-  target variables as no-ops. Existing non-array targets fail with a stable
-  invalid-array-access diagnostic.
+  target variables as no-ops. Multiple supported `unset(...)` operands execute
+  left to right, including any array-offset key expressions. Existing non-array
+  targets fail with a stable invalid-array-access diagnostic.
   Direct `isset($array[$key])` checks return true for existing non-null slots
   and false for null slots, missing keys, undefined array variables, and
   non-array target variables. Direct `empty($array[$key])` checks return true
@@ -209,7 +213,8 @@
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_values`, `array_keys`, `in_array`, `array_search`, both current
-  `foreach` array forms, direct array-offset `unset`, `print_r`, and
+  `foreach` array forms, direct array-offset `unset`, multiple supported
+  `unset(...)` operands, `print_r`, and
   `var_dump` are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
@@ -249,7 +254,8 @@
   runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
-  assignment, variable unset, array offset unset, `foreach`, `break`,
+  assignment, variable unset, array offset unset, multiple-operand unset,
+  `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
   and object property writes are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -356,12 +362,12 @@
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
 - Array gaps: long `array(...)` literal syntax, `unset(...)` forms outside
-  single direct variable or direct array-offset statements, direct `for (...)`
-  syntax, direct `do ... while` syntax, and direct `switch (...)` syntax are
-  rejected with stable parse diagnostics; executing long array literals, object
-  property removal, multiple unset operands, append-offset unset,
-  nested/complex unset operands, C-style/post-condition loops, and switch/case
-  control flow is not implemented.
+  direct variables and direct array-offset operands, direct `for (...)` syntax,
+  direct `do ... while` syntax, and direct `switch (...)` syntax are rejected
+  with stable parse diagnostics; executing long array literals, object property
+  removal, append-offset unset, nested/complex unset operands,
+  C-style/post-condition loops, and switch/case control flow is not
+  implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
   expression, string offset access, by-reference `foreach`, object iteration,
@@ -425,9 +431,9 @@
   by-reference calls
 - long `array(...)` literals; direct syntax is rejected with a stable parse
   diagnostic before execution
-- `unset(...)` forms outside single direct variables and direct array offsets,
-  including object property removal, multiple operands, append-offset unset,
-  and nested/complex operands; these fail with stable parse diagnostics
+- `unset(...)` forms outside direct variables and direct array offsets,
+  including object property removal, append-offset unset, and nested/complex
+  operands; these fail with stable parse diagnostics
 - by-reference `foreach`, object iteration, destructuring loop targets, and
   expression-form `foreach`
 - `for (...)`; direct syntax is rejected with a stable parse diagnostic before

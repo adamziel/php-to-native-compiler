@@ -155,9 +155,16 @@ handled.
 - [x] Implement direct `unset($name)` for static variables backed by the current
   symbol table, including undefined-variable no-op behavior, fixture CLI
   coverage, documentation, and explicit native-codegen rejection while property,
-  multiple, and nested unset forms remain unsupported.
-- [ ] Implement multiple-operand `unset(...)` over the currently supported
+  append-offset, and nested unset forms remain unsupported.
+- [x] Implement multiple-operand `unset(...)` over the currently supported
   direct variable and direct array-offset operands, including left-to-right
   behavior, fixture CLI coverage, documentation, and explicit native-codegen
   rejection while property, append-offset, and nested unset forms remain
   unsupported.
+
+## Milestone 10: Syntax Expansion
+
+- [ ] Implement long `array(...)` literals as an alias for the current
+  short-array literal subset, including keyed entries, fixture CLI coverage,
+  documentation, and explicit unsupported gaps for references, spread, and
+  unsupported key coercions.

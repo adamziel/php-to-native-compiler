@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+pick:first
+pick:second
+count:1
+role=dev
+target:unset
+missing:unset--- stdout end ---
+stderr:
+--- stderr end ---

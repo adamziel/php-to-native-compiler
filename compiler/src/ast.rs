@@ -61,6 +61,10 @@ pub enum Stmt {
         index: Expr,
         span: Span,
     },
+    UnsetMany {
+        targets: Vec<UnsetTarget>,
+        span: Span,
+    },
     Function(FunctionDecl),
     Class(ClassDecl),
     Return {
@@ -93,6 +97,19 @@ pub enum AssignTarget {
     Property {
         object: String,
         property: String,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnsetTarget {
+    Variable {
+        name: String,
+        span: Span,
+    },
+    ArrayIndex {
+        name: String,
+        index: Expr,
         span: Span,
     },
 }

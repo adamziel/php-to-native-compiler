@@ -53,9 +53,8 @@ subset:
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
-- direct `unset($name)` for static variables in the current scope
-- direct `unset($array[$key])` for the documented direct array-variable offset
-  subset
+- `unset(...)` with one or more operands over direct static variables and
+  direct array-variable offsets in the documented subset
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   the documented ordered array value model
 - direct `isset($array[$key])` checks for the documented array-offset subset
@@ -73,7 +72,7 @@ subset:
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
   long `array(...)` literals, unsupported broader `unset(...)` forms such as
-  property, multiple-operand, append-offset, and nested unset,
+  property, append-offset, and nested unset,
   unsupported `foreach` by-reference/destructuring forms, `for (...)`,
   `do ... while`, `switch (...)`, `break`/`continue` depth arguments, object
   method calls, dynamic property names, anonymous classes, and unsupported

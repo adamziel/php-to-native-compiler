@@ -8,7 +8,7 @@ use php_runtime::{
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, Expr, FunctionDecl,
-    Program, Span, Stmt, UnaryOp,
+    Program, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -262,6 +262,12 @@ impl Interpreter {
                 self.execute_unset_array_index(name, index, *span, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::UnsetMany { targets, span } => {
+                for target in targets {
+                    self.execute_unset_target(target, *span, scope)?;
+                }
+                Ok(Flow::Normal)
+            }
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
@@ -279,6 +285,23 @@ impl Interpreter {
                     "importing globals into function scope is not implemented",
                 ),
             )),
+        }
+    }
+
+    fn execute_unset_target(
+        &mut self,
+        target: &UnsetTarget,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match target {
+            UnsetTarget::Variable { name, .. } => {
+                scope.unset_static(name);
+                Ok(())
+            }
+            UnsetTarget::ArrayIndex { name, index, .. } => {
+                self.execute_unset_array_index(name, index, span, scope)
+            }
         }
     }
 

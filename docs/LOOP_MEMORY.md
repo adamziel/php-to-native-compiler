@@ -2584,3 +2584,59 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:53:48Z
 
 - Post-round 41 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:53:51Z
+
+- Starting round 42 at 20260512T025351Z from HEAD `15abca4`.
+
+## Loop Event 2026-05-12T02:53:54Z
+
+- Pre-round 42 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:01:08Z
+
+- Task attempted: implemented multiple-operand `unset(...)` over the currently
+  supported direct variable and direct array-offset operands. Operands execute
+  left to right, array-offset key expressions are evaluated in operand order,
+  missing variables and missing array keys remain no-ops, unsupported property,
+  append-offset, and nested unset forms remain stable parse diagnostics, and
+  native lowering rejects multiple-operand unset explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/multiple_unset.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone9/multiple_unset.php`,
+  `tests/fixtures/milestone9/multiple_unset.stdout`,
+  `tests/fixtures/milestone9/multiple_unset.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test multiple_unset` passed; `cargo test -p phpc --test
+  syntax_boundaries unsupported_unset_forms_are_rejected_with_stable_parse_error`
+  passed; `cargo test -p phpc --test milestone1
+  emit_ir_rejects_multiple_unset_until_native_lowering_exists` passed; `cargo
+  run -p phpc -- test tests/fixtures/milestone9` passed with 3 fixtures;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passed
+  with 3 system PHP comparisons; `cargo test -p phpc --test array_mutation_cli`
+  passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone9/multiple_unset.php` printed the committed
+  multiple-operand unset output; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 8 fixtures; `cargo
+  test -p phpc --test unsupported_syntax_features_cli` passed; `tools/run-tests.sh`
+  passed with 108 fixtures, 42 system PHP comparisons, and 66 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `unset(...)` operands are still limited to direct
+  variables and direct array offsets on direct variables. Object property
+  removal, append-offset unset, nested/complex unset operands, dynamic variable
+  names, `$GLOBALS`/superglobal behavior, string offset removal, references,
+  copy-on-write alias effects, exact PHP warning/Error objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement long `array(...)` literals as an alias for the
+  current short-array literal subset, including keyed entries, fixture CLI
+  coverage, documentation, and explicit unsupported gaps for references,
+  spread, and unsupported key coercions.
+- Checkpoint: pending `tools/checkpoint.sh "unset: add multiple operands"`
+  after the full suite passes.

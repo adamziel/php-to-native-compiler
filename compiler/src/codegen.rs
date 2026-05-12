@@ -127,6 +127,10 @@ impl LlvmGenerator {
                 *span,
                 "array offset unset is supported by phpc run but not LLVM IR emission yet",
             )),
+            Stmt::UnsetMany { span, .. } => Err(self.unsupported(
+                *span,
+                "multiple-operand unset is supported by phpc run but not LLVM IR emission yet",
+            )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
@@ -638,6 +642,10 @@ impl CGenerator {
             Stmt::UnsetArrayIndex { span, .. } => Err(self.unsupported(
                 *span,
                 "array offset unset is supported by phpc run but not assembly emission yet",
+            )),
+            Stmt::UnsetMany { span, .. } => Err(self.unsupported(
+                *span,
+                "multiple-operand unset is supported by phpc run but not assembly emission yet",
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
