@@ -7667,3 +7667,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   executable class-context magic constant evaluation exists.
 - Checkpoint: pending `tools/checkpoint.sh "parser: tighten __METHOD__ magic constant boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T17:52:10Z
+
+- Checkpoint completed for round 25: `bc9ccf2` (`parser: tighten __METHOD__
+  magic constant boundary`).
