@@ -2503,7 +2503,15 @@ Still fails:
   native-codegen rejection through the current object/function-call boundaries.
   Inheritance aliases/imports, anonymous classes, resources, exact native
   reflection/type-system interactions, and native lowering remain unsupported.
+- Added `class_exists($name[, $autoload])` support for the current declared
+  class metadata table, including case-insensitive string-name lookup,
+  string-valued dynamic-call availability, non-string name and non-bool
+  autoload diagnostics, fixture CLI coverage, documentation, and explicit
+  native-codegen rejection through the current function-call boundary.
+  Autoloading, namespace/import aliases, anonymous classes, exact native
+  `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 
-- Continue the next small object/class boundary from `docs/NEXT_TASKS.md`.
+- Continue the next small object/class boundary by adding a new task to
+  `docs/NEXT_TASKS.md`.

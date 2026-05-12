@@ -8930,3 +8930,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:58:02Z
 
 - Post-round 48 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:58:11Z
+
+- Starting round 49 at 20260512T195811Z from HEAD `49a00c5`.
+
+## Loop Event 2026-05-12T19:58:22Z
+
+- Pre-round 49 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:02:22Z
+
+- Task attempted: completed Milestone 100 by adding
+  `class_exists($name[, $autoload])` for the current declared-class metadata
+  table. The slice performs case-insensitive lookup for string class names,
+  accepts one or two arguments, validates the optional autoload flag as bool
+  without triggering autoloading, works through string-valued dynamic calls,
+  and keeps native lowering explicitly rejected through the current
+  function-call codegen boundary.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone100/class_exists.*`,
+  `tests/fixtures/runtime_errors/class_exists_invalid_name.*`,
+  `tests/fixtures/runtime_errors/class_exists_invalid_autoload.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and
+  `CHANGELOG.md`.
+- Tests run so far: `cargo test -p phpc --test object_model class_exists`
+  passed; `cargo fmt -- --check` passed; direct `cargo run -p phpc -- run`
+  commands for the supported and invalid-name fixtures produced the expected
+  behavior; `cargo test -p phpc --test object_introspection_builtins_cli`
+  passed; `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone100` passed with 1 fixture; `cargo run
+  -p phpc -- test --compare-php tests/fixtures/milestone100` passed with 1
+  system PHP comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 116 fixtures; `cargo test -p phpc --test object_model` passed
+  with 19 tests; `git diff --check` passed.
+- Remaining semantic gaps: `class_exists` does not trigger autoloading, does
+  not resolve namespaces or import aliases, does not model anonymous classes or
+  exact native `TypeError` objects, and has no native lowering.
+- Next concrete task: add the next small object/class boundary to
+  `docs/NEXT_TASKS.md` and complete it with tests, CLI coverage, docs, and
+  named unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add class_exists builtin"`
+  after the full suite passes.
+
+## Loop Event 2026-05-12T20:03:00Z
+
+- Full suite result before checkpoint: `tools/run-tests.sh` passed with 295
+  fixtures, 110 system PHP comparisons, and 185 skips.

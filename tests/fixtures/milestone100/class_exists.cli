@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+box:exists
+box:false-autoload
+missing:not-exists
+dynamic:exists
+--- stdout end ---
+stderr:
+--- stderr end ---

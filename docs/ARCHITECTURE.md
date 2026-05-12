@@ -168,6 +168,10 @@ the current public slot without treating a missing name as a property read.
 minimal object value and is also available through string-valued dynamic
 function calls. `get_debug_type($value)` reports current scalar/array type
 names and the declared class name for current object values.
+`class_exists($name[, $autoload])` checks the interpreter's already-registered
+class metadata table by string class name, using the same case-insensitive
+class lookup as instantiation. The autoload flag is accepted only as a boolean
+and does not trigger autoloading in the current subset.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

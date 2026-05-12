@@ -103,13 +103,14 @@
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `get_class`, `is_object`, `get_debug_type`, `var_dump`, and
-  `print_r`;
+  `array_search`, `get_class`, `is_object`, `get_debug_type`,
+  `class_exists`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
-  object's declared class name, and `print_r` can render current minimal
-  object values
+  object's declared class name, `class_exists` checks the current declared
+  class metadata by string name without autoloading, and `print_r` can render
+  current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -284,7 +285,12 @@
   function calls. `get_debug_type($value)` returns current scalar/array type
   names (`null`, `bool`, `int`, `float`, `string`, `array`) and the declared
   class name for current minimal object values, and is available through
-  string-valued dynamic function calls. Static member expressions through `::`,
+  string-valued dynamic function calls. `class_exists($name)` and
+  `class_exists($name, $autoload)` accept string class names, perform
+  case-insensitive lookup against classes declared in the current parsed
+  program, accept only boolean autoload flags, and are available through
+  string-valued dynamic function calls. The autoload flag does not trigger
+  autoloading in the current subset. Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
@@ -606,6 +612,7 @@
   constants, division by zero, non-numeric string arithmetic, duplicate class
   metadata, undefined classes, undefined object properties, invalid property
   targets, non-public property access, non-object `get_class` operands,
+  non-string `class_exists` names, non-bool `class_exists` autoload flags,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -615,6 +622,7 @@
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
+  `class_exists(...)`,
   `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
   rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -702,13 +710,16 @@
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
-  `is_object`, `get_debug_type`, `var_dump`, and `print_r` cover the documented
-  scalar/array/object subset.
+  `is_object`, `get_debug_type`, `class_exists`, `var_dump`, and `print_r`
+  cover the documented scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
   `get_debug_type($value)` returns current scalar/array type names and the
-  declared class name for current minimal object values.
+  declared class name for current minimal object values. `class_exists($name)`
+  and `class_exists($name, $autoload)` accept string class names, return whether
+  the current parsed program declared that class, and accept only boolean
+  autoload flags without triggering autoloading.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer

@@ -252,6 +252,55 @@ echo $call($box), "\n";
 }
 
 #[test]
+fn class_exists_checks_declared_class_metadata() {
+    let source = r#"<?php
+class Box {}
+
+if (class_exists("box")) {
+    echo "box:exists\n";
+}
+if (class_exists("BOX", false)) {
+    echo "box:false-autoload\n";
+}
+if (!class_exists("Missing")) {
+    echo "missing:not-exists\n";
+}
+$call = "class_exists";
+if ($call("Box", true)) {
+    echo "dynamic:exists\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "box:exists\nbox:false-autoload\nmissing:not-exists\ndynamic:exists\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_exists_requires_string_name_and_bool_autoload_arguments() {
+    let name_error = runtime_error("<?php\nvar_dump(class_exists(42));\n");
+
+    assert_eq!(name_error.line, 2);
+    assert_eq!(name_error.column, 10);
+    assert_eq!(
+        name_error.message,
+        "unsupported call class_exists(): class name argument must be string, got int"
+    );
+
+    let autoload_error = runtime_error("<?php\nvar_dump(class_exists(\"Box\", 1));\n");
+
+    assert_eq!(autoload_error.line, 2);
+    assert_eq!(autoload_error.column, 10);
+    assert_eq!(
+        autoload_error.message,
+        "unsupported call class_exists(): autoload argument must be bool in the current subset, got int"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -292,6 +341,18 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
             || error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_class_exists_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho class_exists(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
         "{}",
         error.message
     );

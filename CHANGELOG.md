@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `class_exists($name[, $autoload])` for the current declared-class
+  metadata table, with runtime coverage, fixture coverage, and `phpc run` CLI
+  snapshots.
 - Added `get_debug_type($value)` for the current scalar/array/minimal object
   value model, with runtime coverage, fixture coverage, and a `phpc run` CLI
   snapshot.

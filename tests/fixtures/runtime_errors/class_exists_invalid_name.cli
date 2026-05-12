@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/class_exists_invalid_name.php:2:10: unsupported call class_exists(): class name argument must be string, got int
+--- stderr end ---

@@ -1957,6 +1957,41 @@ impl Interpreter {
                 };
                 Ok(Value::String(type_name))
             }
+            "class_exists" => {
+                match args.as_slice() {
+                    [Value::String(class_name)] => {
+                        Ok(Value::Bool(self.classes.lookup_class(class_name).is_some()))
+                    }
+                    [Value::String(class_name), Value::Bool(_autoload)] => {
+                        Ok(Value::Bool(self.classes.lookup_class(class_name).is_some()))
+                    }
+                    [other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "class_exists()",
+                            format!("class name argument must be string, got {}", other.type_name()),
+                        ),
+                    )),
+                    [_, other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "class_exists()",
+                            format!(
+                                "autoload argument must be bool in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                    _ => Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "class_exists()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    )),
+                }
+            }
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2657,6 +2692,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_class"
             | "is_object"
             | "get_debug_type"
+            | "class_exists"
             | "var_dump"
             | "print_r"
     )

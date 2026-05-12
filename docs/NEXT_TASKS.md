@@ -946,3 +946,12 @@ handled.
   availability, fixture CLI coverage, documentation, and explicit gaps for
   inheritance aliases/imports, anonymous classes, resources, exact native
   reflection/type-system interactions, and native lowering.
+
+## Milestone 100: Class Metadata Introspection Builtin
+
+- [x] Implement `class_exists($name[, $autoload])` over the current declared
+  class metadata table, including case-insensitive class-name lookup,
+  string-valued dynamic-call availability, non-string name and non-bool
+  autoload diagnostics, fixture CLI coverage, documentation, and explicit gaps
+  for autoloading, namespaces/import aliases, anonymous classes, exact native
+  `TypeError` behavior, and native lowering.
