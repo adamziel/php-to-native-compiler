@@ -22,10 +22,13 @@
   values (`null`, booleans, integers, floats, and strings)
 - `if` / `else`
 - `while`
+- `for (initializer; condition; increment)` loops where each header slot is
+  optional and each initializer/increment slot contains at most one expression
+  or assignment from the current assignment subset
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   ordered arrays
-- `break;` and `continue;` for the innermost currently executing `while` or
-  `foreach` loop
+- `break;` and `continue;` for the innermost currently executing `while`,
+  `for`, or `foreach` loop
 - function declarations
 - positional function calls
 - dynamic function calls through string-valued expressions that resolve to the
@@ -94,7 +97,8 @@
   current direct-variable and direct array-offset statement subset
 - explicit parse diagnostics for unsupported `foreach` by-reference iteration,
   destructuring loop targets, and expression-position `foreach`
-- explicit parse diagnostics for unsupported `for (...)` syntax
+- explicit parse diagnostics for unsupported expression-position `for` and
+  comma-separated `for` header expression lists
 - explicit parse diagnostics for unsupported `do ... while` syntax
 - explicit parse diagnostics for unsupported `switch (...)` syntax
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
@@ -229,13 +233,14 @@
   comparisons in `phpc run` fail with an explicit unsupported-comparison
   runtime error.
 - Loop control: `break;` and `continue;` execute for the innermost currently
-  executing `while` or supported array `foreach` loop in `phpc run`. A `break;` or
-  `continue;` that reaches top-level code or a user-function body without an
-  enclosing active loop fails with a stable invalid-loop-control runtime error.
-  Loop-depth arguments such as `break 2;` and `continue 2;` are rejected with
-  stable parse diagnostics. Interaction with future `for`/`do ... while`/
-  `switch` execution, `finally`/exception behavior, and native lowering are not
-  implemented.
+  executing `while`, supported `for`, or supported array `foreach` loop in
+  `phpc run`. For `for` loops, `continue;` runs the increment action before the
+  next condition check. A `break;` or `continue;` that reaches top-level code or
+  a user-function body without an enclosing active loop fails with a stable
+  invalid-loop-control runtime error. Loop-depth arguments such as `break 2;`
+  and `continue 2;` are rejected with stable parse diagnostics. Interaction
+  with future `do ... while`/`switch` execution, `finally`/exception behavior,
+  and native lowering are not implemented.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet. Representative runtime errors are covered by committed `phpc run`
@@ -255,9 +260,9 @@
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
   assignment, variable unset, array offset unset, multiple-operand unset,
-  `foreach`, `break`,
-  `continue`, class declarations, object instantiation, object property reads,
-  and object property writes are rejected with explicit codegen errors.
+  `for`, `foreach`, `break`, `continue`, class declarations, object
+  instantiation, object property reads, and object property writes are rejected
+  with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -363,11 +368,11 @@
   are not implemented.
 - Array gaps: array spread elements and array reference elements are rejected
   with stable parse diagnostics. `unset(...)` forms outside direct variables
-  and direct array-offset operands, direct `for (...)` syntax, direct
-  `do ... while` syntax, and direct `switch (...)` syntax are rejected with
-  stable parse diagnostics; object property removal, append-offset unset,
-  nested/complex unset operands, C-style/post-condition loops, and switch/case
-  control flow are not implemented.
+  and direct array-offset operands, comma-separated `for` header expression
+  lists, direct `do ... while` syntax, and direct `switch (...)` syntax are
+  rejected with stable parse diagnostics; object property removal,
+  append-offset unset, nested/complex unset operands, post-condition loops, and
+  switch/case control flow are not implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
   expression, string offset access, by-reference `foreach`, object iteration,
@@ -435,15 +440,16 @@
   operands; these fail with stable parse diagnostics
 - by-reference `foreach`, object iteration, destructuring loop targets, and
   expression-form `foreach`
-- `for (...)`; direct syntax is rejected with a stable parse diagnostic before
-  C-style loops exist
+- comma-separated `for` initializer, condition, or increment expression lists;
+  only zero or one expression or assignment is supported in each header slot
+- expression-form `for`; `for` is only supported as a statement
 - `do ... while`; direct syntax is rejected with a stable parse diagnostic
   before post-condition loops exist
 - `switch (...)`; direct syntax is rejected with a stable parse diagnostic
   before switch/case control flow exists
 - `break`/`continue` loop-depth arguments such as `break 2;` and `continue 2;`;
   only statement-form `break;` and `continue;` for the innermost active
-  `while` or supported array `foreach` loop are implemented
+  `while`, supported `for`, or supported array `foreach` loop are implemented
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

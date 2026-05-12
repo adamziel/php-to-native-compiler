@@ -115,6 +115,10 @@ impl LlvmGenerator {
                 *span,
                 "while is supported by phpc run but not LLVM IR emission yet",
             )),
+            Stmt::For { span, .. } => Err(self.unsupported(
+                *span,
+                "for loops are supported by phpc run but not LLVM IR emission yet",
+            )),
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,
                 "foreach array iteration is supported by phpc run but not LLVM IR emission yet",
@@ -137,11 +141,11 @@ impl LlvmGenerator {
             )),
             Stmt::Break { span } => Err(self.unsupported(
                 *span,
-                "break is supported by phpc run for innermost while loops but not LLVM IR emission yet",
+                "break is supported by phpc run for innermost loops but not LLVM IR emission yet",
             )),
             Stmt::Continue { span } => Err(self.unsupported(
                 *span,
-                "continue is supported by phpc run for innermost while loops but not LLVM IR emission yet",
+                "continue is supported by phpc run for innermost loops but not LLVM IR emission yet",
             )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,
@@ -631,6 +635,10 @@ impl CGenerator {
                 *span,
                 "while is supported by phpc run but not assembly emission yet",
             )),
+            Stmt::For { span, .. } => Err(self.unsupported(
+                *span,
+                "for loops are supported by phpc run but not assembly emission yet",
+            )),
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,
                 "foreach array iteration is supported by phpc run but not assembly emission yet",
@@ -653,11 +661,11 @@ impl CGenerator {
             )),
             Stmt::Break { span } => Err(self.unsupported(
                 *span,
-                "break is supported by phpc run for innermost while loops but not assembly emission yet",
+                "break is supported by phpc run for innermost loops but not assembly emission yet",
             )),
             Stmt::Continue { span } => Err(self.unsupported(
                 *span,
-                "continue is supported by phpc run for innermost while loops but not assembly emission yet",
+                "continue is supported by phpc run for innermost loops but not assembly emission yet",
             )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,

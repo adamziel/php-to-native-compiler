@@ -1,6 +1,6 @@
 <?php
 $sum = 0;
-for ($i = 0; $i < 3; $i = $i + 1) {
+for ($i = 0, $j = 0; $i < 3; $i = $i + 1) {
     $sum = $sum + $i;
 }
 echo $sum;

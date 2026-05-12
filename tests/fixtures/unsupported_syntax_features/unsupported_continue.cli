@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_continue.php:3:5: unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_continue.php:3:5: unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported
 --- stderr end ---

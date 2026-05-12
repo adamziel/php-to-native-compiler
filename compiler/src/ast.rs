@@ -45,6 +45,13 @@ pub enum Stmt {
         body: Vec<Stmt>,
         span: Span,
     },
+    For {
+        initializer: Option<ForAction>,
+        condition: Option<Expr>,
+        increment: Option<ForAction>,
+        body: Vec<Stmt>,
+        span: Span,
+    },
     Foreach {
         iterable: Expr,
         key: Option<String>,
@@ -112,6 +119,12 @@ pub enum UnsetTarget {
         index: Expr,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForAction {
+    Assign { target: AssignTarget, expr: Expr },
+    Expr { expr: Expr },
 }
 
 impl AssignTarget {

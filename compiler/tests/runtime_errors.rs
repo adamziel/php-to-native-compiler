@@ -1,11 +1,21 @@
 use php_compiler::error::Phase;
 use php_compiler::interpreter::MAX_USER_FUNCTION_CALL_DEPTH;
 use php_compiler::run_source;
+use std::thread;
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
     error
+}
+
+fn with_large_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(f)
+        .expect("large-stack test thread should spawn")
+        .join()
+        .expect("large-stack test thread should not panic")
 }
 
 #[test]
@@ -294,14 +304,16 @@ echo isset($box->secret);
 
 #[test]
 fn runaway_user_function_recursion_hits_stable_depth_guard() {
-    let error = runtime_error(
-        r#"<?php
+    let error = with_large_stack(|| {
+        runtime_error(
+            r#"<?php
 function loop($n) {
     return loop($n + 1);
 }
 echo loop(0);
 "#,
-    );
+        )
+    });
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 12);

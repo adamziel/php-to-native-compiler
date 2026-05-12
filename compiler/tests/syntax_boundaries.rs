@@ -173,23 +173,27 @@ echo foreach ($items as $item);
 }
 
 #[test]
-fn for_syntax_is_rejected_with_stable_parse_error() {
+fn unsupported_for_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
-for ($i = 0; $i < 3; $i = $i + 1) {
+for ($i = 0, $j = 0; $i < 3; $i = $i + 1) {
     echo $i;
 }
 "#,
             2,
-            1,
+            12,
+            "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot",
         ),
         (
             r#"<?php
-FOR ($i = 0; $i < 3; $i = $i + 1) echo $i;
+for ($i = 0; $i < 3; $i = $i + 1, $j = $j + 1) {
+    echo $i;
+}
 "#,
             2,
-            1,
+            33,
+            "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot",
         ),
         (
             r#"<?php
@@ -197,17 +201,15 @@ echo for ($i = 0; $i < 3; $i = $i + 1);
 "#,
             2,
             6,
+            "unsupported for: for loops are only supported as statements in the current subset",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported for: C-style loops are not implemented"
-        );
+        assert_eq!(error.message, message);
     }
 }
 
@@ -315,7 +317,7 @@ while (true) {
 "#,
             3,
             5,
-            "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost while loop is supported",
+            "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported",
         ),
         (
             r#"<?php
@@ -346,7 +348,7 @@ while (true) {
 "#,
             3,
             5,
-            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported",
+            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported",
         ),
         (
             r#"<?php
@@ -356,7 +358,7 @@ while (true) {
 "#,
             3,
             5,
-            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported",
+            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported",
         ),
         (
             r#"<?php

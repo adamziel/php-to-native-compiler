@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::Command;
+use std::thread;
 
 use php_compiler::test_runner::run_fixture_dir;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
@@ -7,7 +8,12 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 #[test]
 fn milestone1_fixtures_pass() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures");
-    let summary = run_fixture_dir(&fixture_dir).unwrap();
+    let summary = thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || run_fixture_dir(&fixture_dir).unwrap())
+        .expect("large-stack fixture test thread should spawn")
+        .join()
+        .expect("large-stack fixture test thread should not panic");
     assert_eq!(summary.failed, 0, "{:#?}", summary.failures);
     assert!(summary.passed >= 13);
 }
@@ -115,6 +121,14 @@ fn emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists() {
             .unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(error.message.contains("foreach"), "{}", error.message);
+}
+
+#[test]
+fn emit_ir_rejects_for_until_native_loop_lowering_exists() {
+    let error =
+        emit_ir_source("<?php\nfor ($i = 0; $i < 3; $i = $i + 1) { echo $i; }\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(error.message.contains("for loops"), "{}", error.message);
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use php_runtime::{
     ArityExpectation, ArrayKey, Comparison, ObjectProperty, PhpArray, PhpClassTable,
@@ -7,8 +8,8 @@ use php_runtime::{
 };
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, Expr, FunctionDecl,
-    Program, Span, Stmt, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, Expr, ForAction,
+    FunctionDecl, Program, Span, Stmt, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -31,7 +32,7 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 }
 
 struct Interpreter {
-    functions: HashMap<String, FunctionDecl>,
+    functions: HashMap<String, Rc<FunctionDecl>>,
     classes: PhpClassTable,
     call_depth: usize,
     stdout: String,
@@ -40,7 +41,7 @@ struct Interpreter {
 #[derive(Debug, Clone)]
 enum Callable {
     Builtin(String),
-    User(FunctionDecl),
+    User(Rc<FunctionDecl>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -119,7 +120,7 @@ impl Interpreter {
                             RuntimeError::duplicate_function(callable_name(&function.name)),
                         ));
                     }
-                    functions.insert(key, function.clone());
+                    functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) => register_class(&mut classes, class)?,
                 _ => {}
@@ -219,6 +220,37 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
+            Stmt::For {
+                initializer,
+                condition,
+                increment,
+                body,
+                ..
+            } => {
+                if let Some(initializer) = initializer {
+                    self.execute_for_action(initializer, scope)?;
+                }
+
+                loop {
+                    if let Some(condition) = condition {
+                        if !self.evaluate(condition, scope)?.is_truthy() {
+                            break;
+                        }
+                    }
+
+                    match self.execute_statements(body, scope)? {
+                        Flow::Normal | Flow::Continue(_) => {}
+                        Flow::Break(_) => break,
+                        flow @ Flow::Return(_) => return Ok(flow),
+                    }
+
+                    if let Some(increment) = increment {
+                        self.execute_for_action(increment, scope)?;
+                    }
+                }
+
+                Ok(Flow::Normal)
+            }
             Stmt::Foreach {
                 iterable,
                 key,
@@ -285,6 +317,20 @@ impl Interpreter {
                     "importing globals into function scope is not implemented",
                 ),
             )),
+        }
+    }
+
+    fn execute_for_action(
+        &mut self,
+        action: &ForAction,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match action {
+            ForAction::Assign { target, expr } => self.execute_assignment(target, expr, scope),
+            ForAction::Expr { expr } => {
+                self.evaluate(expr, scope)?;
+                Ok(())
+            }
         }
     }
 
@@ -649,12 +695,13 @@ impl Interpreter {
 
     fn call_user_function(
         &mut self,
-        function: FunctionDecl,
+        function: Rc<FunctionDecl>,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let required_params = required_param_count(&function);
+        let function = function.as_ref();
+        let required_params = required_param_count(function);
         if args.len() < required_params || args.len() > function.params.len() {
             return Err(runtime_error(
                 span,

@@ -2725,3 +2725,64 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:09:35Z
 
 - Post-round 43 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:09:38Z
+
+- Starting round 44 at 20260512T030938Z from HEAD `04f0dd5`.
+
+## Loop Event 2026-05-12T03:09:41Z
+
+- Pre-round 44 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:20:26Z
+
+- Task attempted: implemented C-style `for (...)` loops over the current
+  expression and assignment subset. Supported statement-form loops now accept
+  optional initializer, condition, and increment slots, run omitted conditions
+  as true, execute `continue;` by running the increment before the next
+  condition check, consume `break;` at the innermost active loop, reject
+  comma-separated header expression lists and expression-form `for` with stable
+  parse diagnostics, and reject native lowering with explicit codegen errors.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/for_loop.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone10/for_loops.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_for.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_break.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_continue.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test for_loop` passed with 3 tests; `cargo test -p phpc --test
+  syntax_boundaries` passed with 9 tests; `cargo test -p phpc --test
+  milestone1 emit_ir_rejects_for_until_native_loop_lowering_exists` passed;
+  `cargo test -p phpc --test syntax_expansion_cli` passed; `cargo test -p
+  phpc --test unsupported_syntax_features_cli` passed; `cargo test -p phpc
+  --test runtime_errors runaway_user_function_recursion_hits_stable_depth_guard`
+  passed after moving that guard exercise to a large-stack test thread without
+  changing the 128-frame runtime guard; `cargo test -p phpc --test milestone1
+  milestone1_fixtures_pass` passed after using the same large-stack fixture
+  test thread; `cargo run -p phpc -- test tests/fixtures/milestone10` passed
+  with 2 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone10` passed with 2 system PHP comparisons; `cargo run
+  -p phpc -- test tests/fixtures/unsupported_syntax_features` passed with 9
+  fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone10/for_loops.php` printed the committed `for` output;
+  `cargo run -p phpc -- compile tests/fixtures/milestone10/for_loops.php
+  --emit-ir` exited `1` with the expected explicit `for loops` codegen
+  rejection; `tools/run-tests.sh` passed with 111 fixtures, 44 system PHP
+  comparisons, and 67 `.phpc-only` skips.
+- Remaining semantic gaps: `for` header expression lists are limited to zero or
+  one expression/assignment per initializer, condition, and increment slot;
+  `for` remains statement-only; native lowering for `for` is unsupported;
+  loop-depth arguments, `do ... while`, `switch`, `finally`/exception
+  interactions, PHP references/copy-on-write effects, and exact PHP
+  warning/Error behavior remain unsupported.
+- Next concrete task: implement `do ... while` loops over the current scalar
+  expression and assignment subset, including at-least-once execution,
+  condition evaluation after the body, `break;`/`continue;` behavior, fixture
+  CLI coverage, documentation, and explicit native-codegen rejection while
+  lowering remains unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "loops: add C-style for execution"`
+  after the full suite passes.

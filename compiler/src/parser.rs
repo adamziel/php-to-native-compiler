@@ -1,6 +1,7 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
-    ClassVisibility, Expr, FunctionDecl, FunctionParam, Program, Span, Stmt, UnaryOp, UnsetTarget,
+    ClassVisibility, Expr, ForAction, FunctionDecl, FunctionParam, Program, Span, Stmt, UnaryOp,
+    UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -42,7 +43,7 @@ impl Parser {
             TokenKind::While => self.parse_while(),
             TokenKind::Do => self.parse_unsupported_do_while(),
             TokenKind::Foreach => self.parse_foreach(),
-            TokenKind::For => self.parse_unsupported_for(),
+            TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_unsupported_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
@@ -54,9 +55,7 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
                 self.parse_foreach()
             }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("for") => {
-                self.parse_unsupported_for()
-            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("for") => self.parse_for(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("switch") => {
                 self.parse_unsupported_switch()
             }
@@ -359,6 +358,67 @@ impl Parser {
         })
     }
 
+    fn parse_for(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after for")?;
+
+        let initializer = self.parse_optional_for_action(TokenKind::Semicolon)?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after for initializer")?;
+
+        let condition = if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+            None
+        } else {
+            let condition = self.parse_expression()?;
+            self.reject_for_header_list_if_comma()?;
+            Some(condition)
+        };
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after for condition")?;
+
+        let increment = self.parse_optional_for_action(TokenKind::RParen)?;
+        self.consume_keyword(TokenKind::RParen, "expected ')' after for increment")?;
+
+        let body = self.parse_block_or_statement()?;
+        Ok(Stmt::For {
+            initializer,
+            condition,
+            increment,
+            body,
+            span,
+        })
+    }
+
+    fn parse_optional_for_action(&mut self, end: TokenKind) -> CompileResult<Option<ForAction>> {
+        if self.check(|kind| same_variant(kind, &end)) {
+            return Ok(None);
+        }
+
+        let action = self.parse_for_action()?;
+        self.reject_for_header_list_if_comma()?;
+        Ok(Some(action))
+    }
+
+    fn parse_for_action(&mut self) -> CompileResult<ForAction> {
+        if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            let saved = self.current;
+            let target = self.parse_assignment_target()?;
+            if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                let expr = self.parse_expression()?;
+                return Ok(ForAction::Assign { target, expr });
+            }
+            self.current = saved;
+        }
+
+        let expr = self.parse_expression()?;
+        Ok(ForAction::Expr { expr })
+    }
+
+    fn reject_for_header_list_if_comma(&self) -> CompileResult<()> {
+        if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(self.peek().span, unsupported_for_header_list_message()));
+        }
+        Ok(())
+    }
+
     fn parse_foreach(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after foreach")?;
@@ -414,11 +474,6 @@ impl Parser {
     fn parse_unsupported_do_while(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
         Err(self.error_at(token.span, unsupported_do_while_message()))
-    }
-
-    fn parse_unsupported_for(&mut self) -> CompileResult<Stmt> {
-        let token = self.advance().clone();
-        Err(self.error_at(token.span, unsupported_for_message()))
     }
 
     fn parse_unsupported_switch(&mut self) -> CompileResult<Stmt> {
@@ -859,7 +914,7 @@ impl Parser {
             TokenKind::Foreach => {
                 Err(self.error_at(token.span, unsupported_foreach_expression_message()))
             }
-            TokenKind::For => Err(self.error_at(token.span, unsupported_for_message())),
+            TokenKind::For => Err(self.error_at(token.span, unsupported_for_expression_message())),
             TokenKind::Switch => Err(self.error_at(token.span, unsupported_switch_message())),
             TokenKind::Break => {
                 Err(self.error_at(token.span, unsupported_break_expression_message()))
@@ -893,7 +948,7 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_foreach_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("for") {
-                    return Err(self.error_at(token.span, unsupported_for_message()));
+                    return Err(self.error_at(token.span, unsupported_for_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("switch") {
                     return Err(self.error_at(token.span, unsupported_switch_message()));
@@ -1422,8 +1477,12 @@ fn unsupported_do_while_message() -> &'static str {
     "unsupported do-while: post-condition loops are not implemented"
 }
 
-fn unsupported_for_message() -> &'static str {
-    "unsupported for: C-style loops are not implemented"
+fn unsupported_for_expression_message() -> &'static str {
+    "unsupported for: for loops are only supported as statements in the current subset"
+}
+
+fn unsupported_for_header_list_message() -> &'static str {
+    "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot"
 }
 
 fn unsupported_switch_message() -> &'static str {
@@ -1431,7 +1490,7 @@ fn unsupported_switch_message() -> &'static str {
 }
 
 fn unsupported_break_depth_message() -> &'static str {
-    "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost while loop is supported"
+    "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported"
 }
 
 fn unsupported_break_expression_message() -> &'static str {
@@ -1439,7 +1498,7 @@ fn unsupported_break_expression_message() -> &'static str {
 }
 
 fn unsupported_continue_depth_message() -> &'static str {
-    "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported"
+    "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported"
 }
 
 fn unsupported_continue_expression_message() -> &'static str {

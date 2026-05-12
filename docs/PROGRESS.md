@@ -279,6 +279,13 @@ Implemented:
   variables and missing array keys remain no-ops, unsupported property,
   append-offset, and nested unset forms remain explicit parse diagnostics, and
   native lowering rejects multiple-operand unset explicitly.
+- Implemented C-style `for (...)` loops over the current expression and
+  assignment subset. The parser accepts statement-form loops with optional
+  initializer, condition, and increment slots; initializer/increment slots
+  support one expression or assignment; omitted conditions behave as true;
+  `break;` exits the innermost loop; `continue;` runs the increment before the
+  next condition check; comma-separated header expression lists remain explicit
+  parse diagnostics; and native lowering rejects `for` loops explicitly.
 
 Tested:
 
@@ -319,9 +326,14 @@ Tested:
   `array(...)` literal execution coverage and stable parse diagnostic coverage
   for unsupported array spread/reference elements, unsupported broader
   `unset(...)` forms, unsupported `foreach` by-reference and destructuring
-  forms, expression-form `foreach`, unsupported `for (...)` syntax,
-  unsupported `do ... while` syntax, unsupported `switch (...)` syntax, and
-  unsupported `break`/`continue` loop-depth arguments.
+  forms, expression-form `foreach`, unsupported `for` header expression lists,
+  expression-form `for`, unsupported `do ... while` syntax, unsupported
+  `switch (...)` syntax, and unsupported `break`/`continue` loop-depth
+  arguments.
+- `cargo test -p phpc --test for_loop` passes with C-style `for` loop
+  coverage for initializer/condition/increment execution, optional header
+  slots, uppercase `FOR`, single-statement bodies, and `break;`/`continue;`
+  behavior.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
   snapshot test covering 9 unsupported syntax fixtures.
 - `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
@@ -396,15 +408,18 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists`
   passes with rejection coverage for key/value `foreach` before native
   iteration lowering exists.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_for_until_native_loop_lowering_exists`
+  passes with rejection coverage for `for` loops before native loop lowering
+  exists.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_variable_unset_until_native_lowering_exists`
   passes with rejection coverage for direct variable unset before native
   symbol-table mutation lowering exists.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 110 fixture tests.
+- `cargo run -p phpc -- test` passes with 111 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 43 fixtures and skipping 67 `.phpc-only` fixtures.
+  installed, comparing 44 fixtures and skipping 67 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -434,10 +449,10 @@ Tested:
   mutation fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
   with 3 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone10` passes with 1 syntax
-  expansion fixture.
+- `cargo run -p phpc -- test tests/fixtures/milestone10` passes with 2 syntax
+  expansion fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone10` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -474,6 +489,9 @@ Tested:
   prints the committed array append/indexed read/indexed write output.
 - `cargo run -p phpc -- run tests/fixtures/milestone10/long_array_literals.php`
   prints the committed long array literal/count/print_r/indexed-read output.
+- `cargo run -p phpc -- run tests/fixtures/milestone10/for_loops.php`
+  prints the committed C-style `for` loop output with `continue;`, `break;`,
+  omitted header slots, and increment behavior.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 34
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
@@ -571,7 +589,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:20: unsupported foreach: destructuring loop targets are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_for.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_for.php:3:1: unsupported for: C-style loops are not implemented`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_for.php:3:12: unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_do_while.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_do_while.php:3:1: unsupported do-while: post-condition loops are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_switch.php`
@@ -615,9 +633,9 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/continue_outside_loop.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/continue_outside_loop.php:2:1: invalid loop control: continue cannot be used outside a loop`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_break.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_break.php:3:5: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost while loop is supported`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_break.php:3:5: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_continue.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_continue.php:3:5: unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_continue.php:3:5: unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_anonymous_class.php`
@@ -688,18 +706,18 @@ Still fails:
   array-offset operands on direct variables; object property removal,
   append-offset unset, and nested/complex unset operands fail with stable parse
   diagnostics.
-  `for (...)` fails with a stable parse diagnostic before C-style loops exist,
-  `do ... while` fails with a stable parse diagnostic before post-condition
-  loops exist, and `switch (...)` fails with a stable parse diagnostic before
-  switch/case control flow exists. Nested indexed writes, complex assignment
-  lvalues, `$array[]` as a read expression, string offset access, by-reference
-  `foreach`, object iteration, destructuring loop targets, references,
-  copy-on-write containers, `for`/`do ... while` iteration behavior, `switch`
-  case matching/fallthrough/default handling, and object/resource keys are also
-  unsupported, as are PHP's full boolean/null/float key coercion rules. The
-  current `foreach` array forms snapshot array entries at loop start and do not
-  claim PHP's full mutation/aliasing behavior while the iterated array is
-  modified.
+  Comma-separated `for` initializer, condition, and increment expression lists
+  fail with stable parse diagnostics; `do ... while` fails with a stable parse
+  diagnostic before post-condition loops exist; and `switch (...)` fails with a
+  stable parse diagnostic before switch/case control flow exists. Nested indexed
+  writes, complex assignment lvalues, `$array[]` as a read expression, string
+  offset access, by-reference `foreach`, object iteration, destructuring loop
+  targets, references, copy-on-write containers, `do ... while` iteration
+  behavior, `switch` case matching/fallthrough/default handling, and
+  object/resource keys are also unsupported, as are PHP's full boolean/null/
+  float key coercion rules. The current `foreach` array forms snapshot array
+  entries at loop start and do not claim PHP's full mutation/aliasing behavior
+  while the iterated array is modified.
   Missing array-key reads
   fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Direct array-offset `isset` is limited to direct
@@ -734,11 +752,11 @@ Still fails:
   behavior. Negative-key auto-index behavior is not claimed beyond the current
   non-negative allocator, and arrays still reject native lowering.
 - Loop-control execution is limited to statement-form `break;` and `continue;`
-  inside active `while` and supported array `foreach` loops. Loop-depth
-  arguments, invalid top-level/function-level loop control recovery beyond the
-  stable runtime diagnostic, interactions with future `for`/`do ... while`/
-  `switch` execution, `finally`/exception behavior, and native loop-control
-  lowering are not implemented.
+  inside active `while`, supported `for`, and supported array `foreach` loops.
+  Loop-depth arguments, invalid top-level/function-level loop control recovery
+  beyond the stable runtime diagnostic, interactions with future
+  `do ... while`/`switch` execution, `finally`/exception behavior, and native
+  loop-control lowering are not implemented.
 - Runtime errors abort the current `phpc run` command with a stable diagnostic;
   PHP `Throwable` objects, stack traces, warning/notice recovery, user error
   handlers, and preservation of partial stdout before a fatal runtime error are
@@ -796,7 +814,7 @@ Still fails:
 
 Next:
 
-- Implement C-style `for (...)` loops over the current scalar expression and
-  assignment subset, including fixture CLI coverage, documentation, loop-control
-  behavior, and explicit native-codegen rejection while lowering remains
-  unsupported.
+- Implement `do ... while` loops over the current scalar expression and
+  assignment subset, including at-least-once execution, `break;`/`continue;`
+  behavior, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection while lowering remains unsupported.

@@ -168,7 +168,12 @@ handled.
   short-array literal subset, including keyed entries, fixture CLI coverage,
   documentation, and explicit unsupported gaps for references, spread, and
   unsupported key coercions.
-- [ ] Implement C-style `for (...)` loops over the current scalar expression
+- [x] Implement C-style `for (...)` loops over the current scalar expression
   and assignment subset, including initializer, condition, increment,
   `break;`/`continue;` behavior, fixture CLI coverage, documentation, and
   explicit native-codegen rejection while lowering remains unsupported.
+- [ ] Implement `do ... while` loops over the current scalar expression and
+  assignment subset, including at-least-once execution, condition evaluation
+  after the body, `break;`/`continue;` behavior, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection while lowering remains
+  unsupported.

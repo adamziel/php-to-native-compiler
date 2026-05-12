@@ -1,2 +1,2 @@
-parse error at 3:5: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost while loop is supported
+parse error at 3:5: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported
 
