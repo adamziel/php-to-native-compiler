@@ -10548,3 +10548,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Known-good tag: not created; this is a narrow null-aware assignment follow-up,
   not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "syntax: add direct variable null coalescing assignment"`.
+
+## Loop Event 2026-05-12T23:28:52Z
+
+- Codex round 18 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T232152Z-18.log`.
+
+## Loop Event 2026-05-12T23:29:03Z
+
+- Post-round 18 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:29:03Z
+
+- Post-round 18 tests passed; running checkpoint for this round.
