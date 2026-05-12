@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `spl_object_hash($object)` as an explicit unsupported object-handle
+  hash boundary before PHP object handle hash behavior exists, with direct-call
+  and dynamic-call runtime coverage, non-object diagnostics, fixture and CLI
+  snapshots, documentation, and native-codegen rejection coverage.
 - Added `spl_object_id($object)` as an explicit unsupported object-handle
   identity boundary before PHP object handles exist, with direct-call and
   dynamic-call runtime coverage, non-object diagnostics, fixture and CLI

@@ -9919,3 +9919,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:12:57Z
 
 - Post-round 7 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:13:06Z
+
+- Starting round 8 at 20260512T221306Z from HEAD `ae46deb`.
+
+## Loop Event 2026-05-12T22:13:18Z
+
+- Pre-round 8 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:18:28Z
+
+- Task attempted: added `spl_object_hash($object)` as the next honest
+  object-handle hash boundary. Direct calls and string-valued dynamic calls now
+  resolve as a known one-argument callable, non-object operands fail with a
+  stable type-boundary diagnostic, object operands fail with a stable
+  unsupported-call diagnostic until PHP object handle hash behavior exists, and
+  native lowering still rejects through the current unsupported class/function
+  call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone117/spl_object_hash_boundary.*`,
+  `tests/fixtures/runtime_errors/spl_object_hash_non_object.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  spl_object_hash` passed with 3 focused tests; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone117/spl_object_hash_boundary.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/spl_object_hash_non_object.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- test
+  tests/fixtures/milestone117` passed with 1 fixture; `cargo run -p phpc --
+  test tests/fixtures/runtime_errors` passed with 140 fixtures;
+  `PATH=/nonexistent ./target/debug/phpc test --compare-php
+  tests/fixtures/milestone117` passed with 1 PHP comparison skipped;
+  `cargo run -p phpc -- compile
+  tests/fixtures/milestone117/spl_object_hash_boundary.php --emit-ir` exited
+  `1` with the expected explicit codegen rejection; `tools/run-tests.sh` passed
+  with 336 fixtures, 121 system PHP comparisons, and 215 skips.
+- Remaining semantic gaps: `spl_object_hash()` is only an explicit unsupported
+  boundary for object inputs. PHP object handle identity, hash formatting,
+  handle reuse after destruction, clone semantics, destructors,
+  references/copy-on-write behavior, exact native `TypeError` objects, and
+  native lowering remain unsupported.
+- Next concrete task: add the documented `get_mangled_object_vars($object)`
+  boundary over the current minimal object value model.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add spl_object_hash boundary"`
+  after the full suite passes. No known-good tag was created because this is a
+  narrow incremental boundary, not a major stable state.

@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call spl_object_hash(): argument must be object, got int
+

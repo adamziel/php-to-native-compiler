@@ -207,6 +207,10 @@ late static binding exist.
 fails with a stable unsupported-call diagnostic for object inputs until PHP
 object handle identity is represented; non-object inputs fail with the current
 stable type-boundary diagnostic.
+`spl_object_hash($object)` is reserved as a one-argument runtime boundary and
+fails with a stable unsupported-call diagnostic for object inputs until PHP
+object handle hash behavior is modeled on top of object identity; non-object
+inputs fail with the current stable type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

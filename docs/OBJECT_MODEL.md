@@ -31,6 +31,10 @@ class context and late static binding exist.
 `spl_object_id($object)` is recognized as a one-argument callable boundary, but
 it currently fails with a stable unsupported-call diagnostic for object inputs
 until PHP object handle identity exists.
+`spl_object_hash($object)` is recognized as a one-argument callable boundary,
+but it currently fails with a stable unsupported-call diagnostic for object
+inputs until PHP object handle hash behavior is modeled on top of object
+identity.
 
 ## Runtime Metadata
 
@@ -87,6 +91,9 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `spl_object_id($object)` validates its one-argument call shape and object
   operand boundary, then fails with a stable unsupported-call diagnostic for
   object inputs because PHP object handle identity is not represented yet;
+- `spl_object_hash($object)` validates its one-argument call shape and object
+  operand boundary, then fails with a stable unsupported-call diagnostic for
+  object inputs because PHP object handle hash behavior is not represented yet;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -150,6 +157,8 @@ trait metadata lookup has native support.
 method/static class context lookup and late static binding have native support.
 `spl_object_id` is rejected through that function-call boundary until PHP object
 handle identity has native support.
+`spl_object_hash` is rejected through that function-call boundary until PHP
+object handle hash behavior has native support.
 
 ## Unsupported Edge Cases
 
@@ -172,6 +181,8 @@ inheritance lookup, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,
 `spl_object_id` object handle identity, handle reuse after destruction, clone
 semantics, destructors,
+`spl_object_hash` object handle hash formatting, object handle identity, handle
+reuse after destruction, clone semantics, destructors,
 `get_class_methods` inheritance/trait/interface and non-public
 context-sensitive method listing, `get_class_vars` property defaults,
 inheritance/trait/interface properties, context-sensitive visibility, object

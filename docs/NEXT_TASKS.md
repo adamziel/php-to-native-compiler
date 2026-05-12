@@ -1114,9 +1114,20 @@ handled.
 
 ## Milestone 117: Object Hash Boundary
 
-- [ ] Add the next honest `spl_object_hash($object)` boundary before PHP
+- [x] Add the next honest `spl_object_hash($object)` boundary before PHP
   object handle identity exists: either a stable unsupported diagnostic or a
   narrow executable hash slice for current minimal objects, with runtime
   coverage, fixture CLI coverage, documentation, and explicit gaps for handle
   reuse, references/copy-on-write, clone semantics, destructors, exact native
   `TypeError` behavior, and native lowering.
+
+## Milestone 118: Mangled Object Vars Boundary
+
+- [ ] Add the next honest `get_mangled_object_vars($object)` boundary over the
+  current minimal object value model before non-public property-name mangling
+  and visibility-context behavior exist: either a stable unsupported
+  diagnostic or a narrow executable public-property slice, with runtime
+  coverage, fixture CLI coverage, documentation, and explicit gaps for
+  protected/private name mangling, dynamic properties, references/copy-on-write,
+  inheritance, traits, aliases/imports, exact native `TypeError` behavior, and
+  native lowering.
