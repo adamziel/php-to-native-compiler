@@ -30,6 +30,26 @@ while ($i < 4) {
 }
 
 #[test]
+fn run_executes_break_for_innermost_while_loop() {
+    let source = r#"<?php
+$i = 0;
+while ($i < 2) {
+    $j = 0;
+    while (true) {
+        echo $i, ":", $j, ";";
+        break;
+        echo "unreachable";
+    }
+    $i = $i + 1;
+}
+echo "done";
+"#;
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "0:0;1:0;done");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_for_integer_arithmetic() {
     let ir = emit_ir_source("<?php\n$x = 1 + 2;\necho $x;\n").unwrap();
     assert!(ir.contains("add i64 1, 2"), "{ir}");
@@ -42,6 +62,13 @@ fn emit_ir_rejects_unsupported_control_flow() {
     let error = emit_ir_source("<?php\nif (1) { echo 1; }\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(error.message.contains("if/else"));
+}
+
+#[test]
+fn emit_ir_rejects_break_until_native_loop_control_lowering_exists() {
+    let error = emit_ir_source("<?php\nbreak;\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(error.message.contains("break"), "{}", error.message);
 }
 
 #[test]

@@ -19,6 +19,7 @@
   values (`null`, booleans, integers, floats, and strings)
 - `if` / `else`
 - `while`
+- `break;` for the innermost currently executing `while` loop
 - function declarations
 - positional function calls
 - dynamic function calls through string-valued expressions that resolve to the
@@ -54,7 +55,8 @@
   declarations, duplicate class/member metadata, undefined classes,
   unsupported object instantiation, undefined object properties, invalid
   property targets, unsupported non-public property access, object-to-string
-  conversion, and runaway user-function recursion
+  conversion, invalid `break` outside a loop, and runaway user-function
+  recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, named arguments,
@@ -72,7 +74,8 @@
 - explicit parse diagnostics for unsupported `for (...)` syntax
 - explicit parse diagnostics for unsupported `do ... while` syntax
 - explicit parse diagnostics for unsupported `switch (...)` syntax
-- explicit parse diagnostics for unsupported `break`/`continue` syntax
+- explicit parse diagnostics for unsupported `continue` syntax and unsupported
+  `break` loop-depth arguments
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -168,6 +171,13 @@
   PHP-version-specific float string precision are not covered. Object
   comparisons in `phpc run` fail with an explicit unsupported-comparison
   runtime error.
+- Loop control: `break;` executes for the innermost currently executing
+  `while` loop in `phpc run`. A `break;` that reaches top-level code or a
+  user-function body without an enclosing active loop fails with a stable
+  invalid-loop-control runtime error. Loop-depth arguments such as `break 2;`
+  are rejected with a stable parse diagnostic. `continue`, interaction with
+  future `for`/`foreach`/`do ... while`/`switch` execution, `finally`/exception
+  behavior, and native lowering are not implemented.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet. Representative runtime errors are covered by committed `phpc run`
@@ -177,11 +187,13 @@
   names, non-string dynamic function callees, division by zero, non-numeric
   string arithmetic, duplicate class metadata, undefined classes,
   undefined object properties, invalid property targets, non-public property
-  access, object-to-string conversion, and runaway user-function recursion.
+  access, object-to-string conversion, invalid `break` outside a loop, and
+  runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
-  assignment, class declarations, object instantiation, object property reads,
-  and object property writes are rejected with explicit codegen errors.
+  assignment, `break`, class declarations, object instantiation, object
+  property reads, and object property writes are rejected with explicit codegen
+  errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -245,11 +257,9 @@
   are not implemented.
 - Array gaps: long `array(...)` literal syntax, `unset(...)` syntax, direct
   `foreach (...)` syntax, direct `for (...)` syntax, direct `do ... while`
-  syntax, direct `switch (...)` syntax, and direct `break`/`continue` syntax
-  are rejected with stable parse
+  syntax, and direct `switch (...)` syntax are rejected with stable parse
   diagnostics; executing long array literals, variable/offset/property removal,
-  iteration, switch/case control flow, and loop-control transfer is not
-  implemented.
+  iteration, and switch/case control flow is not implemented.
   Nested indexed writes, complex assignment lvalues, `$array[]` as a read
   expression, string offset access, `for`/`foreach`/`do ... while` iteration
   behavior, `switch` case matching/fallthrough/default handling, destructuring,
@@ -321,8 +331,10 @@
   before post-condition loops exist
 - `switch (...)`; direct syntax is rejected with a stable parse diagnostic
   before switch/case control flow exists
-- `break` and `continue`; direct syntax is rejected with a stable parse
-  diagnostic before loop-control execution exists
+- `continue`; direct syntax is rejected with a stable parse diagnostic before
+  continue execution exists
+- `break` loop-depth arguments such as `break 2;`; only `break;` for the
+  innermost active `while` loop is implemented
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

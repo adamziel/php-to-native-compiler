@@ -280,17 +280,39 @@ echo switch ($value) {
 }
 
 #[test]
-fn break_continue_syntax_is_rejected_with_stable_parse_error() {
+fn unsupported_break_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
 while (true) {
-    break;
+    break 2;
 }
 "#,
             3,
             5,
+            "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost while loop is supported",
         ),
+        (
+            r#"<?php
+echo break;
+"#,
+            2,
+            6,
+            "unsupported break: break is only supported as a statement in the current subset",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn continue_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
         (
             r#"<?php
 while (true) {
@@ -303,7 +325,7 @@ while (true) {
         (
             r#"<?php
 while (true) {
-    BREAK;
+    CONTINUE;
 }
 "#,
             3,
@@ -324,7 +346,7 @@ echo continue;
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported break/continue: loop-control execution is not implemented"
+            "unsupported continue: continue execution is not implemented"
         );
     }
 }

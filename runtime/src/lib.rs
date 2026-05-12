@@ -108,6 +108,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn invalid_loop_control(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidLoopControl {
+            reason: reason.into(),
+        })
+    }
+
     pub fn call_depth_exceeded(callable: impl Into<String>, limit: usize) -> Self {
         Self::from_kind(RuntimeErrorKind::CallDepthExceeded {
             callable: callable.into(),
@@ -210,6 +216,9 @@ pub enum RuntimeErrorKind {
         reason: String,
     },
     UnsupportedGlobal {
+        reason: String,
+    },
+    InvalidLoopControl {
         reason: String,
     },
     CallDepthExceeded {
@@ -323,6 +332,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::UnsupportedGlobal { reason } => {
             format!("unsupported global declaration: {reason}")
+        }
+        RuntimeErrorKind::InvalidLoopControl { reason } => {
+            format!("invalid loop control: {reason}")
         }
         RuntimeErrorKind::CallDepthExceeded { callable, limit } => {
             format!("maximum user function call depth exceeded for {callable}: limit {limit}")

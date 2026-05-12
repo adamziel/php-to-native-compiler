@@ -51,6 +51,9 @@ pub enum Stmt {
         value: Option<Expr>,
         span: Span,
     },
+    Break {
+        span: Span,
+    },
     Global {
         names: Vec<String>,
         span: Span,

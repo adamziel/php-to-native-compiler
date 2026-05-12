@@ -96,6 +96,7 @@ impl SymbolTable {
 
 enum Flow {
     Continue,
+    Break(Span),
     Return(Value),
 }
 
@@ -136,6 +137,10 @@ impl Interpreter {
                 stderr: String::new(),
                 exit_code: 0,
             }),
+            Flow::Break(span) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
         }
     }
 
@@ -147,7 +152,7 @@ impl Interpreter {
         for stmt in statements {
             match self.execute_statement(stmt, scope)? {
                 Flow::Continue => {}
-                flow @ Flow::Return(_) => return Ok(flow),
+                flow @ (Flow::Break(_) | Flow::Return(_)) => return Ok(flow),
             }
         }
         Ok(Flow::Continue)
@@ -199,6 +204,7 @@ impl Interpreter {
                 while self.evaluate(condition, scope)?.is_truthy() {
                     match self.execute_statements(body, scope)? {
                         Flow::Continue => {}
+                        Flow::Break(_) => break,
                         flow @ Flow::Return(_) => return Ok(flow),
                     }
                 }
@@ -213,6 +219,7 @@ impl Interpreter {
                 };
                 Ok(Flow::Return(value))
             }
+            Stmt::Break { span } => Ok(Flow::Break(*span)),
             Stmt::Global { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_global(
@@ -585,6 +592,10 @@ impl Interpreter {
 
         match flow? {
             Flow::Continue => Ok(Value::Null),
+            Flow::Break(span) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
             Flow::Return(value) => Ok(value),
         }
     }

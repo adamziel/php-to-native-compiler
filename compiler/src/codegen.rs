@@ -119,6 +119,10 @@ impl LlvmGenerator {
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
             )),
+            Stmt::Break { span } => Err(self.unsupported(
+                *span,
+                "break is supported by phpc run for innermost while loops but not LLVM IR emission yet",
+            )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,
                 "global declarations are not supported by LLVM IR emission yet",
@@ -610,6 +614,10 @@ impl CGenerator {
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
+            )),
+            Stmt::Break { span } => Err(self.unsupported(
+                *span,
+                "break is supported by phpc run for innermost while loops but not assembly emission yet",
             )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,

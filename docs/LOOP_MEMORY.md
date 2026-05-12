@@ -1668,3 +1668,65 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:22:15Z
 
 - Post-round 28 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:22:18Z
+
+- Starting round 29 at 20260512T012218Z from HEAD `95d0900`.
+
+## Loop Event 2026-05-12T01:22:20Z
+
+- Pre-round 29 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:29:18Z
+
+- Task attempted: implemented `break;` execution for the innermost currently
+  executing `while` loop. The parser now accepts statement-form `break;`, the
+  interpreter propagates loop-control flow through nested statement blocks and
+  consumes it at the nearest `while`, `break;` outside an active loop fails
+  with a stable invalid-loop-control runtime diagnostic, and native LLVM/assembly
+  lowering rejects `break` explicitly.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/loop_control_cli.rs`,
+  `tests/fixtures/milestone6/break_while.*`,
+  `tests/fixtures/runtime_errors/break_outside_loop.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_break.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_continue.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test milestone1
+  run_executes_break_for_innermost_while_loop` passed; `cargo test -p phpc
+  --test runtime_errors break_outside_loop_has_stable_runtime_error` passed;
+  `cargo test -p phpc --test syntax_boundaries
+  unsupported_break_forms_are_rejected_with_stable_parse_error` passed;
+  `cargo test -p phpc --test syntax_boundaries
+  continue_syntax_is_rejected_with_stable_parse_error` passed; `cargo test -p
+  phpc --test milestone1
+  emit_ir_rejects_break_until_native_loop_control_lowering_exists` passed;
+  `cargo test -p phpc --test loop_control_cli` passed; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo test -p phpc --test
+  unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone6` passed with 1 fixture; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone6` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 8 fixtures; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 19 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone6/break_while.php` printed `0,1,2,after:2`;
+  `cargo run -p phpc -- run tests/fixtures/runtime_errors/break_outside_loop.php`
+  exited `1` with the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/runtime_errors/break_outside_loop.php --emit-ir` exited `1`
+  with the expected `break` codegen rejection; `cargo fmt --check` passed;
+  `tools/run-tests.sh` passed with 80 fixtures, 29 system PHP comparisons, and
+  51 `.phpc-only` skips.
+- Remaining semantic gaps: `break` loop-depth arguments such as `break 2;` are
+  rejected; `continue` execution remains unsupported; loop-control interaction
+  with future `for`/`foreach`/`do ... while`/`switch` execution,
+  `finally`/exception behavior, PHP fatal-error object semantics, and native
+  loop-control lowering are not implemented.
+- Next concrete task: implement `continue;` execution for innermost `while`
+  loops while keeping native lowering and deeper loop-control forms explicitly
+  unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "loops: implement break for while"`
+  after the full suite passes.

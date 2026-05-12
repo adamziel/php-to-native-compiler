@@ -98,7 +98,7 @@ handled.
 
 ## Milestone 6: Loop-Control Execution
 
-- [ ] Implement `break;` execution for innermost `while` loops with parser,
+- [x] Implement `break;` execution for innermost `while` loops with parser,
   interpreter, fixture, CLI snapshot, documentation, and explicit native-codegen
   rejection coverage where lowering remains unsupported.
 - [ ] Implement `continue;` execution for innermost `while` loops with parser,
