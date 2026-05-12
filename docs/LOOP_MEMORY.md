@@ -5565,3 +5565,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   object/resource values, and native lowering explicitly unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_intersect builtin"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T10:21:10Z
+
+- Codex round 87 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T100551Z-87.log`.
+
+## Loop Event 2026-05-12T10:21:15Z
+
+- Post-round 87 test exit code: `0`.
+
+## Loop Event 2026-05-12T10:21:15Z
+
+- Post-round 87 tests passed; running checkpoint for this round.
