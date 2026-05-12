@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added an explicit unsupported `unset($object->publicProperty)` boundary
+  before object property uninitialization semantics exist, with parser
+  regression coverage, fixture/CLI coverage, documentation, and native
+  emission rejection at the parse boundary.
 - Added `empty($object->publicProperty)` for direct object-variable operands
   over the current public instance property model, with truthiness behavior for
   public slots, empty results for missing properties, undefined target

@@ -2676,6 +2676,14 @@ Still fails:
   non-public visibility context, complex lvalues, magic methods,
   references/copy-on-write, exact native error behavior, and native lowering
   remain unsupported.
+- Added an explicit `unset($object->publicProperty)` parse boundary before
+  object property uninitialization semantics exist. The current parser reports
+  a stable diagnostic for direct object-property unset operands, fixture and
+  CLI snapshot coverage record the behavior, and native emission is rejected at
+  the same parse boundary. Typed/uninitialized properties, dynamic property
+  names, non-public visibility context, magic `__unset`,
+  references/copy-on-write, exact native error behavior, and native lowering remain
+  unsupported.
 
 Next:
 

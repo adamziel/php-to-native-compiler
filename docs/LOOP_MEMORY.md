@@ -10107,3 +10107,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:35:29Z
 
 - Post-round 10 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:35:41Z
+
+- Starting round 11 at 20260512T223541Z from HEAD `6e5339e`.
+
+## Loop Event 2026-05-12T22:35:57Z
+
+- Pre-round 11 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:40:11Z
+
+- Task attempted: added an explicit `unset($object->publicProperty)` parse
+  boundary before object property uninitialization semantics exist. The parser
+  now reports a stable object-property-specific diagnostic, the unsupported
+  syntax fixture runner and CLI snapshots cover the behavior, and
+  `compile --emit-ir` rejects the same fixture at the parse boundary.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_object_property_unset.*`,
+  `README.md`, `docs/OBJECT_MODEL.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` completed; `cargo test -p phpc
+  --test syntax_boundaries object_property_unset -- --nocapture` passed;
+  `cargo test -p phpc --test unsupported_syntax_features_cli
+  unsupported_syntax_feature_cli_snapshots_match_committed_outputs` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 11 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_object_property_unset.php`
+  exited `1` with the expected parse diagnostic; `cargo run -p phpc --
+  compile
+  tests/fixtures/unsupported_syntax_features/unsupported_object_property_unset.php
+  --emit-ir` exited `1` with the expected parse diagnostic;
+  `tools/run-tests.sh` passed with 340 fixtures, 123 system PHP comparisons,
+  and 217 skips.
+- Remaining semantic gaps: object-property `unset` is only an explicit parse
+  boundary. Property uninitialization, typed/uninitialized property behavior,
+  dynamic property names, non-public visibility context, magic `__unset`,
+  references/copy-on-write, exact native error behavior, and native lowering
+  remain unsupported.
+- Next concrete task: add explicit diagnostics for unsupported exception syntax
+  (`throw`, `try`/`catch`/`finally`) before exception objects or stack
+  unwinding exist.
+- Known-good tag: not created; this is a narrow syntax boundary, not a major
+  verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add object property unset boundary"`
+  after the full suite passes.

@@ -231,6 +231,8 @@
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
+- explicit parse diagnostics for unsupported `unset($object->property)` before
+  object property uninitialization semantics exist
 - explicit parse diagnostics for unsupported `foreach` by-reference iteration,
   destructuring loop targets, and expression-position `foreach`
 - explicit parse diagnostics for unsupported expression-position `for` and
@@ -1596,6 +1598,10 @@
 - `empty($object->name)` dynamic property names, non-public visibility
   context, complex lvalues, magic `__isset`/`__get` behavior,
   references/copy-on-write, exact native error behavior, and native lowering
+- `unset($object->name)` property uninitialization, typed/uninitialized
+  property behavior, dynamic property names, non-public visibility context,
+  magic `__unset` behavior, references/copy-on-write, exact native error
+  behavior, and native lowering
 - `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, and native lowering

@@ -72,6 +72,8 @@ The model follows the PHP lookup rules needed by the first object slice:
   and false for null or missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
   missing slots, undefined target variables, and non-object target variables;
+- direct `unset($object->name)` is reserved with an explicit parse diagnostic
+  until property uninitialization semantics are modeled;
 - `method_exists($object_or_class, $method)` checks declared method metadata
   using case-insensitive method lookup for current object values or string
   class names;
@@ -191,7 +193,9 @@ object callables, array-offset `isset` operands, non-public property `isset`
 operands, complex object-property `isset` operands, dynamic property-name
 `empty` operands, non-public property visibility context for `empty`, complex
 object-property `empty` operands, magic `__isset`/`__get` behavior for
-`empty`, static member execution through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
+`empty`, object-property `unset`, property uninitialization,
+typed/uninitialized property behavior, magic `__unset` behavior,
+static member execution through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,

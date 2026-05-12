@@ -1143,10 +1143,19 @@ handled.
 
 ## Milestone 120: Object Property Unset Boundary
 
-- [ ] Add the next honest `unset($object->publicProperty)` boundary for direct
+- [x] Add the next honest `unset($object->publicProperty)` boundary for direct
   object-variable operands before PHP property uninitialization semantics
   exist: either stable explicit diagnostics with parser/fixture CLI coverage
   or a narrow executable public-property slice with documented behavior,
   native-codegen rejection, and explicit gaps for typed/uninitialized
   properties, dynamic property names, non-public visibility context, magic
   methods, references/copy-on-write, and native lowering.
+
+## Milestone 121: Exception Syntax Boundary
+
+- [ ] Add explicit diagnostics for unsupported exception syntax before
+  exception objects or stack unwinding exist, including `throw`,
+  `try`/`catch`/`finally`, parser coverage, fixture CLI coverage,
+  documentation, and named gaps for `Throwable`, `Exception`, custom
+  exception classes, `finally` execution, stack traces, exact native error
+  objects, and native lowering.

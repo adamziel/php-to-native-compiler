@@ -79,17 +79,6 @@ fn unsupported_unset_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
-class Box {
-    public $name;
-}
-$box = new Box();
-unset($box->name);
-"#,
-            6,
-            7,
-        ),
-        (
-            r#"<?php
 $items = [[1]];
 unset($items[0][0]);
 "#,
@@ -115,6 +104,40 @@ UNSET($items[]);
             "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented"
         );
     }
+}
+
+#[test]
+fn object_property_unset_has_stable_parse_boundary() {
+    let error = parse_error(
+        r#"<?php
+class Box {
+    public $name;
+}
+$box = new Box();
+unset($box->name);
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 11);
+    assert_eq!(
+        error.message,
+        "unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_unset_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nclass Box { public $name; }\n$box = new Box();\nunset($box->name);\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled"
+    );
 }
 
 #[test]

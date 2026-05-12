@@ -267,7 +267,10 @@ defaults, inheritance/trait/interface properties, context-sensitive visibility,
 `get_mangled_object_vars()` protected/private name mangling, dynamic
 properties, non-public visibility context, `empty($object->name)` dynamic
 property names, non-public visibility context, complex lvalues, magic methods,
-references/copy-on-write, and native object lowering are not supported yet.
+`unset($object->name)` property uninitialization, typed/uninitialized property
+behavior, dynamic property names, non-public visibility context, magic
+`__unset`, references/copy-on-write, and native object lowering are not
+supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

@@ -835,6 +835,12 @@ impl Parser {
         };
 
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_object_property_unset_message(),
+                ));
+            }
             if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
                 return Ok(UnsetTarget::Variable {
                     name,
@@ -1983,6 +1989,10 @@ fn unsupported_array_reference_element_message() -> &'static str {
 
 fn unsupported_unset_message() -> &'static str {
     "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented"
+}
+
+fn unsupported_object_property_unset_message() -> &'static str {
+    "unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled"
 }
 
 fn unsupported_foreach_expression_message() -> &'static str {
