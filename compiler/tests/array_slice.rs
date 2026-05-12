@@ -88,6 +88,40 @@ echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $it
 }
 
 #[test]
+fn array_slice_supports_null_length_argument() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items[-1] = "negative";
+$items[] = "next";
+
+$tail = array_slice($items, 1, null);
+echo count($tail), "|", $tail[0], "|", $tail[1], "|", $tail["02"], "|", $tail[2], "|", $tail[3], "\n";
+
+$negative = array_slice($items, -3, null);
+echo count($negative), "|", $negative["02"], "|", $negative[0], "|", $negative[1], "\n";
+
+$empty = array_slice($items, 99, null);
+echo count($empty), "\n";
+
+$call = "array_slice";
+$dynamic = $call($items, 0, null);
+echo count($dynamic), "|", $dynamic["name"], "|", $dynamic[0], "|", $dynamic[1], "|", $dynamic["02"], "|", $dynamic[2], "|", $dynamic[3], "\n";
+echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $items[-1], "|", $items[6];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "5|five|two|zero two|negative|next\n3|zero two|negative|next\n0\n6|Ada|five|two|zero two|negative|next\nAda|five|two|zero two|negative|next"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_slice_requires_array_first_argument() {
     let error = runtime_error("<?php\necho array_slice(42, 0);\n");
 
@@ -119,7 +153,7 @@ fn array_slice_requires_int_length_argument() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_slice(): length argument must be int in the current subset, got string"
+        "unsupported call array_slice(): length argument must be int or null in the current subset, got string"
     );
 }
 

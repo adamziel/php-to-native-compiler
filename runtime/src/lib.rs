@@ -2536,6 +2536,20 @@ mod tests {
         assert_eq!(entries[0].value, Value::String("two".to_string()));
         assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
         assert_eq!(entries[1].value, Value::String("zero two".to_string()));
+
+        let null_length = array.sliced(1, None);
+        let entries = null_length.entries();
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(2));
+        assert_eq!(entries[3].value, Value::String("negative".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(3));
+        assert_eq!(entries[4].value, Value::String("next".to_string()));
     }
 
     #[test]

@@ -365,14 +365,23 @@ handled.
 - [x] Extend `array_slice` with the integer length argument over the current
   ordered array value model, including positive, negative, and zero length
   behavior, non-int length diagnostics, fixture CLI coverage, documentation,
-  and explicit gaps for null length, preserve-keys mode,
-  references/copy-on-write, object handle identity preservation, resources,
-  exact native `TypeError` objects, and native lowering.
+  and explicit gaps for preserve-keys mode, references/copy-on-write, object
+  handle identity preservation, resources, exact native `TypeError` objects,
+  and native lowering.
 
 ## Milestone 31: Array Slicing Null Length
 
-- [ ] Extend `array_slice` with `null` length as a to-end slice over the
+- [x] Extend `array_slice` with `null` length as a to-end slice over the
   current ordered array value model, including fixture CLI coverage,
   documentation, and explicit gaps for preserve-keys mode,
   references/copy-on-write, object handle identity preservation, resources,
+  exact native `TypeError` objects, and native lowering.
+
+## Milestone 32: Array Slicing Preserve Keys
+
+- [ ] Extend `array_slice` with boolean preserve-key mode over the current
+  ordered integer/string key model, including default/false behavior,
+  true-preserve behavior for integer and string keys, null-length interaction,
+  non-bool diagnostics, fixture CLI coverage, documentation, and explicit gaps
+  for references/copy-on-write, object handle identity preservation, resources,
   exact native `TypeError` objects, and native lowering.

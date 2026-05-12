@@ -4681,3 +4681,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T07:19:12Z
 
 - Post-round 74 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T07:19:17Z
+
+- Starting round 75 at 20260512T071917Z from HEAD `724d8d6`.
+
+## Loop Event 2026-05-12T07:19:22Z
+
+- Pre-round 75 test exit code: `0`.
+
+## Loop Event 2026-05-12T07:25:58Z
+
+- Task attempted: extended `array_slice` with `null` length over the current
+  ordered array value model. The supported slice now treats
+  `array_slice($array, $offset, null)` as a to-end slice, keeps default
+  integer-key reindexing and string-key preservation, supports string-valued
+  dynamic calls, preserves the original array, and keeps preserve-key mode
+  explicitly unsupported.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_slice.rs`,
+  `compiler/tests/array_slicing_builtins_cli.rs`,
+  `tests/fixtures/milestone31/array_slice_null_length.php`,
+  `tests/fixtures/milestone31/array_slice_null_length.stdout`,
+  `tests/fixtures/milestone31/array_slice_null_length.cli`,
+  removed
+  `tests/fixtures/runtime_errors/array_slice_null_length_unsupported.*`,
+  added `tests/fixtures/runtime_errors/array_slice_length_non_int.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `git diff --check`
+  passed; `cargo test -p php_runtime array_slice` passed with 3 focused
+  runtime tests; `cargo test -p phpc --test array_slice` passed with 8 tests;
+  `cargo test -p phpc --test array_slicing_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone31` passed with 1 fixture;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone31` passed with 1 system PHP comparison;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 63 fixtures;
+  `cargo run -p phpc -- run tests/fixtures/milestone31/array_slice_null_length.php` printed the committed output;
+  `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_length_non_int.php` exited `1` with the expected stable diagnostic;
+  `cargo run -p phpc -- compile tests/fixtures/milestone31/array_slice_null_length.php --emit-ir` exited `1` with the current explicit array native-lowering rejection;
+  `tools/run-tests.sh` passed with 167 fixtures, 70 system PHP comparisons,
+  and 97 `.phpc-only` skips.
+- Remaining semantic gaps: `array_slice` still rejects preserve-key mode, does
+  not coerce non-int offsets or non-int/non-null lengths, and does not model
+  references, copy-on-write containers, object handle identity preservation,
+  resource values, exact native `TypeError` objects, or native lowering.
+- Next concrete task: extend `array_slice` with boolean preserve-key mode over
+  the current ordered integer/string key model while keeping native lowering
+  explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_slice null length"`
+  after the full suite passes.

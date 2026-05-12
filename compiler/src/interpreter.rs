@@ -1028,20 +1028,25 @@ impl Interpreter {
                 [Value::Array(array), Value::Int(offset), Value::Int(length)] => {
                     Ok(Value::Array(array.sliced(*offset, Some(*length))))
                 }
-                [Value::Array(_), Value::Int(_), Value::Int(_), _] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_slice()",
-                        "preserve_keys argument is not supported in the current subset",
-                    ),
-                )),
+                [Value::Array(array), Value::Int(offset), Value::Null] => {
+                    Ok(Value::Array(array.sliced(*offset, None)))
+                }
+                [Value::Array(_), Value::Int(_), Value::Int(_) | Value::Null, _] => {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_slice()",
+                            "preserve_keys argument is not supported in the current subset",
+                        ),
+                    ))
+                }
                 [Value::Array(_), Value::Int(_), other]
                 | [Value::Array(_), Value::Int(_), other, _] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_slice()",
                         format!(
-                            "length argument must be int in the current subset, got {}",
+                            "length argument must be int or null in the current subset, got {}",
                             other.type_name()
                         ),
                     ),

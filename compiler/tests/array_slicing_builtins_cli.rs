@@ -11,6 +11,7 @@ fn array_slicing_builtin_cli_snapshots_match_committed_outputs() {
     let fixture_dirs = [
         workspace_root.join("tests/fixtures/milestone29"),
         workspace_root.join("tests/fixtures/milestone30"),
+        workspace_root.join("tests/fixtures/milestone31"),
     ];
     let mut fixtures = fixture_dirs
         .iter()
