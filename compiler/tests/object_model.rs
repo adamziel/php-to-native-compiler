@@ -301,6 +301,69 @@ fn class_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn property_exists_checks_declared_property_metadata() {
+    let source = r#"<?php
+class Box {
+    public $name;
+    protected $secret;
+    private static $cache;
+}
+
+$box = new box();
+if (property_exists($box, "name")) {
+    echo "object:name\n";
+}
+if (property_exists($box, "secret")) {
+    echo "object:secret\n";
+}
+if (property_exists($box, "cache")) {
+    echo "object:static\n";
+}
+if (property_exists("BOX", "cache")) {
+    echo "class:static\n";
+}
+if (!property_exists("Box", "missing")) {
+    echo "class:missing\n";
+}
+if (!property_exists("Missing", "name")) {
+    echo "missing-class:false\n";
+}
+$call = "property_exists";
+if ($call($box, "name")) {
+    echo "dynamic:exists\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object:name\nobject:secret\nobject:static\nclass:static\nclass:missing\nmissing-class:false\ndynamic:exists\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn property_exists_requires_object_or_string_and_string_property_arguments() {
+    let target_error = runtime_error("<?php\nvar_dump(property_exists(42, \"name\"));\n");
+
+    assert_eq!(target_error.line, 2);
+    assert_eq!(target_error.column, 10);
+    assert_eq!(
+        target_error.message,
+        "unsupported call property_exists(): object_or_class argument must be object or string, got int"
+    );
+
+    let property_error = runtime_error("<?php\nvar_dump(property_exists(\"Box\", 42));\n");
+
+    assert_eq!(property_error.line, 2);
+    assert_eq!(property_error.column, 10);
+    assert_eq!(
+        property_error.message,
+        "unsupported call property_exists(): property argument must be string in the current subset, got int"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -349,6 +412,19 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
 #[test]
 fn emit_ir_rejects_class_exists_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho class_exists(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_property_exists_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho property_exists(\"Box\", \"name\");\n")
+        .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

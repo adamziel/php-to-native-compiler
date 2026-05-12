@@ -115,9 +115,10 @@ subset:
   string-callback subset with one-array key preservation and multi-array
   reindexing,
   `in_array` and `array_search` including strict scalar searches,
-  `get_class($object)`, `is_object($value)`, `get_debug_type($value)`, and
-  `class_exists($name[, $autoload])` over the current minimal object value
-  model and declared-class metadata,
+  `get_class($object)`, `is_object($value)`, `get_debug_type($value)`,
+  `class_exists($name[, $autoload])`, and
+  `property_exists($object_or_class, $property)` over the current minimal
+  object value model and declared-class metadata,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
@@ -164,8 +165,11 @@ those current object values, and `get_debug_type($value)` returns scalar/array
 type names or the declared class name for current object values.
 `class_exists($name[, $autoload])` checks the current declared-class metadata
 case-insensitively for string class names; the autoload flag is accepted only
-as a boolean and does not trigger autoloading. Constructors, `$this` object
-context binding,
+as a boolean and does not trigger autoloading.
+`property_exists($object_or_class, $property)` accepts current object values or
+string class names, uses case-sensitive declared property names, reports
+declared public/protected/private and static properties, and returns false for
+missing classes. Constructors, `$this` object context binding,
 method dispatch, dynamic property names, visibility enforcement for non-public
 properties, object handle identity, clone expressions, `instanceof`
 relationship checks, class-name constant resolution through `::class`,

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `property_exists($object_or_class, $property)` for current object
+  values and declared class metadata, with runtime coverage, fixture coverage,
+  and `phpc run` CLI snapshots.
 - Added `class_exists($name[, $autoload])` for the current declared-class
   metadata table, with runtime coverage, fixture coverage, and `phpc run` CLI
   snapshots.

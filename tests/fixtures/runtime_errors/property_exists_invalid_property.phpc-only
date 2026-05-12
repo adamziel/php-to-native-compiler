@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP reports native TypeError object details for property_exists() invalid property arguments.

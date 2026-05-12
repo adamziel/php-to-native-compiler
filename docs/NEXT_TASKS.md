@@ -955,3 +955,23 @@ handled.
   autoload diagnostics, fixture CLI coverage, documentation, and explicit gaps
   for autoloading, namespaces/import aliases, anonymous classes, exact native
   `TypeError` behavior, and native lowering.
+
+## Milestone 101: Property Metadata Introspection Builtin
+
+- [x] Implement `property_exists($object_or_class, $property)` over the current
+  declared property metadata, including object and string-class inputs,
+  case-sensitive property lookup, public/protected/private and static property
+  reporting, invalid argument diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for dynamic properties, autoloading, namespaces/import
+  aliases, reflection behavior, exact native `TypeError` behavior, and native
+  lowering.
+
+## Milestone 102: Method Metadata Introspection Boundary
+
+- [ ] Add the next honest `method_exists($object_or_class, $method)` boundary
+  over the current method metadata: either a stable unsupported diagnostic or a
+  narrow executable metadata lookup slice with string-valued dynamic-call
+  coverage, invalid argument diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for method dispatch, inheritance, traits, interfaces,
+  aliases/imports, autoloading, visibility behavior, exact native `TypeError`
+  behavior, and native lowering.

@@ -8992,3 +8992,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:04:22Z
 
 - Post-round 49 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:04:31Z
+
+- Starting round 50 at 20260512T200431Z from HEAD `38694fc`.
+
+## Loop Event 2026-05-12T20:04:39Z
+
+- Pre-round 50 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:07:54Z
+
+- Task attempted: completed Milestone 101 by adding
+  `property_exists($object_or_class, $property)` over the current declared
+  property metadata. The supported slice accepts current object values or
+  string class names, uses case-sensitive property names, reports declared
+  public/protected/private and static properties, returns false for missing
+  properties or missing string class names, works through string-valued dynamic
+  calls, and keeps native lowering explicitly rejected through the current
+  function-call codegen boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone101/property_exists.*`,
+  `tests/fixtures/runtime_errors/property_exists_invalid_target.*`,
+  `tests/fixtures/runtime_errors/property_exists_invalid_property.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and
+  `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  property_exists` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone101` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone101` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 118 fixtures; `cargo fmt -- --check` initially found one
+  formatting issue, `cargo fmt` fixed it, and `git diff --check` passed;
+  `tools/run-tests.sh` passed with 298 fixtures, 111 system PHP comparisons,
+  and 187 skips.
+- Remaining semantic gaps: `property_exists` does not observe dynamic
+  properties created outside declarations, does not trigger autoloading, does
+  not resolve namespaces or import aliases, does not expose reflection
+  behavior, does not model exact native `TypeError` objects, and has no native
+  lowering.
+- Next concrete task: complete Milestone 102, the next honest
+  `method_exists($object_or_class, $method)` boundary over current method
+  metadata.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add property_exists builtin"` after the full
+  suite passes.

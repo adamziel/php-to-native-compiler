@@ -104,13 +104,14 @@
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `var_dump`, and `print_r`;
+  `class_exists`, `property_exists`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
-  class metadata by string name without autoloading, and `print_r` can render
-  current minimal object values
+  class metadata by string name without autoloading, `property_exists` checks
+  case-sensitive declared property metadata for current object values or
+  string class names, and `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -164,7 +165,8 @@
   `global` declarations, duplicate class/member metadata, undefined classes,
   unsupported object instantiation, undefined object properties, invalid
   property targets, unsupported non-public property access, non-object
-  `get_class` operands,
+  `get_class` operands, unsupported `property_exists` object/class or
+  property arguments,
   object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
@@ -290,7 +292,13 @@
   case-insensitive lookup against classes declared in the current parsed
   program, accept only boolean autoload flags, and are available through
   string-valued dynamic function calls. The autoload flag does not trigger
-  autoloading in the current subset. Static member expressions through `::`,
+  autoloading in the current subset.
+  `property_exists($object_or_class, $property)` accepts a current object value
+  or string class name and a string property name. It checks the current
+  declared property metadata with case-sensitive property names, reports
+  public/protected/private and static properties as existing, returns false for
+  missing properties or missing string class names, and is available through
+  string-valued dynamic function calls. Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
@@ -1137,7 +1145,9 @@
   dynamic properties, dynamic property names, non-public property access,
   static member execution
   through `::`, `::class` class-name constant resolution, property assignment
-  targets other than a direct variable, object handle identity/aliasing,
+  targets other than a direct variable, dynamic properties created outside
+  declarations, autoload side effects from property introspection,
+  object handle identity/aliasing,
   cloning, destructors, serialization hooks, visibility enforcement,
   `self`/`parent`/`static`, object comparisons, `instanceof` relationship
   checks, object-to-string conversion, object callables, and native lowering

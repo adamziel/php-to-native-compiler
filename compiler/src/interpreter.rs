@@ -1992,6 +1992,51 @@ impl Interpreter {
                     )),
                 }
             }
+            "property_exists" => match args.as_slice() {
+                [object_or_class, Value::String(property_name)] => {
+                    let exists = match object_or_class {
+                        Value::Object(object) => self
+                            .classes
+                            .get(object.class_id())
+                            .is_some_and(|class| class.property(property_name).is_some()),
+                        Value::String(class_name) => self
+                            .classes
+                            .lookup_class(class_name)
+                            .is_some_and(|class| class.property(property_name).is_some()),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "property_exists()",
+                                    format!(
+                                        "object_or_class argument must be object or string, got {}",
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    };
+                    Ok(Value::Bool(exists))
+                }
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "property_exists()",
+                        format!(
+                            "property argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "property_exists()",
+                        ArityExpectation::Exactly(2),
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2693,6 +2738,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_object"
             | "get_debug_type"
             | "class_exists"
+            | "property_exists"
             | "var_dump"
             | "print_r"
     )

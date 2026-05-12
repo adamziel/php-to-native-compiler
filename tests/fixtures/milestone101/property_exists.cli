@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+object:name
+object:secret
+object:static
+class:static
+class:missing
+missing-class:false
+dynamic:exists
+--- stdout end ---
+stderr:
+--- stderr end ---

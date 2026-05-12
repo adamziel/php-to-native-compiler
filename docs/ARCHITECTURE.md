@@ -172,6 +172,9 @@ names and the declared class name for current object values.
 class metadata table by string class name, using the same case-insensitive
 class lookup as instantiation. The autoload flag is accepted only as a boolean
 and does not trigger autoloading in the current subset.
+`property_exists($object_or_class, $property)` checks the same declared
+property metadata for current object values or string class names, with
+case-sensitive property names and no autoload side effects.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

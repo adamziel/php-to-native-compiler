@@ -2510,8 +2510,16 @@ Still fails:
   native-codegen rejection through the current function-call boundary.
   Autoloading, namespace/import aliases, anonymous classes, exact native
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `property_exists($object_or_class, $property)` support over the current
+  declared property metadata. The supported slice accepts current object values
+  or string class names, uses case-sensitive property names, reports declared
+  public/protected/private and static properties, returns false for missing
+  properties or missing string class names, works through string-valued dynamic
+  calls, and has fixture CLI coverage plus stable diagnostics for unsupported
+  argument types. Dynamic properties created outside declarations, autoload
+  side effects, namespace/import aliases, reflection behavior, exact native
+  `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 
-- Continue the next small object/class boundary by adding a new task to
-  `docs/NEXT_TASKS.md`.
+- Continue the next small object/class boundary from `docs/NEXT_TASKS.md`.

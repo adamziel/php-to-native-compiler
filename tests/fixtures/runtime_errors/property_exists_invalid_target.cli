@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/property_exists_invalid_target.php:2:10: unsupported call property_exists(): object_or_class argument must be object or string, got int
+--- stderr end ---
