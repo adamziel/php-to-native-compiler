@@ -2997,3 +2997,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:47:05Z
 
 - Post-round 47 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:47:09Z
+
+- Starting round 48 at 20260512T034709Z from HEAD `7c9b744`.
+
+## Loop Event 2026-05-12T03:47:12Z
+
+- Pre-round 48 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:51:19Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  alternate `if`/`elseif`/`else` colon/`endif` conditional syntax. The parser
+  now rejects a colon immediately after `if`/`elseif` conditions and after
+  `else` with the same documented unsupported-boundary message.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.exit`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.phpc-only`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries
+  unsupported_alternate_if_forms_are_rejected_with_stable_parse_error` passed;
+  `cargo test -p phpc --test unsupported_syntax_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 10 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php`
+  exited `1` with the expected stable parse diagnostic; `cargo run -p phpc --
+  test --compare-php tests/fixtures/unsupported_syntax_features` passed with
+  10 `.phpc-only` PHP comparisons skipped; `tools/run-tests.sh` passed with
+  115 fixtures, 47 system PHP comparisons, and 68 `.phpc-only` skips.
+- Remaining semantic gaps: alternate conditional execution is not implemented,
+  including nested alternate conditionals, mixed brace/colon recovery, `endif`
+  parsing beyond the first unsupported colon boundary, and native conditional
+  lowering.
+- Next concrete task: add explicit parse diagnostics for strict identity
+  operators `===` and `!==` before implementing strict comparisons.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: reject alternate if syntax"`
+  after the full suite passes.

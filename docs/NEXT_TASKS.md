@@ -187,7 +187,13 @@ handled.
 - [x] Implement `elseif` chains over the current `if` expression subset,
   including parser/interpreter coverage, fixture CLI coverage, documentation,
   and explicit native-codegen rejection while lowering remains unsupported.
-- [ ] Add explicit parse diagnostics for alternate `if`/`elseif`/`else`
+- [x] Add explicit parse diagnostics for alternate `if`/`elseif`/`else`
   colon/`endif` syntax before implementing alternate conditional syntax,
   including parser coverage, fixture CLI coverage, documentation, and named
   unsupported gaps.
+
+## Milestone 12: Comparison Refinements
+
+- [ ] Add explicit parse diagnostics for strict identity operators `===` and
+  `!==` before implementing strict comparisons, including parser coverage,
+  fixture CLI coverage, documentation, and named unsupported gaps.

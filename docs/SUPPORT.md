@@ -106,6 +106,8 @@
 - explicit parse diagnostics for unsupported expression-position `for` and
   comma-separated `for` header expression lists
 - explicit parse diagnostics for unsupported expression-position `do ... while`
+- explicit parse diagnostics for unsupported alternate `if`/`elseif`/`else`
+  colon/`endif` syntax
 - explicit parse diagnostics for unsupported expression-position `switch` and
   alternate colon/`endswitch` syntax
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
@@ -242,8 +244,10 @@
 - Conditionals: statement-form `if` supports zero or more `elseif` clauses and
   an optional `else` clause over the current expression and truthiness subset.
   Branch bodies may be brace blocks or single statements. Alternate
-  colon/`endif` conditional syntax and native conditional lowering are not
-  implemented.
+  `if`/`elseif`/`else` colon/`endif` conditional syntax now fails with a
+  stable parse diagnostic. Alternate conditional execution, nested alternate
+  conditional parsing, mixed brace/colon conditional recovery, and native
+  conditional lowering are not implemented.
 - Loop control: `break;` and `continue;` execute for the innermost currently
   executing `while`, supported `for`, supported `do ... while`, or supported
   array `foreach` loop in `phpc run`; `break;` also exits the innermost

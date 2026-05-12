@@ -78,10 +78,10 @@ subset:
   `unset(...)` forms such as property, append-offset, and nested unset,
   unsupported `foreach` by-reference/destructuring forms, unsupported
   comma-separated `for` header expression lists, expression-form
-  `do ... while`, expression-form or alternate-syntax `switch`,
-  `break`/`continue` depth arguments, object method calls, dynamic property
-  names, anonymous classes, and unsupported class forms, static member access,
-  and class constants
+  `do ... while`, alternate `if`/`elseif`/`else` colon/`endif` syntax,
+  expression-form or alternate-syntax `switch`, `break`/`continue` depth
+  arguments, object method calls, dynamic property names, anonymous classes,
+  and unsupported class forms, static member access, and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

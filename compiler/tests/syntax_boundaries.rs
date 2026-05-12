@@ -296,6 +296,54 @@ echo switch ($value) {
 }
 
 #[test]
+fn unsupported_alternate_if_forms_are_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+if ($value):
+    echo "yes";
+endif;
+"#,
+            2,
+            12,
+        ),
+        (
+            r#"<?php
+$value = 2;
+if ($value == 1) {
+    echo "one";
+} elseif ($value == 2):
+    echo "two";
+endif;
+"#,
+            5,
+            23,
+        ),
+        (
+            r#"<?php
+if ($value) {
+    echo "yes";
+} ELSE:
+    echo "no";
+endif;
+"#,
+            4,
+            7,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported if: alternate if/elseif/else colon/endif syntax is not implemented; use brace blocks or single-statement bodies"
+        );
+    }
+}
+
+#[test]
 fn unsupported_break_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

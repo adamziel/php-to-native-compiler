@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php:5:23: unsupported if: alternate if/elseif/else colon/endif syntax is not implemented; use brace blocks or single-statement bodies
+--- stderr end ---

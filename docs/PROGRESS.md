@@ -306,6 +306,9 @@ Implemented:
   nested-`if` AST shape, evaluates conditions left to right until the first
   truthy branch, preserves optional final `else` behavior, and keeps native
   conditional lowering rejected explicitly.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
+  CLI snapshots for unsupported alternate `if`/`elseif`/`else` colon/`endif`
+  conditional syntax before alternate conditional execution is implemented.
 
 Tested:
 
@@ -348,8 +351,9 @@ Tested:
   `unset(...)` forms, unsupported `foreach` by-reference and destructuring
   forms, expression-form `foreach`, unsupported `for` header expression lists,
   expression-form `for`, expression-form `do ... while`, expression-form and
-  alternate-syntax `switch`, unsupported switch case separators, and
-  unsupported `break`/`continue` loop-depth arguments.
+  alternate-syntax `switch`, unsupported switch case separators, alternate
+  `if`/`elseif`/`else` colon/`endif` syntax, and unsupported
+  `break`/`continue` loop-depth arguments.
 - `cargo test -p phpc --test for_loop` passes with C-style `for` loop
   coverage for initializer/condition/increment execution, optional header
   slots, uppercase `FOR`, single-statement bodies, and `break;`/`continue;`
@@ -364,7 +368,7 @@ Tested:
   skipped later-condition coverage, `else` fallback behavior,
   single-statement bodies, and uppercase tail keyword coverage.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 9 unsupported syntax fixtures.
+  snapshot test covering 10 unsupported syntax fixtures.
 - `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
   test covering the Milestone 10 syntax expansion fixtures.
 - `cargo test -p phpc --test conditional_refinements_cli` passes with 1 CLI
@@ -454,9 +458,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 114 fixture tests.
+- `cargo run -p phpc -- test` passes with 115 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 47 fixtures and skipping 67 `.phpc-only` fixtures.
+  installed, comparing 47 fixtures and skipping 68 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -509,10 +513,15 @@ Tested:
 - `cargo run -p phpc -- test --compare-php
   tests/fixtures/unsupported_object_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
+- `cargo test -p phpc --test syntax_boundaries unsupported_alternate_if_forms_are_rejected_with_stable_parse_error`
+  passes with stable parse diagnostics for alternate `if`, `elseif`, and
+  `else` colon syntax.
+- `cargo test -p phpc --test unsupported_syntax_features_cli` passes with the
+  unsupported syntax CLI snapshots, including alternate conditional syntax.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 9 unsupported syntax fixtures.
+  passes with 10 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 9 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 10 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -645,6 +654,8 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_do_while.php:2:6: unsupported do-while: do-while loops are only supported as statements in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_switch.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_switch.php:3:16: unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php:5:23: unsupported if: alternate if/elseif/else colon/endif syntax is not implemented; use brace blocks or single-statement bodies`.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/break_while.php`
   prints `0,1,2,after:2`.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/continue_while.php`
@@ -736,8 +747,8 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 113 fixtures, 46 system PHP comparisons,
-  and 67 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 115 fixtures, 47 system PHP comparisons,
+  and 68 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -765,8 +776,9 @@ Still fails:
   diagnostics.
   Comma-separated `for` initializer, condition, and increment expression lists
   fail with stable parse diagnostics; expression-form `do ... while` fails with
-  a stable parse diagnostic; expression-form `switch`, alternate switch syntax,
-  and semicolon case separators fail with stable parse diagnostics. Nested
+  a stable parse diagnostic; alternate `if`/`elseif`/`else` colon/`endif`
+  syntax, expression-form `switch`, alternate switch syntax, and semicolon case
+  separators fail with stable parse diagnostics. Nested
   indexed writes, complex assignment lvalues, `$array[]` as a read expression,
   string offset access, by-reference `foreach`, object iteration, destructuring
   loop targets, references, copy-on-write containers, unsupported switch inputs
@@ -817,8 +829,11 @@ Still fails:
   `finally`/exception behavior, and native loop-control lowering are not
   implemented.
 - Conditional execution is limited to statement-form `if`/`elseif`/`else`
-  bodies using brace blocks or single statements. Alternate colon/`endif`
-  conditional syntax and native conditional lowering are not implemented.
+  bodies using brace blocks or single statements. Alternate
+  `if`/`elseif`/`else` colon/`endif` syntax now fails with a stable parse
+  diagnostic; alternate conditional execution, nested alternate conditional
+  parsing, mixed brace/colon conditional recovery, and native conditional
+  lowering are not implemented.
 - Runtime errors abort the current `phpc run` command with a stable diagnostic;
   PHP `Throwable` objects, stack traces, warning/notice recovery, user error
   handlers, and preservation of partial stdout before a fatal runtime error are
@@ -876,5 +891,5 @@ Still fails:
 
 Next:
 
-- Add explicit parse diagnostics for alternate `if`/`elseif`/`else`
-  colon/`endif` syntax before implementing alternate conditional syntax.
+- Add explicit parse diagnostics for strict identity operators `===` and `!==`
+  before implementing strict comparisons.

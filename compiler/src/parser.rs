@@ -339,10 +339,16 @@ impl Parser {
         self.consume_keyword(TokenKind::LParen, open_message)?;
         let condition = self.parse_expression()?;
         self.consume_keyword(TokenKind::RParen, close_message)?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            return Err(self.error_at(self.previous().span, unsupported_if_alternate_message()));
+        }
         let then_branch = self.parse_block_or_statement()?;
         let else_branch = if let Some(elseif_span) = self.match_elseif() {
             vec![self.parse_if_after_keyword(elseif_span, "elseif")?]
         } else if self.match_else() {
+            if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+                return Err(self.error_at(self.previous().span, unsupported_if_alternate_message()));
+            }
             self.parse_block_or_statement()?
         } else {
             Vec::new()
@@ -1633,6 +1639,10 @@ fn unsupported_switch_expression_message() -> &'static str {
 
 fn unsupported_switch_alternate_message() -> &'static str {
     "unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks"
+}
+
+fn unsupported_if_alternate_message() -> &'static str {
+    "unsupported if: alternate if/elseif/else colon/endif syntax is not implemented; use brace blocks or single-statement bodies"
 }
 
 fn unsupported_break_depth_message() -> &'static str {
