@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP warns and skips unsupported array_fill_keys key values.

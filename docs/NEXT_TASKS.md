@@ -265,7 +265,14 @@ handled.
   including integer/string value-to-key conversion, duplicate-key overwrite
   behavior, non-array and unsupported-value diagnostics, fixture CLI coverage,
   documentation, and explicit native-codegen rejection.
-- [ ] Implement `array_fill_keys($keys, $value)` for the current ordered array
+- [x] Implement `array_fill_keys($keys, $value)` for the current ordered array
   value model, including integer/string key-value conversion, duplicate-key
   overwrite behavior, non-array and unsupported-key diagnostics, fixture CLI
   coverage, documentation, and explicit native-codegen rejection.
+
+## Milestone 19: Array Counting Builtins
+
+- [ ] Implement `array_count_values($array)` for the current ordered array
+  value model, including integer/string value counting, non-array and
+  unsupported-value diagnostics, fixture CLI coverage, documentation, and
+  explicit native-codegen rejection.

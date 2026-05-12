@@ -1,0 +1,20 @@
+Array
+(
+    [name] => value
+    [2] => value
+    [02] => value
+    [-1] => value
+)
+4
+value|value|value|value
+after
+Array
+(
+    [first] => name
+    [5] => 2
+    [two] => 2
+    [02] => 02
+    [6] => -1
+    [dup-string] => name
+)
+again|again|again|again

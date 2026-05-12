@@ -565,6 +565,15 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn filled_keys(&self, value: Value) -> RuntimeResult<Self> {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let key = array_fill_key_from_value(&entry.value)?;
+            array.insert(key, value.clone());
+        }
+        Ok(array)
+    }
+
     fn merge_entries_from(&mut self, source: &Self) {
         for entry in &source.entries {
             match &entry.key {
@@ -694,6 +703,20 @@ fn array_flip_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
             "array_flip()",
             format!(
                 "values must be int or string in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+    match value {
+        Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::String(value) => Ok(ArrayKey::string(value.clone())),
+        other => Err(RuntimeError::unsupported_call(
+            "array_fill_keys()",
+            format!(
+                "key values must be int or string in the current subset, got {}",
                 other.type_name()
             ),
         )),
@@ -2500,6 +2523,65 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_flip(): values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_fill_keys_uses_int_string_values_as_keys_and_overwrites_duplicates() {
+        let mut keys = PhpArray::new();
+
+        keys.insert("first", Value::String("name".to_string()));
+        keys.insert(5, Value::String("2".to_string()));
+        keys.insert("two", Value::Int(2));
+        keys.insert("02", Value::String("02".to_string()));
+        keys.append(Value::Int(-1)).unwrap();
+        keys.insert("dup-string", Value::String("name".to_string()));
+
+        let mut filled = keys
+            .filled_keys(Value::String("filled".to_string()))
+            .unwrap();
+        let entries = filled.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("filled".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("filled".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("filled".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(-1));
+        assert_eq!(entries[3].value, Value::String("filled".to_string()));
+        assert_eq!(
+            filled.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(3)
+        );
+        assert_eq!(
+            keys.get("dup-string"),
+            Some(&Value::String("name".to_string())),
+            "array_fill_keys must not mutate the original key array"
+        );
+    }
+
+    #[test]
+    fn array_fill_keys_rejects_unsupported_key_value_types() {
+        let mut keys = PhpArray::new();
+        keys.insert("ok", Value::String("name".to_string()));
+        keys.insert("bad", Value::Bool(true));
+
+        let error = keys
+            .filled_keys(Value::String("filled".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_fill_keys()".to_string(),
+                reason: "key values must be int or string in the current subset, got bool"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool"
         );
     }
 

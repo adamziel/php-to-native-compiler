@@ -244,6 +244,14 @@ Implemented:
   entries without moving the first flipped-key slot, is available through
   string-valued dynamic function calls, and has stable diagnostics for
   non-array arguments and unsupported non-int/string source values.
+- Added `array_fill_keys($keys, $value)` support for the current ordered array
+  value model. The supported slice uses integer and string key values as result
+  keys with the current string-key normalization rules, stores the supplied
+  value in each result slot with the current cloned value model, overwrites
+  duplicate result keys with later key entries without moving the first
+  result-key slot, is available through string-valued dynamic function calls,
+  and has stable diagnostics for non-array key arguments and unsupported
+  non-int/string key values.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -395,8 +403,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 39 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 24 focused array value tests.
+- `cargo test -p php_runtime` passes with 41 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 26 focused array value tests.
 - `cargo test -p php_runtime array_key_first` passes with 1 focused
   first-key runtime test.
 - `cargo test -p php_runtime array_key_last` passes with 1 focused last-key
@@ -407,6 +415,8 @@ Tested:
   array-combination runtime tests.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
   runtime tests.
+- `cargo test -p php_runtime array_fill_keys` passes with 2 focused
+  array-transform runtime tests.
 - `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
   array-search tests.
 - `cargo test -p php_runtime array_search` passes with 3 focused loose/strict
@@ -417,7 +427,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 47 representative runtime error fixtures.
+  covering 49 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -527,6 +537,10 @@ Tested:
   value-to-key conversion, duplicate-key overwrite behavior, dynamic
   string-call coverage, original-array preservation, non-array diagnostics,
   unsupported-value diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_fill_keys` passes with integer/string
+  key-value conversion, duplicate-key overwrite behavior, dynamic string-call
+  coverage, original-key-array preservation, non-array diagnostics,
+  unsupported-key diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -552,7 +566,8 @@ Tested:
   1 CLI snapshot test covering the Milestone 17 `array_key_first` and
   `array_key_last` fixtures.
 - `cargo test -p phpc --test array_transform_builtins_cli` passes with 1 CLI
-  snapshot test covering the Milestone 18 `array_flip` fixture.
+  snapshot test covering the Milestone 18 `array_flip` and `array_fill_keys`
+  fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -741,6 +756,10 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_unsupported_value.php:3:6: unsupported call array_flip(): values must be int or string in the current subset, got bool`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_fill_keys_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_fill_keys_non_array.php:2:6: unsupported call array_fill_keys(): first argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_fill_keys_unsupported_key.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_fill_keys_unsupported_key.php:3:6: unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -870,10 +889,15 @@ Tested:
   the committed `array_flip` output with integer/string value-to-key
   conversion, duplicate-key overwrites, original-array preservation, append
   behavior after flipped integer keys, and dynamic string-call coverage.
-- `cargo run -p phpc -- test tests/fixtures/milestone18` passes with 1
-  fixture.
+- `cargo run -p phpc -- run tests/fixtures/milestone18/array_fill_keys.php`
+  prints the committed `array_fill_keys` output with integer/string
+  key-value conversion, duplicate-key overwrites, original-key-array
+  preservation, append behavior after filled integer keys, and dynamic
+  string-call coverage.
+- `cargo run -p phpc -- test tests/fixtures/milestone18` passes with 2
+  fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone18` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1045,6 +1069,12 @@ Still fails:
   reference values fail with a stable project diagnostic instead of PHP's
   warning-and-skip behavior; references, copy-on-write containers, exact native
   warning/`TypeError` objects, and native lowering are not implemented.
+  `array_fill_keys` is limited to arrays whose key values are integers or
+  strings. Unsupported `null`, bool, float, array, object, future resource, and
+  reference key values fail with a stable project diagnostic instead of PHP's
+  warning-and-skip behavior; references, copy-on-write containers, object handle
+  identity for object fill values, exact native warning/`TypeError` objects,
+  and native lowering are not implemented.
   `in_array` and `array_search` are limited to loose scalar searches and strict
   scalar searches when the third argument is a boolean. Strict searches
   involving array/object needles or haystack values, resource/reference
@@ -1134,7 +1164,7 @@ Still fails:
 
 Next:
 
-- Implement `array_fill_keys($keys, $value)` for the current ordered array
-  value model, including integer/string key-value conversion, duplicate-key
-  overwrite behavior, non-array and unsupported-key diagnostics, fixture CLI
-  coverage, documentation, and explicit native-codegen rejection.
+- Implement `array_count_values($array)` for the current ordered array value
+  model, including integer/string value counting, non-array and
+  unsupported-value diagnostics, fixture CLI coverage, documentation, and
+  explicit native-codegen rejection.

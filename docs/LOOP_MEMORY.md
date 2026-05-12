@@ -3856,3 +3856,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:32:57Z
 
 - Post-round 61 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:33:00Z
+
+- Starting round 62 at 20260512T053300Z from HEAD `de2ef49`.
+
+## Loop Event 2026-05-12T05:33:05Z
+
+- Pre-round 62 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:38:24Z
+
+- Task attempted: implemented `array_fill_keys($keys, $value)` for the current
+  ordered array value model. The supported slice converts integer and string
+  key values into normalized result keys, stores the supplied value in each
+  result slot with the current cloned value model, overwrites duplicate result
+  keys with later key entries without moving the first result-key slot, supports
+  string-valued dynamic calls, and reports stable diagnostics for non-array key
+  arguments and unsupported non-int/string key values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_fill_keys.rs`,
+  `tests/fixtures/milestone18/array_fill_keys.*`,
+  `tests/fixtures/runtime_errors/array_fill_keys_non_array.*`,
+  `tests/fixtures/runtime_errors/array_fill_keys_unsupported_key.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo test -p php_runtime
+  array_fill_keys` passed with 2 focused runtime tests; `cargo test -p phpc
+  --test array_fill_keys` passed with 4 compiler tests; `cargo test -p phpc
+  --test array_transform_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone18` passed with 2 fixtures; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone18` passed with 2 system PHP
+  comparisons; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 49 fixtures; `cargo fmt --check` passed; `cargo run -p phpc --
+  run tests/fixtures/milestone18/array_fill_keys.php` printed the committed
+  output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_fill_keys_non_array.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_fill_keys_unsupported_key.php` exited
+  `1` with the expected stable diagnostic; `tools/run-tests.sh` passed with
+  140 fixtures, 57 system PHP comparisons, and 83 `.phpc-only` skips; `cargo
+  test -p php_runtime array_` passed with 26 focused array tests.
+- Remaining semantic gaps: `array_fill_keys` is limited to arrays whose key
+  values are integers or strings. Unsupported `null`, bool, float, array,
+  object, future resource, and reference key values fail with a stable project
+  diagnostic instead of PHP's warning-and-skip behavior. References,
+  copy-on-write containers, object handle identity for object fill values,
+  exact native warning/`TypeError` objects, resource values, and native lowering
+  remain unsupported.
+- Next concrete task: implement `array_count_values($array)` for the current
+  ordered array value model, including integer/string value counting,
+  non-array and unsupported-value diagnostics, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_fill_keys builtin"`
+  after the full suite passes.

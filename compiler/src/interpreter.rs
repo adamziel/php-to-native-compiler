@@ -1024,6 +1024,22 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_fill_keys" => {
+                expect_arity(name, &args, 2, span)?;
+                match &args[0] {
+                    Value::Array(keys) => keys
+                        .filled_keys(args[1].clone())
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_fill_keys()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1440,6 +1456,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_reverse"
             | "array_merge"
             | "array_flip"
+            | "array_fill_keys"
             | "in_array"
             | "array_search"
             | "var_dump"

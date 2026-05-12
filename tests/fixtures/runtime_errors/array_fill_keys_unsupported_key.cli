@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_fill_keys_unsupported_key.php:3:6: unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool
+--- stderr end ---
