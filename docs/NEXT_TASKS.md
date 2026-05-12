@@ -710,9 +710,17 @@ handled.
 
 ## Milestone 71: Magic Constant Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported magic constants such as
+- [x] Add explicit parse diagnostics for unsupported magic constants such as
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__FILE__`, `__DIR__`, and
   `__LINE__` before source-aware magic constant evaluation exists, including
   parser coverage, fixture CLI coverage, documentation, and named gaps for
   function/method/class context, line/file/dir source mapping, namespaces,
   traits, and native lowering.
+
+## Milestone 72: Magic Constant Line Slice
+
+- [ ] Implement `__LINE__` as the first executable magic constant using
+  expression source spans, including parser/interpreter support, fixture CLI
+  coverage, documentation, and explicit gaps for `__FILE__`, `__DIR__`,
+  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, namespaces, traits, and native
+  lowering.

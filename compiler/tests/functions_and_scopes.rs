@@ -416,6 +416,99 @@ function counter($enabled) {
 }
 
 #[test]
+fn magic_constants_are_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+echo __LINE__;
+"#,
+            2,
+            6,
+            "__LINE__",
+        ),
+        (
+            r#"<?php
+echo __FILE__;
+"#,
+            2,
+            6,
+            "__FILE__",
+        ),
+        (
+            r#"<?php
+echo __dir__;
+"#,
+            2,
+            6,
+            "__DIR__",
+        ),
+        (
+            r#"<?php
+function current_name() {
+    return __FUNCTION__;
+}
+"#,
+            3,
+            12,
+            "__FUNCTION__",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function label() {
+        return __METHOD__;
+    }
+}
+"#,
+            4,
+            16,
+            "__METHOD__",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function label() {
+        return __CLASS__;
+    }
+}
+"#,
+            4,
+            16,
+            "__CLASS__",
+        ),
+        (
+            r#"<?php
+echo __TRAIT__;
+"#,
+            2,
+            6,
+            "__TRAIT__",
+        ),
+        (
+            r#"<?php
+echo __NAMESPACE__;
+"#,
+            2,
+            6,
+            "__NAMESPACE__",
+        ),
+    ];
+
+    for (source, line, column, magic_name) in cases {
+        let error = parse_error(source);
+
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            format!(
+                "unsupported magic constant {magic_name}: source-aware magic constant evaluation is not implemented"
+            )
+        );
+    }
+}
+
+#[test]
 fn reference_returns_are_rejected_with_stable_parse_error() {
     let error = parse_error(
         r#"<?php

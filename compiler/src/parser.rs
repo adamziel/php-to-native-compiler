@@ -1162,6 +1162,11 @@ impl Parser {
                 "unsupported reference expression: references are not implemented",
             )),
             TokenKind::Identifier(name) => {
+                if let Some(magic_name) = magic_constant_name(&name) {
+                    return Err(
+                        self.error_at(token.span, unsupported_magic_constant_message(magic_name))
+                    );
+                }
                 if name.eq_ignore_ascii_case("do") {
                     return Err(
                         self.error_at(token.span, unsupported_do_while_expression_message())
@@ -1748,6 +1753,26 @@ fn unsupported_return_type_message() -> &'static str {
 
 fn unsupported_static_local_message() -> &'static str {
     "unsupported static local variable declaration: function-local static storage is not implemented"
+}
+
+fn magic_constant_name(name: &str) -> Option<&'static str> {
+    match name.to_ascii_uppercase().as_str() {
+        "__LINE__" => Some("__LINE__"),
+        "__FILE__" => Some("__FILE__"),
+        "__DIR__" => Some("__DIR__"),
+        "__FUNCTION__" => Some("__FUNCTION__"),
+        "__CLASS__" => Some("__CLASS__"),
+        "__TRAIT__" => Some("__TRAIT__"),
+        "__METHOD__" => Some("__METHOD__"),
+        "__NAMESPACE__" => Some("__NAMESPACE__"),
+        _ => None,
+    }
+}
+
+fn unsupported_magic_constant_message(name: &str) -> String {
+    format!(
+        "unsupported magic constant {name}: source-aware magic constant evaluation is not implemented"
+    )
 }
 
 fn unsupported_eval_message() -> &'static str {

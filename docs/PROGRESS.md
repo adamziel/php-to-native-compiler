@@ -111,6 +111,11 @@ Implemented:
 - Added explicit parser diagnostics, unit tests, fixture coverage, and
   `phpc run` CLI snapshots for unsupported function-local `static $name`
   declarations before static local storage exists.
+- Added explicit parser diagnostics, unit tests, fixture coverage, and
+  `phpc run` CLI snapshots for unsupported magic constants such as
+  `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, `__CLASS__`,
+  `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__` before source-aware magic
+  constant evaluation exists.
 - Added a materialized interpreter symbol table for top-level and function-local
   scopes. Current static variable reads, writes, `unset($name)`,
   `isset($name)`, parameter binding, default-parameter evaluation, and direct
@@ -2275,12 +2280,16 @@ Still fails:
   parameter and return type declarations, closures and arrow functions, named
   arguments, and `declare(strict_types=1)` now fail with explicit parse
   diagnostics. Static local variable declarations inside functions also fail
-  with an explicit parse diagnostic before static local storage exists.
+  with an explicit parse diagnostic before static local storage exists. Magic
+  constants fail with explicit parse diagnostics before source-aware magic
+  constant evaluation exists.
   Nullable, union, and intersection types, `mixed`, `void`/`never`,
   class/interface type names, coercive versus strict typing, variance, runtime
   type enforcement, static local initialization expressions, per-function
-  persistence, references, recursion/reentrancy behavior, native static-local
-  lowering, and native type lowering are not implemented.
+  persistence, references, recursion/reentrancy behavior, function/method/class
+  magic constant context, line/file/dir source mapping, namespace and trait
+  magic constants, native static-local lowering, magic constant lowering, and
+  native type lowering are not implemented.
   Dynamic function calls are limited to string-valued function names resolving
   to current user functions or the documented callable builtins; array/object
   callables, method calls, first-class callable syntax, `call_user_func`,
@@ -2318,7 +2327,7 @@ Still fails:
   constant-expression/scalar-array value subset, including references to
   previously defined unqualified constants and the current built-in
   `ARRAY_FILTER_*` constants. Forward references, other built-in constants,
-  names lexed as language keywords or literals for bare reads,
+  names lexed as language keywords or literals for bare reads, magic constants,
   case-insensitive legacy constants, extension constants, namespace-qualified
   constants, nested declarations, dynamic declaration values, class constants
   through
@@ -2340,6 +2349,6 @@ Still fails:
 
 Next:
 
-- Add explicit parse diagnostics for unsupported magic constants such as
-  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__FILE__`, `__DIR__`, and
-  `__LINE__` before source-aware magic constant evaluation exists.
+- Implement `__LINE__` as the first executable magic constant using expression
+  source spans while keeping file/dir and function/method/class context
+  constants explicitly unsupported.

@@ -7324,3 +7324,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T16:52:55Z
 
 - Post-round 19 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T16:53:03Z
+
+- Starting round 20 at 20260512T165303Z from HEAD `d4eb876`.
+
+## Loop Event 2026-05-12T16:53:11Z
+
+- Pre-round 20 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:01:37Z
+
+- Task attempted: completed Milestone 71 by adding explicit parse diagnostics
+  for unsupported magic constants before source-aware magic constant evaluation
+  exists. Bare `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`,
+  `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__` now fail in the
+  parser with a stable diagnostic instead of falling through to runtime
+  constant lookup.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.php`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.stderr`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.exit`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.phpc-only`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo test -p phpc
+  --test functions_and_scopes magic_constants_are_rejected_with_stable_parse_error`
+  passed; `cargo test -p phpc --test functions_and_scopes` passed with 23
+  tests; `cargo test -p phpc --test unsupported_function_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 10 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 10 `.phpc-only`
+  skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_function_features/unsupported_magic_constant.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 258 fixtures, 104 system PHP comparisons, and 154 `.phpc-only`
+  skips.
+- Remaining semantic gaps: magic constants are not executable. Source line
+  values, file and directory paths, function/method/class context,
+  namespace/trait context, case-insensitive runtime semantics beyond the parse
+  boundary, references/copy-on-write interactions, exact PHP error objects, and
+  native lowering remain unsupported.
+- Next concrete task: implement `__LINE__` as the first executable magic
+  constant using expression source spans while keeping file/dir and
+  function/method/class context constants explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "parser: add magic constant diagnostics"`
+  after the full suite passes.

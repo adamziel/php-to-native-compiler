@@ -1,0 +1,2 @@
+parse error at 3:12: unsupported magic constant __FUNCTION__: source-aware magic constant evaluation is not implemented
+

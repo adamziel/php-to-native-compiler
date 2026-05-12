@@ -162,6 +162,9 @@
   reference expressions, parameter type declarations, return type declarations,
   static local variable declarations inside functions, anonymous functions,
   arrow functions, named arguments, and `declare(strict_types=1)`
+- explicit parse diagnostics for unsupported magic constants such as
+  `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, `__CLASS__`,
+  `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
@@ -626,14 +629,18 @@
   declarations also fail with stable parse diagnostics before any type
   enforcement can run. Static local variable declarations inside functions
   also fail with a stable parse diagnostic before function-local static storage
-  exists. The project does not implement runtime semantics for those features
-  yet. Nullable, union, and intersection types, `mixed`, `void`/`never`,
+  exists. Magic constants such as `__FUNCTION__`, `__METHOD__`, `__CLASS__`,
+  `__FILE__`, `__DIR__`, and `__LINE__` fail with stable parse diagnostics
+  before source-aware magic constant evaluation exists. The project does not
+  implement runtime semantics for those features yet. Nullable, union, and
+  intersection types, `mixed`, `void`/`never`,
   class/interface type names, coercive versus strict typing, variance, static
   local initialization expressions, per-function persistence,
-  recursion/reentrancy behavior, magic function constants, array callables,
-  object/method callables, first-class callable syntax, `call_user_func`,
-  namespace-qualified callable resolution, autoload interaction, and native
-  lowering for type declarations are unsupported.
+  recursion/reentrancy behavior, function/method/class magic constant context,
+  line/file/dir source mapping for magic constants, namespace and trait magic
+  constants, array callables, object/method callables, first-class callable
+  syntax, `call_user_func`, namespace-qualified callable resolution, autoload
+  interaction, and native lowering for type declarations are unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -938,7 +945,8 @@
   declaration references, non-string or unsupported names, unsupported
   object-containing values, unknown `constant(...)` names, non-string or
   unsupported `defined(...)` names, unknown bare constants, and the legacy
-  third `define(...)` flag fail with stable diagnostics. Constant names that
+  third `define(...)` flag fail with stable diagnostics. Magic constants are
+  rejected by the parser before runtime constant lookup. Constant names that
   are lexed as language keywords or literals cannot be read bare, and
   case-insensitive legacy constants, namespace-qualified constants, extension
   constants, nested declarations, dynamic declaration values, class constants
@@ -1140,6 +1148,11 @@
 - static local variable declarations inside functions, including
   initialization expressions, per-function persistence, references,
   recursion/reentrancy behavior, and native lowering
+- magic constants such as `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`,
+  `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`; these fail with
+  stable parse diagnostics before source line/file/dir mapping,
+  function/method/class context, namespace/trait context, or native lowering
+  exists
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex
@@ -1248,8 +1261,8 @@
   constants, namespace-qualified constants, nested `const` declarations,
   dynamic declaration values, `constant()`/`defined()` lookup
   for class constants, names lexed as language keywords or literals for bare
-  reads, reference/copy-on-write behavior for constant values, and native
-  lowering remain unsupported
+  reads, magic constants, reference/copy-on-write behavior for constant values,
+  and native lowering remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions
