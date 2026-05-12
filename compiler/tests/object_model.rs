@@ -222,6 +222,52 @@ if ($call($box)) {
 }
 
 #[test]
+fn get_debug_type_reports_current_value_type_names() {
+    let source = r#"<?php
+class Box {}
+
+$box = new box();
+$values = [
+    null,
+    false,
+    7,
+    3.5,
+    "x",
+    ["nested"],
+    $box,
+];
+foreach ($values as $value) {
+    echo get_debug_type($value), "\n";
+}
+$call = "get_debug_type";
+echo $call($box), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "null\nbool\nint\nfloat\nstring\narray\nBox\nBox\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
+            .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations")
+            || error.message.contains("object instantiation")
+            || error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_ir_rejects_is_object_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\nclass Box {}\necho is_object(new Box());\n")
         .unwrap_err();

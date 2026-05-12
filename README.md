@@ -115,8 +115,8 @@ subset:
   string-callback subset with one-array key preservation and multi-array
   reindexing,
   `in_array` and `array_search` including strict scalar searches,
-  `get_class($object)` and `is_object($value)` over the current minimal object
-  value model,
+  `get_class($object)`, `is_object($value)`, and
+  `get_debug_type($value)` over the current minimal object value model,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
@@ -158,8 +158,10 @@ subset:
 object values. `phpc run` can instantiate declared constructor-free classes,
 read/write public instance properties by static name, and check those public
 properties with `isset`. `get_class($object)` returns the declared class name
-for those minimal object values, and `is_object($value)` returns true only for
-those current object values. Constructors, `$this` object context binding,
+for those minimal object values, `is_object($value)` returns true only for
+those current object values, and `get_debug_type($value)` returns scalar/array
+type names or the declared class name for current object values. Constructors,
+`$this` object context binding,
 method dispatch, dynamic property names, visibility enforcement for non-public
 properties, object handle identity, clone expressions, `instanceof`
 relationship checks, class-name constant resolution through `::class`,

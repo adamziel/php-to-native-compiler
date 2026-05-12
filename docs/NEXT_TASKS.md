@@ -937,3 +937,12 @@ handled.
   coverage, documentation, and explicit gaps for inheritance-aware object
   checks, proxy/extension object behavior, exact native reflection/type-system
   interactions, and native lowering.
+
+## Milestone 99: Debug Type Introspection Builtin
+
+- [x] Implement `get_debug_type($value)` over the current scalar/array/minimal
+  object value model, including scalar and array type-name results, declared
+  class-name results for current object values, string-valued dynamic-call
+  availability, fixture CLI coverage, documentation, and explicit gaps for
+  inheritance aliases/imports, anonymous classes, resources, exact native
+  reflection/type-system interactions, and native lowering.

@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+null
+bool
+int
+float
+string
+array
+Box
+Box
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1949,6 +1949,14 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::Bool(matches!(&args[0], Value::Object(_))))
             }
+            "get_debug_type" => {
+                expect_arity(name, &args, 1, span)?;
+                let type_name = match &args[0] {
+                    Value::Object(object) => object.class_name().to_string(),
+                    other => other.type_name().to_string(),
+                };
+                Ok(Value::String(type_name))
+            }
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2648,6 +2656,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_search"
             | "get_class"
             | "is_object"
+            | "get_debug_type"
             | "var_dump"
             | "print_r"
     )

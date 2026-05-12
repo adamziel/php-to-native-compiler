@@ -2496,6 +2496,13 @@ Still fails:
   Inheritance-aware object checks, proxy/extension object behavior, exact
   native reflection/type-system interactions, and native lowering remain
   unsupported.
+- Added `get_debug_type($value)` support for the current scalar/array/minimal
+  object value model, including scalar and array type-name results, declared
+  class-name results for current object values, string-valued dynamic-call
+  availability, fixture CLI coverage, documentation, and explicit
+  native-codegen rejection through the current object/function-call boundaries.
+  Inheritance aliases/imports, anonymous classes, resources, exact native
+  reflection/type-system interactions, and native lowering remain unsupported.
 
 Next:
 

@@ -166,7 +166,8 @@ current object value stored in that variable. Direct `isset($box->name)` checks
 the current public slot without treating a missing name as a property read.
 `get_class($object)` returns the declared class name stored in the current
 minimal object value and is also available through string-valued dynamic
-function calls.
+function calls. `get_debug_type($value)` reports current scalar/array type
+names and the declared class name for current object values.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

@@ -8875,3 +8875,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:52:44Z
 
 - Post-round 47 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:52:54Z
+
+- Starting round 48 at 20260512T195254Z from HEAD `6270362`.
+
+## Loop Event 2026-05-12T19:53:03Z
+
+- Pre-round 48 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:59:58Z
+
+- Task attempted: completed Milestone 99 by adding
+  `get_debug_type($value)` for the current scalar/array/minimal object value
+  model. The slice returns current scalar and array type names, returns the
+  declared class name for current object values, works through string-valued
+  dynamic function calls, has fixture and CLI snapshot coverage, and keeps
+  native lowering rejected through the current object/function-call codegen
+  boundaries.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone99/get_debug_type.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo test -p phpc
+  --test object_model get_debug_type` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone99` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone99` passed with 1 system PHP
+  comparison; direct `cargo run -p phpc -- run
+  tests/fixtures/milestone99/get_debug_type.php` printed the committed output;
+  `git diff --check` passed; `tools/run-tests.sh` passed with 292 fixtures,
+  109 system PHP comparisons, and 183 skips.
+- Remaining semantic gaps: `get_debug_type()` is limited to the current value
+  model. Inheritance aliases/imports, anonymous classes, resources, exact
+  native reflection/type-system interactions, and native lowering remain
+  unsupported.
+- Next concrete task: add the next small object/class introspection or
+  boundary task to `docs/NEXT_TASKS.md` and complete it with tests, CLI
+  coverage, docs, and named unsupported gaps.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add get_debug_type builtin"` after the full
+  suite passes.
