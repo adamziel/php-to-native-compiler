@@ -427,6 +427,70 @@ fn method_exists_requires_object_or_string_and_string_method_arguments() {
 }
 
 #[test]
+fn is_a_checks_exact_current_class_relationships() {
+    let source = r#"<?php
+class Box {}
+class Crate {}
+
+$box = new box();
+if (is_a($box, "Box")) {
+    echo "object:box\n";
+}
+if (is_a($box, "box")) {
+    echo "object:case-insensitive\n";
+}
+if (!is_a($box, "Crate")) {
+    echo "object:not-crate\n";
+}
+if (!is_a("Box", "Box")) {
+    echo "string:default-false\n";
+}
+if (is_a("BOX", "box", true)) {
+    echo "string:allowed\n";
+}
+if (!is_a("Missing", "Box", true)) {
+    echo "missing-source:false\n";
+}
+if (!is_a($box, "Missing")) {
+    echo "missing-target:false\n";
+}
+$call = "is_a";
+if ($call($box, "BOX")) {
+    echo "dynamic:object\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object:box\nobject:case-insensitive\nobject:not-crate\nstring:default-false\nstring:allowed\nmissing-source:false\nmissing-target:false\ndynamic:object\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn is_a_requires_string_class_name_and_bool_allow_string_arguments() {
+    let class_error =
+        runtime_error("<?php\nclass Box {}\n$box = new Box();\nvar_dump(is_a($box, 42));\n");
+
+    assert_eq!(class_error.line, 4);
+    assert_eq!(class_error.column, 10);
+    assert_eq!(
+        class_error.message,
+        "unsupported call is_a(): class name argument must be string in the current subset, got int"
+    );
+
+    let allow_string_error = runtime_error("<?php\nvar_dump(is_a(\"Box\", \"Box\", 1));\n");
+
+    assert_eq!(allow_string_error.line, 2);
+    assert_eq!(allow_string_error.column, 10);
+    assert_eq!(
+        allow_string_error.message,
+        "unsupported call is_a(): allow_string argument must be bool in the current subset, got int"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -501,6 +565,19 @@ fn emit_ir_rejects_property_exists_until_native_object_lowering_exists() {
 fn emit_ir_rejects_method_exists_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho method_exists(\"Box\", \"open\");\n")
         .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_is_a_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\necho is_a(\"Box\", \"Box\", true);\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

@@ -118,8 +118,9 @@ subset:
   `get_class($object)`, `is_object($value)`, `get_debug_type($value)`,
   `class_exists($name[, $autoload])`, and
   `property_exists($object_or_class, $property)` and
-  `method_exists($object_or_class, $method)` over the current minimal object
-  value model and declared-class metadata,
+  `method_exists($object_or_class, $method)` and
+  `is_a($object_or_class, $class_name[, $allow_string])` over the current
+  minimal object value model and declared-class metadata,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
@@ -174,15 +175,19 @@ missing classes.
 `method_exists($object_or_class, $method)` accepts current object values or
 string class names, uses case-insensitive declared method names, reports
 declared public/protected/private and static methods, and returns false for
-missing classes. Constructors, `$this` object context binding,
-method dispatch, dynamic property names, visibility enforcement for non-public
-properties, object handle identity, clone expressions, `instanceof`
-relationship checks, class-name constant resolution through `::class`,
-property default values, constructor arguments, multiple properties in one
-declaration, class constant declarations, static property storage, static
-method dispatch, magic static receivers such as `self::`, `parent::`, and
-`static::`, class constants, trait use inside classes, enum declarations, and
-native object lowering are not supported yet.
+missing classes. `is_a($object_or_class, $class_name[, $allow_string])` checks
+exact class identity only: object inputs are accepted, string object/class
+inputs are considered only when `allow_string` is true, and target class names
+use the current case-insensitive class metadata lookup. Constructors, `$this`
+object context binding, method dispatch, dynamic property names, visibility
+enforcement for non-public properties, inheritance and interface relationship
+checks, object handle identity, clone expressions, `instanceof` relationship
+checks, class-name constant resolution through `::class`, property default
+values, constructor arguments, multiple properties in one declaration, class
+constant declarations, static property storage, static method dispatch, magic
+static receivers such as `self::`, `parent::`, and `static::`, class constants,
+trait use inside classes, enum declarations, and native object lowering are
+not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

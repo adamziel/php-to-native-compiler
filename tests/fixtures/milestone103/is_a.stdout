@@ -1,0 +1,9 @@
+object:box
+object:case-insensitive
+object:not-crate
+string:default-false
+string:allowed
+missing-source:false
+missing-target:false
+dynamic:object
+

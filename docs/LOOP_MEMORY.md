@@ -9109,3 +9109,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:14:30Z
 
 - Post-round 51 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:14:44Z
+
+- Starting round 52 at 20260512T201444Z from HEAD `1416cf8`.
+
+## Loop Event 2026-05-12T20:14:56Z
+
+- Pre-round 52 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:25:41Z
+
+- Task attempted: implemented `is_a($object_or_class, $class_name[,
+  $allow_string])` over the current minimal object/class metadata as an exact
+  class relationship slice. Object inputs compare against the target class
+  metadata by class id, string first arguments are considered only when
+  `allow_string` is true, class-name lookup is case-insensitive through the
+  current class table, missing source or target classes return false, and
+  string-valued dynamic calls use the same builtin path.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone103/is_a.*`,
+  `tests/fixtures/runtime_errors/is_a_invalid_class_name.*`,
+  `tests/fixtures/runtime_errors/is_a_invalid_allow_string.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model is_a` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone103` passed; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 122 fixtures;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone103` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test object_introspection_builtins_cli`
+  passed; `tools/run-tests.sh` passed with 304 fixtures, 113 system PHP
+  comparisons, and 191 skips.
+- Remaining semantic gaps: `is_a` is exact-class metadata only; inheritance,
+  interfaces, traits, aliases/imports, namespace-aware names, autoloading,
+  exact native `TypeError` behavior, object handle identity beyond current
+  class ids, and native lowering remain unsupported.
+- Next concrete task: add the next honest
+  `is_subclass_of($object_or_class, $class_name[, $allow_string])` boundary
+  from `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add is_a exact class lookup"` after the full
+  suite passes.

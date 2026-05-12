@@ -978,10 +978,20 @@ handled.
 
 ## Milestone 103: Class Relationship Introspection Boundary
 
-- [ ] Add the next honest `is_a($object_or_class, $class_name[, $allow_string])`
+- [x] Add the next honest `is_a($object_or_class, $class_name[, $allow_string])`
   boundary over the current minimal object/class metadata: either a stable
   unsupported diagnostic or a narrow executable exact-class lookup slice with
   string-valued dynamic-call coverage, invalid argument diagnostics, fixture
   CLI coverage, documentation, and explicit gaps for inheritance, interfaces,
   traits, aliases/imports, autoloading, case handling, exact native
   `TypeError` behavior, and native lowering.
+
+## Milestone 104: Subclass Relationship Boundary
+
+- [ ] Add the next honest `is_subclass_of($object_or_class, $class_name[, $allow_string])`
+  boundary over the current no-inheritance class metadata: either a stable
+  unsupported diagnostic or a narrow executable false-for-exact-class/no-parent
+  slice with string-valued dynamic-call coverage, invalid argument diagnostics,
+  fixture CLI coverage, documentation, and explicit gaps for inheritance,
+  interfaces, traits, aliases/imports, autoloading, exact native `TypeError`
+  behavior, and native lowering.

@@ -986,6 +986,26 @@ impl Interpreter {
         Ok(())
     }
 
+    fn value_is_exact_class(
+        &self,
+        object_or_class: &Value,
+        class_name: &str,
+        allow_string: bool,
+    ) -> bool {
+        let Some(target_class) = self.classes.lookup_class(class_name) else {
+            return false;
+        };
+
+        match object_or_class {
+            Value::Object(object) => object.class_id() == target_class.id(),
+            Value::String(candidate) if allow_string => self
+                .classes
+                .lookup_class(candidate)
+                .is_some_and(|candidate_class| candidate_class.id() == target_class.id()),
+            _ => false,
+        }
+    }
+
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
             "define" => {
@@ -2082,6 +2102,42 @@ impl Interpreter {
                     ),
                 )),
             },
+            "is_a" => match args.as_slice() {
+                [object_or_class, Value::String(class_name)] => {
+                    Ok(Value::Bool(self.value_is_exact_class(object_or_class, class_name, false)))
+                }
+                [object_or_class, Value::String(class_name), Value::Bool(allow_string)] => Ok(
+                    Value::Bool(self.value_is_exact_class(object_or_class, class_name, *allow_string)),
+                ),
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_a()",
+                        format!(
+                            "class name argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [_, _, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_a()",
+                        format!(
+                            "allow_string argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "is_a()",
+                        ArityExpectation::Between { min: 2, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2785,6 +2841,7 @@ fn is_builtin(name: &str) -> bool {
             | "class_exists"
             | "property_exists"
             | "method_exists"
+            | "is_a"
             | "var_dump"
             | "print_r"
     )

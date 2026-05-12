@@ -2528,7 +2528,18 @@ Still fails:
   argument types. Method dispatch, inheritance, traits, interfaces,
   aliases/imports, autoloading, visibility behavior beyond metadata reporting,
   exact native `TypeError` behavior, and native lowering remain unsupported.
+- Added `is_a($object_or_class, $class_name[, $allow_string])` support over
+  the current minimal object/class metadata as an exact-class lookup slice. The
+  supported path accepts current object values, accepts string first arguments
+  only when `allow_string` is true, uses case-insensitive class metadata lookup
+  for class-name strings, returns false for missing source or target classes,
+  works through string-valued dynamic calls, and has fixture CLI coverage plus
+  stable diagnostics for unsupported class-name and allow-string argument
+  types. Inheritance, interfaces, traits, aliases/imports, namespace-aware
+  names, autoloading, exact native `TypeError` behavior, and native lowering
+  remain unsupported.
 
 Next:
 
-- Continue the next small object/class boundary from `docs/NEXT_TASKS.md`.
+- Continue with the `is_subclass_of($object_or_class, $class_name[,
+  $allow_string])` boundary from `docs/NEXT_TASKS.md`.

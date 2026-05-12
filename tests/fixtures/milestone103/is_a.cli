@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+object:box
+object:case-insensitive
+object:not-crate
+string:default-false
+string:allowed
+missing-source:false
+missing-target:false
+dynamic:object
+--- stdout end ---
+stderr:
+--- stderr end ---

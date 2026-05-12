@@ -104,7 +104,7 @@
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `var_dump`, and
+  `class_exists`, `property_exists`, `method_exists`, `is_a`, `var_dump`, and
   `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
@@ -113,8 +113,10 @@
   class metadata by string name without autoloading, `property_exists` checks
   case-sensitive declared property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared method
-  metadata for current object values or string class names, and `print_r` can
-  render current minimal object values
+  metadata for current object values or string class names, `is_a` checks
+  exact class identity over current object values or string class names when
+  `allow_string` is true, and `print_r` can render current minimal object
+  values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -170,7 +172,7 @@
   property targets, unsupported non-public property access, non-object
   `get_class` operands, unsupported `property_exists` object/class or
   property arguments, unsupported `method_exists` object/class or method
-  arguments,
+  arguments, unsupported `is_a` class-name or allow-string arguments,
   object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
@@ -308,7 +310,15 @@
   method metadata with case-insensitive method names, reports
   public/protected/private and static methods as existing, returns false for
   missing methods or missing string class names, and is available through
-  string-valued dynamic function calls. Static member expressions through `::`,
+  string-valued dynamic function calls.
+  `is_a($object_or_class, $class_name)` accepts current object values and
+  checks exact class identity against the current declared class metadata using
+  case-insensitive class-name lookup. `is_a($object_or_class, $class_name,
+  true)` also accepts a string first argument and checks whether both string
+  names resolve to the same declared class. A false or omitted `allow_string`
+  flag makes string first arguments return false. Missing source or target
+  class names return false, and string-valued dynamic calls to `is_a` use the
+  same path. Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
@@ -631,6 +641,7 @@
   metadata, undefined classes, undefined object properties, invalid property
   targets, non-public property access, non-object `get_class` operands,
   non-string `class_exists` names, non-bool `class_exists` autoload flags,
+  non-string `is_a` class names, non-bool `is_a` allow_string flags,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -640,7 +651,8 @@
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
-  `class_exists(...)`,
+  `class_exists(...)`, `property_exists(...)`, `method_exists(...)`,
+  `is_a(...)`,
   `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
   rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -657,7 +669,7 @@
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `var_dump`, or
+  `class_exists`, `property_exists`, `method_exists`, `is_a`, `var_dump`, or
   `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
@@ -730,7 +742,7 @@
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
-  `method_exists`, `var_dump`, and `print_r` cover the documented
+  `method_exists`, `is_a`, `var_dump`, and `print_r` cover the documented
   scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
@@ -744,7 +756,9 @@
   metadata for current object values or string class names with case-sensitive
   property names. `method_exists($object_or_class, $method)` checks declared
   method metadata for current object values or string class names with
-  case-insensitive method names.
+  case-insensitive method names. `is_a($object_or_class, $class_name[,
+  $allow_string])` checks exact class identity over current object values, and
+  over string class names only when `allow_string` is true.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -1388,6 +1402,9 @@
   aliases/imports, namespace-aware names, autoloading, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, and native
   lowering
+- `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
+  names, autoloading, exact native `TypeError` behavior, object handle
+  identity beyond current class ids, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
