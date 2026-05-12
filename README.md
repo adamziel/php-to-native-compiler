@@ -54,6 +54,8 @@ subset:
 - minimal object instantiation with `new ClassName()` for declared classes that
   do not define constructors; public instance properties can be read and
   written by static property name and checked with `isset($object->name)`
+- narrow built-in global constant resolution for exact uppercase
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -117,7 +119,8 @@ subset:
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, object method calls, dynamic property names, anonymous classes,
   unsupported class forms, static member access, class constants, and bare
-  global constants such as `ARRAY_FILTER_USE_BOTH`
+  global constants outside the current narrow built-in slice, such as
+  `PHP_VERSION`
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

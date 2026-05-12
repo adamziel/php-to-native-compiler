@@ -57,6 +57,8 @@
   name: `$object->name` and `$object->name = ...`
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
+- exact uppercase built-in global constants `ARRAY_FILTER_USE_KEY` and
+  `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -145,8 +147,8 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
-- explicit parse diagnostics for unsupported bare global constants such as
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`
+- explicit parse diagnostics for unsupported bare global constants outside the
+  current narrow built-in slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
@@ -862,11 +864,12 @@
   current integer or string key as arguments, preserving original keys for
   entries whose callback result is truthy. Non-string non-null callback values
   fail with a stable diagnostic, and unresolved callback names fail with the
-  current undefined-function diagnostic. Array/object callables, closures,
-  first-class callables, method calls, named
-  `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants, integer mode flags
-  outside `0`, `1`, and `2`, non-int mode coercions such as `false`,
-  references,
+  current undefined-function diagnostic. Exact uppercase
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants may be used as
+  the mode argument and evaluate to the same current integer mode values as PHP.
+  Array/object callables, closures, first-class callables, method calls,
+  integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
+  `false`, references,
   copy-on-write containers, exact native `TypeError` objects, object handle
   identity preservation, resource values, and native lowering are not
   implemented.
@@ -1143,9 +1146,8 @@
   identity preservation, resource values, exact native `TypeError` objects, and
   native lowering
 - `array_filter` callbacks outside `null` and string-valued
-  user-function/callable-builtin names, named
-  `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants, integer mode flags
-  outside `0`, `1`, and `2`, non-int mode coercions such as `false`,
+  user-function/callable-builtin names, integer mode flags outside `0`, `1`,
+  and `2`, non-int mode coercions such as `false`,
   reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
@@ -1154,9 +1156,10 @@
   resource values, exact native `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
-- bare global constant resolution; bare identifiers such as
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` fail with stable parse
-  diagnostics until built-in/user/extension constant lookup exists
+- global constant resolution outside exact uppercase `ARRAY_FILTER_USE_KEY`
+  and `ARRAY_FILTER_USE_BOTH`; other built-in constants, user-defined
+  constants, extension constants, namespace-qualified constants, `constant()`
+  lookup, and native lowering remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

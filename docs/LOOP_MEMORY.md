@@ -6512,3 +6512,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T14:06:06Z
 
 - Post-round 6 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T14:06:13Z
+
+- Starting round 7 at 20260512T140613Z from HEAD `ffa93d2`.
+
+## Loop Event 2026-05-12T14:06:19Z
+
+- Pre-round 7 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:16:06Z
+
+- Task attempted: implemented the Milestone 58 built-in global constant slice
+  for exact uppercase `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`.
+  These constants now parse as first-class expressions, evaluate to integer
+  values `2` and `1` in `phpc run`, work as named `array_filter` key-only and
+  value/key mode flags, keep unsupported constants such as `PHP_VERSION` on
+  stable parse diagnostics, and reject LLVM IR lowering explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/milestone58/array_filter_named_constants.php`,
+  `tests/fixtures/milestone58/array_filter_named_constants.stdout`,
+  `tests/fixtures/milestone58/array_filter_named_constants.cli`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  array_filter` passed with 13 tests; `cargo test -p phpc --test
+  dynamic_features` passed with 10 tests; `cargo test -p phpc --test
+  array_filtering_builtins_cli` passed; `cargo test -p phpc --test
+  unsupported_dynamic_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone58` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone58` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_dynamic_features` passed with 12 fixtures;
+  `cargo run -p phpc -- run
+  tests/fixtures/milestone58/array_filter_named_constants.php` printed the
+  committed output; `tools/run-tests.sh` passed with 235 fixtures, 96 system
+  PHP comparisons, and 139 `.phpc-only` skips.
+- Remaining semantic gaps: global constant resolution is limited to exact
+  uppercase `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`. Other built-in
+  constants, user-defined constants, extension constants, namespace-qualified
+  constants, `constant()` lookup, constants in native lowering, and PHP's exact
+  undefined-constant `Error` object behavior remain unsupported.
+- Next concrete task: add an explicit `constant()` boundary: either a stable
+  unsupported diagnostic before executable lookup exists or a first narrow
+  executable slice with tests, CLI coverage, docs, and named constant-resolution
+  gaps.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add array filter constants"`
+  after the full suite passes.

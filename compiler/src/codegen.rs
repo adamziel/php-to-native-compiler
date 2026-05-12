@@ -169,6 +169,10 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
+            Expr::GlobalConstant { span, .. } => Err(self.unsupported(
+                *span,
+                "global constants are supported by phpc run for a narrow built-in subset but not LLVM IR emission yet",
+            )),
             Expr::Array { span, .. } => Err(self.unsupported(
                 *span,
                 "arrays are supported by phpc run but not LLVM IR emission yet",
@@ -699,6 +703,10 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
+            Expr::GlobalConstant { span, .. } => Err(self.unsupported(
+                *span,
+                "global constants are supported by phpc run for a narrow built-in subset but not assembly emission yet",
+            )),
             Expr::Array { span, .. } => Err(self.unsupported(
                 *span,
                 "arrays are supported by phpc run but not assembly emission yet",

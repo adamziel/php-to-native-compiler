@@ -601,8 +601,16 @@ handled.
 
 ## Milestone 58: Built-in Constant Slice
 
-- [ ] Implement a narrow built-in global constant resolution slice for
+- [x] Implement a narrow built-in global constant resolution slice for
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, including parser/runtime
   support, `array_filter` named-mode fixture CLI coverage, documentation, and
   explicit gaps for user-defined constants, extension constants, namespaces,
   `constant()` lookup, and native lowering.
+
+## Milestone 59: Constant Lookup Boundary
+
+- [ ] Add an explicit `constant()` boundary: either a stable unsupported
+  diagnostic for `constant(...)` before executable lookup exists, or the first
+  narrow executable slice with parser/runtime tests, fixture CLI coverage,
+  docs, and named gaps for user-defined, extension, namespace-qualified, and
+  native-lowered constants.

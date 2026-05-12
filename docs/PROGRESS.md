@@ -406,6 +406,12 @@ Implemented:
   `phpc run` CLI snapshots for unsupported bare global constants such as
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` before constant
   resolution exists.
+- Added a narrow built-in global constant slice for exact uppercase
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`. The supported slice
+  parses those bare identifiers as integer values `2` and `1`, exercises them
+  as named `array_filter` mode arguments with fixture and CLI coverage, keeps
+  other bare constants on stable parse diagnostics, and rejects native lowering
+  explicitly.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -2149,11 +2155,11 @@ Still fails:
   fully qualified function/class references, aliases, grouped imports, function
   imports, constant imports, trait `use` execution, autoload interaction, and
   namespace-aware native lowering are not implemented.
-- Bare global constant resolution remains unsupported. Bare identifiers such as
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` fail with stable parse
-  diagnostics; built-in constants, user-defined constants, extension constants,
-  namespace-qualified constants, `constant()` lookup, and native lowering are
-  not implemented.
+- Global constant resolution is limited to exact uppercase
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`. Other built-in
+  constants, user-defined constants, extension constants, namespace-qualified
+  constants, `constant()` lookup, and native lowering for constants are not
+  implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
@@ -2169,6 +2175,6 @@ Still fails:
 
 Next:
 
-- Implement a narrow built-in global constant slice for
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` without adding user-defined
-  or extension constant resolution.
+- Add a narrow `constant()` unsupported boundary or first executable slice,
+  keeping user-defined, extension, and namespace-qualified constant resolution
+  explicit.

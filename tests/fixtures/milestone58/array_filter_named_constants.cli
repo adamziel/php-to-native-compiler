@@ -1,0 +1,18 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => short
+    [1] => 5
+)
+2|Ada|Linus
+Array
+(
+    [0] => long
+    [1] => 6
+)
+2|Grace|tail
+2|1
+2|tail--- stdout end ---
+stderr:
+--- stderr end ---

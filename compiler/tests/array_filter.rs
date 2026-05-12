@@ -232,6 +232,57 @@ echo count($null_mode), "|", strlen($null_mode["space"]), "\n";
 }
 
 #[test]
+fn array_filter_accepts_named_mode_constants_for_key_and_value_key_callbacks() {
+    let source = r#"<?php
+function keep_named_key($key) {
+    if ($key === "short") {
+        return true;
+    }
+    if ($key === 5) {
+        return true;
+    }
+    return false;
+}
+
+function keep_named_value_and_key($value, $key) {
+    if ($key === "long") {
+        return $value === "Grace";
+    }
+    if ($key === 6) {
+        return $value === "tail";
+    }
+    return false;
+}
+
+$items = [];
+$items["short"] = "Ada";
+$items["long"] = "Grace";
+$items[5] = "Linus";
+$items[] = "tail";
+
+$key_mode = array_filter($items, "keep_named_key", ARRAY_FILTER_USE_KEY);
+print_r(array_keys($key_mode));
+echo count($key_mode), "|", $key_mode["short"], "|", $key_mode[5], "\n";
+
+$both_mode = array_filter($items, "keep_named_value_and_key", ARRAY_FILTER_USE_BOTH);
+print_r(array_keys($both_mode));
+echo count($both_mode), "|", $both_mode["long"], "|", $both_mode[6], "\n";
+echo ARRAY_FILTER_USE_KEY, "|", ARRAY_FILTER_USE_BOTH, "\n";
+
+$call = "array_filter";
+$again = $call($items, "keep_named_value_and_key", ARRAY_FILTER_USE_BOTH);
+echo count($again), "|", $again[6];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => short\n    [1] => 5\n)\n2|Ada|Linus\nArray\n(\n    [0] => long\n    [1] => 6\n)\n2|Grace|tail\n2|1\n2|tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_filter_requires_array_argument() {
     let error = runtime_error("<?php\necho array_filter(42);\n");
 
@@ -382,5 +433,13 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
         key_value_mode_error.message.contains("function calls"),
         "{}",
         key_value_mode_error.message
+    );
+
+    let constant_error = emit_ir_source("<?php\necho ARRAY_FILTER_USE_KEY;\n").unwrap_err();
+    assert_eq!(constant_error.phase, Phase::Codegen);
+    assert!(
+        constant_error.message.contains("global constants"),
+        "{}",
+        constant_error.message
     );
 }

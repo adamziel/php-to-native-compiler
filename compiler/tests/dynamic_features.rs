@@ -308,23 +308,23 @@ $box = new namespace\Box();
 }
 
 #[test]
-fn bare_global_constants_are_rejected_with_stable_parse_errors() {
+fn bare_global_constants_outside_the_narrow_builtin_slice_are_rejected() {
     let cases = [
         (
             r#"<?php
-echo ARRAY_FILTER_USE_BOTH;
+echo PHP_VERSION;
 "#,
             2,
             6,
-            "ARRAY_FILTER_USE_BOTH",
+            "PHP_VERSION",
         ),
         (
             r#"<?php
-echo array_filter([], "strlen", ARRAY_FILTER_USE_KEY);
+echo array_filter([], "strlen", CUSTOM_FILTER_MODE);
 "#,
             2,
             33,
-            "ARRAY_FILTER_USE_KEY",
+            "CUSTOM_FILTER_MODE",
         ),
     ];
 
@@ -334,7 +334,9 @@ echo array_filter([], "strlen", ARRAY_FILTER_USE_KEY);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            format!("unsupported global constant {name}: constant resolution is not implemented")
+            format!(
+                "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset"
+            )
         );
     }
 }

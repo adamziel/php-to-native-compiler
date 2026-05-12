@@ -219,6 +219,11 @@ pub enum Expr {
     Float(f64, Span),
     String(String, Span),
     Variable(String, Span),
+    GlobalConstant {
+        name: String,
+        value: i64,
+        span: Span,
+    },
     Array {
         items: Vec<ArrayItem>,
         span: Span,
@@ -270,6 +275,7 @@ impl Expr {
             | Expr::Float(_, span)
             | Expr::String(_, span)
             | Expr::Variable(_, span)
+            | Expr::GlobalConstant { span, .. }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
             | Expr::Property { span, .. }

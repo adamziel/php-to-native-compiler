@@ -1,2 +1,2 @@
-parse error at 3:42: unsupported global constant ARRAY_FILTER_USE_BOTH: constant resolution is not implemented
+parse error at 2:6: unsupported global constant PHP_VERSION: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset
 
