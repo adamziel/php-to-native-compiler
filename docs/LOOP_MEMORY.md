@@ -8214,3 +8214,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint: pending
   `tools/checkpoint.sh "parser: reject property defaults"` after the full
   suite passes.
+
+## Loop Event 2026-05-12T18:43:39Z
+
+- Codex round 35 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T184022Z-35.log`.
+
+## Loop Event 2026-05-12T18:43:47Z
+
+- Post-round 35 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:43:47Z
+
+- Post-round 35 tests passed; running checkpoint for this round.
