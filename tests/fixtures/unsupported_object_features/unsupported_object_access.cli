@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_object_access.php:2:5: unsupported object access: object property and method access are not implemented
+--- stderr end ---

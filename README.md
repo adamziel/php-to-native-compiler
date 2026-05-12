@@ -53,7 +53,11 @@ subset:
   `global` declarations, and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
-  variadics, references, closures, named arguments, and `declare(strict_types=1)`
+  variadics, references, closures, named arguments, `declare(strict_types=1)`,
+  and object/class syntax
+
+`php_runtime` also contains an internal, tested object/class metadata sketch for
+future syntax work. PHP object execution is not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

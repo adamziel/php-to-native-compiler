@@ -786,3 +786,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-11T23:57:20Z
 
 - Post-round 13 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-11T23:57:22Z
+
+- Starting round 14 at 20260511T235722Z from HEAD `dece482`.
+
+## Loop Event 2026-05-11T23:57:24Z
+
+- Pre-round 14 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:03:24Z
+
+- Task attempted: sketched the minimal object/class metadata model before
+  adding executable object syntax. Added tested `php_runtime` class metadata
+  tables, stable `ClassId` handles, property/method metadata, visibility and
+  static flags, object-shape derivation, duplicate class/member diagnostics,
+  and explicit parser/CLI diagnostics for unsupported `class`, `new`, and `->`
+  syntax.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/unsupported_object_features_cli.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_declaration.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_new_expression.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_object_access.*`,
+  `docs/OBJECT_MODEL.md`, `README.md`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p php_runtime` passed
+  with 15 runtime unit tests; `cargo test -p phpc --test object_model` passed;
+  `cargo test -p phpc --test unsupported_object_features_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/unsupported_object_features` passed with 3
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 3 `.phpc-only`
+  skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_new_expression.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 52 fixtures, 24 system PHP comparisons, and 28 `.phpc-only`
+  skips.
+- Remaining semantic gaps: object/class execution is still unsupported. The
+  metadata model is not wired to PHP syntax; `class`, `new`, and `->` still
+  reject with stable parse diagnostics. Object values, property storage,
+  `$this`, constructors, inheritance, interfaces, traits, typed properties,
+  constants, static property storage, visibility enforcement, method dispatch,
+  magic methods, namespaces/autoloading, object callables, reflection, and
+  native lowering remain unsupported.
+- Next concrete task: parse class declarations into a metadata registry while
+  keeping object instantiation and member access unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add metadata sketch"`
+  after the full suite passes.

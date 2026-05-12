@@ -19,6 +19,8 @@ pub enum TokenKind {
     Print,
     Function,
     Fn,
+    Class,
+    New,
     Return,
     Global,
     Declare,
@@ -46,6 +48,7 @@ pub enum TokenKind {
     Star,
     Slash,
     Dot,
+    ObjectOperator,
     Ellipsis,
     Ampersand,
     Colon,
@@ -116,7 +119,13 @@ impl<'a> Lexer<'a> {
                 ';' => TokenKind::Semicolon,
                 ',' => TokenKind::Comma,
                 '+' => TokenKind::Plus,
-                '-' => TokenKind::Minus,
+                '-' => {
+                    if self.match_char('>') {
+                        TokenKind::ObjectOperator
+                    } else {
+                        TokenKind::Minus
+                    }
+                }
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
                 '.' => {
@@ -365,6 +374,8 @@ impl<'a> Lexer<'a> {
             "print" => TokenKind::Print,
             "function" => TokenKind::Function,
             "fn" => TokenKind::Fn,
+            "class" => TokenKind::Class,
+            "new" => TokenKind::New,
             "return" => TokenKind::Return,
             "global" => TokenKind::Global,
             "declare" => TokenKind::Declare,

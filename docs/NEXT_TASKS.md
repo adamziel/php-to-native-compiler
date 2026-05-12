@@ -58,4 +58,6 @@ handled.
   unresolved calls as explicit runtime errors.
 - [x] Define the `eval` fallback boundary: parser entry point, caller scope
   behavior, diagnostics, and unsupported cases.
-- [ ] Sketch the minimal object/class metadata model before adding syntax.
+- [x] Sketch the minimal object/class metadata model before adding syntax.
+- [ ] Parse class declarations into a metadata registry while keeping object
+  instantiation and member access unsupported.

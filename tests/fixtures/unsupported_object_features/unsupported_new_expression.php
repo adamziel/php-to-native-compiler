@@ -1,0 +1,2 @@
+<?php
+$box = new Box();

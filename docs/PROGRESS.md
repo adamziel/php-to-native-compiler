@@ -114,11 +114,19 @@ Implemented:
   diagnostics, fixture coverage, and `phpc run` CLI snapshots for unsupported
   direct `eval(...)` statement and expression forms. Eval execution remains
   unsupported.
+- Added the first internal object/class metadata sketch in `php_runtime`:
+  ordered class tables with stable `ClassId` handles, class/property/method
+  metadata, visibility flags, instance/static flags, duplicate
+  class/member diagnostics, and derived object shapes for future instance
+  property layout.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
+  snapshots for unsupported object/class syntax: `class` declarations, `new`
+  expressions, and `->` object access.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 12 runtime unit tests.
+- `cargo test -p php_runtime` passes with 15 runtime unit tests.
 - `cargo test -p php_runtime array_` passes with 4 focused array value tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
@@ -138,6 +146,10 @@ Tested:
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
   CLI snapshot test covering 7 unsupported variable-variable,
   include/require, and eval fixtures.
+- `cargo test -p phpc --test object_model` passes with 1 test covering stable
+  parse diagnostics for unsupported object/class syntax.
+- `cargo test -p phpc --test unsupported_object_features_cli` passes with 1 CLI
+  snapshot test covering 3 unsupported object/class fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
@@ -145,9 +157,9 @@ Tested:
   passes with rejection coverage for `global` declarations.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists`
   passes with rejection coverage for dynamic function calls.
-- `cargo run -p phpc -- test` passes with 49 fixture tests.
+- `cargo run -p phpc -- test` passes with 52 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 24 fixtures and skipping 25 `.phpc-only` fixtures.
+  installed, comparing 24 fixtures and skipping 28 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -169,6 +181,11 @@ Tested:
   passes with 7 unsupported dynamic-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
   tests/fixtures/unsupported_dynamic_features` passes with 7 `.phpc-only` PHP
+  comparisons skipped.
+- `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passes with 3 unsupported object/class fixtures.
+- `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passes with 3 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -224,6 +241,12 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval.php:2:1: unsupported eval: eval parsing and caller-scope execution are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2:11: unsupported eval: eval parsing and caller-scope execution are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_declaration.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_declaration.php:2:1: unsupported class declaration: object/class syntax is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_new_expression.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_new_expression.php:2:8: unsupported object instantiation: object/class syntax is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_object_access.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_object_access.php:2:5: unsupported object access: object property and method access are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -295,8 +318,15 @@ Still fails:
   strings, functions/classes declared from evaluated code, nested eval,
   include/require inside eval, and exact PHP `ParseError`/warning behavior are
   not implemented.
+- Object/class execution remains unsupported. The runtime metadata sketch is
+  not wired to PHP syntax yet; `class`, `new`, and `->` fail with stable parse
+  diagnostics. Object values, property storage, `$this`, constructors,
+  inheritance, interfaces, traits, typed properties, constants, static property
+  storage, visibility enforcement, method dispatch, magic methods,
+  namespaces/autoloading, object callables, reflection, and native lowering are
+  not implemented.
 
 Next:
 
-- Continue Milestone 5 by sketching the minimal object/class metadata model
-  before adding syntax.
+- Continue Milestone 5+ by parsing class declarations into the metadata
+  registry while keeping object instantiation and member access unsupported.

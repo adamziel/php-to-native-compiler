@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt;
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
@@ -23,6 +24,24 @@ impl RuntimeError {
     pub fn duplicate_function(callable: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::DuplicateFunction {
             callable: callable.into(),
+        })
+    }
+
+    pub fn duplicate_class(class_name: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::DuplicateClass {
+            class_name: class_name.into(),
+        })
+    }
+
+    pub fn duplicate_class_member(
+        class_name: impl Into<String>,
+        member_kind: ClassMemberKind,
+        member_name: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::DuplicateClassMember {
+            class_name: class_name.into(),
+            member_kind,
+            member_name: member_name.into(),
         })
     }
 
@@ -106,6 +125,14 @@ pub enum RuntimeErrorKind {
     DuplicateFunction {
         callable: String,
     },
+    DuplicateClass {
+        class_name: String,
+    },
+    DuplicateClassMember {
+        class_name: String,
+        member_kind: ClassMemberKind,
+        member_name: String,
+    },
     ArityMismatch {
         callable: String,
         expected: ArityExpectation,
@@ -181,6 +208,16 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::DuplicateFunction { callable } => {
             format!("function {callable} is already defined")
+        }
+        RuntimeErrorKind::DuplicateClass { class_name } => {
+            format!("class {class_name} is already defined")
+        }
+        RuntimeErrorKind::DuplicateClassMember {
+            class_name,
+            member_kind,
+            member_name,
+        } => {
+            format!("class {class_name} already defines {member_kind} {member_name}")
         }
         RuntimeErrorKind::ArityMismatch {
             callable,
@@ -381,6 +418,263 @@ impl From<&str> for ArrayKey {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClassId(usize);
+
+impl ClassId {
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PhpClassTable {
+    classes: Vec<PhpClassMetadata>,
+    lookup: HashMap<String, ClassId>,
+}
+
+impl PhpClassTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn declare_class(&mut self, name: impl Into<String>) -> RuntimeResult<ClassId> {
+        let name = name.into();
+        let lookup_name = normalize_class_lookup_name(&name);
+        if self.lookup.contains_key(&lookup_name) {
+            return Err(RuntimeError::duplicate_class(name));
+        }
+
+        let id = ClassId(self.classes.len());
+        self.lookup.insert(lookup_name, id);
+        self.classes.push(PhpClassMetadata::new(id, name));
+        Ok(id)
+    }
+
+    pub fn get(&self, id: ClassId) -> Option<&PhpClassMetadata> {
+        self.classes.get(id.index())
+    }
+
+    pub fn get_mut(&mut self, id: ClassId) -> Option<&mut PhpClassMetadata> {
+        self.classes.get_mut(id.index())
+    }
+
+    pub fn lookup_class(&self, name: &str) -> Option<&PhpClassMetadata> {
+        let id = self.lookup.get(&normalize_class_lookup_name(name))?;
+        self.get(*id)
+    }
+
+    pub fn classes(&self) -> &[PhpClassMetadata] {
+        &self.classes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpClassMetadata {
+    id: ClassId,
+    name: String,
+    properties: Vec<PhpPropertyMetadata>,
+    property_lookup: HashMap<String, usize>,
+    methods: Vec<PhpMethodMetadata>,
+    method_lookup: HashMap<String, usize>,
+}
+
+impl PhpClassMetadata {
+    fn new(id: ClassId, name: String) -> Self {
+        Self {
+            id,
+            name,
+            properties: Vec::new(),
+            property_lookup: HashMap::new(),
+            methods: Vec::new(),
+            method_lookup: HashMap::new(),
+        }
+    }
+
+    pub fn id(&self) -> ClassId {
+        self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn properties(&self) -> &[PhpPropertyMetadata] {
+        &self.properties
+    }
+
+    pub fn methods(&self) -> &[PhpMethodMetadata] {
+        &self.methods
+    }
+
+    pub fn add_property(&mut self, property: PhpPropertyMetadata) -> RuntimeResult<()> {
+        let name = property.name.clone();
+        if self.property_lookup.contains_key(&name) {
+            return Err(RuntimeError::duplicate_class_member(
+                self.name.clone(),
+                ClassMemberKind::Property,
+                name,
+            ));
+        }
+
+        self.property_lookup.insert(name, self.properties.len());
+        self.properties.push(property);
+        Ok(())
+    }
+
+    pub fn add_method(&mut self, method: PhpMethodMetadata) -> RuntimeResult<()> {
+        let name = method.name.clone();
+        let lookup_name = normalize_class_lookup_name(&name);
+        if self.method_lookup.contains_key(&lookup_name) {
+            return Err(RuntimeError::duplicate_class_member(
+                self.name.clone(),
+                ClassMemberKind::Method,
+                name,
+            ));
+        }
+
+        self.method_lookup.insert(lookup_name, self.methods.len());
+        self.methods.push(method);
+        Ok(())
+    }
+
+    pub fn property(&self, name: &str) -> Option<&PhpPropertyMetadata> {
+        let index = self.property_lookup.get(name)?;
+        self.properties.get(*index)
+    }
+
+    pub fn method(&self, name: &str) -> Option<&PhpMethodMetadata> {
+        let index = self.method_lookup.get(&normalize_class_lookup_name(name))?;
+        self.methods.get(*index)
+    }
+
+    pub fn object_shape(&self) -> PhpObjectShape {
+        let instance_properties = self
+            .properties
+            .iter()
+            .filter(|property| !property.is_static)
+            .map(|property| property.name.clone())
+            .collect();
+
+        PhpObjectShape {
+            class_id: self.id,
+            instance_properties,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    Public,
+    Protected,
+    Private,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassMemberKind {
+    Property,
+    Method,
+}
+
+impl fmt::Display for ClassMemberKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ClassMemberKind::Property => write!(f, "property"),
+            ClassMemberKind::Method => write!(f, "method"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpPropertyMetadata {
+    name: String,
+    visibility: Visibility,
+    is_static: bool,
+}
+
+impl PhpPropertyMetadata {
+    pub fn instance(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            is_static: false,
+        }
+    }
+
+    pub fn static_property(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            is_static: true,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    pub fn is_static(&self) -> bool {
+        self.is_static
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpMethodMetadata {
+    name: String,
+    visibility: Visibility,
+    is_static: bool,
+}
+
+impl PhpMethodMetadata {
+    pub fn instance(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            is_static: false,
+        }
+    }
+
+    pub fn static_method(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            is_static: true,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    pub fn is_static(&self) -> bool {
+        self.is_static
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpObjectShape {
+    class_id: ClassId,
+    instance_properties: Vec<String>,
+}
+
+impl PhpObjectShape {
+    pub fn class_id(&self) -> ClassId {
+        self.class_id
+    }
+
+    pub fn instance_properties(&self) -> &[String] {
+        &self.instance_properties
+    }
+}
+
 fn normalize_string_key(value: String) -> ArrayKey {
     if is_php_integer_array_key(&value) {
         if let Ok(parsed) = value.parse::<i64>() {
@@ -415,6 +709,10 @@ fn is_php_integer_array_key(value: &str) -> bool {
     }
 
     digits[0] != b'0'
+}
+
+fn normalize_class_lookup_name(name: &str) -> String {
+    name.to_ascii_lowercase()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1091,6 +1389,110 @@ mod tests {
         assert_eq!(
             error.message(),
             "invalid array key: bool keys are not supported; only int and string keys are implemented"
+        );
+    }
+
+    #[test]
+    fn class_table_preserves_names_and_uses_case_insensitive_lookup() {
+        let mut classes = PhpClassTable::new();
+
+        let id = classes.declare_class("Widget").unwrap();
+
+        assert_eq!(id.index(), 0);
+        assert_eq!(classes.get(id).unwrap().name(), "Widget");
+        assert_eq!(classes.lookup_class("widget").unwrap().id(), id);
+        assert_eq!(classes.lookup_class("WIDGET").unwrap().name(), "Widget");
+
+        let error = classes.declare_class("widget").unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::DuplicateClass {
+                class_name: "widget".to_string(),
+            }
+        );
+        assert_eq!(error.message(), "class widget is already defined");
+    }
+
+    #[test]
+    fn class_metadata_tracks_php_property_and_method_lookup_rules() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Counter").unwrap();
+        let class = classes.get_mut(id).unwrap();
+
+        class
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Private))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("Value", Visibility::Public))
+            .unwrap();
+        class
+            .add_method(PhpMethodMetadata::instance("increment", Visibility::Public))
+            .unwrap();
+
+        assert_eq!(
+            class.property("value").unwrap().visibility(),
+            Visibility::Private
+        );
+        assert_eq!(
+            class.property("Value").unwrap().visibility(),
+            Visibility::Public
+        );
+        assert!(class.property("VALUE").is_none());
+        assert_eq!(class.method("INCREMENT").unwrap().name(), "increment");
+
+        let error = class
+            .add_method(PhpMethodMetadata::instance("Increment", Visibility::Public))
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::DuplicateClassMember {
+                class_name: "Counter".to_string(),
+                member_kind: ClassMemberKind::Method,
+                member_name: "Increment".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "class Counter already defines method Increment"
+        );
+
+        let error = class
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public))
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "class Counter already defines property value"
+        );
+    }
+
+    #[test]
+    fn object_shape_contains_only_instance_properties_in_declaration_order() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Packet").unwrap();
+        let class = classes.get_mut(id).unwrap();
+
+        class
+            .add_property(PhpPropertyMetadata::instance("id", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::static_property(
+                "nextId",
+                Visibility::Private,
+            ))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance(
+                "payload",
+                Visibility::Protected,
+            ))
+            .unwrap();
+
+        let shape = class.object_shape();
+
+        assert_eq!(shape.class_id(), id);
+        assert_eq!(
+            shape.instance_properties(),
+            &["id".to_string(), "payload".to_string()]
         );
     }
 }

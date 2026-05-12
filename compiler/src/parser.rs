@@ -31,6 +31,7 @@ impl Parser {
     fn parse_statement(&mut self) -> CompileResult<Stmt> {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
+            TokenKind::Class => self.parse_unsupported_class_declaration(),
             TokenKind::Declare => self.parse_unsupported_declare(),
             TokenKind::Eval => self.parse_unsupported_eval(),
             TokenKind::Echo => self.parse_echo(),
@@ -114,6 +115,13 @@ impl Parser {
             body,
             span: start,
         }))
+    }
+
+    fn parse_unsupported_class_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Class, "expected 'class'")?
+            .span;
+        Err(self.error_at(span, unsupported_class_declaration_message()))
     }
 
     fn parse_unsupported_declare(&mut self) -> CompileResult<Stmt> {
@@ -478,6 +486,11 @@ impl Parser {
                 continue;
             }
 
+            if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+                let span = self.previous().span;
+                return Err(self.error_at(span, unsupported_object_access_message()));
+            }
+
             break;
         }
 
@@ -495,6 +508,10 @@ impl Parser {
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LBracket => self.parse_array_literal(token.span),
+            TokenKind::Class => {
+                Err(self.error_at(token.span, unsupported_class_declaration_message()))
+            }
+            TokenKind::New => Err(self.error_at(token.span, unsupported_new_message())),
             TokenKind::Function => Err(self.error_at(
                 token.span,
                 "unsupported closure: anonymous functions are not implemented",
@@ -728,6 +745,8 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Print => "print",
         TokenKind::Function => "function",
         TokenKind::Fn => "fn",
+        TokenKind::Class => "class",
+        TokenKind::New => "new",
         TokenKind::Return => "return",
         TokenKind::Global => "global",
         TokenKind::Declare => "declare",
@@ -755,6 +774,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Star => "*",
         TokenKind::Slash => "/",
         TokenKind::Dot => ".",
+        TokenKind::ObjectOperator => "->",
         TokenKind::Ellipsis => "...",
         TokenKind::Ampersand => "&",
         TokenKind::Colon => ":",
@@ -786,4 +806,16 @@ fn unsupported_include_require_message(construct: &str) -> String {
 
 fn unsupported_eval_message() -> &'static str {
     "unsupported eval: eval parsing and caller-scope execution are not implemented"
+}
+
+fn unsupported_class_declaration_message() -> &'static str {
+    "unsupported class declaration: object/class syntax is not implemented"
+}
+
+fn unsupported_new_message() -> &'static str {
+    "unsupported object instantiation: object/class syntax is not implemented"
+}
+
+fn unsupported_object_access_message() -> &'static str {
+    "unsupported object access: object property and method access are not implemented"
 }

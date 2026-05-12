@@ -50,6 +50,8 @@
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
+- explicit parse diagnostics for unsupported object/class syntax: `class`
+  declarations, `new` expressions, and `->` object access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -81,6 +83,14 @@
   references/copy-on-write interactions, `GLOBALS`/superglobal behavior,
   namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
   recovery behavior are not implemented.
+- Object/class metadata: `php_runtime` has a small internal metadata model for
+  future object syntax. It records an ordered class table with stable `ClassId`
+  handles, declared class names with case-insensitive class lookup, ordered
+  property metadata with case-sensitive property lookup, ordered method metadata
+  with case-insensitive method lookup, visibility flags, static/instance flags,
+  object-shape derivation for instance properties, and structured duplicate
+  class/member diagnostics. This metadata is not connected to executable PHP
+  syntax yet. `class`, `new`, and `->` still fail with stable parse diagnostics.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -154,6 +164,15 @@
   as a special static form, it is not available through dynamic function
   lookup. Object formatting and PHP's complete warning behavior are not
   implemented.
+- Object/class gaps: class declarations, object instantiation, property access,
+  method calls, `$this`, constructors, inheritance, interfaces, traits,
+  abstract/final/readonly modifiers, typed properties, property defaults,
+  constants, static property storage, late static binding, magic methods,
+  namespaces, autoloading, anonymous classes, attributes, reflection, dynamic
+  properties, cloning, destructors, serialization hooks, visibility
+  enforcement, `self`/`parent`/`static`, object values, object truthiness,
+  object formatting, method dispatch, object callables, and native lowering are
+  unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -190,11 +209,12 @@
 - nested/complex array assignment lvalues
 - string offset access
 - references
-- objects/classes
 - include/require execution; `include`, `include_once`, `require`, and
   `require_once` currently fail with stable parse diagnostics
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
+- object/class execution; `class`, `new`, and `->` currently fail with stable
+  parse diagnostics
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
