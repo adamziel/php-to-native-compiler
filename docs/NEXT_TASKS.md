@@ -998,10 +998,20 @@ handled.
 
 ## Milestone 105: Parent Class Introspection Boundary
 
-- [ ] Add the next honest `get_parent_class($object_or_class)` boundary over
+- [x] Add the next honest `get_parent_class($object_or_class)` boundary over
   the current no-inheritance class metadata: either a stable unsupported
   diagnostic or a narrow executable false-for-no-parent slice with
   string-valued dynamic-call coverage, invalid argument diagnostics, fixture
   CLI coverage, documentation, and explicit gaps for inheritance, interfaces,
   aliases/imports, namespace-aware names, autoloading, default `$this`
   behavior, exact native `TypeError` behavior, and native lowering.
+
+## Milestone 106: Declared Class List Introspection Boundary
+
+- [ ] Add the next honest `get_declared_classes()` boundary over the current
+  declared-class metadata: either a stable unsupported diagnostic or a narrow
+  executable list slice for classes declared in the current program, with
+  string-valued dynamic-call coverage, fixture CLI coverage, documentation,
+  and explicit gaps for built-in/internal classes, extension classes,
+  anonymous classes, autoloading, namespaces/import aliases, exact native
+  ordering, and native lowering.

@@ -105,7 +105,7 @@
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `property_exists`, `method_exists`, `is_a`,
-  `is_subclass_of`, `var_dump`, and `print_r`;
+  `is_subclass_of`, `get_parent_class`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -117,8 +117,9 @@
   exact class identity over current object values or string class names when
   `allow_string` is true, `is_subclass_of` returns false for the current
   no-inheritance metadata model after validating the supported object/string
-  and class-name argument boundary, and `print_r` can render current minimal
-  object values
+  and class-name argument boundary, `get_parent_class` returns false for
+  supported object/declared-string inputs because parent metadata is not
+  represented, and `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -175,6 +176,7 @@
   `get_class` operands, unsupported `property_exists` object/class or
   property arguments, unsupported `method_exists` object/class or method
   arguments, unsupported `is_a` class-name or allow-string arguments,
+  unsupported `get_parent_class` object/class arguments,
   object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
@@ -326,6 +328,10 @@
   string first arguments only when `allow_string` is true, returns false for
   exact-class, missing-class, and no-parent cases because inheritance metadata
   is not represented yet, and is available through string-valued dynamic calls.
+  `get_parent_class($object_or_class)` accepts current object values or
+  declared string class names, returns false for all supported inputs because
+  parent metadata is not represented yet, and is available through
+  string-valued dynamic calls.
   Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
@@ -652,6 +658,8 @@
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
   non-object/non-string `is_subclass_of` first arguments, non-string
   `is_subclass_of` class names, non-bool `is_subclass_of` allow_string flags,
+  non-object/non-string `get_parent_class` arguments and missing
+  `get_parent_class` string classes,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -662,7 +670,7 @@
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `property_exists(...)`, `method_exists(...)`,
-  `is_a(...)`, `is_subclass_of(...)`,
+  `is_a(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
   `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
   rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -680,7 +688,7 @@
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `property_exists`, `method_exists`, `is_a`,
-  `is_subclass_of`, `var_dump`, or `print_r`.
+  `is_subclass_of`, `get_parent_class`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -752,8 +760,8 @@
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
-  `method_exists`, `is_a`, `is_subclass_of`, `var_dump`, and `print_r` cover
-  the documented scalar/array/object subset.
+  `method_exists`, `is_a`, `is_subclass_of`, `get_parent_class`, `var_dump`,
+  and `print_r` cover the documented scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -772,6 +780,9 @@
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` validates
   current object/string relationship-check arguments and returns false for the
   current no-inheritance metadata model.
+  `get_parent_class($object_or_class)` accepts current object values or
+  declared string class names and returns false because parent class metadata
+  is not represented.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -1421,6 +1432,9 @@
 - `is_subclass_of` inheritance, interfaces, traits, aliases/imports,
   namespace-aware names, autoloading, exact native `TypeError` behavior, and
   native lowering
+- `get_parent_class` inheritance lookup, interfaces, aliases/imports,
+  namespace-aware names, autoloading, default `$this` behavior, exact native
+  `TypeError` behavior, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase

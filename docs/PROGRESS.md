@@ -2547,8 +2547,17 @@ Still fails:
   fixture CLI coverage. Inheritance, interfaces, traits, aliases/imports,
   namespace-aware names, autoloading, exact native `TypeError` behavior, and
   native lowering remain unsupported.
+- Added `get_parent_class($object_or_class)` as a no-inheritance parent-class
+  boundary. The supported path accepts current object values and declared
+  string class names, returns false for all supported inputs because parent
+  class metadata is not represented yet, works through string-valued dynamic
+  calls, and has fixture CLI coverage plus stable diagnostics for unsupported
+  argument types and missing string classes. Inheritance, interfaces,
+  aliases/imports, namespace-aware names, autoloading, default `$this`
+  behavior, exact native `TypeError` behavior, and native lowering remain
+  unsupported.
 
 Next:
 
-- Continue with the next small object/class metadata boundary from
-  `docs/NEXT_TASKS.md`.
+- Continue with the next small object/class metadata introspection boundary
+  from `docs/NEXT_TASKS.md`.

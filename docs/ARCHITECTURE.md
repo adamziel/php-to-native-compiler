@@ -179,6 +179,9 @@ case-sensitive property names and no autoload side effects.
 identity checks against the current metadata table. `is_subclass_of(...)`
 shares the same argument boundary, but because inheritance metadata is not
 represented yet it returns false for exact-class and no-parent cases.
+`get_parent_class($object_or_class)` accepts current object values or declared
+string class names and returns false for all supported inputs because parent
+metadata is not represented yet.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

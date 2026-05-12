@@ -563,6 +563,53 @@ fn is_subclass_of_requires_supported_argument_types() {
 }
 
 #[test]
+fn get_parent_class_reports_false_without_inheritance_metadata() {
+    let source = r#"<?php
+class Box {}
+
+$box = new box();
+if (!get_parent_class($box)) {
+    echo "object:false\n";
+}
+if (!get_parent_class("BOX")) {
+    echo "string:false\n";
+}
+$call = "get_parent_class";
+if (!$call($box)) {
+    echo "dynamic:false";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object:false\nstring:false\ndynamic:false"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_parent_class_requires_object_or_string_argument() {
+    let target_error = runtime_error("<?php\nvar_dump(get_parent_class(42));\n");
+
+    assert_eq!(target_error.line, 2);
+    assert_eq!(target_error.column, 10);
+    assert_eq!(
+        target_error.message,
+        "unsupported call get_parent_class(): object_or_class argument must be object or string, got int"
+    );
+
+    let missing_class_error = runtime_error("<?php\nvar_dump(get_parent_class(\"Missing\"));\n");
+
+    assert_eq!(missing_class_error.line, 2);
+    assert_eq!(missing_class_error.column, 10);
+    assert_eq!(
+        missing_class_error.message,
+        "unsupported call get_parent_class(): string argument must name a declared class in the current subset"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -664,6 +711,19 @@ fn emit_ir_rejects_is_subclass_of_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\necho is_subclass_of(\"Box\", \"Box\", true);\n")
             .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_get_parent_class_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\necho get_parent_class(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

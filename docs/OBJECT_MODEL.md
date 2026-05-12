@@ -18,6 +18,8 @@ $allow_string])` as an exact-class metadata check, without inheritance or
 interface relationship traversal. `is_subclass_of($object_or_class,
 $class_name[, $allow_string])` now validates the same relationship-check
 boundary and returns false for the current no-inheritance metadata model.
+`get_parent_class($object_or_class)` validates current object/declared-string
+inputs and returns false because no parent-class metadata is recorded yet.
 
 ## Runtime Metadata
 
@@ -59,6 +61,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   current object values and string first arguments, with string first
   arguments considered only when `allow_string` is true, and returns false
   because the current metadata records no parent/interface relationships;
+- `get_parent_class($object_or_class)` accepts current object values or
+  declared string class names and returns false because the current metadata
+  records no parent class relationship;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -101,7 +106,9 @@ property slots, and dispatch have explicit lowering support.
 Native lowering also rejects `method_exists` through the current function-call
 boundary until class metadata lookup has native support. `is_a` and
 `is_subclass_of` are rejected through the same function-call boundary until
-class relationship lookup has native support.
+class relationship lookup has native support. `get_parent_class` is rejected
+through that function-call boundary until parent metadata lookup has native
+support.
 
 ## Unsupported Edge Cases
 
@@ -119,6 +126,7 @@ identity/handle aliasing, object comparisons, object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
 operands, complex object-property `isset` operands, static member execution
 through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
-`is_subclass_of` inheritance/interface traversal, interfaces, traits,
-aliases/imports, namespace-aware class names, autoloading, exact native
-`TypeError` behavior, and native lowering.
+`is_subclass_of` inheritance/interface traversal, `get_parent_class`
+inheritance lookup, default `$this` behavior for `get_parent_class()`,
+interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
+exact native `TypeError` behavior, and native lowering.

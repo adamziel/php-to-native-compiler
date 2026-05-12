@@ -2206,6 +2206,40 @@ impl Interpreter {
                     ),
                 )),
             },
+            "get_parent_class" => match args.as_slice() {
+                [Value::Object(_)] => Ok(Value::Bool(false)),
+                [Value::String(class_name)] => {
+                    if self.classes.lookup_class(class_name).is_some() {
+                        Ok(Value::Bool(false))
+                    } else {
+                        Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "get_parent_class()",
+                                "string argument must name a declared class in the current subset",
+                            ),
+                        ))
+                    }
+                }
+                [other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "get_parent_class()",
+                        format!(
+                            "object_or_class argument must be object or string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "get_parent_class()",
+                        ArityExpectation::Exactly(1),
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2911,6 +2945,7 @@ fn is_builtin(name: &str) -> bool {
             | "method_exists"
             | "is_a"
             | "is_subclass_of"
+            | "get_parent_class"
             | "var_dump"
             | "print_r"
     )

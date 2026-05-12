@@ -9226,3 +9226,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:27:36Z
 
 - Post-round 53 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:27:46Z
+
+- Starting round 54 at 20260512T202746Z from HEAD `1fb56b5`.
+
+## Loop Event 2026-05-12T20:27:56Z
+
+- Pre-round 54 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:31:05Z
+
+- Task attempted: completed Milestone 105 by adding
+  `get_parent_class($object_or_class)` as the current no-inheritance
+  parent-class metadata boundary. The supported slice accepts current object
+  values or declared string class names, returns false for all supported inputs
+  because parent metadata is not represented yet, rejects unsupported argument
+  types and missing string classes with stable runtime diagnostics, and works
+  through string-valued dynamic calls.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone105/get_parent_class.*`,
+  `tests/fixtures/runtime_errors/get_parent_class_invalid_target.*`,
+  `tests/fixtures/runtime_errors/get_parent_class_missing_class.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run so far: `cargo test -p phpc --test object_model
+  get_parent_class` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone105` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone105` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 127 fixtures; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo fmt -- --check` passed; `git diff --check` passed;
+  `tools/run-tests.sh` passed with 311 fixtures, 115 system PHP comparisons,
+  and 196 skips.
+- Remaining semantic gaps: `get_parent_class` does not model inheritance,
+  interfaces, aliases/imports, namespace-aware names, autoloading, default
+  `$this` behavior for omitted arguments, exact native `TypeError` objects, or
+  native lowering.
+- Next concrete task: complete Milestone 106,
+  `get_declared_classes()` over the current declared-class metadata boundary.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add get_parent_class boundary"` after the full
+  suite passes.

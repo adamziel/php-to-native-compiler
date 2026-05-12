@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `get_parent_class($object_or_class)` as a no-inheritance metadata
+  boundary that accepts current object/declared-string inputs, returns false
+  until parent metadata exists, and has runtime, fixture, and CLI snapshot
+  coverage.
 - Added `is_subclass_of($object_or_class, $class_name[, $allow_string])` as a
   no-inheritance metadata boundary that validates supported arguments, returns
   false for current exact-class/no-parent cases, and has runtime, fixture, and

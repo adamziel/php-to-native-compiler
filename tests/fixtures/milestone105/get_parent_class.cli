@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+object:false
+string:false
+dynamic:false--- stdout end ---
+stderr:
+--- stderr end ---
