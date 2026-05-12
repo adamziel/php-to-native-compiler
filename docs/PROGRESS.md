@@ -2375,8 +2375,12 @@ Still fails:
   the current missing method-dispatch and method-context execution path, plus
   fixture and CLI snapshot coverage. `__METHOD__` remains unsupported until a
   real method execution slice exists.
+- Tightened the `__CLASS__` boundary with a stable parse diagnostic tied to
+  the current missing class-context tracking path, plus fixture and CLI
+  snapshot coverage. `__CLASS__` remains unsupported until class-context magic
+  constant evaluation exists.
 
 Next:
 
-- Define the next honest `__CLASS__` boundary before executable class-context
+- Define the next honest `__TRAIT__` boundary before executable trait-context
   magic constant evaluation exists.

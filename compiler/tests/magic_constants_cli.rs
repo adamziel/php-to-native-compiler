@@ -14,6 +14,7 @@ fn magic_constant_cli_snapshots_match_committed_outputs() {
         workspace_root.join("tests/fixtures/milestone74"),
         workspace_root.join("tests/fixtures/milestone75"),
         workspace_root.join("tests/fixtures/milestone76"),
+        workspace_root.join("tests/fixtures/milestone77"),
     ];
     let mut fixtures = fixture_dirs
         .iter()

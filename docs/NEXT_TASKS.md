@@ -761,8 +761,16 @@ handled.
 
 ## Milestone 77: Magic Constant Class Boundary
 
-- [ ] Define the next honest `__CLASS__` path before executable class-context
+- [x] Define the next honest `__CLASS__` path before executable class-context
   magic constant evaluation exists, including parser coverage, fixture CLI
   coverage, documentation, and explicit gaps for method/class context tracking,
   traits, namespaces, eval/include source mapping, canonical PHP behavior, and
   native lowering.
+
+## Milestone 78: Magic Constant Trait Boundary
+
+- [ ] Define the next honest `__TRAIT__` path before executable trait-context
+  magic constant evaluation exists, including parser coverage, fixture CLI
+  coverage, documentation, and explicit gaps for trait declarations/use,
+  method/class/trait context tracking, namespaces, eval/include source mapping,
+  canonical PHP behavior, and native lowering.

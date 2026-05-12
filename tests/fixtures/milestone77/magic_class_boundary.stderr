@@ -1,0 +1,2 @@
+parse error at 4:16: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented
+

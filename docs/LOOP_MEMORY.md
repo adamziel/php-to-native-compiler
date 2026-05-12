@@ -7684,3 +7684,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:39:44Z
 
 - Post-round 25 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:39:51Z
+
+- Starting round 26 at 20260512T173951Z from HEAD `00c9aae`.
+
+## Loop Event 2026-05-12T17:40:04Z
+
+- Pre-round 26 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:43:25Z
+
+- Task attempted: completed Milestone 77 by tightening the `__CLASS__` magic
+  constant boundary. The parser now emits a dedicated stable diagnostic for
+  `__CLASS__` tied to missing class-context tracking, with parser regression
+  coverage, a `milestone77` fixture, CLI snapshot coverage, support/progress
+  docs, and the next task queue updated.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone77/magic_class_boundary.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, and a concurrently present automation prompt update
+  in `tools/codex-yolo-forever.sh` that was preserved.
+- Tests run this round: `cargo test -p phpc --test functions_and_scopes
+  magic_class_constant_is_rejected_until_class_context_tracking_exists` passed;
+  `cargo test -p phpc --test magic_constants_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone77` passed with 1 fixture; `cargo run -p phpc
+  -- run tests/fixtures/milestone77/magic_class_boundary.php` exited `1` with
+  the expected stable parse diagnostic; `tools/run-tests.sh` passed with 264
+  fixtures, 106 system PHP comparisons, and 158 skips.
+- Remaining semantic gaps: `__CLASS__` remains unsupported until class-context
+  tracking exists. Trait declarations/use, namespace-aware context, method/class
+  magic constant execution, eval/include source mapping, canonical PHP magic
+  constant behavior, exact PHP error objects, and native lowering remain
+  unsupported.
+- Next concrete task: define the next honest `__TRAIT__` boundary before
+  executable trait-context magic constant evaluation exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: tighten __CLASS__ magic constant boundary"`
+  after the full suite passes.

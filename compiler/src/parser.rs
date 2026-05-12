@@ -1793,6 +1793,9 @@ fn unsupported_magic_constant_message(name: &str) -> String {
     if name == "__METHOD__" {
         return "unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented".to_string();
     }
+    if name == "__CLASS__" {
+        return "unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented".to_string();
+    }
     format!(
         "unsupported magic constant {name}: source-aware magic constant evaluation is not implemented"
     )

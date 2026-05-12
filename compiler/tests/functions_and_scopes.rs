@@ -578,18 +578,6 @@ fn magic_constants_except_line_file_dir_and_function_are_rejected_with_stable_pa
     let cases = [
         (
             r#"<?php
-class Box {
-    public function label() {
-        return __CLASS__;
-    }
-}
-"#,
-            4,
-            16,
-            "__CLASS__",
-        ),
-        (
-            r#"<?php
 echo __TRAIT__;
 "#,
             2,
@@ -618,6 +606,26 @@ echo __NAMESPACE__;
             )
         );
     }
+}
+
+#[test]
+fn magic_class_constant_is_rejected_until_class_context_tracking_exists() {
+    let error = parse_error(
+        r#"<?php
+class Box {
+    public function label() {
+        return __CLASS__;
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 16);
+    assert_eq!(
+        error.message,
+        "unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented"
+    );
 }
 
 #[test]
