@@ -2438,8 +2438,12 @@ Still fails:
   typed constants, inheritance/override behavior, interface constants,
   reflection behavior, exact PHP parse/error objects, and native lowering
   remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported `$this` usage before
+  method execution and object context binding exist. Method dispatch,
+  constructor context, closure binding, static method behavior, inheritance,
+  exact PHP `Error` objects, and native lowering remain unsupported.
 
 Next:
 
-- Add an explicit diagnostic boundary for unsupported `$this` usage before
-  method execution and object context binding exist.
+- Continue the next small object/class boundary from `docs/NEXT_TASKS.md`.

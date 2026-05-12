@@ -1,0 +1,1 @@
+phpc intentionally rejects $this before method execution and object context binding exist.

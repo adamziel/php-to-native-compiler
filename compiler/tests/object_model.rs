@@ -513,6 +513,26 @@ class Box {
         ),
         (
             r#"<?php
+class Box {
+    public function label() {
+        return $this->name;
+    }
+}
+"#,
+            4,
+            16,
+            "unsupported object context: $this requires method execution and object binding, which are not implemented",
+        ),
+        (
+            r#"<?php
+echo $this;
+"#,
+            2,
+            6,
+            "unsupported object context: $this requires method execution and object binding, which are not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,

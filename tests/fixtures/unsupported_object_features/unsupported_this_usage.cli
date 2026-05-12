@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_this_usage.php:4:16: unsupported object context: $this requires method execution and object binding, which are not implemented
+--- stderr end ---

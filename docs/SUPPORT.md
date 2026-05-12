@@ -200,8 +200,8 @@
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
-  anonymous class expressions, method calls, dynamic property names, static
-  property access,
+  unsupported `$this` usage, anonymous class expressions, method calls,
+  dynamic property names, static property access,
   static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
@@ -270,9 +270,9 @@
   diagnostics for normal reads/writes. Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. Method dispatch, dynamic property names,
-  `$this`, visibility enforcement for non-public properties, static storage,
-  class constants, object handle aliasing/identity, and native object lowering
-  are not implemented.
+  `$this` object context binding, visibility enforcement for non-public
+  properties, static storage, class constants, object handle aliasing/identity,
+  and native object lowering are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -1084,10 +1084,11 @@
   methods, readonly properties, typed property storage and enforcement,
   property initialization rules, inheritance interactions, property defaults,
   multiple properties in one declaration, per-property defaults in
-  multi-property declarations, class constant declarations, constants, static
-  property storage, late static binding, magic methods, namespaces,
-  autoloading, anonymous classes, attributes, reflection, dynamic properties,
-  dynamic property names, non-public property access, static member execution
+  multi-property declarations, class constant declarations, constants, `$this`
+  object context binding, static property storage, late static binding, magic
+  methods, namespaces, autoloading, anonymous classes, attributes, reflection,
+  dynamic properties, dynamic property names, non-public property access,
+  static member execution
   through `::`, `::class`, property assignment targets other than a direct
   variable, object handle identity/aliasing, cloning, destructors,
   serialization hooks, visibility enforcement, `self`/`parent`/`static`, object
@@ -1166,7 +1167,8 @@
   declarations, enum cases/backing values/methods/interface implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  class constant declarations, constants, and anonymous classes
+  class constant declarations, constants, `$this` object context binding, and
+  anonymous classes
 - static property access, static method calls, and class constant access through
   `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex

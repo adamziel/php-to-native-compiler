@@ -1,0 +1,2 @@
+parse error at 4:16: unsupported object context: $this requires method execution and object binding, which are not implemented
+

@@ -857,7 +857,7 @@ handled.
 
 ## Milestone 89: Object Context Boundary
 
-- [ ] Add an explicit diagnostic boundary for unsupported `$this` usage before
+- [x] Add an explicit diagnostic boundary for unsupported `$this` usage before
   method execution and object context binding exist, including parser/runtime
   coverage, fixture CLI coverage, documentation, and named gaps for method
   dispatch, constructor context, closures, static methods, inheritance, and

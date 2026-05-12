@@ -1199,7 +1199,12 @@ impl Parser {
             TokenKind::Int(value) => Ok(Expr::Int(value, token.span)),
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
-            TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Variable(name) => {
+                if name.eq_ignore_ascii_case("this") {
+                    return Err(self.error_at(token.span, unsupported_this_message()));
+                }
+                Ok(Expr::Variable(name, token.span))
+            }
             TokenKind::LBracket => {
                 self.parse_array_literal(token.span, ArrayLiteralDelimiter::Short)
             }
@@ -2024,6 +2029,10 @@ fn unsupported_class_modifier_declaration_message() -> &'static str {
 
 fn unsupported_method_call_message() -> &'static str {
     "unsupported method call: method dispatch is not implemented"
+}
+
+fn unsupported_this_message() -> &'static str {
+    "unsupported object context: $this requires method execution and object binding, which are not implemented"
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {

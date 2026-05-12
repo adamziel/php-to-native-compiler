@@ -8334,3 +8334,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:53:52Z
 
 - Post-round 37 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:54:00Z
+
+- Starting round 38 at 20260512T185400Z from HEAD `bb1e4ae`.
+
+## Loop Event 2026-05-12T18:54:09Z
+
+- Pre-round 38 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:57:32Z
+
+- Task attempted: completed Milestone 89 by adding an explicit `$this`
+  object-context parse diagnostic before method execution and object binding
+  exist. The parser now rejects `$this` in ordinary expressions and method
+  bodies with a stable message, object parser regression coverage includes
+  method-body and top-level `$this`, and unsupported-object fixture coverage
+  includes committed `phpc run` CLI snapshots.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_this_usage.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo test -p phpc
+  --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 21 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 21 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_this_usage.php`
+  exited `1` with the expected stable parse diagnostic; `git diff --check`
+  passed; `tools/run-tests.sh` passed with 280 fixtures, 106 system PHP
+  comparisons, and 174 skips.
+- Remaining semantic gaps: `$this` remains unsupported until method dispatch,
+  constructor context, closure binding, static method behavior, inheritance,
+  exact PHP `Error` objects, and native lowering exist.
+- Next concrete task: continue the next small object/class boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject unsupported this context"` after the
+  full suite passes.
