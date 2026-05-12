@@ -8267,3 +8267,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint: pending
   `tools/checkpoint.sh "parser: reject multiple property declarations"` after
   the full suite passes.
+
+## Loop Event 2026-05-12T18:47:59Z
+
+- Codex round 36 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T184354Z-36.log`.
+
+## Loop Event 2026-05-12T18:48:08Z
+
+- Post-round 36 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:48:08Z
+
+- Post-round 36 tests passed; running checkpoint for this round.
