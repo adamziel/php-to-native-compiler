@@ -1,0 +1,2 @@
+parse error at 2:10: unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset
+

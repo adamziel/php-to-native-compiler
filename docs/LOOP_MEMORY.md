@@ -1303,3 +1303,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:55:28Z
 
 - Post-round 21 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:55:29Z
+
+- Starting round 22 at 20260512T005529Z from HEAD `1a5428f`.
+
+## Loop Event 2026-05-12T00:55:31Z
+
+- Pre-round 22 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:59:40Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported long
+  `array(...)` literal syntax before long array literals are implemented. Direct
+  `array(...)`, assignment RHS `array(...)`, and uppercase `ARRAY(...)` forms
+  now fail in parsing with a stable diagnostic instead of reaching dynamic
+  function lookup as an undefined `array()` call.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/unsupported_syntax_features_cli.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries` passed;
+  `cargo test -p phpc --test unsupported_syntax_features_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/unsupported_syntax_features` passed with 1
+  fixture; `cargo fmt --check` passed; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 1 `.phpc-only` skip;
+  direct `phpc run` for `unsupported_long_array_literal.php` exited `1` with the
+  expected stable diagnostic; `tools/run-tests.sh` passed with 71 fixtures, 28
+  system PHP comparisons, and 43 `.phpc-only` skips.
+- Remaining semantic gaps: long `array(...)` literal execution remains
+  unsupported; `array` language-construct behavior is not implemented through
+  dynamic calls; nested indexed writes, complex assignment lvalues, `$array[]`
+  reads, string offset access, `unset`, `foreach`, destructuring, spread,
+  references, copy-on-write containers, object/resource keys, and native array
+  lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `unset(...)` syntax before implementing unset.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject long array syntax"`
+  after the full suite passes.

@@ -81,5 +81,7 @@ handled.
 
 ## Syntax Boundaries
 
-- [ ] Add explicit parse diagnostics for unsupported long `array(...)` syntax
+- [x] Add explicit parse diagnostics for unsupported long `array(...)` syntax
   before implementing long array literals.
+- [ ] Add explicit parse diagnostics for unsupported `unset(...)` syntax before
+  implementing unset.
