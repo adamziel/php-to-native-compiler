@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/strict_identity_object.php:5:6: unsupported comparison: strict identity for objects is not implemented
+--- stderr end ---

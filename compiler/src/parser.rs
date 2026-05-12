@@ -818,19 +818,14 @@ impl Parser {
     fn parse_equality(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_comparison()?;
         loop {
-            if self.match_token(|kind| {
-                matches!(kind, TokenKind::StrictEqual | TokenKind::StrictBangEqual)
-            }) {
-                return Err(self.error_at(
-                    self.previous().span,
-                    unsupported_strict_comparison_message(),
-                ));
-            }
-
             let op = if self.match_token(|kind| matches!(kind, TokenKind::EqualEqual)) {
                 BinaryOp::Eq
             } else if self.match_token(|kind| matches!(kind, TokenKind::BangEqual)) {
                 BinaryOp::Ne
+            } else if self.match_token(|kind| matches!(kind, TokenKind::StrictEqual)) {
+                BinaryOp::StrictEq
+            } else if self.match_token(|kind| matches!(kind, TokenKind::StrictBangEqual)) {
+                BinaryOp::StrictNe
             } else {
                 break;
             };
@@ -1654,10 +1649,6 @@ fn unsupported_switch_alternate_message() -> &'static str {
 
 fn unsupported_if_alternate_message() -> &'static str {
     "unsupported if: alternate if/elseif/else colon/endif syntax is not implemented; use brace blocks or single-statement bodies"
-}
-
-fn unsupported_strict_comparison_message() -> &'static str {
-    "unsupported strict comparison: strict identity operators === and !== are not implemented"
 }
 
 fn unsupported_break_depth_message() -> &'static str {

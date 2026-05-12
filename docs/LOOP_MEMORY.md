@@ -3107,3 +3107,63 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:56:54Z
 
 - Post-round 49 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:56:57Z
+
+- Starting round 50 at 20260512T035657Z from HEAD `4bbc2a6`.
+
+## Loop Event 2026-05-12T03:57:00Z
+
+- Pre-round 50 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:05:13Z
+
+- Task attempted: implemented strict identity operators `===` and `!==` for
+  the current scalar value subset only. The parser now accepts the strict
+  identity tokens, the interpreter evaluates `null`, booleans, integers,
+  floats, and strings with type-and-value semantics and no numeric/string
+  coercion, array/object strict identity operands fail with stable runtime
+  diagnostics, and native lowering rejects strict comparisons explicitly.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/strict_identity.rs`,
+  `compiler/tests/comparison_refinements_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone12/strict_identity_scalars.php`,
+  `tests/fixtures/milestone12/strict_identity_scalars.stdout`,
+  `tests/fixtures/milestone12/strict_identity_scalars.cli`,
+  `tests/fixtures/runtime_errors/strict_identity_array.*`,
+  `tests/fixtures/runtime_errors/strict_identity_object.*`,
+  removed the obsolete unsupported strict-identity syntax fixtures, and updated
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p
+  php_runtime strict_identity` passed with 2 focused runtime tests; `cargo
+  test -p phpc --test strict_identity` passed with 4 compiler tests; `cargo
+  test -p phpc --test comparison_refinements_cli` passed; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone12` passed with 1 fixture; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone12` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 36 fixtures; `cargo test -p phpc --test syntax_boundaries`
+  passed with 10 tests; `cargo test -p phpc --test runtime_errors` passed with
+  24 tests; `cargo test -p php_runtime` passed with 26 tests; `cargo run -p
+  phpc -- run tests/fixtures/milestone12/strict_identity_scalars.php` printed
+  the committed strict identity matrix; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/strict_identity_array.php` and
+  `strict_identity_object.php` exited `1` with the expected stable diagnostics;
+  `cargo test -p phpc --test unsupported_syntax_features_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/unsupported_syntax_features` passed with
+  10 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 10 `.phpc-only`
+  skips; `tools/run-tests.sh` passed with 118 fixtures, 48 system PHP
+  comparisons, and 70 `.phpc-only` skips.
+- Remaining semantic gaps: strict identity is only implemented for the current
+  scalar runtime values. Arrays, objects, resources, references, object handle
+  identity/aliasing, native lowering, and `NAN`/`INF` precision edge cases are
+  unsupported; array/object strict identity operands intentionally fail with
+  stable unsupported-comparison runtime diagnostics.
+- Next concrete task: implement `in_array($needle, $array, true)` for the
+  current scalar needle/value subset using strict identity semantics.
+- Checkpoint: pending `tools/checkpoint.sh "runtime: add scalar strict identity"`
+  after the full suite passes.

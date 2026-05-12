@@ -1,0 +1,15 @@
+exit: 0
+stdout:
+null|null:10
+null|false:01
+false|false:10
+false|int0:01
+true|int1:01
+int1|int1:10
+int1|float1:01
+float1|float1:10
+str1|int1:01
+str1|str1:10
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -197,7 +197,18 @@ handled.
 - [x] Add explicit parse diagnostics for strict identity operators `===` and
   `!==` before implementing strict comparisons, including parser coverage,
   fixture CLI coverage, documentation, and named unsupported gaps.
-- [ ] Implement strict identity operators `===` and `!==` for the current
+- [x] Implement strict identity operators `===` and `!==` for the current
   scalar value subset only, including parser/runtime/fixture coverage,
   documentation, and explicit gaps for arrays, objects, resources, references,
   and native lowering.
+
+## Milestone 13: Strict Array Search
+
+- [ ] Implement `in_array($needle, $array, true)` for the current scalar
+  needle/value subset using strict identity semantics, including fixture CLI
+  coverage, documentation, and explicit gaps for arrays, objects, resources,
+  references, and native lowering.
+- [ ] Implement `array_search($needle, $array, true)` for the current scalar
+  needle/value subset using strict identity semantics and key-return behavior,
+  including fixture CLI coverage, documentation, and explicit gaps for arrays,
+  objects, resources, references, and native lowering.

@@ -1153,6 +1153,33 @@ impl Value {
         self.php_cmp(other, Comparison::Eq)
     }
 
+    pub fn php_identical_checked(&self, other: &Value) -> RuntimeResult<bool> {
+        match (self, other) {
+            (Value::Array(_), _) | (_, Value::Array(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "strict identity for arrays is not implemented",
+                ))
+            }
+            (Value::Object(_), _) | (_, Value::Object(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "strict identity for objects is not implemented",
+                ))
+            }
+            _ => Ok(self.php_identical_scalar(other)),
+        }
+    }
+
+    fn php_identical_scalar(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(left), Value::Bool(right)) => left == right,
+            (Value::Int(left), Value::Int(right)) => left == right,
+            (Value::Float(left), Value::Float(right)) => left == right,
+            (Value::String(left), Value::String(right)) => left == right,
+            _ => false,
+        }
+    }
+
     pub fn php_cmp_checked(&self, other: &Value, op: Comparison) -> RuntimeResult<bool> {
         match (self, other) {
             (Value::Object(_), _) | (_, Value::Object(_)) => Err(
@@ -1598,6 +1625,72 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn strict_identity_matches_php_scalar_subset() {
+        let cases = [
+            ("null|null", Value::Null, Value::Null, true),
+            ("null|false", Value::Null, Value::Bool(false), false),
+            ("false|false", Value::Bool(false), Value::Bool(false), true),
+            ("false|int0", Value::Bool(false), Value::Int(0), false),
+            ("true|int1", Value::Bool(true), Value::Int(1), false),
+            ("int1|int1", Value::Int(1), Value::Int(1), true),
+            ("int1|float1", Value::Int(1), Value::Float(1.0), false),
+            ("float1|float1", Value::Float(1.0), Value::Float(1.0), true),
+            (
+                "str1|int1",
+                Value::String("1".to_string()),
+                Value::Int(1),
+                false,
+            ),
+            (
+                "str1|str1",
+                Value::String("1".to_string()),
+                Value::String("1".to_string()),
+                true,
+            ),
+        ];
+
+        for (label, left, right, expected) in cases {
+            let actual = left.php_identical_checked(&right).unwrap();
+            assert_eq!(actual, expected, "strict identity mismatch for {label}");
+        }
+    }
+
+    #[test]
+    fn strict_identity_rejects_non_scalar_values() {
+        let error = Value::Array(PhpArray::new())
+            .php_identical_checked(&Value::Array(PhpArray::new()))
+            .unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedComparison {
+                reason: "strict identity for arrays is not implemented".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported comparison: strict identity for arrays is not implemented"
+        );
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get(class_id).unwrap();
+        let object = Value::Object(PhpObject::from_class(class));
+        let error = object.php_identical_checked(&Value::Null).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedComparison {
+                reason: "strict identity for objects is not implemented".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported comparison: strict identity for objects is not implemented"
+        );
     }
 
     fn comparison_matrix_value(label: &str) -> Value {

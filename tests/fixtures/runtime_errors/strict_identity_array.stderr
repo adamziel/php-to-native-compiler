@@ -1,0 +1,2 @@
+runtime error at 2:6: unsupported comparison: strict identity for arrays is not implemented
+

@@ -18,8 +18,10 @@
   integers, floats, and well-formed numeric strings
 - unary `-` and `!`
 - string concatenation: `.`
-- comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current scalar
-  values (`null`, booleans, integers, floats, and strings)
+- loose comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current
+  scalar values (`null`, booleans, integers, floats, and strings)
+- strict identity comparisons: `===` and `!==` across the current scalar
+  values only (`null`, booleans, integers, floats, and strings)
 - `if` / `elseif` / `else`
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
@@ -84,9 +86,10 @@
   `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
-  unsupported non-public property access, object-to-string conversion, invalid
-  `foreach` iterables, invalid `break`/`continue` outside a loop, unsupported
-  `continue;` inside `switch`, and runaway user-function recursion
+  unsupported non-public property access, object-to-string conversion,
+  unsupported strict identity array/object operands, invalid `foreach`
+  iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
+  inside `switch`, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, named arguments,
@@ -112,8 +115,6 @@
   alternate colon/`endswitch` syntax
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
-- explicit parse diagnostics for unsupported strict identity comparison
-  operators `===` and `!==`
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -238,13 +239,13 @@
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and
-  floats. Strict identity operators `===` and `!==` are reserved and rejected
-  with a stable parse diagnostic until strict comparison execution exists. This
-  is not PHP's full comparison matrix: strict type-and-value identity semantics,
-  arrays, objects, resources, and edge cases around `NAN`/`INF` and
-  PHP-version-specific float string precision are not covered. Object
-  comparisons in `phpc run` fail with an explicit unsupported-comparison runtime
-  error.
+  floats. Strict identity operators `===` and `!==` execute for the current
+  scalar values with type-and-value semantics and no numeric/string coercion.
+  This is not PHP's full comparison matrix: strict identity for arrays,
+  objects, resources, references, object handle identity, and edge cases around
+  `NAN`/`INF` and PHP-version-specific float string precision are not covered.
+  Object loose comparisons and strict identity involving array/object operands
+  in `phpc run` fail with explicit unsupported-comparison runtime errors.
 - Conditionals: statement-form `if` supports zero or more `elseif` clauses and
   an optional `else` clause over the current expression and truthiness subset.
   Branch bodies may be brace blocks or single statements. Alternate
@@ -270,9 +271,9 @@
   expressions are evaluated in source order until the first loose `==` match,
   `default` is used only when no case matches, and execution falls through
   later labels until a `break;`, `return`, or the end of the switch body.
-  Arrays, objects, resources, strict identity matching, alternate
-  colon/`endswitch` syntax, semicolon case separators, `continue;` inside
-  switch, and native lowering are not implemented.
+  Arrays, objects, resources, alternate colon/`endswitch` syntax, semicolon
+  case separators, `continue;` inside switch, and native lowering are not
+  implemented.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet. Representative runtime errors are covered by committed `phpc run`
@@ -398,10 +399,13 @@
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
-- Scalar comparison gaps: strict identity operators `===` and `!==` fail with a
-  stable parse diagnostic instead of executing PHP's type-and-value identity
-  semantics. Strict identity for scalars, arrays, objects, resources,
-  references, object handle identity, and native lowering is not implemented.
+- Scalar comparison gaps: strict identity is implemented only for the current
+  scalar values. Strict identity for arrays, objects, resources, references,
+  object handle identity, and native lowering is not implemented. Array/object
+  strict identity operands fail with stable unsupported-comparison runtime
+  diagnostics. Float identity currently follows Rust/PHP-style `f64` equality
+  for representable literals and does not claim broader `NAN`/`INF` precision
+  edge-case coverage.
 - Array gaps: array spread elements and array reference elements are rejected
   with stable parse diagnostics. `unset(...)` forms outside direct variables
   and direct array-offset operands, comma-separated `for` header expression

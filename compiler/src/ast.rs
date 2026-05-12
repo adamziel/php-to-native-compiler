@@ -297,6 +297,8 @@ pub enum BinaryOp {
     Concat,
     Eq,
     Ne,
+    StrictEq,
+    StrictNe,
     Lt,
     Le,
     Gt,

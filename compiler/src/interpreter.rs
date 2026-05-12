@@ -1177,6 +1177,10 @@ impl Interpreter {
             BinaryOp::Ne => left
                 .php_cmp_checked(&right, Comparison::Ne)
                 .map(Value::Bool),
+            BinaryOp::StrictEq => left.php_identical_checked(&right).map(Value::Bool),
+            BinaryOp::StrictNe => left
+                .php_identical_checked(&right)
+                .map(|identical| Value::Bool(!identical)),
             BinaryOp::Lt => left
                 .php_cmp_checked(&right, Comparison::Lt)
                 .map(Value::Bool),

@@ -245,6 +245,8 @@ impl LlvmGenerator {
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
+            | BinaryOp::StrictEq
+            | BinaryOp::StrictNe
             | BinaryOp::Lt
             | BinaryOp::Le
             | BinaryOp::Gt
@@ -773,6 +775,8 @@ impl CGenerator {
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
+            | BinaryOp::StrictEq
+            | BinaryOp::StrictNe
             | BinaryOp::Lt
             | BinaryOp::Le
             | BinaryOp::Gt
