@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+empty-matches-null
+zero-matches-false
+numeric-string-matches-int
+float-matches-int
+string-match
+missing-int
+missing-string
+dynamic-match--- stdout end ---
+stderr:
+--- stderr end ---

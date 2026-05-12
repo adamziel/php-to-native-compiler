@@ -679,6 +679,41 @@ impl Interpreter {
                     )),
                 }
             }
+            "in_array" => match args.as_slice() {
+                [needle, Value::Array(array)] => array
+                    .contains_value_loose_scalar(needle)
+                    .map(Value::Bool)
+                    .map_err(|error| runtime_error(span, error)),
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "in_array()",
+                        format!("second argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                [_, Value::Array(_), _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "in_array()",
+                        "strict mode argument is not implemented",
+                    ),
+                )),
+                [_, other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "in_array()",
+                        format!("second argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "in_array()",
+                        ArityExpectation::Between { min: 2, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -982,6 +1017,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_key_exists"
             | "array_values"
             | "array_keys"
+            | "in_array"
             | "var_dump"
             | "print_r"
     )

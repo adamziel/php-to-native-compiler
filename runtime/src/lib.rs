@@ -461,6 +461,17 @@ impl PhpArray {
         array
     }
 
+    pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
+        for entry in &self.entries {
+            ensure_loose_array_search_values_supported(needle, &entry.value)?;
+            if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     fn bump_next_auto_index(&mut self, key: &ArrayKey) {
         let ArrayKey::Int(value) = key else {
             return;
@@ -479,6 +490,20 @@ impl PhpArray {
 impl Default for PhpArray {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn ensure_loose_array_search_values_supported(needle: &Value, value: &Value) -> RuntimeResult<()> {
+    match (needle, value) {
+        (Value::Array(_), _) | (_, Value::Array(_)) => Err(RuntimeError::unsupported_call(
+            "in_array()",
+            "array needles and array values are not implemented",
+        )),
+        (Value::Object(_), _) | (_, Value::Object(_)) => Err(RuntimeError::unsupported_call(
+            "in_array()",
+            "object needles and object values are not implemented",
+        )),
+        _ => Ok(()),
     }
 }
 
@@ -1725,6 +1750,53 @@ mod tests {
             array.get("name"),
             Some(&Value::String("Ada".to_string())),
             "array_keys must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn in_array_uses_loose_scalar_comparison_in_insertion_order() {
+        let mut array = PhpArray::new();
+
+        array.insert("null", Value::Null);
+        array.insert("false", Value::Bool(false));
+        array.insert("int", Value::Int(10));
+        array.insert("numeric-string", Value::String("10.0".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+
+        assert!(array
+            .contains_value_loose_scalar(&Value::String(String::new()))
+            .unwrap());
+        assert!(array
+            .contains_value_loose_scalar(&Value::String("0".to_string()))
+            .unwrap());
+        assert!(array
+            .contains_value_loose_scalar(&Value::String("10".to_string()))
+            .unwrap());
+        assert!(array.contains_value_loose_scalar(&Value::Int(10)).unwrap());
+        assert!(!array.contains_value_loose_scalar(&Value::Int(11)).unwrap());
+        assert!(!array
+            .contains_value_loose_scalar(&Value::String("missing".to_string()))
+            .unwrap());
+    }
+
+    #[test]
+    fn in_array_rejects_array_comparison_gaps() {
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array
+            .contains_value_loose_scalar(&Value::String("needle".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "in_array()".to_string(),
+                reason: "array needles and array values are not implemented".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call in_array(): array needles and array values are not implemented"
         );
     }
 

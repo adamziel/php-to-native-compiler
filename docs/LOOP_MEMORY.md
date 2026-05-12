@@ -2111,3 +2111,72 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:05:35Z
 
 - Post-round 35 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:05:38Z
+
+- Starting round 36 at 20260512T020538Z from HEAD `614fdbf`.
+
+## Loop Event 2026-05-12T02:05:40Z
+
+- Pre-round 36 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:11:33Z
+
+- Task attempted: implemented `in_array($needle, $array)` for the current
+  ordered array value model. The supported slice scans haystack values in
+  insertion order, uses the existing PHP 8-style loose scalar comparison rules,
+  supports string-valued dynamic calls to `in_array`, and reports stable
+  diagnostics for non-array haystacks, unsupported strict mode, and unsupported
+  array/object needles or haystack values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/in_array.rs`, `tests/fixtures/milestone7/in_array.php`,
+  `tests/fixtures/milestone7/in_array.stdout`,
+  `tests/fixtures/milestone7/in_array.cli`,
+  `tests/fixtures/runtime_errors/in_array_non_array.php`,
+  `tests/fixtures/runtime_errors/in_array_non_array.stderr`,
+  `tests/fixtures/runtime_errors/in_array_non_array.exit`,
+  `tests/fixtures/runtime_errors/in_array_non_array.phpc-only`,
+  `tests/fixtures/runtime_errors/in_array_non_array.cli`,
+  `tests/fixtures/runtime_errors/in_array_strict_mode.php`,
+  `tests/fixtures/runtime_errors/in_array_strict_mode.stderr`,
+  `tests/fixtures/runtime_errors/in_array_strict_mode.exit`,
+  `tests/fixtures/runtime_errors/in_array_strict_mode.phpc-only`,
+  `tests/fixtures/runtime_errors/in_array_strict_mode.cli`,
+  `tests/fixtures/runtime_errors/in_array_array_value.php`,
+  `tests/fixtures/runtime_errors/in_array_array_value.stderr`,
+  `tests/fixtures/runtime_errors/in_array_array_value.exit`,
+  `tests/fixtures/runtime_errors/in_array_array_value.phpc-only`,
+  `tests/fixtures/runtime_errors/in_array_array_value.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p php_runtime
+  in_array` passed with 2 focused tests; `cargo test -p php_runtime` passed
+  with 21 runtime unit tests; `cargo test -p php_runtime array_` passed with 8
+  focused array tests; `cargo test -p phpc --test in_array` passed with 4
+  tests; `php tests/fixtures/milestone7/in_array.php` printed the committed
+  output; `cargo run -p phpc -- test tests/fixtures/milestone7` passed with 6
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone7` passed with 6 system PHP comparisons; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 29 fixtures;
+  `cargo test -p phpc --test array_refinements_cli` passed; `cargo test -p
+  phpc --test runtime_error_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone7/in_array.php` printed the committed loose scalar
+  search output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/in_array_non_array.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/in_array_strict_mode.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/in_array_array_value.php` exited `1` with the
+  expected stable diagnostic; `tools/run-tests.sh` passed with 97 fixtures, 36
+  system PHP comparisons, and 61 `.phpc-only` skips.
+- Remaining semantic gaps: `in_array` is limited to the two-argument loose
+  scalar search form over array haystacks. The third strict-mode argument,
+  array/object needles or haystack values, references, copy-on-write containers,
+  exact native `TypeError` objects, and native lowering for function calls
+  remain unsupported.
+- Next concrete task: implement `array_search($needle, $array)` over the
+  current ordered array value model with loose scalar comparison behavior, key
+  return behavior, non-array diagnostics, fixture CLI coverage, and documented
+  gaps around strict mode, objects, arrays, and references.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add in_array builtin"` after
+  the full suite passes.

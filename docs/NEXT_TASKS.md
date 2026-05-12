@@ -124,7 +124,11 @@ handled.
 - [x] Implement `array_keys($array)` for the current ordered array value model,
   including integer/string key value emission, non-array diagnostics, fixture
   CLI coverage, and documented gaps.
-- [ ] Implement `in_array($needle, $array)` over the current ordered array
+- [x] Implement `in_array($needle, $array)` over the current ordered array
   value model, including loose scalar comparison behavior, non-array
   diagnostics, fixture CLI coverage, and documented gaps around strict mode,
   objects, arrays, and references.
+- [ ] Implement `array_search($needle, $array)` over the current ordered array
+  value model, including loose scalar comparison behavior, key return behavior,
+  non-array diagnostics, fixture CLI coverage, and documented gaps around
+  strict mode, objects, arrays, and references.
