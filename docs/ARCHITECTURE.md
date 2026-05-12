@@ -112,18 +112,18 @@ dynamic-call subset.
 
 ## Namespace/Import Boundary
 
-`namespace` declarations and top-level `use` declarations are reserved by the
-lexer/parser today and rejected with stable parse diagnostics before execution.
+`namespace` declarations, top-level `use` declarations, and
+namespace-qualified function/class references are reserved by the lexer/parser
+today and rejected with stable parse diagnostics before execution.
 The first executable namespace/import slice should define how declared
 functions, classes, dynamic function lookup, object instantiation, and error
 messages store and resolve fully qualified names.
 
 Initial unsupported namespace/import behavior remains: bracketed namespace
-blocks, global namespace blocks, multiple namespaces in one file, subnamespace
-separators in executable names, qualified and fully qualified function/class
-references, aliased imports, grouped imports, function imports, constant
-imports, trait `use` execution, autoload interaction, and namespace-aware
-native lowering.
+blocks, global namespace blocks, multiple namespaces in one file, executable
+qualified and fully qualified function/class references, aliased imports,
+grouped imports, function imports, constant imports, trait `use` execution,
+autoload interaction, and namespace-aware native lowering.
 
 ## Object/Class Boundary
 

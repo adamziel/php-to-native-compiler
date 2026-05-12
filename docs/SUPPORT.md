@@ -64,6 +64,8 @@
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - explicit parse diagnostics for unsupported namespace and top-level `use`
   declaration syntax
+- explicit parse diagnostics for unsupported namespace-qualified function and
+  class names such as `App\fn()` and `new App\Box()`
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -100,13 +102,15 @@
   references/copy-on-write interactions, `GLOBALS`/superglobal behavior,
   namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
   recovery behavior are not implemented.
-- Namespaces/imports: `namespace` declarations and top-level `use`
-  declarations are reserved by the lexer/parser and rejected with stable parse
-  diagnostics. Namespace-aware name resolution, bracketed namespace blocks,
-  global namespace blocks, multiple namespaces in one file, qualified and fully
-  qualified function/class references, aliased imports, grouped imports,
-  function imports, constant imports, trait `use` execution, autoload
-  interaction, and namespace-aware native lowering are not implemented.
+- Namespaces/imports: `namespace` declarations, top-level `use` declarations,
+  and namespace-qualified function/class names such as `App\fn()` and
+  `new App\Box()` are reserved by the lexer/parser and rejected with stable
+  parse diagnostics. Namespace-aware name resolution, bracketed namespace
+  blocks, global namespace blocks, multiple namespaces in one file, executable
+  qualified and fully qualified function/class references, aliased imports,
+  grouped imports, function imports, constant imports, trait `use` execution,
+  autoload interaction, and namespace-aware native lowering are not
+  implemented.
 - Object/class model: `php_runtime` has a small metadata and object-value model
   for the first object slice. It records an ordered class table with stable
   `ClassId` handles, declared class names with case-insensitive class lookup,
@@ -267,8 +271,10 @@
   `require_once` currently fail with stable parse diagnostics
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
-- namespace and top-level `use` declarations; both currently fail with stable
-  parse diagnostics before namespace-aware name resolution or imports exist
+- namespace and top-level `use` declarations, plus namespace-qualified
+  function/class names such as `App\fn()` and `new App\Box()`; these currently
+  fail with stable parse diagnostics before namespace-aware name resolution or
+  imports exist
 - method dispatch and dynamic property names; `$object->method()` and
   `$object->$name` currently fail with stable parse diagnostics
 - non-public object property access and property writes to lvalues other than a
@@ -293,7 +299,7 @@
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and
-  qualified/fully qualified function or class references
+  executable qualified/fully qualified function or class references
 - closures and arrow functions
 - configurable recursion/call-stack limits matching PHP deployments
 - exceptions

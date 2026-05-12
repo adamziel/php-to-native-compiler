@@ -1248,3 +1248,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:51:09Z
 
 - Post-round 20 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:51:11Z
+
+- Starting round 21 at 20260512T005111Z from HEAD `ccb37f9`.
+
+## Loop Event 2026-05-12T00:51:13Z
+
+- Pre-round 21 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:54:42Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  namespace-qualified function and class names before namespace-aware name
+  resolution exists. `App\fn()`, fully qualified function names, `new
+  App\Box()`, fully qualified class names, and `namespace\Name` forms now fail
+  with targeted parse diagnostics instead of generic parser errors.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_class.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  dynamic_features namespace_qualified_function_and_class_names_are_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test dynamic_features` passed with 9 tests;
+  `cargo test -p phpc --test unsupported_dynamic_features_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/unsupported_dynamic_features` passed with
+  11 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passed with 11 `.phpc-only`
+  skips; direct `phpc run` exercises for
+  `unsupported_namespace_qualified_function.php` and
+  `unsupported_namespace_qualified_class.php` each exited `1` with the expected
+  stable diagnostic; `cargo fmt --check` passed; `tools/run-tests.sh` passed
+  with 70 fixtures, 28 system PHP comparisons, and 42 `.phpc-only` skips.
+- Remaining semantic gaps: namespace-aware name resolution, namespace
+  declarations, imports, aliases, grouped imports, executable qualified and
+  fully qualified function/class references, namespace-aware dynamic callable
+  lookup, autoload interaction, and namespace-aware native lowering remain
+  unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported long
+  `array(...)` syntax before implementing long array literals.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject namespace-qualified names"`
+  after the full suite passes.

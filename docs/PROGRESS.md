@@ -117,6 +117,10 @@ Implemented:
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported namespace declarations and top-level `use`
   import declarations before namespace-aware name resolution or imports exist.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
+  CLI snapshots for unsupported namespace-qualified function and class names
+  such as `App\fn()` and `new App\Box()` before namespace-aware name resolution
+  exists.
 - Added the first internal object/class metadata sketch in `php_runtime`:
   ordered class tables with stable `ClassId` handles, class/property/method
   metadata, visibility flags, instance/static flags, duplicate
@@ -179,13 +183,13 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with 8 tests covering
+- `cargo test -p phpc --test dynamic_features` passes with 9 tests covering
   static symbol-table behavior, dynamic function lookup behavior, and
-  unsupported variable-variable/include/require/eval/namespace/use diagnostic
-  coverage.
+  unsupported variable-variable/include/require/eval/namespace/use and
+  namespace-qualified name diagnostic coverage.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
-  CLI snapshot test covering 9 unsupported variable-variable,
-  include/require, eval, namespace, and use fixtures.
+  CLI snapshot test covering 11 unsupported variable-variable,
+  include/require, eval, namespace, use, and namespace-qualified name fixtures.
 - `cargo test -p phpc --test object_model` passes with 9 tests covering class
   metadata registration, minimal object instantiation, duplicate metadata
   diagnostics, undefined-class diagnostics, constructor rejection, public
@@ -206,9 +210,9 @@ Tested:
   passes with rejection coverage for object instantiation.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_object_property`
   passes with rejection coverage for object property reads and writes.
-- `cargo run -p phpc -- test` passes with 68 fixture tests.
+- `cargo run -p phpc -- test` passes with 70 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 28 fixtures and skipping 40 `.phpc-only` fixtures.
+  installed, comparing 28 fixtures and skipping 42 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -228,9 +232,9 @@ Tested:
   tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
   PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
-  passes with 9 unsupported dynamic-feature fixtures.
+  passes with 11 unsupported dynamic-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_dynamic_features` passes with 9 `.phpc-only` PHP
+  tests/fixtures/unsupported_dynamic_features` passes with 11 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
   passes with 7 unsupported object/class fixtures.
@@ -315,6 +319,10 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace.php:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.php:2:1: unsupported use declaration: namespace imports are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2:4: unsupported namespace-qualified function name: namespace-aware function resolution is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_class.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_class.php:2:15: unsupported namespace-qualified class name: namespace-aware class resolution is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_anonymous_class.php`
@@ -407,11 +415,11 @@ Still fails:
   strings, functions/classes declared from evaluated code, nested eval,
   include/require inside eval, and exact PHP `ParseError`/warning behavior are
   not implemented.
-- Namespace execution and imports remain unsupported. `namespace` declarations
-  and top-level `use` import declarations fail with stable parse diagnostics;
-  bracketed namespace blocks, global namespace blocks, multiple namespaces in
-  one file, namespace separators in executable names, qualified and fully
-  qualified function/class references, aliases, grouped imports, function
+- Namespace execution and imports remain unsupported. `namespace` declarations,
+  top-level `use` import declarations, and namespace-qualified function/class
+  names fail with stable parse diagnostics; bracketed namespace blocks, global
+  namespace blocks, multiple namespaces in one file, executable qualified and
+  fully qualified function/class references, aliases, grouped imports, function
   imports, constant imports, trait `use` execution, autoload interaction, and
   namespace-aware native lowering are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
@@ -429,6 +437,5 @@ Still fails:
 
 Next:
 
-- Continue Milestone 5+ by adding explicit parse diagnostics for unsupported
-  namespace-qualified function and class names before namespace-aware name
-  resolution exists.
+- Continue by adding explicit parse diagnostics for unsupported long
+  `array(...)` syntax before implementing long array literals.

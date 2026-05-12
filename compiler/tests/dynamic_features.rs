@@ -235,3 +235,74 @@ use function App\Demo\make_service;
         assert_eq!(error.message, message);
     }
 }
+
+#[test]
+fn namespace_qualified_function_and_class_names_are_rejected_with_stable_parse_errors() {
+    let function_cases = [
+        (
+            r#"<?php
+App\fn();
+"#,
+            2,
+            4,
+        ),
+        (
+            r#"<?php
+$result = \App\make();
+"#,
+            2,
+            11,
+        ),
+        (
+            r#"<?php
+$result = namespace\make();
+"#,
+            2,
+            11,
+        ),
+    ];
+
+    for (source, line, column) in function_cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
+        );
+    }
+
+    let class_cases = [
+        (
+            r#"<?php
+$box = new App\Box();
+"#,
+            2,
+            15,
+        ),
+        (
+            r#"<?php
+$box = new \App\Box();
+"#,
+            2,
+            12,
+        ),
+        (
+            r#"<?php
+$box = new namespace\Box();
+"#,
+            2,
+            12,
+        ),
+    ];
+
+    for (source, line, column) in class_cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
+        );
+    }
+}

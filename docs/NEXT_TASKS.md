@@ -75,6 +75,11 @@ handled.
   member storage or dispatch.
 - [x] Add explicit parse diagnostics for unsupported namespace and `use`
   declaration syntax before namespace-aware name resolution or imports exist.
-- [ ] Add explicit parse diagnostics for unsupported namespace-qualified
+- [x] Add explicit parse diagnostics for unsupported namespace-qualified
   function and class names such as `App\fn()` and `new App\Box()` before
   namespace-aware name resolution exists.
+
+## Syntax Boundaries
+
+- [ ] Add explicit parse diagnostics for unsupported long `array(...)` syntax
+  before implementing long array literals.

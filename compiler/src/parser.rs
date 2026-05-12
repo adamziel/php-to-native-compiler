@@ -699,6 +699,12 @@ impl Parser {
                 "unsupported reference expression: references are not implemented",
             )),
             TokenKind::Identifier(name) => {
+                if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_namespace_qualified_function_name_message(),
+                    ));
+                }
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
                     return self.reject_unsupported_static_member_access();
                 }
@@ -709,6 +715,16 @@ impl Parser {
                     args,
                     span: token.span,
                 })
+            }
+            TokenKind::Backslash => Err(self.error_at(
+                token.span,
+                unsupported_namespace_qualified_function_name_message(),
+            )),
+            TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
+                Err(self.error_at(
+                    token.span,
+                    unsupported_namespace_qualified_function_name_message(),
+                ))
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
                 self.reject_unsupported_static_member_access()
@@ -768,7 +784,32 @@ impl Parser {
             ));
         }
 
-        let class_name = self.consume_identifier("expected class name after 'new'")?;
+        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_namespace_qualified_class_name_message(),
+            ));
+        }
+
+        let token = self.advance().clone();
+        let class_name = match token.kind {
+            TokenKind::Identifier(name) => {
+                if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_namespace_qualified_class_name_message(),
+                    ));
+                }
+                name
+            }
+            TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
+                return Err(self.error_at(
+                    token.span,
+                    unsupported_namespace_qualified_class_name_message(),
+                ));
+            }
+            _ => return Err(self.error_at(token.span, "expected class name after 'new'")),
+        };
         self.consume_keyword(TokenKind::LParen, "expected '(' after class name")?;
         let args = self.parse_call_arguments_after_open()?;
         Ok(Expr::New {
@@ -1062,6 +1103,14 @@ fn unsupported_namespace_message() -> &'static str {
 
 fn unsupported_use_message() -> &'static str {
     "unsupported use declaration: namespace imports are not implemented"
+}
+
+fn unsupported_namespace_qualified_function_name_message() -> &'static str {
+    "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
+}
+
+fn unsupported_namespace_qualified_class_name_message() -> &'static str {
+    "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
 }
 
 fn unsupported_class_expression_message() -> &'static str {
