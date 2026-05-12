@@ -193,6 +193,50 @@ fn get_class_requires_object_argument() {
 }
 
 #[test]
+fn is_object_checks_current_minimal_object_values() {
+    let source = r#"<?php
+class Box {}
+
+$box = new box();
+if (is_object($box)) {
+    echo "box:object\n";
+}
+if (!is_object(42)) {
+    echo "int:not-object\n";
+}
+if (!is_object(["box"])) {
+    echo "array:not-object\n";
+}
+$call = "is_object";
+if ($call($box)) {
+    echo "dynamic:object\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "box:object\nint:not-object\narray:not-object\ndynamic:object\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_is_object_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nclass Box {}\necho is_object(new Box());\n")
+        .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations")
+            || error.message.contains("object instantiation")
+            || error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_class(new Box());\n")
         .unwrap_err();

@@ -8822,3 +8822,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:46:53Z
 
 - Post-round 46 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:47:03Z
+
+- Starting round 47 at 20260512T194703Z from HEAD `ecb4a51`.
+
+## Loop Event 2026-05-12T19:47:11Z
+
+- Pre-round 47 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:51:42Z
+
+- Task attempted: completed Milestone 98 by adding `is_object($value)` for the
+  current minimal object value model. The slice returns true for current object
+  values, false for scalars and arrays, works through string-valued dynamic
+  function calls, has fixture and CLI snapshot coverage, and keeps native
+  lowering rejected through the current object/function-call codegen
+  boundaries.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone98/is_object.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model is_object`
+  passed; `cargo test -p phpc --test object_introspection_builtins_cli`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone98` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone98`
+  passed with 1 system PHP comparison; direct `cargo run -p phpc -- run
+  tests/fixtures/milestone98/is_object.php` printed the committed output;
+  `cargo fmt -- --check` passed; `git diff --check` passed;
+  `tools/run-tests.sh` passed with 291 fixtures, 108 system PHP comparisons,
+  and 183 skips.
+- Remaining semantic gaps: `is_object()` is limited to current minimal object
+  values. Inheritance-aware object checks, proxy/extension object behavior,
+  exact native reflection/type-system interactions, and native lowering remain
+  unsupported.
+- Next concrete task: add the next small object/class introspection or boundary
+  task to `docs/NEXT_TASKS.md` and complete it with tests, CLI coverage, docs,
+  and named unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add is_object builtin"`
+  after the full suite passes.

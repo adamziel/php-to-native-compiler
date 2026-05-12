@@ -928,3 +928,12 @@ handled.
   documentation, and explicit gaps for inheritance, aliases/imports, anonymous
   classes, magic class names, object handle identity, exact native `TypeError`
   objects, and native lowering.
+
+## Milestone 98: Object Type Introspection Builtins
+
+- [x] Implement `is_object($value)` over the current minimal object value
+  model, including true results for current object values, false results for
+  scalars and arrays, string-valued dynamic-call availability, fixture CLI
+  coverage, documentation, and explicit gaps for inheritance-aware object
+  checks, proxy/extension object behavior, exact native reflection/type-system
+  interactions, and native lowering.

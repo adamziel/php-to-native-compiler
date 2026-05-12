@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added `is_object($value)` for the current minimal object value model, with
+  runtime coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported trait-use-in-class boundary with parser
   regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `implements` clause boundary with parser

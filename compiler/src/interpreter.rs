@@ -1945,6 +1945,10 @@ impl Interpreter {
                     )),
                 }
             }
+            "is_object" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::Object(_))))
+            }
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2643,6 +2647,7 @@ fn is_builtin(name: &str) -> bool {
             | "in_array"
             | "array_search"
             | "get_class"
+            | "is_object"
             | "var_dump"
             | "print_r"
     )

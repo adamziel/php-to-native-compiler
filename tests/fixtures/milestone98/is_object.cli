@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+box:object
+int:not-object
+array:not-object
+dynamic:object
+--- stdout end ---
+stderr:
+--- stderr end ---

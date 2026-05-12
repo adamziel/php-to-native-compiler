@@ -2489,6 +2489,13 @@ Still fails:
   rejection. Inheritance, aliases/imports, anonymous classes, magic class
   names, object handle identity, exact native `TypeError` objects, and native
   lowering remain unsupported.
+- Added `is_object($value)` support for the current minimal object value model,
+  including false results for scalars and arrays, string-valued dynamic-call
+  availability, fixture CLI coverage, documentation, and explicit
+  native-codegen rejection through the current object/function-call boundaries.
+  Inheritance-aware object checks, proxy/extension object behavior, exact
+  native reflection/type-system interactions, and native lowering remain
+  unsupported.
 
 Next:
 
