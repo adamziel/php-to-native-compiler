@@ -3057,11 +3057,16 @@ impl Interpreter {
             Expr::Index { target, index, .. } => {
                 self.is_direct_array_offset_empty(target, index, caller_scope)
             }
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.is_direct_object_property_empty(target, property, *span, caller_scope),
             _ => Err(runtime_error(
                 arg.span(),
                 RuntimeError::unsupported_call(
                     "empty()",
-                    "only direct variables and direct array offset operands are supported",
+                    "only direct variables, direct array offset operands, and direct object property operands are supported",
                 ),
             )),
         }
@@ -3078,7 +3083,7 @@ impl Interpreter {
                 target.span(),
                 RuntimeError::unsupported_call(
                     "empty()",
-                    "only direct variables and direct array offset operands are supported",
+                    "only direct variables, direct array offset operands, and direct object property operands are supported",
                 ),
             ));
         };
@@ -3088,6 +3093,31 @@ impl Interpreter {
                 let key = self.evaluate_array_key(index, caller_scope)?;
                 Ok(array.get(key).map_or(true, |value| !value.is_truthy()))
             }
+            Some(_) | None => Ok(true),
+        }
+    }
+
+    fn is_direct_object_property_empty(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Expr::Variable(name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "empty()",
+                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                ),
+            ));
+        };
+
+        match caller_scope.read_named(name) {
+            Some(Value::Object(object)) => object
+                .is_public_property_empty(property)
+                .map_err(|error| runtime_error(span, error)),
             Some(_) | None => Ok(true),
         }
     }

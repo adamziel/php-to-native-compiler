@@ -10044,3 +10044,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:25:58Z
 
 - Post-round 9 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:26:08Z
+
+- Starting round 10 at 20260512T222608Z from HEAD `5ba3ab9`.
+
+## Loop Event 2026-05-12T22:26:20Z
+
+- Pre-round 10 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:34:08Z
+
+- Task attempted: implemented `empty($object->publicProperty)` for direct
+  object-variable operands over the current public instance property model.
+  The supported path uses current PHP-shaped truthiness for public property
+  slots, treats missing properties, undefined target variables, and non-object
+  target variables as empty, and keeps non-public visibility context and
+  complex object-property lvalues as explicit unsupported boundaries.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/empty.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/object_property_empty_cli.rs`,
+  `tests/fixtures/milestone119/object_property_empty.php`,
+  `tests/fixtures/milestone119/object_property_empty.stdout`,
+  `tests/fixtures/milestone119/object_property_empty.cli`,
+  `tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.cli`,
+  `tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.stderr`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime
+  object_public_property_reads_and_writes_use_exact_slot_names` passed;
+  `cargo test -p phpc --test empty` passed; `cargo test -p phpc --test
+  object_model empty_ -- --nocapture` passed; `cargo test -p phpc --test
+  object_property_empty_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone119` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone119` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 141 fixtures; `cargo run -p phpc -- compile
+  tests/fixtures/milestone119/object_property_empty.php --emit-ir` exited
+  `1` with the expected explicit class-declaration/codegen rejection;
+  `cargo fmt --all` completed; `tools/run-tests.sh` passed with 339 fixtures,
+  123 system PHP comparisons, and 216 skips.
+- Remaining semantic gaps: `empty($object->name)` only accepts direct
+  object-variable operands with static public property names. Dynamic property
+  names, non-public visibility context, complex lvalues, magic
+  `__isset`/`__get` behavior, references/copy-on-write, exact native error
+  behavior, and native lowering remain unsupported.
+- Next concrete task: add the next honest `unset($object->publicProperty)`
+  boundary before PHP property uninitialization semantics exist.
+- Known-good tag: not created; this is a narrow incremental object-property
+  refinement, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add object property empty"`
+  after the full suite passes.

@@ -92,8 +92,10 @@
   iteration in insertion order over a snapshot of the current array entries
 - `isset($array[$key])` for direct array-variable offset operands over the
   current integer/string key subset
-- `empty($name)` and `empty($array[$key])` for direct variables and direct
-  array-variable offset operands over the current scalar/array value model
+- `empty($name)`, `empty($array[$key])`, and
+  `empty($object->publicProperty)` for direct variables, direct array-variable
+  offset operands, and direct object-variable public-property operands over
+  the current value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -367,6 +369,10 @@
   of public instance property names in declaration order with their current
   slot values. Protected/private slots and static properties are not included.
   It is available through string-valued dynamic function calls.
+  Direct `empty($object->name)` accepts direct object-variable public-property
+  operands, returns true for falsey public property slots, missing properties,
+  undefined target variables, and non-object target variables, and uses a
+  stable unsupported-property diagnostic for non-public properties.
   `get_mangled_object_vars($object)` accepts current object values and returns
   the same public instance property slice in declaration order. Protected and
   private property-name mangling, dynamic properties, and visibility-context
@@ -896,7 +902,10 @@
   names. `get_object_vars($object)` returns public instance property names
   with their current values for current object values.
   `get_mangled_object_vars($object)` currently returns that same public
-  instance property slice for current object values.
+  instance property slice for current object values. `empty($object->name)`
+  checks falsey public slots and treats missing properties, undefined target
+  variables, and non-object target variables as empty in the current
+  direct-object-variable subset.
   `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity over current object values, and over string class names only when
   `allow_string` is true.
@@ -1276,12 +1285,15 @@
   array targets, and undefined object-property targets. Nested array offsets,
   append offset operands, dynamic property names, non-public property operands,
   complex lvalues, and general expression operands remain unsupported. `empty`
-  supports one direct variable operand or one direct array offset operand such
-  as `empty($array[$key])`; undefined variables, missing array keys, undefined
-  array targets, and non-array array targets are treated as empty, and existing
-  values use the current PHP truthiness rules. Nested array offsets, object
-  property operands, append offset operands, complex lvalues, general
-  expression operands, and unsupported array-key coercions remain unsupported.
+  supports one direct variable operand, one direct array offset operand such
+  as `empty($array[$key])`, or one direct public object-property operand such
+  as `empty($object->name)`; undefined variables, missing array keys,
+  undefined array targets, non-array array targets, missing object properties,
+  undefined object targets, and non-object property targets are treated as
+  empty, and existing values use the current PHP truthiness rules. Nested array
+  offsets, dynamic property names, non-public property visibility context,
+  append offset operands, complex lvalues, general expression operands, magic
+  methods, and unsupported array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
@@ -1581,6 +1593,9 @@
   properties, non-public visibility context, inheritance, traits, interfaces,
   aliases/imports, namespace-aware names, references/copy-on-write, exact
   native ordering and `TypeError` behavior, and native lowering
+- `empty($object->name)` dynamic property names, non-public visibility
+  context, complex lvalues, magic `__isset`/`__get` behavior,
+  references/copy-on-write, exact native error behavior, and native lowering
 - `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, and native lowering
@@ -1637,9 +1652,10 @@
 - generators
 - attributes
 - PHP standard library beyond documented builtins
-- `empty(...)` operands outside direct variables and direct array offsets,
-  including nested offsets, object properties, append offsets, and general
-  expressions
+- `empty(...)` operands outside direct variables, direct array offsets, and
+  direct public object-property operands, including nested offsets, dynamic
+  property names, non-public property visibility context, append offsets,
+  complex lvalues, magic methods, and general expressions
 - Zend extension loading
 - WordPress compatibility
 - PHP's warning-and-continue behavior for undefined variables; plain reads fail

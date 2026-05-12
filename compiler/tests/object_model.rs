@@ -161,6 +161,118 @@ if (isset($missing->name)) {
 }
 
 #[test]
+fn empty_public_instance_properties_checks_current_truthiness() {
+    let source = r#"<?php
+class Profile {
+    public $name;
+    public $isFalse;
+    public $zero;
+    public $emptyString;
+    public $zeroString;
+    public $items;
+    public $filled;
+    private $token;
+}
+
+$profile = new Profile();
+$profile->isFalse = false;
+$profile->zero = 0;
+$profile->emptyString = "";
+$profile->zeroString = "0";
+$profile->items = [];
+$profile->filled = "Ada";
+
+if (empty($profile->name)) {
+    echo "null-slot:empty\n";
+}
+if (empty($profile->isFalse)) {
+    echo "false:empty\n";
+}
+if (empty($profile->zero)) {
+    echo "zero:empty\n";
+}
+if (empty($profile->emptyString)) {
+    echo "empty-string:empty\n";
+}
+if (empty($profile->zeroString)) {
+    echo "zero-string:empty\n";
+}
+if (empty($profile->items)) {
+    echo "empty-array:empty\n";
+}
+if (empty($profile->filled)) {
+    echo "filled:empty\n";
+} else {
+    echo "filled:not-empty\n";
+}
+if (empty($profile->missing)) {
+    echo "missing-property:empty\n";
+}
+$value = 42;
+if (empty($value->name)) {
+    echo "scalar-target:empty\n";
+}
+if (empty($missing->name)) {
+    echo "missing-target:empty";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "null-slot:empty\nfalse:empty\nzero:empty\nempty-string:empty\nzero-string:empty\nempty-array:empty\nfilled:not-empty\nmissing-property:empty\nscalar-target:empty\nmissing-target:empty"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn empty_non_public_property_access_remains_explicitly_unsupported() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $secret;
+}
+
+$box = new Box();
+echo empty($box->secret);
+"#,
+    );
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+    );
+}
+
+#[test]
+fn complex_object_property_empty_operands_remain_explicitly_unsupported() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public $name;
+}
+
+function make_box() {
+    return new Box();
+}
+
+echo empty(make_box()->name);
+"#,
+    );
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported call empty(): only direct variables, direct array offset operands, and direct object property operands are supported"
+    );
+}
+
+#[test]
 fn get_class_returns_declared_class_name_for_minimal_objects() {
     let source = r#"<?php
 class Box {}
@@ -1335,6 +1447,24 @@ fn emit_ir_rejects_get_mangled_object_vars_until_native_object_lowering_exists()
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
             || error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_empty_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\nclass Box { public $name; }\n$box = new Box();\necho empty($box->name);\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations")
+            || error.message.contains("object instantiation")
+            || error.message.contains("function calls")
+            || error.message.contains("object property access"),
         "{}",
         error.message
     );

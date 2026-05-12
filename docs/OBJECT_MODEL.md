@@ -7,8 +7,9 @@ The current implementation parses top-level class declarations into metadata and
 can evaluate `new ClassName()` for declared classes that do not define
 constructors. It stores class identity plus `null` instance-property slots and
 can read/write public instance properties by static property name and check
-direct public property operands with `isset($object->name)`. Method calls and
-dynamic property names still fail with explicit parse diagnostics. Static
+direct public property operands with `isset($object->name)` and
+`empty($object->name)`. Method calls and dynamic property names still fail
+with explicit parse diagnostics. Static
 member access through `::` also fails with explicit parse diagnostics until
 static property storage, static method dispatch, and class constants exist.
 The current introspection slice can check declared methods with
@@ -69,6 +70,8 @@ The model follows the PHP lookup rules needed by the first object slice:
   variable;
 - direct `isset($object->name)` checks return true for non-null public slots
   and false for null or missing slots;
+- direct `empty($object->name)` checks return true for falsey public slots,
+  missing slots, undefined target variables, and non-object target variables;
 - `method_exists($object_or_class, $method)` checks declared method metadata
   using case-insensitive method lookup for current object values or string
   class names;
@@ -127,11 +130,14 @@ errors because constructor execution is not implemented.
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
 property. It also accepts direct `isset($object->name)` checks over direct
+object-variable operands and direct `empty($object->name)` checks over direct
 object-variable operands. Property names remain case-sensitive. Undefined
 properties, property access on non-object values, and non-public properties
 produce stable runtime errors for ordinary reads/writes; `isset` returns false
 for null slots, missing property names, undefined target variables, and
-non-object target variables. Static properties are recorded as metadata but are
+non-object target variables, while `empty` returns true for falsey slots,
+missing property names, undefined target variables, and non-object target
+variables. Static properties are recorded as metadata but are
 not stored in object values. Static member expressions such as
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST` are rejected
 by the parser instead of falling through to generic expression errors.
@@ -182,8 +188,10 @@ arguments, non-public property access, dynamic property names, property
 assignment targets other than a direct variable, method dispatch, object
 identity/handle aliasing, object comparisons, object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
-operands, complex object-property `isset` operands, static member execution
-through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
+operands, complex object-property `isset` operands, dynamic property-name
+`empty` operands, non-public property visibility context for `empty`, complex
+object-property `empty` operands, magic `__isset`/`__get` behavior for
+`empty`, static member execution through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,

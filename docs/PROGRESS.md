@@ -1928,7 +1928,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unset_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unset_non_array.php:3:1: invalid array access: cannot unset offset on int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php:3:12: unsupported call empty(): only direct variables and direct array offset operands are supported`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php:3:12: unsupported call empty(): only direct variables, direct array offset operands, and direct object property operands are supported`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/break_outside_loop.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/break_outside_loop.php:2:1: invalid loop control: break cannot be used outside a loop`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/continue_outside_loop.php`
@@ -2667,6 +2667,15 @@ Still fails:
   non-public visibility context, inheritance, traits, aliases/imports,
   namespace-aware names, references/copy-on-write, exact native ordering and
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `empty($object->publicProperty)` over direct object-variable operands
+  in the current public instance property model. The supported slice returns
+  true for null and falsey public slots, missing properties, undefined target
+  variables, and non-object target variables, has fixture CLI and optional
+  system PHP comparison coverage, and rejects native lowering through the
+  current function-call/class-declaration boundary. Dynamic property names,
+  non-public visibility context, complex lvalues, magic methods,
+  references/copy-on-write, exact native error behavior, and native lowering
+  remain unsupported.
 
 Next:
 

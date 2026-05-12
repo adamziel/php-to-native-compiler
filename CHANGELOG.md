@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added `empty($object->publicProperty)` for direct object-variable operands
+  over the current public instance property model, with truthiness behavior for
+  public slots, empty results for missing properties, undefined target
+  variables, and non-object targets, plus fixture/CLI coverage, documentation,
+  and native-codegen rejection coverage.
 - Added `get_mangled_object_vars($object)` for the current minimal object
   value model as a public-property slice, with direct-call and dynamic-call
   runtime coverage, fixture coverage, non-object diagnostics, documentation,

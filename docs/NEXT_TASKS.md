@@ -1134,9 +1134,19 @@ handled.
 
 ## Milestone 119: Object Property Empty Boundary
 
-- [ ] Add `empty($object->publicProperty)` support for direct object-variable
+- [x] Add `empty($object->publicProperty)` support for direct object-variable
   operands over the current public instance property model, including null,
   falsey, missing-property, undefined-variable, and non-object behavior,
   fixture CLI coverage, documentation, native-codegen rejection, and explicit
   gaps for dynamic property names, non-public visibility context, complex
   lvalues, magic methods, references/copy-on-write, and native lowering.
+
+## Milestone 120: Object Property Unset Boundary
+
+- [ ] Add the next honest `unset($object->publicProperty)` boundary for direct
+  object-variable operands before PHP property uninitialization semantics
+  exist: either stable explicit diagnostics with parser/fixture CLI coverage
+  or a narrow executable public-property slice with documented behavior,
+  native-codegen rejection, and explicit gaps for typed/uninitialized
+  properties, dynamic property names, non-public visibility context, magic
+  methods, references/copy-on-write, and native lowering.

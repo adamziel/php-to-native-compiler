@@ -127,6 +127,6 @@ fn complex_empty_operands_remain_explicitly_unsupported() {
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call empty(): only direct variables and direct array offset operands are supported"
+        "unsupported call empty(): only direct variables, direct array offset operands, and direct object property operands are supported"
     );
 }

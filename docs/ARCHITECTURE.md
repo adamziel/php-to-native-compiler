@@ -164,6 +164,9 @@ declaration order while skipping static properties.
 name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
 current object value stored in that variable. Direct `isset($box->name)` checks
 the current public slot without treating a missing name as a property read.
+Direct `empty($box->name)` checks the current public slot truthiness and treats
+null slots, missing names, undefined target variables, and non-object target
+variables as empty for the current direct-object-variable subset.
 `get_class($object)` returns the declared class name stored in the current
 minimal object value and is also available through string-valued dynamic
 function calls. `get_debug_type($value)` reports current scalar/array type

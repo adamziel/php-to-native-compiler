@@ -1,0 +1,14 @@
+exit: 0
+stdout:
+null-slot:empty
+false:empty
+zero:empty
+empty-string:empty
+zero-string:empty
+empty-array:empty
+filled:not-empty
+missing-property:empty
+scalar-target:empty
+missing-target:empty--- stdout end ---
+stderr:
+--- stderr end ---

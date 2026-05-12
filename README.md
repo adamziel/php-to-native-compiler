@@ -76,8 +76,9 @@ subset:
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   the documented ordered array value model
 - direct `isset($array[$key])` checks for the documented array-offset subset
-- direct `empty($name)` and `empty($array[$key])` checks for the documented
-  variable/array-offset subset
+- direct `empty($name)`, `empty($array[$key])`, and
+  `empty($object->publicProperty)` checks for the documented
+  variable/array-offset/public-property subset
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
   `empty`, `count`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, including loose and strict
@@ -176,10 +177,13 @@ subset:
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,
 read/write public instance properties by static name, and check those public
-properties with `isset`. `get_class($object)` returns the declared class name
-for those minimal object values, `is_object($value)` returns true only for
-those current object values, and `get_debug_type($value)` returns scalar/array
-type names or the declared class name for current object values.
+properties with `isset` and `empty`. `empty($object->name)` returns true for
+null and falsey public slots, missing properties, undefined target variables,
+and non-object target variables in the current direct-object-variable subset.
+`get_class($object)` returns the declared class name for those minimal object
+values, `is_object($value)` returns true only for those current object values,
+and `get_debug_type($value)` returns scalar/array type names or the declared
+class name for current object values.
 `class_exists($name[, $autoload])` checks the current declared-class metadata
 case-insensitively for string class names; the autoload flag is accepted only
 as a boolean and does not trigger autoloading.
@@ -261,8 +265,9 @@ exact native class/interface/method/property ordering, `get_class_vars()` proper
 defaults, inheritance/trait/interface properties, context-sensitive visibility,
 `get_object_vars()` dynamic properties and non-public visibility context,
 `get_mangled_object_vars()` protected/private name mangling, dynamic
-properties, non-public visibility context, and references/copy-on-write,
-and native object lowering are not supported yet.
+properties, non-public visibility context, `empty($object->name)` dynamic
+property names, non-public visibility context, complex lvalues, magic methods,
+references/copy-on-write, and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.
