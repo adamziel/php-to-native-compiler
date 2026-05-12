@@ -309,7 +309,42 @@ $box = new namespace\Box();
 }
 
 #[test]
-fn bare_global_constants_outside_the_narrow_builtin_slice_are_rejected() {
+fn bare_global_constants_resolve_runtime_defined_and_builtin_values() {
+    let execution = run_source(
+        r#"<?php
+define("APP_NAME", "compiler");
+define("APP_VERSION", 2);
+echo APP_NAME, "|", APP_VERSION + 3, "\n";
+echo ARRAY_FILTER_USE_KEY, "|", ARRAY_FILTER_USE_BOTH, "\n";
+
+$items = ["name" => "Ada", "nested" => ["x" => 1]];
+define("APP_ITEMS", $items);
+$copy = APP_ITEMS;
+$copy["name"] = "changed";
+echo APP_ITEMS["name"], "|", APP_ITEMS["nested"]["x"], "|", $copy["name"], "\n";
+
+function read_constant_inside_function() {
+    define("FUNCTION_CONSTANT", "inside");
+    return APP_NAME . ":" . FUNCTION_CONSTANT;
+}
+
+echo read_constant_inside_function(), "\n";
+$call = "define";
+$call("DYNAMIC_CONSTANT", "dynamic");
+echo DYNAMIC_CONSTANT, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "compiler|5\n2|1\nAda|1|changed\ncompiler:inside\ndynamic\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn undefined_bare_global_constants_have_stable_runtime_errors() {
     let cases = [
         (
             r#"<?php
@@ -330,15 +365,10 @@ echo array_filter([], "strlen", CUSTOM_FILTER_MODE);
     ];
 
     for (source, line, column, name) in cases {
-        let error = parse_error(source);
+        let error = runtime_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            format!(
-                "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented as bare constants; runtime-defined constants must be read with constant() in the current subset"
-            )
-        );
+        assert_eq!(error.message, format!("undefined constant {name}"));
     }
 }
 

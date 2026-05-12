@@ -1,0 +1,1 @@
+phpc only implements bare global constants from the documented built-in/runtime-defined subset; unknown constants use a stable project diagnostic.

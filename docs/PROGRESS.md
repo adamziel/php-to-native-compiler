@@ -432,6 +432,12 @@ Implemented:
   diagnostics for duplicate definitions, built-in redefinition attempts,
   unsupported names, unsupported object-containing values, unknown
   `constant(...)` names, and the legacy third `define(...)` flag.
+- Added bare user constant reads for runtime-defined unqualified constants over
+  the current name/value subset. The supported slice resolves bare
+  runtime-defined names through the same interpreter constant table as
+  `constant($name)`, keeps exact built-in `ARRAY_FILTER_*` bare constants on
+  that path, clones array values on lookup, works inside user functions, and
+  reports unknown bare constants with a stable runtime diagnostic.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -739,7 +745,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 106 representative runtime error fixtures.
+  covering 107 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -752,13 +758,13 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 4 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with 20 tests covering
+- `cargo test -p phpc --test dynamic_features` passes with 21 tests covering
   static symbol-table behavior, dynamic function lookup behavior,
-  runtime-defined constant behavior, and unsupported
+  runtime-defined constant and bare constant behavior, and unsupported
   variable-variable/include/require/eval/namespace/use and namespace-qualified
   name diagnostic coverage.
 - `cargo test -p phpc --test user_constants_cli` passes with 1 CLI snapshot
-  test covering the Milestone 61 runtime-defined constant fixture.
+  test covering the Milestone 61 and Milestone 62 user constant fixtures.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
   CLI snapshot test covering 12 unsupported variable-variable,
   include/require, eval, namespace, use, and namespace-qualified name fixtures.
@@ -1071,9 +1077,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 233 fixture tests.
+- `cargo run -p phpc -- test` passes with 241 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 95 fixtures and skipping 138 `.phpc-only` fixtures.
+  installed, comparing 99 fixtures and skipping 142 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -1172,7 +1178,15 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/milestone61/runtime_defined_constants.php`
   prints the committed `define(...)`/`constant(...)` output for scalar values,
   array constants, function-scope lookup, and string-valued dynamic calls.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 106
+- `cargo run -p phpc -- test tests/fixtures/milestone62` passes with 1 bare
+  runtime-defined constant fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone62` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone62/bare_runtime_defined_constants.php`
+  prints the committed bare constant output for scalar values, cloned array
+  constants, function-scope lookup, built-in constants, and string-valued
+  dynamic `define` calls.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 107
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -1937,10 +1951,10 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/milestone52/array_reduce_initial.php`
   prints the committed scalar, array, empty-array, and dynamic-call initial
   accumulator output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 106
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 107
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 239 fixtures, 98 system PHP comparisons,
-  and 141 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 241 fixtures, 99 system PHP comparisons,
+  and 142 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -2189,12 +2203,13 @@ Still fails:
 - Global constant resolution is limited to exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` as bare built-in
   constants, plus runtime-defined constants created with `define($name,
-  $value)` and read through `constant($name)` for the current unqualified
-  string-name and scalar/array value subset. Bare user constants, other
-  built-in constants, case-insensitive legacy constants, extension constants,
-  namespace-qualified constants, class constants through `constant()`,
-  references/copy-on-write behavior for constant values, and native lowering
-  for constants are not implemented.
+  $value)` and read through `constant($name)` or bare unqualified names for
+  the current string-name and scalar/array value subset. Other built-in
+  constants, names lexed as language keywords or literals for bare reads,
+  case-insensitive legacy constants, extension constants, namespace-qualified
+  constants, class constants through `constant()`, references/copy-on-write
+  behavior for constant values, and native lowering for constants are not
+  implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct

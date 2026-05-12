@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/undefined_constant.php:2:6: undefined constant PHP_VERSION
+--- stderr end ---

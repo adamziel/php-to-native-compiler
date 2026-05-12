@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+compiler|5
+2|1
+Ada|1|changed
+compiler:inside
+dynamic
+--- stdout end ---
+stderr:
+--- stderr end ---

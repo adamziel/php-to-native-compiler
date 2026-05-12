@@ -633,9 +633,18 @@ handled.
 
 ## Milestone 62: Bare User Constant Reads
 
-- [ ] Implement bare user constant reads for runtime-defined unqualified
+- [x] Implement bare user constant reads for runtime-defined unqualified
   constants over the current name/value subset, including parser/runtime
   lookup, undefined/unsupported constant diagnostics, fixture CLI coverage,
   documentation, and explicit gaps for namespaces, extension constants, class
   constants, case-insensitive legacy constants, references/copy-on-write, and
   native lowering.
+
+## Milestone 63: Constant Introspection Builtin
+
+- [ ] Implement `defined($name)` over the current built-in/runtime-defined
+  constant table, including string-name validation, true/false behavior for
+  existing and missing constants, string-valued dynamic-call availability,
+  fixture CLI coverage, documentation, and explicit gaps for namespaces,
+  extension constants, class constants, case-insensitive legacy constants,
+  references/copy-on-write, and native lowering.

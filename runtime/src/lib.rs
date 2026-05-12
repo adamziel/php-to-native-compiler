@@ -31,6 +31,10 @@ impl RuntimeError {
         Self::from_kind(RuntimeErrorKind::DuplicateConstant { name: name.into() })
     }
 
+    pub fn undefined_constant(name: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UndefinedConstant { name: name.into() })
+    }
+
     pub fn duplicate_class(class_name: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::DuplicateClass {
             class_name: class_name.into(),
@@ -194,6 +198,9 @@ pub enum RuntimeErrorKind {
     DuplicateConstant {
         name: String,
     },
+    UndefinedConstant {
+        name: String,
+    },
     DuplicateClass {
         class_name: String,
     },
@@ -309,6 +316,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::DuplicateConstant { name } => {
             format!("constant {name} is already defined")
+        }
+        RuntimeErrorKind::UndefinedConstant { name } => {
+            format!("undefined constant {name}")
         }
         RuntimeErrorKind::DuplicateClass { class_name } => {
             format!("class {class_name} is already defined")

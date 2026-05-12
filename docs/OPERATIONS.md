@@ -95,6 +95,9 @@ Behavior:
 - runs `tools/run-tests.sh` before and after each Codex pass
 - calls `tools/checkpoint.sh` after a round only when the post-round test suite
   passes
+- prints and logs a roadmap summary at the start of each round, including total
+  checked-task percentage, an ASCII progress bar, milestone checkboxes, the next
+  unchecked task, current HEAD, and dirty worktree file count
 - appends machine-readable-ish events to `docs/LOOP_MEMORY.md`
 - stores generated prompts and logs under `.codex-yolo/logs/`
 
@@ -103,6 +106,7 @@ Useful environment variables:
 - `CODEX_BIN`: Codex executable name or path, default `codex`
 - `CODEX_YOLO_MEMORY`: memory file path, default `docs/LOOP_MEMORY.md`
 - `CODEX_YOLO_LOG_DIR`: log directory, default `.codex-yolo/logs`
+- `CODEX_YOLO_PROGRESS_WIDTH`: progress bar width, default `32`, minimum `10`
 
 The forever loop is intentionally aggressive. Use it only when you want the repo
 to keep changing without manual prompts.

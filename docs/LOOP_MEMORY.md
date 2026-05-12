@@ -6761,3 +6761,65 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T14:56:51Z
 
 - Post-round 10 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T14:56:58Z
+
+- Starting round 11 at 20260512T145658Z from HEAD `6a2155b`.
+
+## Loop Event 2026-05-12T14:57:05Z
+
+- Pre-round 11 test exit code: `0`.
+
+## Loop Event 2026-05-12T15:11:08Z
+
+- Task attempted: implemented Milestone 62 bare user constant reads for
+  runtime-defined unqualified constants over the current name/value subset.
+  Bare constants now parse as runtime constant expressions, resolve through the
+  same interpreter constant table as `constant($name)`, keep exact
+  `ARRAY_FILTER_*` built-ins on that path, clone array values on lookup, work
+  inside user functions, and report unknown bare constants with a stable
+  runtime diagnostic.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/dynamic_features.rs`, `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone62/bare_runtime_defined_constants.*`,
+  `tests/fixtures/runtime_errors/undefined_constant.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, plus
+  concurrent `tools/codex-yolo-forever.sh` and `docs/OPERATIONS.md`
+  roadmap-summary changes that were inspected and syntax-checked before
+  checkpointing.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  dynamic_features` passed with 21 tests; `cargo test -p phpc --test
+  user_constants_cli` passed; `cargo test -p phpc --test runtime_error_cli`
+  passed with 107 runtime-error CLI fixtures; `cargo test -p php_runtime`
+  passed with 74 runtime tests; `cargo test -p phpc --test array_filter`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone62` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone62` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 107 fixtures;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with 12 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/runtime_errors` passed with 107 `.phpc-only` skips; `cargo run
+  -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`
+  passed with 12 `.phpc-only` skips; `cargo run -p phpc -- run
+  tests/fixtures/milestone62/bare_runtime_defined_constants.php` printed the
+  committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/undefined_constant.php` exited `1` with the
+  expected stable undefined-constant diagnostic; `bash -n
+  tools/codex-yolo-forever.sh` passed; `tools/run-tests.sh` passed with 241
+  fixtures, 99 system PHP comparisons, and 142 `.phpc-only` skips.
+- Remaining semantic gaps: bare constant reads only cover unqualified names that
+  parse as identifier tokens and exist in the current built-in/runtime-defined
+  constant table. Names lexed as language keywords or literals, other built-in
+  constants such as `PHP_VERSION`, extension constants, namespace-qualified
+  constants, class constants, case-insensitive legacy constants,
+  references/copy-on-write behavior for constant values, exact PHP `Error`/
+  `ValueError`/`TypeError` objects, and native constant lowering remain
+  unsupported.
+- Next concrete task: implement `defined($name)` over the current
+  built-in/runtime-defined constant table with string-name validation, dynamic
+  call coverage, docs, and named unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add bare user constants"`
+  after the full suite passes.

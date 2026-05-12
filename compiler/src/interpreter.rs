@@ -490,7 +490,7 @@ impl Interpreter {
             Expr::Float(value, _) => Ok(Value::Float(*value)),
             Expr::String(value, _) => Ok(Value::String(value.clone())),
             Expr::Variable(name, span) => scope.read_static(name, *span),
-            Expr::GlobalConstant { value, .. } => Ok(Value::Int(*value)),
+            Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
                 target,
@@ -632,6 +632,12 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn evaluate_global_constant(&self, name: &str, span: Span) -> CompileResult<Value> {
+        self.constants
+            .get(name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_constant(name)))
     }
 
     fn evaluate_array(

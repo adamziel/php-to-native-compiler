@@ -63,6 +63,8 @@
   `constant($name)` over the current unqualified string-name and scalar/array
   value subset; string-valued dynamic calls to `define` and `constant` use the
   same path
+- bare reads of runtime-defined unqualified constants over the same current
+  name/value subset; array constant values are cloned on lookup
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -137,10 +139,11 @@
   non-bool `in_array`/`array_search` strict-mode flag values, unsupported
   non-scalar `array_keys` search-value comparisons, non-bool `array_keys`
   strict-mode flag values, unsupported non-scalar `in_array`/`array_search`
-  comparisons, unsupported `global` declarations, duplicate class/member
-  metadata, undefined classes, unsupported object
-  instantiation, undefined object properties, invalid property targets,
-  unsupported non-public property access, object-to-string conversion,
+  comparisons, duplicate constants, undefined constants, unsupported
+  `global` declarations, duplicate class/member metadata, undefined classes,
+  unsupported object instantiation, undefined object properties, invalid
+  property targets, unsupported non-public property access,
+  object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
   inside `switch`, and runaway user-function recursion
@@ -155,9 +158,8 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
-- explicit parse diagnostics for unsupported bare global constants outside the
-  current narrow built-in slice, such as `PHP_VERSION`; runtime-defined
-  constants must be read with `constant(...)`
+- stable runtime diagnostics for unsupported bare global constants outside the
+  current built-in/runtime-defined slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
@@ -547,10 +549,11 @@
   `in_array`/`array_search` strict-mode flag values, and array-value
   comparisons for `in_array`/`array_search`,
   unsupported complex `empty` operands, non-array `unset($array[$key])`
-  targets, unresolved dynamic function callees, division by zero, non-numeric
-  string arithmetic, duplicate class metadata, undefined classes, undefined
-  object properties, invalid property targets, non-public property access,
-  object-to-string conversion, invalid `break`/`continue` outside a loop,
+  targets, unresolved dynamic function callees, duplicate constants, undefined
+  constants, division by zero, non-numeric string arithmetic, duplicate class
+  metadata, undefined classes, undefined object properties, invalid property
+  targets, non-public property access, object-to-string conversion, invalid
+  `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. `if`/`elseif`/`else`, `while`,
@@ -888,15 +891,17 @@
   may also be used as mode expressions. `define($name, $value)` accepts
   unqualified string names matching the current identifier subset and stores
   `null`, booleans, integers, floats, strings, and arrays containing only
-  supported constant values. `constant($name)` returns a cloned value from the
+  supported constant values. `constant($name)` and bare reads of
+  runtime-defined unqualified constants return a cloned value from the
   runtime-defined table or from the exact built-in `ARRAY_FILTER_*` slice.
   Duplicate definitions, redefinition of the built-in constants, non-string or
   unsupported names, unsupported object-containing values, unknown
-  `constant(...)` names, and the legacy third `define(...)` flag fail with
-  stable diagnostics. Bare user constants, case-insensitive legacy constants,
-  namespace-qualified constants, extension constants, class constants through
-  `constant(...)`, references/copy-on-write behavior, and native lowering are
-  not implemented.
+  `constant(...)` names, unknown bare constants, and the legacy third
+  `define(...)` flag fail with stable diagnostics. Constant names that are
+  lexed as language keywords or literals cannot be read bare, and
+  case-insensitive legacy constants, namespace-qualified constants, extension
+  constants, class constants through `constant(...)`,
+  references/copy-on-write behavior, and native lowering are not implemented.
   Array/object callables, closures, first-class callables, method calls,
   integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
   `false`, references,
@@ -1187,11 +1192,13 @@
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; bare user constants,
-  unsupported `define(...)` names or values, case-insensitive legacy constants,
-  extension constants, namespace-qualified constants, `constant()` lookup for
-  class constants, reference/copy-on-write behavior for constant values, and
-  native lowering remain unsupported
+  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, and runtime-defined
+  unqualified constants in the current name/value subset; unsupported
+  `define(...)` names or values, case-insensitive legacy constants, extension
+  constants, namespace-qualified constants, `constant()` lookup for class
+  constants, names lexed as language keywords or literals for bare reads,
+  reference/copy-on-write behavior for constant values, and native lowering
+  remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

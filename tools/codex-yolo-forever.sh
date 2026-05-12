@@ -48,6 +48,120 @@ run_tests_no_stop() {
   return 127
 }
 
+print_roadmap_summary() {
+  phase=$1
+  tasks_file="$repo_root/docs/NEXT_TASKS.md"
+  head_commit=$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')
+  dirty_count=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  progress_width=${CODEX_YOLO_PROGRESS_WIDTH:-32}
+
+  case "$progress_width" in
+    '' | *[!0-9]*)
+      progress_width=32
+      ;;
+  esac
+  if [ "$progress_width" -lt 10 ]; then
+    progress_width=10
+  fi
+
+  if [ ! -r "$tasks_file" ]; then
+    printf 'codex-yolo: roadmap summary unavailable for %s; missing %s\n' "$phase" "$tasks_file"
+    return 0
+  fi
+
+  awk -v phase="$phase" -v head_commit="$head_commit" -v dirty_count="$dirty_count" -v width="$progress_width" '
+    function trim(value) {
+      gsub(/^[[:space:]]+/, "", value)
+      gsub(/[[:space:]]+$/, "", value)
+      return value
+    }
+
+    function marker(index) {
+      if (total[index] == 0) {
+        return "[ ]"
+      }
+      if (done[index] == total[index]) {
+        return "[x]"
+      }
+      if (index == active_milestone || done[index] > 0) {
+        return "[>]"
+      }
+      return "[ ]"
+    }
+
+    /^##[[:space:]]+/ {
+      milestone_count++
+      title = $0
+      sub(/^##[[:space:]]+/, "", title)
+      milestone[milestone_count] = trim(title)
+      next
+    }
+
+    /^[[:space:]]*-[[:space:]]+\[[xX ]\]/ {
+      if (milestone_count == 0) {
+        next
+      }
+
+      total[milestone_count]++
+      total_tasks++
+
+      if ($0 ~ /^[[:space:]]*-[[:space:]]+\[[xX]\]/) {
+        done[milestone_count]++
+        done_tasks++
+      } else {
+        open_tasks++
+        if (next_task == "") {
+          next_task = $0
+          sub(/^[[:space:]]*-[[:space:]]+\[[[:space:]]\][[:space:]]*/, "", next_task)
+          next_task = trim(next_task)
+          active_milestone = milestone_count
+        }
+      }
+      next
+    }
+
+    END {
+      percent = total_tasks == 0 ? 0 : int((done_tasks * 100) / total_tasks)
+      filled = total_tasks == 0 ? 0 : int((done_tasks * width) / total_tasks)
+      bar = ""
+      for (index = 1; index <= width; index++) {
+        bar = bar (index <= filled ? "#" : "-")
+      }
+
+      printf "\n"
+      printf "codex-yolo: roadmap summary (%s)\n", phase
+      printf "  HEAD: %s\n", head_commit
+      printf "  Worktree changes: %s file(s)\n", dirty_count
+      printf "  Tasks: %d/%d complete, %d open (%d%%)\n", done_tasks, total_tasks, open_tasks, percent
+      printf "  [%s] %d%%\n", bar, percent
+
+      if (next_task != "") {
+        printf "  Next: %s\n", next_task
+      } else if (total_tasks > 0) {
+        printf "  Next: none; roadmap queue is fully checked\n"
+      } else {
+        printf "  Next: none; no roadmap tasks found\n"
+      }
+
+      printf "\n"
+      printf "  Milestones:\n"
+      for (index = 1; index <= milestone_count; index++) {
+        if (total[index] == 0) {
+          continue
+        }
+
+        milestone_percent = int((done[index] * 100) / total[index])
+        printf "    %s %-48s %3d/%-3d %3d%%", marker(index), milestone[index], done[index], total[index], milestone_percent
+        if (index == active_milestone) {
+          printf "  <- in progress"
+        }
+        printf "\n"
+      }
+      printf "\n"
+    }
+  ' "$tasks_file"
+}
+
 round=1
 while :; do
   timestamp=$(date -u '+%Y%m%dT%H%M%SZ')
@@ -90,6 +204,7 @@ while :; do
     printf '7. If tests fail, keep working until they pass or record the blocker in `docs/LOOP_MEMORY.md`; do not mark the task done.\n'
   } >"$prompt_file"
 
+  print_roadmap_summary "round $round start" | tee -a "$round_log"
   append_memory "- Starting round $round at $timestamp from HEAD \`$head_commit\`."
 
   printf 'codex-yolo: round %s starting at %s\n' "$round" "$timestamp" | tee -a "$round_log"

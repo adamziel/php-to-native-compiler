@@ -221,7 +221,6 @@ pub enum Expr {
     Variable(String, Span),
     GlobalConstant {
         name: String,
-        value: i64,
         span: Span,
     },
     Array {

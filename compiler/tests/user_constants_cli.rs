@@ -8,8 +8,13 @@ fn user_constant_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone61");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir, workspace_root);
+    let mut fixtures = Vec::new();
+    for fixture_dir in ["tests/fixtures/milestone61", "tests/fixtures/milestone62"] {
+        fixtures.extend(cli_snapshot_fixtures(
+            &workspace_root.join(fixture_dir),
+            workspace_root,
+        ));
+    }
 
     fixtures.sort();
     assert!(!fixtures.is_empty(), "expected user constant CLI fixtures");

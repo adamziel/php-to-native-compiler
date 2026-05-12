@@ -1111,16 +1111,10 @@ impl Parser {
                     return self.reject_unsupported_static_member_access();
                 }
                 if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                    if let Some(value) = builtin_global_constant_value(&name) {
-                        return Ok(Expr::GlobalConstant {
-                            name,
-                            value,
-                            span: token.span,
-                        });
-                    }
-                    return Err(
-                        self.error_at(token.span, unsupported_global_constant_message(&name))
-                    );
+                    return Ok(Expr::GlobalConstant {
+                        name,
+                        span: token.span,
+                    });
                 }
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let args = self.parse_call_arguments_after_open()?;
@@ -1614,20 +1608,6 @@ fn unsupported_namespace_qualified_function_name_message() -> &'static str {
 
 fn unsupported_namespace_qualified_class_name_message() -> &'static str {
     "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
-}
-
-fn unsupported_global_constant_message(name: &str) -> String {
-    format!(
-        "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented as bare constants; runtime-defined constants must be read with constant() in the current subset"
-    )
-}
-
-fn builtin_global_constant_value(name: &str) -> Option<i64> {
-    match name {
-        "ARRAY_FILTER_USE_BOTH" => Some(1),
-        "ARRAY_FILTER_USE_KEY" => Some(2),
-        _ => None,
-    }
 }
 
 fn unsupported_array_spread_message() -> &'static str {
