@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_value.php:2:18: const declaration values only support constant expressions in the current subset
+--- stderr end ---

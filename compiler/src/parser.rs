@@ -14,11 +14,16 @@ pub fn parse_source(source: &str) -> CompileResult<Program> {
 struct Parser {
     tokens: Vec<Token>,
     current: usize,
+    nested_statement_depth: usize,
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, current: 0 }
+        Self {
+            tokens,
+            current: 0,
+            nested_statement_depth: 0,
+        }
     }
 
     fn parse_program(mut self) -> CompileResult<Program> {
@@ -62,7 +67,11 @@ impl Parser {
                 self.parse_continue()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => {
-                self.parse_unsupported_const_declaration()
+                if self.nested_statement_depth == 0 {
+                    self.parse_const_declaration()
+                } else {
+                    self.parse_unsupported_nested_const_declaration()
+                }
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset") => self.parse_unset(),
             kind if include_require_name(kind).is_some() => {
@@ -293,9 +302,31 @@ impl Parser {
         Err(self.error_at(span, unsupported_eval_message()))
     }
 
-    fn parse_unsupported_const_declaration(&mut self) -> CompileResult<Stmt> {
+    fn parse_unsupported_nested_const_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
-        Err(self.error_at(span, unsupported_const_declaration_message()))
+        Err(self.error_at(span, unsupported_nested_const_declaration_message()))
+    }
+
+    fn parse_const_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        let name = self.consume_identifier("expected constant name after const")?;
+        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_namespace_const_declaration_message(),
+            ));
+        }
+        self.consume_keyword(TokenKind::Equal, "expected '=' after constant name")?;
+        let value = self.parse_expression()?;
+        self.ensure_supported_const_declaration_expr(&value)?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_grouped_const_declaration_message(),
+            ));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after const declaration")?;
+        Ok(Stmt::ConstDeclaration { name, value, span })
     }
 
     fn parse_unsupported_include_or_require(&mut self) -> CompileResult<Stmt> {
@@ -580,19 +611,24 @@ impl Parser {
     }
 
     fn parse_switch_case_body(&mut self) -> CompileResult<Vec<Stmt>> {
-        let mut statements = Vec::new();
-        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof))
-            && !self.check_switch_label()
-        {
-            if self.check(|kind| matches!(kind, TokenKind::Class)) {
-                return Err(self.error_at(
-                    self.peek().span,
-                    "unsupported nested class declaration: only top-level class declarations are implemented",
-                ));
+        self.nested_statement_depth += 1;
+        let result = (|| {
+            let mut statements = Vec::new();
+            while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof))
+                && !self.check_switch_label()
+            {
+                if self.check(|kind| matches!(kind, TokenKind::Class)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "unsupported nested class declaration: only top-level class declarations are implemented",
+                    ));
+                }
+                statements.push(self.parse_statement()?);
             }
-            statements.push(self.parse_statement()?);
-        }
-        Ok(statements)
+            Ok(statements)
+        })();
+        self.nested_statement_depth -= 1;
+        result
     }
 
     fn consume_switch_label(&mut self) -> CompileResult<SwitchLabel> {
@@ -796,7 +832,7 @@ impl Parser {
             return self.parse_block_after_open();
         }
 
-        Ok(vec![self.parse_statement()?])
+        Ok(vec![self.parse_nested_statement()?])
     }
 
     fn parse_required_block(&mut self, message: &str) -> CompileResult<Vec<Stmt>> {
@@ -805,18 +841,30 @@ impl Parser {
     }
 
     fn parse_block_after_open(&mut self) -> CompileResult<Vec<Stmt>> {
-        let mut statements = Vec::new();
-        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
-            if self.check(|kind| matches!(kind, TokenKind::Class)) {
-                return Err(self.error_at(
-                    self.peek().span,
-                    "unsupported nested class declaration: only top-level class declarations are implemented",
-                ));
+        self.nested_statement_depth += 1;
+        let result = (|| {
+            let mut statements = Vec::new();
+            while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+                if self.check(|kind| matches!(kind, TokenKind::Class)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "unsupported nested class declaration: only top-level class declarations are implemented",
+                    ));
+                }
+                statements.push(self.parse_statement()?);
             }
-            statements.push(self.parse_statement()?);
-        }
-        self.consume_keyword(TokenKind::RBrace, "expected '}' after block")?;
-        Ok(statements)
+            self.consume_keyword(TokenKind::RBrace, "expected '}' after block")?;
+            Ok(statements)
+        })();
+        self.nested_statement_depth -= 1;
+        result
+    }
+
+    fn parse_nested_statement(&mut self) -> CompileResult<Stmt> {
+        self.nested_statement_depth += 1;
+        let result = self.parse_statement();
+        self.nested_statement_depth -= 1;
+        result
     }
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
@@ -1357,6 +1405,40 @@ impl Parser {
         }
     }
 
+    fn ensure_supported_const_declaration_expr(&self, expr: &Expr) -> CompileResult<()> {
+        match expr {
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _) => Ok(()),
+            Expr::Array { items, .. } => {
+                for item in items {
+                    if let Some(key) = &item.key {
+                        self.ensure_supported_const_declaration_expr(key)?;
+                    }
+                    self.ensure_supported_const_declaration_expr(&item.value)?;
+                }
+                Ok(())
+            }
+            Expr::Unary { expr, .. } => self.ensure_supported_const_declaration_expr(expr),
+            Expr::Binary { left, right, .. } => {
+                self.ensure_supported_const_declaration_expr(left)?;
+                self.ensure_supported_const_declaration_expr(right)
+            }
+            Expr::Variable(_, _)
+            | Expr::GlobalConstant { .. }
+            | Expr::Index { .. }
+            | Expr::Property { .. }
+            | Expr::Call { .. }
+            | Expr::DynamicCall { .. }
+            | Expr::New { .. } => Err(self.error_at(
+                expr.span(),
+                "const declaration values only support constant expressions in the current subset",
+            )),
+        }
+    }
+
     fn consume_object_property_name(&mut self, operator_span: Span) -> CompileResult<String> {
         let token = self.advance().clone();
         match token.kind {
@@ -1610,8 +1692,16 @@ fn unsupported_use_message() -> &'static str {
     "unsupported use declaration: namespace imports are not implemented"
 }
 
-fn unsupported_const_declaration_message() -> &'static str {
-    "unsupported const declaration: top-level constant declarations are not implemented"
+fn unsupported_nested_const_declaration_message() -> &'static str {
+    "unsupported const declaration: only top-level constant declarations are implemented"
+}
+
+fn unsupported_grouped_const_declaration_message() -> &'static str {
+    "unsupported const declaration: grouped constant declarations are not implemented"
+}
+
+fn unsupported_namespace_const_declaration_message() -> &'static str {
+    "unsupported const declaration: namespace-qualified constant declarations are not implemented"
 }
 
 fn unsupported_namespace_qualified_function_name_message() -> &'static str {

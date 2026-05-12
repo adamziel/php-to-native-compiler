@@ -357,6 +357,10 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
+            Stmt::ConstDeclaration { name, value, span } => {
+                self.execute_const_declaration(name, value, *span, scope)?;
+                Ok(Flow::Normal)
+            }
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
@@ -484,6 +488,30 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn execute_const_declaration(
+        &mut self,
+        name: &str,
+        value: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let value = self.evaluate(value, scope)?;
+        if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "const declaration",
+                    format!(
+                        "value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                    ),
+                ),
+            ));
+        }
+        self.constants
+            .define(name, value)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn evaluate(&mut self, expr: &Expr, scope: &mut SymbolTable) -> CompileResult<Value> {

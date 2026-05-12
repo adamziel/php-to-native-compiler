@@ -486,32 +486,113 @@ echo defined("123BAD");
 }
 
 #[test]
-fn top_level_const_declarations_are_rejected_with_stable_parse_errors() {
+fn top_level_const_declarations_populate_constant_table() {
+    let execution = run_source(
+        r#"<?php
+const APP_NAME = "compiler";
+CONST APP_VERSION = 2;
+const APP_SCALE = 1 + 2 * 3;
+const APP_ITEMS = ["name" => "Ada", "count" => 2, "nested" => ["x" => 1]];
+echo APP_NAME, "|", APP_VERSION, "|", APP_SCALE, "\n";
+echo constant("APP_NAME"), "|", defined("APP_ITEMS"), "|", defined("MISSING_CONST"), "\n";
+$copy = APP_ITEMS;
+$copy["name"] = "changed";
+echo count($copy), "|", $copy["name"], "|", APP_ITEMS["name"], "|", APP_ITEMS["nested"]["x"], "\n";
+function read_declared_const() {
+    return APP_NAME . ":" . APP_VERSION;
+}
+echo read_declared_const(), "\n";
+$name = "APP_NAME";
+echo constant($name), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "compiler|2|7\ncompiler|1|\n3|changed|Ada|1\ncompiler:2\ncompiler\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn duplicate_top_level_const_declarations_have_stable_diagnostics() {
+    let duplicate = runtime_error(
+        r#"<?php
+const APP_NAME = "compiler";
+const APP_NAME = "again";
+"#,
+    );
+    assert_eq!(duplicate.line, 3);
+    assert_eq!(duplicate.column, 1);
+    assert_eq!(duplicate.message, "constant APP_NAME is already defined");
+
+    let builtin = runtime_error(
+        r#"<?php
+const ARRAY_FILTER_USE_KEY = 4;
+"#,
+    );
+    assert_eq!(builtin.line, 2);
+    assert_eq!(builtin.column, 1);
+    assert_eq!(
+        builtin.message,
+        "constant ARRAY_FILTER_USE_KEY is already defined"
+    );
+}
+
+#[test]
+fn unsupported_const_declaration_forms_have_stable_parse_errors() {
     let cases = [
         (
             r#"<?php
-const APP_NAME = "compiler";
+const APP_VERSION = 1, APP_ENV = "dev";
 "#,
             2,
-            1,
+            22,
+            "unsupported const declaration: grouped constant declarations are not implemented",
         ),
         (
             r#"<?php
-CONST APP_VERSION = 1, APP_ENV = "dev";
+if (true) {
+    const INSIDE = 1;
+}
+"#,
+            3,
+            5,
+            "unsupported const declaration: only top-level constant declarations are implemented",
+        ),
+        (
+            r#"<?php
+const APP_NAME = $name;
 "#,
             2,
-            1,
+            18,
+            "const declaration values only support constant expressions in the current subset",
+        ),
+        (
+            r#"<?php
+class Box {}
+const BOX = new Box();
+"#,
+            3,
+            13,
+            "const declaration values only support constant expressions in the current subset",
+        ),
+        (
+            r#"<?php
+const APP\NAME = 1;
+"#,
+            2,
+            10,
+            "unsupported const declaration: namespace-qualified constant declarations are not implemented",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported const declaration: top-level constant declarations are not implemented"
-        );
+        assert_eq!(error.message, message);
     }
 }
 
@@ -663,6 +744,19 @@ fn emit_ir_rejects_defined_until_constant_introspection_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
         error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_const_declarations_until_native_lowering_exists() {
+    let error =
+        emit_ir_source("<?php\nconst APP_NAME = \"compiler\";\necho APP_NAME;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("top-level const declarations"),
         "{}",
         error.message
     );

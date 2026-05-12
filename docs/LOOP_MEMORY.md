@@ -6954,3 +6954,61 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T15:38:01Z
 
 - Post-round 13 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T15:38:09Z
+
+- Starting round 14 at 20260512T153809Z from HEAD `06ee1cb`.
+
+## Loop Event 2026-05-12T15:38:16Z
+
+- Pre-round 14 test exit code: `0`.
+
+## Loop Event 2026-05-12T15:56:40Z
+
+- Task attempted: implemented Milestone 65 top-level
+  `const NAME = value;` declarations over the current constant-expression and
+  scalar/array value subset. The parser now accepts unqualified top-level
+  const declarations, keeps grouped/nested/namespace-aware/dynamic-value forms
+  on explicit parse diagnostics, the interpreter defines constants in source
+  order through the existing constant table, and LLVM IR/assembly lowering
+  reject const declarations explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/dynamic_features.rs`, `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone65/top_level_const_declarations.*`,
+  `tests/fixtures/runtime_errors/const_duplicate.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_const_value.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo fmt -- --check` passed;
+  `cargo test -p phpc --test dynamic_features` passed with 28 tests;
+  `cargo test -p phpc --test user_constants_cli` passed; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo test -p phpc --test
+  unsupported_dynamic_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone65` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone65` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_dynamic_features` passed with 14 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passed with 14 `.phpc-only`
+  skips; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 110 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone65/top_level_const_declarations.php` printed the
+  committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/const_duplicate.php` exited `1` with the
+  expected stable duplicate-constant diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_const_value.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 248 fixtures, 101 system PHP comparisons, and 147 `.phpc-only`
+  skips.
+- Remaining semantic gaps: grouped top-level const declarations, nested const
+  declarations, namespace-aware constants, class constants, names lexed as
+  language keywords/literals for bare reads, dynamic declaration values,
+  references/copy-on-write behavior for constant values, exact native PHP
+  error objects, and native constant lowering remain unsupported.
+- Next concrete task: implement grouped top-level
+  `const A = value, B = value;` declarations over the current
+  constant-expression and value subset with left-to-right duplicate diagnostics.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add top-level const declarations"`
+  after the full suite passes.

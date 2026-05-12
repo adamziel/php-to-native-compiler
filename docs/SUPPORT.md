@@ -66,6 +66,10 @@
   dynamic calls to `define`, `constant`, and `defined` use the same path
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
+- top-level `const NAME = value;` declarations for unqualified constant names
+  whose values use the current constant-expression subset: `null`, booleans,
+  integers, floats, strings, short and long arrays with supported keys, unary
+  expressions, and binary expressions over those values
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -160,8 +164,8 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
-- explicit parse diagnostics for unsupported top-level `const NAME = value;`
-  declarations before constant-declaration execution exists
+- explicit parse diagnostics for unsupported grouped, nested, namespace-aware,
+  or dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
@@ -565,9 +569,9 @@
   arrays, array indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
-  object property writes, global constants, `constant(...)`, `defined(...)`,
-  and `define(...)` constant definitions are rejected with explicit codegen
-  errors.
+  object property writes, global constants, top-level `const` declarations,
+  `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
+  rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -903,16 +907,19 @@
   runtime-defined table or from the exact built-in `ARRAY_FILTER_*` slice.
   `defined($name)` returns true for supported unqualified names present in that
   current table and false for supported unqualified names that are missing.
-  Duplicate definitions, redefinition of the built-in constants, non-string or
-  unsupported names, unsupported object-containing values, unknown
-  `constant(...)` names, non-string or unsupported `defined(...)` names,
-  unknown bare constants, and the legacy third `define(...)` flag fail with
-  stable diagnostics. Constant names that are lexed as language keywords or
-  literals cannot be read bare, and case-insensitive legacy constants,
-  namespace-qualified constants, extension constants, top-level
-  `const NAME = value;` declaration execution, grouped declarations, class
-  constants through `constant(...)`/`defined(...)`,
-  references/copy-on-write behavior, and native lowering are not implemented.
+  Top-level `const NAME = value;` declarations accept unqualified names and the
+  current constant-expression subset (`null`, booleans, integers, floats,
+  strings, arrays, unary expressions, and binary expressions over those
+  values). Duplicate definitions, redefinition of the built-in constants,
+  non-string or unsupported names, unsupported object-containing values,
+  unknown `constant(...)` names, non-string or unsupported `defined(...)`
+  names, unknown bare constants, and the legacy third `define(...)` flag fail
+  with stable diagnostics. Constant names that are lexed as language keywords
+  or literals cannot be read bare, and case-insensitive legacy constants,
+  namespace-qualified constants, extension constants, grouped declarations,
+  nested declarations, dynamic declaration values, class constants through
+  `constant(...)`/`defined(...)`, references/copy-on-write behavior, and native
+  lowering are not implemented.
   Array/object callables, closures, first-class callables, method calls,
   integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
   `false`, references,
@@ -1206,11 +1213,11 @@
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, and runtime-defined
   unqualified constants in the current name/value subset; unsupported
   `define(...)` names or values, case-insensitive legacy constants, extension
-  constants, namespace-qualified constants, top-level `const NAME = value;`
-  declaration execution, grouped declarations, dynamic declaration values,
-  `constant()`/`defined()` lookup for class constants, names lexed as language
-  keywords or literals for bare reads, reference/copy-on-write behavior for
-  constant values, and native lowering remain unsupported
+  constants, namespace-qualified constants, grouped or nested `const`
+  declarations, dynamic declaration values, `constant()`/`defined()` lookup
+  for class constants, names lexed as language keywords or literals for bare
+  reads, reference/copy-on-write behavior for constant values, and native
+  lowering remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

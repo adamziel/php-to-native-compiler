@@ -659,9 +659,17 @@ handled.
 
 ## Milestone 65: Global Constant Declaration Slice
 
-- [ ] Implement top-level `const NAME = value;` declarations over the current
+- [x] Implement top-level `const NAME = value;` declarations over the current
   constant-expression and value subset, including parser/interpreter support,
   duplicate and unsupported-value diagnostics, fixture CLI coverage,
   documentation, and explicit gaps for grouped declarations, namespace-aware
   constants, class constants, references/copy-on-write, dynamic values, and
   native lowering.
+
+## Milestone 66: Grouped Global Constant Declarations
+
+- [ ] Implement grouped top-level `const A = value, B = value;` declarations
+  over the current constant-expression and value subset, including
+  left-to-right duplicate diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for namespace-aware constants, class constants,
+  references/copy-on-write, dynamic values, and native lowering.

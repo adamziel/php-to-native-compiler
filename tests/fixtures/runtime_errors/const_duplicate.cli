@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/const_duplicate.php:3:1: constant APP_NAME is already defined
+--- stderr end ---

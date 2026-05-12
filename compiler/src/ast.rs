@@ -82,6 +82,11 @@ pub enum Stmt {
         targets: Vec<UnsetTarget>,
         span: Span,
     },
+    ConstDeclaration {
+        name: String,
+        value: Expr,
+        span: Span,
+    },
     Function(FunctionDecl),
     Class(ClassDecl),
     Return {

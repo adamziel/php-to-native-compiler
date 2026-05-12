@@ -447,6 +447,14 @@ Implemented:
 - Added explicit stable parse diagnostics, parser coverage, fixture coverage,
   and `phpc run` CLI snapshots for unsupported top-level `const NAME = value;`
   declarations before constant-declaration execution exists.
+- Implemented top-level `const NAME = value;` declarations over the current
+  constant-expression and scalar/array value subset. The supported slice
+  defines unqualified constants in source order, supports bare reads,
+  `constant($name)`, and `defined($name)` on declared constants, clones array
+  constant values on lookup through the existing constant table, reports
+  duplicate declarations with stable diagnostics, keeps grouped, nested,
+  namespace-aware, and dynamic-value declarations on explicit parse
+  diagnostics, and rejects native lowering explicitly.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -1206,14 +1214,26 @@ Tested:
   prints the committed `defined(...)` output for built-in constants,
   before/after runtime definitions, supported missing names, function-scope
   lookup, and string-valued dynamic calls.
+- `cargo run -p phpc -- test tests/fixtures/milestone65` passes with 1
+  top-level const declaration fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone65` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone65/top_level_const_declarations.php`
+  prints the committed output for scalar const declarations, array const
+  cloning, bare reads, `constant($name)`, `defined($name)`, and function-body
+  reads after declaration.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
-  passes with 13 unsupported dynamic feature fixtures.
+  passes with 14 unsupported dynamic feature fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`
-  passes with 13 `.phpc-only` skips.
+  passes with 14 `.phpc-only` skips.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php:2:1: unsupported const declaration: top-level constant declarations are not implemented`.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 109
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php:2:22: unsupported const declaration: grouped constant declarations are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_const_value.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_value.php:2:18: const declaration values only support constant expressions in the current subset`.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 110
   runtime error fixtures.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/const_duplicate.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/const_duplicate.php:3:1: constant APP_NAME is already defined`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php`
@@ -1981,10 +2001,10 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/milestone52/array_reduce_initial.php`
   prints the committed scalar, array, empty-array, and dynamic-call initial
   accumulator output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 109
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 110
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 245 fixtures, 100 system PHP comparisons,
-  and 145 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 248 fixtures, 101 system PHP comparisons,
+  and 147 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -2235,11 +2255,13 @@ Still fails:
   constants, plus runtime-defined constants created with `define($name,
   $value)`, introspected with `defined($name)`, and read through
   `constant($name)` or bare unqualified names for the current string-name and
-  scalar/array value subset. Other built-in constants, names lexed as language
-  keywords or literals for bare reads, case-insensitive legacy constants,
-  extension constants, namespace-qualified constants, top-level `const NAME =
-  value;` declaration execution, grouped declarations, dynamic declaration
-  values, class constants through `constant()`/`defined()`,
+  scalar/array value subset. Top-level `const NAME = value;` declarations work
+  for unqualified names and the current constant-expression/scalar-array value
+  subset. Other built-in constants, names lexed as language keywords or
+  literals for bare reads, case-insensitive legacy constants, extension
+  constants, namespace-qualified constants, grouped declarations, nested
+  declarations, dynamic declaration values, class constants through
+  `constant()`/`defined()`,
   references/copy-on-write behavior for constant values, and native lowering
   for constants are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for

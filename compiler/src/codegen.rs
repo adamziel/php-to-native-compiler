@@ -143,6 +143,10 @@ impl LlvmGenerator {
                 *span,
                 "multiple-operand unset is supported by phpc run but not LLVM IR emission yet",
             )),
+            Stmt::ConstDeclaration { span, .. } => Err(self.unsupported(
+                *span,
+                "top-level const declarations are supported by phpc run but not LLVM IR emission yet",
+            )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
@@ -682,6 +686,10 @@ impl CGenerator {
             Stmt::UnsetMany { span, .. } => Err(self.unsupported(
                 *span,
                 "multiple-operand unset is supported by phpc run but not assembly emission yet",
+            )),
+            Stmt::ConstDeclaration { span, .. } => Err(self.unsupported(
+                *span,
+                "top-level const declarations are supported by phpc run but not assembly emission yet",
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
