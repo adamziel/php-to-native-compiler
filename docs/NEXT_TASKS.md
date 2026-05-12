@@ -1179,8 +1179,18 @@ handled.
 
 ## Milestone 124: Null Coalescing Expression Boundary
 
-- [ ] Add explicit diagnostics for unsupported null coalescing expressions
+- [x] Add explicit diagnostics for unsupported null coalescing expressions
   (`$value ?? $fallback`) before null-aware expression-form branching exists,
   including parser coverage, fixture CLI coverage, documentation, and named
   gaps for undefined-variable behavior, chained coalescing, precedence,
   assignment forms, exact native error objects, and native lowering.
+
+## Milestone 125: Null Coalescing Expression Slice
+
+- [ ] Implement the first executable `??` expression slice for direct static
+  variables and direct array offsets over the current value model, including
+  undefined-variable, missing-key, null, falsey-non-null, and fallback
+  evaluation behavior, fixture CLI coverage, documentation, explicit native
+  lowering rejection, and named gaps for chained precedence interactions,
+  `??=` assignment, property offsets, dynamic lvalues, references/copy-on-write,
+  exact native error objects, and native lowering.

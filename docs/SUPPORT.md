@@ -248,6 +248,7 @@
   `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
 - explicit parse diagnostics for unsupported ternary conditional expressions
+- explicit parse diagnostics for unsupported null coalescing expressions
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface declarations and implementation, trait
   declarations, trait use inside classes, enum declarations,
@@ -1515,6 +1516,11 @@
   forms are rejected. Condition truthiness, short-ternary value reuse,
   nesting/precedence, thrown expressions inside arms, exact native error
   objects, and native lowering are not implemented.
+- Null coalescing expressions currently fail with a stable parse diagnostic
+  before null-aware expression-form branching exists. `$value ?? $fallback`,
+  chained coalescing, precedence interactions, `??=` assignment forms,
+  undefined-variable/null-aware reads, exact native error objects, and native
+  lowering are not implemented.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

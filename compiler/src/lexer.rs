@@ -82,6 +82,7 @@ pub enum TokenKind {
     Ellipsis,
     Ampersand,
     Question,
+    QuestionQuestion,
     Pipe,
     Colon,
     Bang,
@@ -174,7 +175,13 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 '&' => TokenKind::Ampersand,
-                '?' => TokenKind::Question,
+                '?' => {
+                    if self.match_char('?') {
+                        TokenKind::QuestionQuestion
+                    } else {
+                        TokenKind::Question
+                    }
+                }
                 '|' => TokenKind::Pipe,
                 ':' => {
                     if self.match_char(':') {

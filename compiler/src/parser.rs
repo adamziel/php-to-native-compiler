@@ -1036,6 +1036,9 @@ impl Parser {
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
         let expr = self.parse_equality()?;
+        if self.match_token(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
+            return Err(self.error_at(self.previous().span, unsupported_null_coalescing_message()));
+        }
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
             return Err(self.error_at(self.previous().span, unsupported_ternary_message()));
         }
@@ -1918,6 +1921,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Ellipsis => "...",
         TokenKind::Ampersand => "&",
         TokenKind::Question => "?",
+        TokenKind::QuestionQuestion => "??",
         TokenKind::Pipe => "|",
         TokenKind::Colon => ":",
         TokenKind::Bang => "!",
@@ -2031,6 +2035,10 @@ fn unsupported_match_expression_message() -> &'static str {
 
 fn unsupported_ternary_message() -> &'static str {
     "unsupported ternary expression: expression-form branching is not implemented"
+}
+
+fn unsupported_null_coalescing_message() -> &'static str {
+    "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

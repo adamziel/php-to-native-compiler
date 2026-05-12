@@ -274,6 +274,46 @@ fn emit_ir_rejects_ternary_expression_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_null_coalescing_expressions_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$value = null;\n$result = $value ?? 'fallback';\n",
+            3,
+            18,
+        ),
+        ("<?php\necho $missing ?? 'fallback';\n", 2, 15),
+        (
+            "<?php\n$first = null;\n$result = $first ?? $second ?? 'fallback';\n",
+            3,
+            18,
+        ),
+        ("<?php\n$value ??= 'fallback';\n", 2, 8),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_null_coalescing_expression_at_parse_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n$result = $value ?? 'fallback';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+    );
+}
+
+#[test]
 fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

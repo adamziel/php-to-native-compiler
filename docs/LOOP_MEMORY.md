@@ -10340,3 +10340,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:00:13Z
 
 - Post-round 14 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:00:22Z
+
+- Starting round 15 at 20260512T230022Z from HEAD `2af3957`.
+
+## Loop Event 2026-05-12T23:00:31Z
+
+- Pre-round 15 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:07:58Z
+
+- Task attempted: added an explicit null coalescing expression parse boundary
+  for `$value ?? $fallback`, chained `??`, and `??=` assignment-form syntax
+  before null-aware expression-form branching exists.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries
+  unsupported_null_coalescing` passed; `cargo test -p phpc --test
+  syntax_boundaries emit_ir_rejects_null_coalescing_expression_at_parse_boundary`
+  passed; `cargo test -p phpc --test unsupported_syntax_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 18 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 18 `.phpc-only` PHP
+  comparisons skipped; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.php`
+  exited 1 with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 347 fixtures, 123 system PHP comparisons, and 224 skips.
+- Remaining semantic gaps: null coalescing support is only an explicit parse
+  boundary. Undefined-variable behavior, missing-key/null-aware reads, chained
+  evaluation, precedence interactions, `??=` assignment execution, exact native
+  error objects, and native lowering remain unsupported.
+- Next concrete task: implement the first executable `??` expression slice for
+  direct static variables and direct array offsets over the current value
+  model.
+- Known-good tag: not created; this is a narrow syntax boundary, not a major
+  verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add null coalescing boundary"`.

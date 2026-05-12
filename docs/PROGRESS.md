@@ -2707,8 +2707,18 @@ Still fails:
   rejects the same syntax at parse time. Condition truthiness, short-ternary
   value reuse, nesting/precedence, thrown expressions inside arms, exact native
   error objects, and native lowering remain unsupported.
+- Added explicit parse diagnostics for unsupported null coalescing expressions
+  before null-aware expression-form branching exists. The lexer now tokenizes
+  `??` distinctly from ternary `?`, the parser rejects `$value ?? $fallback`,
+  chained coalescing, and `??=` assignment-form syntax at the `??` token with a
+  stable diagnostic, fixture and CLI snapshot coverage record the behavior, and
+  native emission rejects the same syntax at parse time. Undefined-variable
+  behavior, null-aware reads, chained evaluation, precedence, `??=` assignment
+  execution, exact native error objects, and native lowering remain
+  unsupported.
 
 Next:
 
-- Add an explicit diagnostic for unsupported null coalescing expressions before
-  null-aware expression-form branching exists.
+- Implement the first executable null coalescing expression slice for direct
+  static variables and direct array offsets, with undefined/null behavior
+  documented before adding broader expression-form branching.

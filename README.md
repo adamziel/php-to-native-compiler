@@ -164,8 +164,8 @@ subset:
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
   `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
-  conditional expressions, object method calls, dynamic property names,
-  anonymous classes,
+  conditional expressions, unsupported null coalescing expressions, object
+  method calls, dynamic property names, anonymous classes,
   unsupported class forms, `abstract`/`final`/`readonly` class modifiers,
   unsupported `abstract`/`final`/`readonly` class member modifiers,
   unsupported typed property declarations, unsupported property defaults,
