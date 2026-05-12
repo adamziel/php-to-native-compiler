@@ -10781,3 +10781,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Known-good tag: not created; this is a narrow syntax-boundary checkpoint,
   not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "syntax: add compound assignment boundary"`.
+
+## Loop Event 2026-05-12T23:56:21Z
+
+- Codex round 22 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T235042Z-22.log`.
+
+## Loop Event 2026-05-12T23:56:31Z
+
+- Post-round 22 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:56:31Z
+
+- Post-round 22 tests passed; running checkpoint for this round.
