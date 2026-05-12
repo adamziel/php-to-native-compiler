@@ -159,8 +159,14 @@ Implemented:
   properties in the current object value model. The supported slice checks
   direct object-variable operands, treats null slots, missing property names,
   undefined target variables, and non-object target variables as false, supports
-  multiple `isset` operands, and keeps array offsets, dynamic property names,
-  non-public property operands, complex lvalues, and method dispatch
+  multiple `isset` operands, and keeps dynamic property names, non-public
+  property operands, complex lvalues, and method dispatch
+  unsupported.
+- Added direct `isset($array[$key])` support for array offsets on direct array
+  variables. The supported slice checks integer/string keyed offsets, treats
+  existing non-null slots as true, treats null slots, missing keys, undefined
+  target variables, and non-array target variables as false, supports multiple
+  `isset` operands, and keeps nested/complex offset operands explicitly
   unsupported.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
   snapshots for unsupported static property access, static method calls, and
@@ -243,6 +249,10 @@ Tested:
   snapshot test covering 8 unsupported syntax fixtures.
 - `cargo test -p phpc --test loop_control_cli` passes with 1 CLI snapshot test
   covering `break;` and `continue;` execution for innermost `while` loops.
+- `cargo test -p phpc --test array_isset` passes with direct array-offset
+  `isset` behavior and unsupported complex-lvalue coverage.
+- `cargo test -p phpc --test array_refinements_cli` passes with 1 CLI snapshot
+  test covering the Milestone 7 direct array-offset `isset` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
@@ -262,9 +272,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_continue_until_native_loop_control_lowering_exists`
   passes with rejection coverage for `continue` statements before native
   loop-control lowering exists.
-- `cargo run -p phpc -- test` passes with 82 fixture tests.
+- `cargo run -p phpc -- test` passes with 84 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 30 fixtures and skipping 52 `.phpc-only` fixtures.
+  installed, comparing 31 fixtures and skipping 53 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -282,6 +292,10 @@ Tested:
   loop-control fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone6` passes
   with 2 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/milestone7` passes with 1
+  array-refinement fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone7` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -316,7 +330,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 20
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 21
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -400,6 +414,8 @@ Tested:
   prints `0,1,2,after:2`.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/continue_while.php`
   prints `1,3,4,5,after:5`.
+- `cargo run -p phpc -- run tests/fixtures/milestone7/array_offset_isset.php`
+  prints the committed direct array-offset `isset` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/break_outside_loop.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/break_outside_loop.php:2:1: invalid loop control: break cannot be used outside a loop`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/continue_outside_loop.php`
@@ -477,7 +493,9 @@ Still fails:
   float key coercion rules.
   Missing array-key reads
   fail with a stable runtime error instead of PHP's
-  warning-and-`null` recovery. Writes to existing non-array scalar variables
+  warning-and-`null` recovery. Direct array-offset `isset` is limited to direct
+  variable targets and integer/string keys; nested/complex offset operands
+  remain unsupported. Writes to existing non-array scalar variables
   other than `null` are rejected instead of following PHP's full automatic
   conversion behavior. Negative-key auto-index behavior is not claimed beyond
   the current non-negative allocator, and arrays still reject native lowering.
@@ -538,11 +556,11 @@ Still fails:
   enforcement for non-public properties, nested and conditional classes,
   inheritance, interfaces, traits, typed/default/multiple properties, static
   property storage, magic methods, namespaces/autoloading, object identity/handle
-  aliasing, array-offset/complex `isset` operands, object comparisons,
+  aliasing, complex `isset` operands, object comparisons,
   object-to-string conversion, object callables, reflection, and native lowering
   are not implemented.
 
 Next:
 
-- Implement direct `isset($array[$key])` support for array offset operands while
-  keeping complex lvalues explicitly unsupported.
+- Implement `array_key_exists($key, $array)` for the current ordered array value
+  model, with null-value contrast against `isset`.

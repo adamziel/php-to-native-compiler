@@ -107,6 +107,10 @@ handled.
 
 ## Milestone 7: Builtin and Array Refinements
 
-- [ ] Implement direct `isset($array[$key])` support for array offset operands,
+- [x] Implement direct `isset($array[$key])` support for array offset operands,
   with tests for existing keys, null values, missing keys, undefined arrays, and
   non-array targets while keeping complex lvalues explicitly unsupported.
+- [ ] Implement `array_key_exists($key, $array)` for the current ordered array
+  value model, including null-value contrast against `isset`, invalid key and
+  non-array diagnostics, fixture CLI coverage, and docs for unsupported key
+  coercions.

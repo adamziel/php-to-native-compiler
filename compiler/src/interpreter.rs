@@ -695,6 +695,11 @@ impl Interpreter {
     ) -> CompileResult<bool> {
         match arg {
             Expr::Variable(name, _) => Ok(caller_scope.is_set_static(name)),
+            Expr::Index {
+                target,
+                index,
+                ..
+            } => self.is_direct_array_offset_set(target, index, caller_scope),
             Expr::Property {
                 target,
                 property,
@@ -704,9 +709,34 @@ impl Interpreter {
                 arg.span(),
                 RuntimeError::unsupported_call(
                     "isset()",
-                    "only direct variables and direct object property operands are supported",
+                    "only direct variables, direct array offset operands, and direct object property operands are supported",
                 ),
             )),
+        }
+    }
+
+    fn is_direct_array_offset_set(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Expr::Variable(name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "isset()",
+                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                ),
+            ));
+        };
+
+        match caller_scope.read_named(name).cloned() {
+            Some(Value::Array(array)) => {
+                let key = self.evaluate_array_key(index, caller_scope)?;
+                Ok(matches!(array.get(key), Some(value) if !matches!(value, Value::Null)))
+            }
+            Some(_) | None => Ok(false),
         }
     }
 
@@ -722,7 +752,7 @@ impl Interpreter {
                 target.span(),
                 RuntimeError::unsupported_call(
                     "isset()",
-                    "only direct variables and direct object property operands are supported",
+                    "only direct variables, direct array offset operands, and direct object property operands are supported",
                 ),
             ));
         };

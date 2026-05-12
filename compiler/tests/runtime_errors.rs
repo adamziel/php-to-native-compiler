@@ -237,14 +237,14 @@ fn isset_can_check_undefined_variables_without_reading_them() {
 }
 
 #[test]
-fn isset_array_offsets_remain_explicitly_unsupported() {
-    let error = runtime_error("<?php\n$items = [1];\necho isset($items[0]);\n");
+fn complex_isset_operands_remain_explicitly_unsupported() {
+    let error = runtime_error("<?php\n$items = [[1]];\necho isset($items[0][0]);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call isset(): only direct variables and direct object property operands are supported"
+        "unsupported call isset(): only direct variables, direct array offset operands, and direct object property operands are supported"
     );
 }
 

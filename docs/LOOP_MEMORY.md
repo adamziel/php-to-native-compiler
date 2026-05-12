@@ -1819,3 +1819,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:37:04Z
 
 - Post-round 30 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:37:06Z
+
+- Starting round 31 at 20260512T013706Z from HEAD `15f3226`.
+
+## Loop Event 2026-05-12T01:37:08Z
+
+- Pre-round 31 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:42:25Z
+
+- Task attempted: implemented direct `isset($array[$key])` support for direct
+  array-variable offset operands. Existing non-null slots return true, null
+  slots return false, missing keys return false, undefined array variables
+  return false, and non-array targets return false. Nested/complex array-offset
+  `isset` operands still fail with a stable unsupported-call diagnostic.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_isset.rs`, `compiler/tests/array_refinements_cli.rs`,
+  `compiler/tests/runtime_errors.rs`,
+  `tests/fixtures/milestone7/array_offset_isset.*`,
+  `tests/fixtures/runtime_errors/unsupported_isset_complex_lvalue.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test array_isset` passed; `cargo test -p phpc --test runtime_errors
+  complex_isset_operands_remain_explicitly_unsupported` passed; `cargo test -p
+  phpc --test array_refinements_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone7` passed with 1 fixture; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone7` passed with 1 system PHP comparison;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 21
+  fixtures; `cargo test -p phpc --test runtime_error_cli` passed; `cargo run
+  -p phpc -- run tests/fixtures/milestone7/array_offset_isset.php` printed the
+  committed direct array-offset `isset` output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/unsupported_isset_complex_lvalue.php` exited
+  `1` with the expected stable diagnostic; `tools/run-tests.sh` passed with 84
+  fixtures, 31 system PHP comparisons, and 53 `.phpc-only` skips.
+- Remaining semantic gaps: direct array-offset `isset` is limited to direct
+  variable targets and integer/string keys; nested offsets, append offset
+  operands, string offset access, complex lvalues, unsupported key coercions,
+  references, copy-on-write behavior, warning/notice recovery, dynamic access
+  to `isset`, and native lowering are still unsupported.
+- Next concrete task: implement `array_key_exists($key, $array)` for the
+  current ordered array value model, including null-value contrast against
+  `isset`.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: support direct offset isset"`
+  after the full suite passes.

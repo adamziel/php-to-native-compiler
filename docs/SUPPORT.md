@@ -46,6 +46,8 @@
 - array indexed reads: `$array[$key]` for existing integer/string keyed array
   entries
 - direct variable array writes: `$array[$key] = ...` and `$array[] = ...`
+- `isset($array[$key])` for direct array-variable offset operands over the
+  current integer/string key subset
 - builtins for the documented subset: `strlen`, `isset`, `count`, `var_dump`,
   and `print_r`; `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
@@ -156,9 +158,12 @@
   writes append at the next non-negative integer key. Direct variable offset
   writes update existing array variables, and writes to undefined or `null`
   variables materialize an array. Existing-key reads return the stored value.
-  Missing-key reads fail with a stable runtime error instead of PHP's
-  warning-and-`null` recovery. Array truthiness, `count`, `print_r`, and
-  `var_dump` are implemented for this ordered value model.
+  Direct `isset($array[$key])` checks return true for existing non-null slots
+  and false for null slots, missing keys, undefined array variables, and
+  non-array target variables. Missing-key reads still fail with a stable
+  runtime error instead of PHP's warning-and-`null` recovery. Array truthiness,
+  `count`, `print_r`, and `var_dump` are implemented for this ordered value
+  model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -231,13 +236,15 @@
   documented scalar/array/object subset. `print_r` can also render the current
   minimal object values. `strlen` remains scalar-only and rejects arrays and
   objects. `count` accepts arrays only. `isset` supports direct variable
-  operands and direct public object-property operands such as
-  `isset($object->name)`; it can safely check undefined variables and undefined
-  object-property targets. Array offsets, dynamic property names, non-public
-  property operands, complex lvalues, and expression operands remain
-  unsupported. Because `isset` is modeled as a special static form, it is not
-  available through dynamic function lookup. PHP's complete warning behavior is
-  not implemented.
+  operands, direct array offset operands such as `isset($array[$key])`, and
+  direct public object-property operands such as `isset($object->name)`; it can
+  safely check undefined variables, missing/null array slots, undefined array
+  variables, non-array array targets, and undefined object-property targets.
+  Nested array offsets, append offset operands, dynamic property names,
+  non-public property operands, complex lvalues, and general expression
+  operands remain unsupported. Because `isset` is modeled as a special static
+  form, it is not available through dynamic function lookup. PHP's complete
+  warning behavior is not implemented.
 - Object/class gaps: nested and conditional class declarations, method calls,
   `$this`, constructor execution, constructor arguments, inheritance,
   interfaces, traits, abstract/final/readonly modifiers, typed properties,
@@ -260,10 +267,11 @@
   syntax, and direct `switch (...)` syntax are rejected with stable parse
   diagnostics; executing long array literals, variable/offset/property removal,
   iteration, and switch/case control flow is not implemented.
-  Nested indexed writes, complex assignment lvalues, `$array[]` as a read
-  expression, string offset access, `for`/`foreach`/`do ... while` iteration
-  behavior, `switch` case matching/fallthrough/default handling, destructuring,
-  spread, references, copy-on-write containers, and object/resource keys are not
+  Nested indexed writes, complex assignment lvalues, nested/complex
+  `isset(...)` array offset operands, `$array[]` as a read expression, string
+  offset access, `for`/`foreach`/`do ... while` iteration behavior, `switch`
+  case matching/fallthrough/default handling, destructuring, spread,
+  references, copy-on-write containers, and object/resource keys are not
   implemented. Array
   keys are currently limited to values that evaluate to integers or strings;
   PHP's boolean, null, float, object, and resource key coercions are rejected

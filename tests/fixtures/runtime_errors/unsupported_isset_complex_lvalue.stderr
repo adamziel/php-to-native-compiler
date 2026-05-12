@@ -1,0 +1,2 @@
+runtime error at 3:12: unsupported call isset(): only direct variables, direct array offset operands, and direct object property operands are supported
+

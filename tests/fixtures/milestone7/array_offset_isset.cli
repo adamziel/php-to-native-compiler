@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+present:set
+null:unset
+missing:unset
+undefined:unset
+scalar:unset
+nullable:unset
+multi:set
+multi-null:unset
+int-normalized:set--- stdout end ---
+stderr:
+--- stderr end ---
