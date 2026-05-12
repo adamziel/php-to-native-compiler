@@ -63,6 +63,48 @@ echo ($number["any"] ?? "scalar-target-fallback");
 }
 
 #[test]
+fn null_coalescing_handles_direct_object_properties() {
+    let source = r#"<?php
+class Box {
+    public $value;
+    public $nullable;
+    public $flag;
+    public $zero;
+    public $empty;
+}
+
+$box = new Box();
+$box->value = "object-value";
+$box->flag = false;
+$box->zero = 0;
+$box->empty = "";
+
+echo ($box->value ?? $undefined_object_fallback), "\n";
+echo ($box->nullable ?? "null-property-fallback"), "\n";
+echo ($box->missing ?? "missing-property-fallback"), "\n";
+if (($box->flag ?? true) === false) {
+    echo "object-false-kept\n";
+}
+if (($box->zero ?? 9) === 0) {
+    echo "object-zero-kept\n";
+}
+if (($box->empty ?? "fallback") === "") {
+    echo "object-empty-string-kept\n";
+}
+echo ($missing_box->value ?? "undefined-object-fallback"), "\n";
+$number = 42;
+echo ($number->value ?? "non-object-fallback");
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object-value\nnull-property-fallback\nmissing-property-fallback\nobject-false-kept\nobject-zero-kept\nobject-empty-string-kept\nundefined-object-fallback\nnon-object-fallback"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn complex_null_coalescing_left_operands_remain_explicitly_unsupported() {
     let error = runtime_error("<?php\n$items = [[1]];\necho $items[0][0] ?? 'fallback';\n");
 
@@ -70,7 +112,7 @@ fn complex_null_coalescing_left_operands_remain_explicitly_unsupported() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call ??: left operand must be a direct variable or direct array offset in the current subset"
+        "unsupported call ??: left operand must be a direct variable, direct array offset, or direct object property in the current subset"
     );
 }
 
@@ -83,6 +125,19 @@ fn emit_ir_rejects_null_coalescing_until_native_lowering_exists() {
     assert_eq!(error.column, 10);
     assert_eq!(
         error.message,
-        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset subset but not LLVM IR emission yet"
+        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_null_coalescing_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value = $box->name ?? 'fallback';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet"
     );
 }

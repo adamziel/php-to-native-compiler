@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+object-value
+null-property-fallback
+missing-property-fallback
+object-false-kept
+object-zero-kept
+object-empty-string-kept
+undefined-object-fallback
+non-object-fallback--- stdout end ---
+stderr:
+--- stderr end ---

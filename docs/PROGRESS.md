@@ -2723,9 +2723,19 @@ Still fails:
   Complex or nested left operands, object-property operands, unparenthesized
   chained coalescing, `??=` assignment execution, references/copy-on-write,
   exact native error objects, and native lowering remain unsupported.
+- Extended null coalescing with direct public object-property operands over
+  the current minimal object model. Missing public properties, undefined target
+  variables, non-object target variables, and null property slots evaluate the
+  fallback; falsey non-null property values such as `false`, `0`, and `""` are
+  returned without evaluating the fallback. Fixture and CLI snapshot coverage
+  record the behavior, and LLVM IR emission still rejects `??` explicitly until
+  native null-aware lowering exists. Complex/nested left operands, dynamic
+  property names, non-public visibility context, magic methods, `??=`,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain unsupported.
 
 Next:
 
-- Implement `??` for direct public object-property operands over the current
-  minimal object value model, or keep that property-offset boundary explicit
+- Pick the next small syntax or value-model gap from `docs/NEXT_TASKS.md`,
+  keeping unsupported edges explicit until executable behavior is tested
   if the object model is not ready for null-aware property reads.

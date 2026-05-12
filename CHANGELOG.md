@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Extended `??` to direct public object-property operands, with fallback
+  behavior for missing properties, undefined/non-object targets, and null
+  property slots, preservation of falsey non-null property values, fixture/CLI
+  coverage, documentation, and native-codegen rejection.
 - Implemented the first executable `??` slice for direct static variables and
   direct array offsets, with isset-like fallback behavior for undefined,
   missing, and null values, lazy fallback evaluation for present non-null

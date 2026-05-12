@@ -8,8 +8,10 @@ fn null_coalescing_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone125");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let mut fixtures = cli_snapshot_fixtures(&workspace_root.join("tests/fixtures/milestone125"));
+    fixtures.extend(cli_snapshot_fixtures(
+        &workspace_root.join("tests/fixtures/milestone126"),
+    ));
 
     fixtures.sort();
     assert!(
@@ -22,7 +24,11 @@ fn null_coalescing_cli_snapshots_match_committed_outputs() {
             .file_name()
             .and_then(|value| value.to_str())
             .expect("null-coalescing fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone125/{file_name}");
+        let relative_dir = fixture
+            .parent()
+            .and_then(|path| path.strip_prefix(workspace_root).ok())
+            .expect("fixture lives under workspace root");
+        let fixture_arg = format!("{}/{}", relative_dir.display(), file_name);
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])

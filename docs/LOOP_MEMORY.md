@@ -10447,3 +10447,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:15:26Z
 
 - Post-round 16 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:15:37Z
+
+- Starting round 17 at 20260512T231537Z from HEAD `73cb0c1`.
+
+## Loop Event 2026-05-12T23:15:47Z
+
+- Pre-round 17 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:28:49Z
+
+- Task attempted: extended null coalescing `??` to direct public object
+  property operands over the current minimal object value model.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/null_coalescing.rs`,
+  `compiler/tests/null_coalescing_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone126/object_property_null_coalescing.php`,
+  `tests/fixtures/milestone126/object_property_null_coalescing.stdout`,
+  `tests/fixtures/milestone126/object_property_null_coalescing.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test null_coalescing` passed;
+  `cargo test -p phpc --test null_coalescing_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone126` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone126` passed with 1 system
+  PHP comparison; `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_null_coalescing_expression_at_codegen_boundary` passed;
+  `tools/run-tests.sh` passed with 349 fixtures, 125 system PHP comparisons,
+  and 224 skips.
+- Remaining semantic gaps: null coalescing still supports only direct static
+  variables, direct array-variable offsets, and direct object-variable public
+  properties. Complex or nested left operands, dynamic property names,
+  non-public visibility context, magic methods, unparenthesized chained
+  coalescing, `??=` assignment execution, references/copy-on-write, exact
+  native error objects, and native lowering remain unsupported.
+- Next concrete task: add the next honest `??=` assignment path, starting with
+  either an explicit stable boundary or a direct-variable executable slice.
+- Known-good tag: not created; this is a narrow expression follow-up, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add object property null coalescing"`.

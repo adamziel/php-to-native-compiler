@@ -1588,6 +1588,25 @@ impl PhpObject {
         Ok(!matches!(property.value, Value::Null))
     }
 
+    pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<&Value>> {
+        let Some(property) = self
+            .properties
+            .iter()
+            .find(|property| property.name == name)
+        else {
+            return Ok(None);
+        };
+
+        if property.visibility != Visibility::Public {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires visibility enforcement, which is not implemented",
+                self.class_name, name
+            )));
+        }
+
+        Ok(Some(&property.value))
+    }
+
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
         let Some(property) = self
             .properties

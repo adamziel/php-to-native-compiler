@@ -303,7 +303,7 @@ fn emit_ir_rejects_null_coalescing_expression_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset subset but not LLVM IR emission yet"
+        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet"
     );
 }
 

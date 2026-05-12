@@ -789,12 +789,19 @@ impl Interpreter {
             Expr::Index { target, index, .. } => {
                 self.evaluate_direct_array_offset_for_null_coalescing(target, index, scope)?
             }
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.evaluate_direct_object_property_for_null_coalescing(
+                target, property, *span, scope,
+            )?,
             _ => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "??",
-                        "left operand must be a direct variable or direct array offset in the current subset",
+                        "left operand must be a direct variable, direct array offset, or direct object property in the current subset",
                     ),
                 ));
             }
@@ -817,7 +824,7 @@ impl Interpreter {
                 target.span(),
                 RuntimeError::unsupported_call(
                     "??",
-                    "left operand must be a direct variable or direct array offset in the current subset",
+                    "left operand must be a direct variable, direct array offset, or direct object property in the current subset",
                 ),
             ));
         };
@@ -828,6 +835,32 @@ impl Interpreter {
                 .get(key)
                 .cloned()
                 .filter(|value| !matches!(value, Value::Null))),
+            Some(_) | None => Ok(None),
+        }
+    }
+
+    fn evaluate_direct_object_property_for_null_coalescing(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let Expr::Variable(name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "??",
+                    "left operand must be a direct variable, direct array offset, or direct object property in the current subset",
+                ),
+            ));
+        };
+
+        match scope.read_named(name) {
+            Some(Value::Object(object)) => object
+                .read_public_property_for_isset(property)
+                .map(|value| value.cloned().filter(|value| !matches!(value, Value::Null)))
+                .map_err(|error| runtime_error(span, error)),
             Some(_) | None => Ok(None),
         }
     }

@@ -238,7 +238,7 @@ impl LlvmGenerator {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.unsupported(
                         *span,
-                        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset subset but not LLVM IR emission yet",
+                        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet",
                     ));
                 }
                 let left = self.emit_expr(left)?;
@@ -292,7 +292,7 @@ impl LlvmGenerator {
             )),
             BinaryOp::NullCoalesce => Err(self.unsupported(
                 span,
-                "null coalescing expressions are supported by phpc run for the current direct variable/array-offset subset but not LLVM IR emission yet",
+                "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet",
             )),
         }
     }
@@ -802,7 +802,7 @@ impl CGenerator {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.unsupported(
                         *span,
-                        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset subset but not assembly emission yet",
+                        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not assembly emission yet",
                     ));
                 }
                 let left = self.emit_expr(left)?;
@@ -856,7 +856,7 @@ impl CGenerator {
             )),
             BinaryOp::NullCoalesce => Err(self.unsupported(
                 span,
-                "null coalescing expressions are supported by phpc run for the current direct variable/array-offset subset but not assembly emission yet",
+                "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not assembly emission yet",
             )),
         }
     }

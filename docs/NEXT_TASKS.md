@@ -1197,10 +1197,19 @@ handled.
 
 ## Milestone 126: Null Coalescing Property Follow-up
 
-- [ ] Implement `??` for direct public object-property operands over the
+- [x] Implement `??` for direct public object-property operands over the
   current minimal object value model, including null, falsey-non-null,
   missing-property, undefined-variable, and non-object target behavior, fixture
   CLI coverage, documentation, explicit native-codegen rejection, and named
   gaps for dynamic property names, non-public visibility context, magic
   methods, references/copy-on-write, exact native error objects, `??=`, and
   native lowering.
+
+## Milestone 127: Null Coalescing Assignment Boundary
+
+- [ ] Add the next honest `??=` assignment path: either a stable explicit
+  diagnostic that remains accurate after `??` expression support, or a first
+  executable direct-variable slice with lazy fallback assignment behavior,
+  fixture CLI coverage, documentation, native-codegen rejection, and named
+  gaps for array offsets, object properties, dynamic lvalues,
+  references/copy-on-write, exact native error objects, and native lowering.

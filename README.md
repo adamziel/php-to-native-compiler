@@ -79,8 +79,8 @@ subset:
 - direct `empty($name)`, `empty($array[$key])`, and
   `empty($object->publicProperty)` checks for the documented
   variable/array-offset/public-property subset
-- null coalescing `??` for direct static variables and direct array offsets
-  over the current value model
+- null coalescing `??` for direct static variables, direct array offsets, and
+  direct public object properties over the current value model
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
   `empty`, `count`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, including loose and strict
