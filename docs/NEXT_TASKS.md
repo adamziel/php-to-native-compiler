@@ -642,9 +642,17 @@ handled.
 
 ## Milestone 63: Constant Introspection Builtin
 
-- [ ] Implement `defined($name)` over the current built-in/runtime-defined
+- [x] Implement `defined($name)` over the current built-in/runtime-defined
   constant table, including string-name validation, true/false behavior for
   existing and missing constants, string-valued dynamic-call availability,
   fixture CLI coverage, documentation, and explicit gaps for namespaces,
   extension constants, class constants, case-insensitive legacy constants,
   references/copy-on-write, and native lowering.
+
+## Milestone 64: Global Constant Declaration Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported top-level `const NAME =
+  value;` declarations before implementing constant declarations, including
+  parser coverage, fixture CLI coverage, documentation, and named gaps for
+  grouped declarations, namespace-aware constants, class constants, dynamic
+  values, and native lowering.

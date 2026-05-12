@@ -56,8 +56,9 @@ subset:
   written by static property name and checked with `isset($object->name)`
 - narrow global constant resolution: exact uppercase `ARRAY_FILTER_USE_KEY` and
   `ARRAY_FILTER_USE_BOTH` work as bare built-in constants, and
-  `define($name, $value)`, `constant($name)`, and bare user-constant reads
-  support unqualified names over the documented scalar/array value subset
+  `define($name, $value)`, `constant($name)`, `defined($name)`, and bare
+  user-constant reads support unqualified names over the documented
+  scalar/array value subset
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -99,7 +100,7 @@ subset:
   and with string-valued value-only callbacks, including explicit integer mode
   flag `0` for those value-only paths, plus string-valued key-only callbacks
   through integer mode flag `2` and string-valued value/key callbacks through
-  integer mode flag `1`, `define` and `constant` over the documented
+  integer mode flag `1`, `define`, `constant`, and `defined` over the documented
   runtime-defined/built-in constant name slice, `array_map` over the current
   one-array null-callback identity, variadic null-callback zip, and variadic
   string-callback subset with one-array key preservation and multi-array
@@ -109,8 +110,9 @@ subset:
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, duplicate or unsupported `define(...)` constant
-  definitions, unknown bare global constants outside the current
-  built-in/runtime-defined slice such as `PHP_VERSION`,
+  definitions, unsupported `defined(...)` name arguments, unknown bare global
+  constants outside the current built-in/runtime-defined slice such as
+  `PHP_VERSION`,
   invalid `break`/`continue` outside a loop, and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,

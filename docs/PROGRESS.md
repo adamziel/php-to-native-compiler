@@ -438,6 +438,12 @@ Implemented:
   `constant($name)`, keeps exact built-in `ARRAY_FILTER_*` bare constants on
   that path, clones array values on lookup, works inside user functions, and
   reports unknown bare constants with a stable runtime diagnostic.
+- Added `defined($name)` support over the current built-in/runtime-defined
+  constant table. The supported slice accepts the same unqualified string-name
+  subset as `constant($name)`, returns true for current built-in or
+  runtime-defined names, returns false for supported missing names, works
+  through string-valued dynamic calls to `defined`, and has stable diagnostics
+  for non-string or unsupported names.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -758,13 +764,14 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 4 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with 21 tests covering
+- `cargo test -p phpc --test dynamic_features` passes with 24 tests covering
   static symbol-table behavior, dynamic function lookup behavior,
-  runtime-defined constant and bare constant behavior, and unsupported
-  variable-variable/include/require/eval/namespace/use and namespace-qualified
-  name diagnostic coverage.
+  runtime-defined constant, bare constant, and `defined(...)` behavior, and
+  unsupported variable-variable/include/require/eval/namespace/use and
+  namespace-qualified name diagnostic coverage.
 - `cargo test -p phpc --test user_constants_cli` passes with 1 CLI snapshot
-  test covering the Milestone 61 and Milestone 62 user constant fixtures.
+  test covering the Milestone 61, Milestone 62, and Milestone 63 user constant
+  fixtures.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
   CLI snapshot test covering 12 unsupported variable-variable,
   include/require, eval, namespace, use, and namespace-qualified name fixtures.
@@ -1186,7 +1193,15 @@ Tested:
   prints the committed bare constant output for scalar values, cloned array
   constants, function-scope lookup, built-in constants, and string-valued
   dynamic `define` calls.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 107
+- `cargo run -p phpc -- test tests/fixtures/milestone63` passes with 1
+  `defined(...)` constant-introspection fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone63` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone63/defined_constants.php`
+  prints the committed `defined(...)` output for built-in constants,
+  before/after runtime definitions, supported missing names, function-scope
+  lookup, and string-valued dynamic calls.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 109
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -1196,6 +1211,10 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only int and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/define_duplicate.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/define_duplicate.php:3:1: constant APP_NAME is already defined`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/defined_non_string.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/defined_non_string.php:2:6: unsupported call defined(): name argument must be string in the current subset, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/defined_unsupported_name.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/defined_unsupported_name.php:2:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_invalid_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3:6: invalid array key: bool keys are not supported; only int and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_non_array.php`
@@ -1951,10 +1970,10 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/milestone52/array_reduce_initial.php`
   prints the committed scalar, array, empty-array, and dynamic-call initial
   accumulator output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 107
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 109
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 241 fixtures, 99 system PHP comparisons,
-  and 142 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 244 fixtures, 100 system PHP comparisons,
+  and 144 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -2203,13 +2222,13 @@ Still fails:
 - Global constant resolution is limited to exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` as bare built-in
   constants, plus runtime-defined constants created with `define($name,
-  $value)` and read through `constant($name)` or bare unqualified names for
-  the current string-name and scalar/array value subset. Other built-in
-  constants, names lexed as language keywords or literals for bare reads,
-  case-insensitive legacy constants, extension constants, namespace-qualified
-  constants, class constants through `constant()`, references/copy-on-write
-  behavior for constant values, and native lowering for constants are not
-  implemented.
+  $value)`, introspected with `defined($name)`, and read through
+  `constant($name)` or bare unqualified names for the current string-name and
+  scalar/array value subset. Other built-in constants, names lexed as language
+  keywords or literals for bare reads, case-insensitive legacy constants,
+  extension constants, namespace-qualified constants, class constants through
+  `constant()`/`defined()`, references/copy-on-write behavior for constant
+  values, and native lowering for constants are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct

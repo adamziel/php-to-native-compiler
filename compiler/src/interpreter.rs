@@ -132,6 +132,10 @@ impl ConstantTable {
             .cloned()
             .or_else(|| builtin_global_constant_value(name).map(Value::Int))
     }
+
+    fn contains(&self, name: &str) -> bool {
+        self.values.contains_key(name) || builtin_global_constant_value(name).is_some()
+    }
 }
 
 enum Flow {
@@ -1025,6 +1029,33 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "constant()",
+                            format!(
+                                "name argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
+            "defined" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(name) if is_supported_runtime_constant_name(name) => {
+                        Ok(Value::Bool(self.constants.contains(name)))
+                    }
+                    Value::String(name) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "defined()",
+                            format!(
+                                "constant name must be a non-empty unqualified identifier in the current subset, got {name}"
+                            ),
+                        ),
+                    )),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "defined()",
                             format!(
                                 "name argument must be string in the current subset, got {}",
                                 other.type_name()
@@ -2491,6 +2522,7 @@ fn is_builtin(name: &str) -> bool {
             | "strlen"
             | "count"
             | "constant"
+            | "defined"
             | "array_key_exists"
             | "array_values"
             | "array_key_first"

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/defined_non_string.php:2:6: unsupported call defined(): name argument must be string in the current subset, got int
+--- stderr end ---

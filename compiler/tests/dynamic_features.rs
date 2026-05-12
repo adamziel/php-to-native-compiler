@@ -434,6 +434,58 @@ echo constant(42);
 }
 
 #[test]
+fn defined_builtin_introspects_current_constant_table() {
+    let execution = run_source(
+        r#"<?php
+echo defined("ARRAY_FILTER_USE_KEY"), "|", defined("ARRAY_FILTER_USE_BOTH"), "\n";
+echo defined("APP_NAME"), "|", defined("MISSING_CONST"), "\n";
+define("APP_NAME", "compiler");
+echo defined("APP_NAME"), "|", defined("MISSING_CONST"), "\n";
+$call = "defined";
+echo $call("APP_NAME"), "|", $call("MISSING_CONST"), "\n";
+
+function check_defined_inside_function() {
+    define("INSIDE_DEFINED", 1);
+    return defined("INSIDE_DEFINED") . ":" . defined("APP_NAME");
+}
+
+echo check_defined_inside_function(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|1\n|\n1|\n1|\n1:1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn defined_builtin_requires_string_names_and_supported_names() {
+    let non_string = runtime_error(
+        r#"<?php
+echo defined(42);
+"#,
+    );
+    assert_eq!(non_string.line, 2);
+    assert_eq!(non_string.column, 6);
+    assert_eq!(
+        non_string.message,
+        "unsupported call defined(): name argument must be string in the current subset, got int"
+    );
+
+    let bad_name = runtime_error(
+        r#"<?php
+echo defined("123BAD");
+"#,
+    );
+    assert_eq!(bad_name.line, 2);
+    assert_eq!(bad_name.column, 6);
+    assert_eq!(
+        bad_name.message,
+        "unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD"
+    );
+}
+
+#[test]
 fn define_builtin_populates_runtime_constant_table() {
     let execution = run_source(
         r#"<?php
@@ -572,4 +624,16 @@ fn emit_ir_rejects_define_until_user_constant_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(error.message.contains("define()"), "{}", error.message);
+}
+
+#[test]
+fn emit_ir_rejects_defined_until_constant_introspection_lowering_exists() {
+    let error = emit_ir_source("<?php\necho defined(\"APP_NAME\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
 }

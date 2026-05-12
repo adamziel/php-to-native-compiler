@@ -105,9 +105,9 @@ Dynamic PHP features will be implemented as runtime fallback zones:
 - global constants use a narrow interpreter constant table: exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` are available as bare
   built-in constants, while runtime-defined constants can be created with
-  `define($name, $value)` and read with `constant($name)` or a bare
-  unqualified constant name for the documented string-name and scalar/array
-  value subset
+  `define($name, $value)`, queried with `defined($name)`, and read with
+  `constant($name)` or a bare unqualified constant name for the documented
+  string-name and scalar/array value subset
 
 Only the string-valued dynamic function lookup slice is executable today.
 Variable-variable execution, include/require execution, and `eval` remain design
@@ -119,8 +119,8 @@ namespace/autoload-aware callable resolution are still outside the implemented
 dynamic-call subset. Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, class constants through
-`constant(...)`, references/copy-on-write for constant values, and constant
-lowering are still outside the implemented constant subset.
+`constant(...)`/`defined(...)`, references/copy-on-write for constant values,
+and constant lowering are still outside the implemented constant subset.
 
 ## Namespace/Import Boundary
 

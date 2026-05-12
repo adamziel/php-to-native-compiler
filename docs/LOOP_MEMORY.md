@@ -6835,3 +6835,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T15:15:41Z
 
 - Post-round 11 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T15:15:48Z
+
+- Starting round 12 at 20260512T151548Z from HEAD `e66b8f5`.
+
+## Loop Event 2026-05-12T15:15:56Z
+
+- Pre-round 12 test exit code: `0`.
+
+## Loop Event 2026-05-12T15:25:21Z
+
+- Task attempted: implemented Milestone 63 `defined($name)` over the current
+  built-in/runtime-defined constant table. The supported slice accepts
+  unqualified string names in the same current identifier-shaped subset as
+  `constant($name)`, returns true for existing `ARRAY_FILTER_*` built-ins and
+  runtime-defined constants, returns false for supported missing names, works
+  through string-valued dynamic calls to `defined`, and has stable diagnostics
+  for non-string or unsupported names.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/dynamic_features.rs`, `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone63/defined_constants.*`,
+  `tests/fixtures/runtime_errors/defined_non_string.*`,
+  `tests/fixtures/runtime_errors/defined_unsupported_name.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo fmt -- --check` passed;
+  `cargo test -p phpc --test dynamic_features` passed with 24 tests;
+  `cargo test -p phpc --test user_constants_cli` passed; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone63` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone63` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 109 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone63/defined_constants.php` printed the committed
+  output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/defined_non_string.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/defined_unsupported_name.php` exited `1` with
+  the expected stable diagnostic; `tools/run-tests.sh` passed with 244
+  fixtures, 100 system PHP comparisons, and 144 `.phpc-only` skips.
+- Remaining semantic gaps: `defined($name)` only checks the current
+  built-in/runtime-defined constant table for unqualified identifier-shaped
+  string names. Namespace-qualified names, class constants such as
+  `ClassName::CONST`, extension constants beyond the two exact `ARRAY_FILTER_*`
+  built-ins, case-insensitive legacy constants, non-string name coercions,
+  references/copy-on-write behavior for constant values, exact native
+  `TypeError` objects, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported top-level
+  `const NAME = value;` declarations before implementing constant declaration
+  execution.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add defined constant introspection"`
+  after the full suite passes.
