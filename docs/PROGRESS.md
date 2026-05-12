@@ -303,6 +303,13 @@ Implemented:
   dynamic calls, preserves the original array, and reports stable diagnostics
   for non-array operands, unsupported non-scalar values, and unsupported sort
   flags.
+- Added `array_replace($array, $replacement)` support for two arrays over the
+  current ordered integer/string key model. The supported slice clones the
+  first array, overwrites matching replacement keys without moving existing
+  slots, appends new replacement keys in replacement insertion order, preserves
+  integer keys instead of reindexing them, supports string-valued dynamic
+  calls, preserves the source arrays, and reports stable diagnostics for
+  non-array operands and unsupported variadic replacement arguments.
 - Added `array_flip($array)` support for the current ordered array value model.
   The supported slice uses integer and string source values as result keys with
   the current string-key normalization rules, writes original integer/string
@@ -589,8 +596,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 68 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 53 focused array value tests.
+- `cargo test -p php_runtime` passes with 69 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 54 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
 - `cargo test -p php_runtime array_pad` passes with 3 focused array-padding
@@ -617,6 +624,8 @@ Tested:
   value-intersection, and variadic value-intersection behavior.
 - `cargo test -p php_runtime array_unique` passes with 2 focused array
   deduplication runtime tests.
+- `cargo test -p php_runtime array_replace` passes with 1 focused array
+  replacement runtime test.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
   runtime tests.
 - `cargo test -p php_runtime array_fill_keys` passes with 2 focused
@@ -825,6 +834,10 @@ Tested:
   dynamic string-call coverage, original-array preservation, non-array operand
   diagnostics, unsupported non-scalar comparison diagnostics, unsupported sort
   flag diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_replace` passes with key-preserving
+  replacement overwrite behavior, new-key insertion order, dynamic string-call
+  coverage, source-array preservation, non-array operand diagnostics,
+  unsupported variadic replacement diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -891,6 +904,8 @@ Tested:
   the Milestone 44 variadic `array_intersect` fixture.
 - `cargo test -p phpc --test array_value_deduplication_builtins_cli` passes
   with 1 CLI snapshot test covering the Milestone 46 `array_unique` fixture.
+- `cargo test -p phpc --test array_replacement_builtins_cli` passes with 1 CLI
+  snapshot test covering the Milestone 47 `array_replace` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -1099,6 +1114,12 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_second_non_array.php:3:6: unsupported call array_merge(): second argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_third_non_array.php:4:6: unsupported call array_merge(): third argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_replace_first_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_replace_first_non_array.php:3:6: unsupported call array_replace(): first argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_replace_second_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_replace_second_non_array.php:3:6: unsupported call array_replace(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_replace_third_argument_unsupported.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_replace_third_argument_unsupported.php:4:6: arity mismatch for array_replace(): expected 2 argument(s), got 3`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_first_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_first_non_array.php:3:6: unsupported call array_combine(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_second_non_array.php`
@@ -1524,6 +1545,15 @@ Tested:
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone46` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone47/array_replace.php`
+  prints the committed `array_replace` output with key-preserving replacement
+  overwrites, new replacement-key insertion order, original-array
+  preservation, append-index behavior, and string-valued dynamic calls to
+  `array_replace`.
+- `cargo run -p phpc -- test tests/fixtures/milestone47` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone47` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1673,8 +1703,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone46/array_unique.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 211 fixtures, 85 system PHP comparisons,
-  and 126 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone47/array_replace.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 215 fixtures, 86 system PHP comparisons,
+  and 129 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1789,6 +1822,11 @@ Still fails:
   comparisons, references, copy-on-write containers, object/resource values,
   exact native `TypeError` objects, PHP warning-and-string-conversion behavior
   for arrays/objects, and native lowering are not implemented.
+  `array_replace` accepts exactly two array operands over the current
+  integer/string key model, but variadic replacements, references,
+  copy-on-write containers, object handle identity preservation for object
+  values, resource values, exact native `TypeError` objects, and native
+  lowering are not implemented.
   `array_flip` is limited to arrays whose source values are integers or
   strings. Unsupported `null`, bool, float, array, object, future resource, and
   reference values fail with a stable project diagnostic instead of PHP's
@@ -1910,7 +1948,7 @@ Still fails:
 
 Next:
 
-- Implement `array_replace($array, $replacement)` for two arrays over the
-  current ordered integer/string key model, including replacement overwrite
-  behavior, new-key insertion order, diagnostics, fixture CLI coverage, docs,
-  and explicit unsupported gaps.
+- Extend `array_replace` beyond the current two-array slice with variadic
+  replacement arrays, including left-to-right overwrite behavior across all
+  replacements, non-array variadic operand diagnostics, fixture CLI coverage,
+  docs, and explicit unsupported gaps.

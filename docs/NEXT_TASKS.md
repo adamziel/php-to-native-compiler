@@ -510,9 +510,17 @@ handled.
 
 ## Milestone 47: Array Replacement Builtins
 
-- [ ] Implement `array_replace($array, $replacement)` for two arrays over the
+- [x] Implement `array_replace($array, $replacement)` for two arrays over the
   current ordered integer/string key model, including replacement overwrite
   behavior, new-key insertion order, non-array diagnostics, fixture CLI
   coverage, documentation, and explicit gaps for variadic replacements,
   references/copy-on-write, exact native `TypeError` objects,
   object/resource values, and native lowering.
+
+## Milestone 48: Array Replacement Variadic Follow-ups
+
+- [ ] Extend `array_replace` beyond the current two-array slice with variadic
+  replacement arrays, including left-to-right overwrite behavior across all
+  replacements, non-array variadic operand diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for references/copy-on-write, exact native
+  `TypeError` objects, object/resource values, and native lowering.

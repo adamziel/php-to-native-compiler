@@ -1248,6 +1248,29 @@ impl Interpreter {
 
                 Ok(Value::Array(PhpArray::merged_from(arrays)))
             }
+            "array_replace" => {
+                expect_arity(name, &args, 2, span)?;
+                match args.as_slice() {
+                    [Value::Array(array), Value::Array(replacement)] => {
+                        Ok(Value::Array(array.replaced_with(replacement)))
+                    }
+                    [Value::Array(_), other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_replace()",
+                            format!("second argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    [other, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_replace()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    _ => unreachable!("array_replace arity is checked above"),
+                }
+            }
             "array_flip" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -2160,6 +2183,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_chunk"
             | "array_pad"
             | "array_merge"
+            | "array_replace"
             | "array_flip"
             | "array_fill_keys"
             | "array_combine"

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_replace_first_non_array.php:3:6: unsupported call array_replace(): first argument must be array, got int
+--- stderr end ---

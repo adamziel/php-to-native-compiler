@@ -1,0 +1,46 @@
+exit: 0
+stdout:
+Array
+(
+    [name] => Bea
+    [5] => five right
+    [2] => two
+    [02] => zero two right
+    [6] => left next
+    [7] => seven
+    [8] => right next
+    [extra] => extra
+)
+8
+Bea|five right|two|zero two right|left next|seven|right next|extra
+after
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [02] => zero two
+    [6] => left next
+)
+Array
+(
+    [name] => Bea
+    [5] => five right
+    [7] => seven
+    [02] => zero two right
+    [8] => right next
+    [extra] => extra
+)
+Bea|five right|zero two right|extra
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [02] => zero two
+    [6] => left next
+)
+5
+after empty--- stdout end ---
+stderr:
+--- stderr end ---
