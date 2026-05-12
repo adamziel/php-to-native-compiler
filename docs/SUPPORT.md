@@ -264,6 +264,8 @@
   `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
 - explicit parse diagnostics for unsupported ternary conditional expressions
+- explicit parse diagnostics for unsupported expression-position assignment
+  forms such as `($name = expr)` and `($name ??= expr)`
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -1553,6 +1555,12 @@
   `$condition ? $if_true : $if_false` and short ternary `$value ?: $fallback`
   forms are rejected. Condition truthiness, short-ternary value reuse,
   nesting/precedence, thrown expressions inside arms, exact native error
+  objects, and native lowering are not implemented.
+- Assignment expressions currently fail with a stable parse diagnostic.
+  Statement-level `=`, direct variable `??=`, direct array-offset `??=`, and
+  direct public object-property `??=` are the only executable assignment forms.
+  Assignment result values, chained assignments, expression-position `??=`,
+  lvalue evaluation order, references/copy-on-write, exact native error
   objects, and native lowering are not implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus

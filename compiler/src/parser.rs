@@ -1060,10 +1060,13 @@ impl Parser {
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_equality()?;
+        self.reject_assignment_expression_operator()?;
         if self.match_token(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
             let operator_span = self.previous().span;
             if self.check(|kind| matches!(kind, TokenKind::Equal)) {
-                return Err(self.error_at(operator_span, unsupported_null_coalescing_message()));
+                return Err(
+                    self.error_at(operator_span, unsupported_assignment_expression_message())
+                );
             }
             let right = self.parse_equality()?;
             let span = expr.span();
@@ -1074,13 +1077,38 @@ impl Parser {
                 span,
             };
             if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
+                if matches!(self.peek_next().kind, TokenKind::Equal) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_assignment_expression_message(),
+                    ));
+                }
                 return Err(self.error_at(self.peek().span, unsupported_null_coalescing_message()));
             }
         }
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
             return Err(self.error_at(self.previous().span, unsupported_ternary_message()));
         }
+        self.reject_assignment_expression_operator()?;
         Ok(expr)
+    }
+
+    fn reject_assignment_expression_operator(&self) -> CompileResult<()> {
+        if self.check(|kind| matches!(kind, TokenKind::Equal)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_assignment_expression_message(),
+            ));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+            && matches!(self.peek_next().kind, TokenKind::Equal)
+        {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_assignment_expression_message(),
+            ));
+        }
+        Ok(())
     }
 
     fn parse_equality(&mut self) -> CompileResult<Expr> {
@@ -2091,6 +2119,10 @@ fn unsupported_null_coalescing_message() -> &'static str {
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
     "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented"
+}
+
+fn unsupported_assignment_expression_message() -> &'static str {
+    "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset"
 }
 
 fn unsupported_namespace_message() -> &'static str {

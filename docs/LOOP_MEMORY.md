@@ -10689,3 +10689,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:44:52Z
 
 - Post-round 20 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:45:00Z
+
+- Starting round 21 at 20260512T234500Z from HEAD `8a365f0`.
+
+## Loop Event 2026-05-12T23:45:14Z
+
+- Pre-round 21 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:49:26Z
+
+- Task attempted: added an explicit parse boundary for expression-position
+  assignment forms before assignment expressions have value semantics. The
+  parser now rejects `($name = expr)`, array-offset assignment expressions,
+  `($name ??= expr)`, and array-offset `??=` expressions with a stable
+  assignment-expression diagnostic while preserving statement-level assignment
+  and `??=` behavior.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_assignment_expression.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing_assignment_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries`
+  passed with 23 tests; `cargo test -p phpc --test
+  unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 21 fixtures;
+  `tools/run-tests.sh` passed with 359 fixtures, 128 system PHP comparisons,
+  and 231 skips.
+- Remaining semantic gaps: assignment expressions do not produce values,
+  chained assignment remains unsupported, expression-position `??=` remains
+  unsupported, compound assignments are not explicitly diagnosed yet,
+  lvalue evaluation order, references/copy-on-write, exact native error
+  objects, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for compound assignment
+  forms such as `$name += expr`, `$name -= expr`, `$name *= expr`,
+  `$name /= expr`, and `$name .= expr`.
+- Known-good tag: not created; this is a narrow syntax-boundary checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add assignment expression boundary"`.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added explicit unsupported expression-position assignment diagnostics for
+  `($name = expr)` and `($name ??= expr)` style forms before assignment
+  expressions have value semantics, with parser regression coverage,
+  fixture/CLI snapshots, documentation, and native emission rejection at the
+  parse boundary.
 - Implemented direct public object-property `??=` for
   `$object->property ??= expr`, including lazy initialization of existing
   declared public null slots, preservation of falsey non-null values, stable

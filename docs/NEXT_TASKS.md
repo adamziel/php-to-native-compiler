@@ -1234,9 +1234,19 @@ handled.
 
 ## Milestone 130: Assignment Expression Boundary
 
-- [ ] Add explicit parse diagnostics for expression-position assignment forms
+- [x] Add explicit parse diagnostics for expression-position assignment forms
   such as `($name = expr)` and `($name ??= expr)` before assignment expressions
   are executable values, including parser coverage, fixture CLI coverage,
   documentation, native-codegen parse-boundary behavior, and named gaps for
   assignment result values, chained assignments, lvalue evaluation order,
   references/copy-on-write, and exact native error objects.
+
+## Milestone 131: Compound Assignment Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported compound assignment forms
+  such as `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`,
+  and `$name .= expr` before compound assignment execution exists, including
+  parser coverage, fixture CLI coverage, documentation, native-codegen
+  parse-boundary behavior, and named gaps for read-modify-write ordering,
+  array/object targets, references/copy-on-write, numeric/string coercions,
+  and exact native error objects.

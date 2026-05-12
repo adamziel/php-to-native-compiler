@@ -2769,9 +2769,19 @@ Still fails:
   dynamic lvalues, expression-position assignment results,
   references/copy-on-write, exact native error objects, preservation of partial
   stdout before fatal runtime errors, and native lowering remain unsupported.
+- Added explicit parse diagnostics for unsupported expression-position
+  assignment forms before assignment expressions have executable value
+  semantics. The parser now rejects forms such as `($name = expr)`,
+  `($array[$key] = expr)`, `($name ??= expr)`, and
+  `($array[$key] ??= expr)` with a stable assignment-expression diagnostic,
+  fixture and CLI snapshot coverage record representative `=` and `??=`
+  failures, and native emission rejects the same syntax at parse time.
+  Assignment result values, chained assignments, lvalue evaluation order,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain unsupported.
 
 Next:
 
-- Add the next explicit assignment-expression boundary so expression-position
-  assignment forms fail with stable diagnostics until assignment expressions
-  have tested value semantics.
+- Add the next explicit compound-assignment boundary so forms such as
+  `$name += expr` and `$name .= expr` fail with stable diagnostics until
+  read-modify-write semantics are implemented.
