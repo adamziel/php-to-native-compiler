@@ -1,4 +1,4 @@
 <?php
 while (true) {
-    continue;
+    continue 2;
 }

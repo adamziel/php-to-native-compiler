@@ -37,7 +37,7 @@ subset:
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons used by control flow
 - `if` / `else`
-- `while`, including `break;` for the innermost executing loop
+- `while`, including `break;` and `continue;` for the innermost executing loop
 - function declarations, positional calls with trailing default parameter
   values, recursive calls up to the documented guard, `return`, and isolated
   local scopes for user-function calls
@@ -55,15 +55,16 @@ subset:
   `count`, `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
-  `global` declarations, invalid `break` outside a loop, and runaway recursion
+  `global` declarations, invalid `break`/`continue` outside a loop, and runaway
+  recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
   long `array(...)` literals, `unset(...)`, `foreach (...)`, `for (...)`,
-  `do ... while`, `switch (...)`, `continue`, break depth arguments, object
-  method calls, dynamic property names, anonymous classes, and unsupported
-  class forms, static member access, and class constants
+  `do ... while`, `switch (...)`, `break`/`continue` depth arguments, object
+  method calls, dynamic property names, anonymous classes, and unsupported class
+  forms, static member access, and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

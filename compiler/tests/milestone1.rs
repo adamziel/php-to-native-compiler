@@ -50,6 +50,29 @@ echo "done";
 }
 
 #[test]
+fn run_executes_continue_for_innermost_while_loop() {
+    let source = r#"<?php
+$i = 0;
+while ($i < 2) {
+    $j = 0;
+    while ($j < 3) {
+        $j = $j + 1;
+        if ($j == 2) {
+            continue;
+        }
+        echo $i, ":", $j, ";";
+    }
+    echo "outer;";
+    $i = $i + 1;
+}
+echo "done";
+"#;
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "0:1;0:3;outer;1:1;1:3;outer;done");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_for_integer_arithmetic() {
     let ir = emit_ir_source("<?php\n$x = 1 + 2;\necho $x;\n").unwrap();
     assert!(ir.contains("add i64 1, 2"), "{ir}");
@@ -69,6 +92,13 @@ fn emit_ir_rejects_break_until_native_loop_control_lowering_exists() {
     let error = emit_ir_source("<?php\nbreak;\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(error.message.contains("break"), "{}", error.message);
+}
+
+#[test]
+fn emit_ir_rejects_continue_until_native_loop_control_lowering_exists() {
+    let error = emit_ir_source("<?php\ncontinue;\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(error.message.contains("continue"), "{}", error.message);
 }
 
 #[test]

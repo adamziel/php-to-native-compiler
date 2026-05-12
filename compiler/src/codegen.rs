@@ -123,6 +123,10 @@ impl LlvmGenerator {
                 *span,
                 "break is supported by phpc run for innermost while loops but not LLVM IR emission yet",
             )),
+            Stmt::Continue { span } => Err(self.unsupported(
+                *span,
+                "continue is supported by phpc run for innermost while loops but not LLVM IR emission yet",
+            )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,
                 "global declarations are not supported by LLVM IR emission yet",
@@ -618,6 +622,10 @@ impl CGenerator {
             Stmt::Break { span } => Err(self.unsupported(
                 *span,
                 "break is supported by phpc run for innermost while loops but not assembly emission yet",
+            )),
+            Stmt::Continue { span } => Err(self.unsupported(
+                *span,
+                "continue is supported by phpc run for innermost while loops but not assembly emission yet",
             )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,

@@ -196,6 +196,18 @@ fn break_outside_loop_has_stable_runtime_error() {
 }
 
 #[test]
+fn continue_outside_loop_has_stable_runtime_error() {
+    let error = runtime_error("<?php\ncontinue;\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid loop control: continue cannot be used outside a loop"
+    );
+}
+
+#[test]
 fn invalid_arithmetic_has_stable_runtime_error() {
     let error = runtime_error("<?php\necho 1 / 0;\n");
 

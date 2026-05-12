@@ -101,6 +101,12 @@ handled.
 - [x] Implement `break;` execution for innermost `while` loops with parser,
   interpreter, fixture, CLI snapshot, documentation, and explicit native-codegen
   rejection coverage where lowering remains unsupported.
-- [ ] Implement `continue;` execution for innermost `while` loops with parser,
+- [x] Implement `continue;` execution for innermost `while` loops with parser,
   interpreter, fixture, CLI snapshot, documentation, and explicit native-codegen
   rejection coverage where lowering remains unsupported.
+
+## Milestone 7: Builtin and Array Refinements
+
+- [ ] Implement direct `isset($array[$key])` support for array offset operands,
+  with tests for existing keys, null values, missing keys, undefined arrays, and
+  non-array targets while keeping complex lvalues explicitly unsupported.

@@ -54,6 +54,9 @@ pub enum Stmt {
     Break {
         span: Span,
     },
+    Continue {
+        span: Span,
+    },
     Global {
         names: Vec<String>,
         span: Span,

@@ -45,7 +45,7 @@ impl Parser {
             TokenKind::For => self.parse_unsupported_for(),
             TokenKind::Switch => self.parse_unsupported_switch(),
             TokenKind::Break => self.parse_break(),
-            TokenKind::Continue => self.parse_unsupported_continue(),
+            TokenKind::Continue => self.parse_continue(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => {
@@ -62,7 +62,7 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("break") => self.parse_break(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
-                self.parse_unsupported_continue()
+                self.parse_continue()
             }
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
@@ -387,9 +387,13 @@ impl Parser {
         Ok(Stmt::Break { span: token.span })
     }
 
-    fn parse_unsupported_continue(&mut self) -> CompileResult<Stmt> {
+    fn parse_continue(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
-        Err(self.error_at(token.span, unsupported_continue_message()))
+        if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+            return Err(self.error_at(token.span, unsupported_continue_depth_message()));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after continue")?;
+        Ok(Stmt::Continue { span: token.span })
     }
 
     fn parse_return(&mut self) -> CompileResult<Stmt> {
@@ -743,7 +747,9 @@ impl Parser {
             TokenKind::Break => {
                 Err(self.error_at(token.span, unsupported_break_expression_message()))
             }
-            TokenKind::Continue => Err(self.error_at(token.span, unsupported_continue_message())),
+            TokenKind::Continue => {
+                Err(self.error_at(token.span, unsupported_continue_expression_message()))
+            }
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_require_message("include")))
             }
@@ -779,7 +785,9 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_break_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("continue") {
-                    return Err(self.error_at(token.span, unsupported_continue_message()));
+                    return Err(
+                        self.error_at(token.span, unsupported_continue_expression_message())
+                    );
                 }
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -1243,8 +1251,12 @@ fn unsupported_break_expression_message() -> &'static str {
     "unsupported break: break is only supported as a statement in the current subset"
 }
 
-fn unsupported_continue_message() -> &'static str {
-    "unsupported continue: continue execution is not implemented"
+fn unsupported_continue_depth_message() -> &'static str {
+    "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported"
+}
+
+fn unsupported_continue_expression_message() -> &'static str {
+    "unsupported continue: continue is only supported as a statement in the current subset"
 }
 
 fn unsupported_class_expression_message() -> &'static str {

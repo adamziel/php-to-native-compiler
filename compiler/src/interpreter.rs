@@ -95,8 +95,9 @@ impl SymbolTable {
 }
 
 enum Flow {
-    Continue,
+    Normal,
     Break(Span),
+    Continue(Span),
     Return(Value),
 }
 
@@ -132,7 +133,7 @@ impl Interpreter {
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
         let mut scope = SymbolTable::new();
         match self.execute_statements(&program.statements, &mut scope)? {
-            Flow::Continue | Flow::Return(_) => Ok(Execution {
+            Flow::Normal | Flow::Return(_) => Ok(Execution {
                 stdout: self.stdout.clone(),
                 stderr: String::new(),
                 exit_code: 0,
@@ -140,6 +141,10 @@ impl Interpreter {
             Flow::Break(span) => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
+            Flow::Continue(span) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
         }
     }
@@ -151,11 +156,11 @@ impl Interpreter {
     ) -> CompileResult<Flow> {
         for stmt in statements {
             match self.execute_statement(stmt, scope)? {
-                Flow::Continue => {}
-                flow @ (Flow::Break(_) | Flow::Return(_)) => return Ok(flow),
+                Flow::Normal => {}
+                flow @ (Flow::Break(_) | Flow::Continue(_) | Flow::Return(_)) => return Ok(flow),
             }
         }
-        Ok(Flow::Continue)
+        Ok(Flow::Normal)
     }
 
     fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
@@ -168,7 +173,7 @@ impl Interpreter {
                         .map_err(|error| runtime_error(expr.span(), error))?;
                     self.stdout.push_str(&output);
                 }
-                Ok(Flow::Continue)
+                Ok(Flow::Normal)
             }
             Stmt::Print { expr, .. } => {
                 let value = self.evaluate(expr, scope)?;
@@ -176,15 +181,15 @@ impl Interpreter {
                     .try_echo_string()
                     .map_err(|error| runtime_error(expr.span(), error))?;
                 self.stdout.push_str(&output);
-                Ok(Flow::Continue)
+                Ok(Flow::Normal)
             }
             Stmt::Assign { target, expr, .. } => {
                 self.execute_assignment(target, expr, scope)?;
-                Ok(Flow::Continue)
+                Ok(Flow::Normal)
             }
             Stmt::Expr { expr, .. } => {
                 self.evaluate(expr, scope)?;
-                Ok(Flow::Continue)
+                Ok(Flow::Normal)
             }
             Stmt::If {
                 condition,
@@ -203,15 +208,15 @@ impl Interpreter {
             } => {
                 while self.evaluate(condition, scope)?.is_truthy() {
                     match self.execute_statements(body, scope)? {
-                        Flow::Continue => {}
+                        Flow::Normal | Flow::Continue(_) => {}
                         Flow::Break(_) => break,
                         flow @ Flow::Return(_) => return Ok(flow),
                     }
                 }
-                Ok(Flow::Continue)
+                Ok(Flow::Normal)
             }
-            Stmt::Function(_) => Ok(Flow::Continue),
-            Stmt::Class(_) => Ok(Flow::Continue),
+            Stmt::Function(_) => Ok(Flow::Normal),
+            Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
                 let value = match value {
                     Some(expr) => self.evaluate(expr, scope)?,
@@ -220,6 +225,7 @@ impl Interpreter {
                 Ok(Flow::Return(value))
             }
             Stmt::Break { span } => Ok(Flow::Break(*span)),
+            Stmt::Continue { span } => Ok(Flow::Continue(*span)),
             Stmt::Global { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_global(
@@ -591,10 +597,14 @@ impl Interpreter {
         self.call_depth -= 1;
 
         match flow? {
-            Flow::Continue => Ok(Value::Null),
+            Flow::Normal => Ok(Value::Null),
             Flow::Break(span) => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
+            )),
+            Flow::Continue(span) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
             Flow::Return(value) => Ok(value),
         }

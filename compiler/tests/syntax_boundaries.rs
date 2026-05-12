@@ -311,25 +311,27 @@ echo break;
 }
 
 #[test]
-fn continue_syntax_is_rejected_with_stable_parse_error() {
+fn unsupported_continue_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
 while (true) {
-    continue;
+    continue 2;
 }
 "#,
             3,
             5,
+            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported",
         ),
         (
             r#"<?php
 while (true) {
-    CONTINUE;
+    CONTINUE 2;
 }
 "#,
             3,
             5,
+            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost while loop is supported",
         ),
         (
             r#"<?php
@@ -337,16 +339,14 @@ echo continue;
 "#,
             2,
             6,
+            "unsupported continue: continue is only supported as a statement in the current subset",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported continue: continue execution is not implemented"
-        );
+        assert_eq!(error.message, message);
     }
 }
