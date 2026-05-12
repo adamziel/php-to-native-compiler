@@ -120,6 +120,7 @@ subset:
   `property_exists($object_or_class, $property)` and
   `method_exists($object_or_class, $method)` and
   `get_class_methods($object_or_class)` and
+  `get_class_vars($class_name)` and
   `is_a($object_or_class, $class_name[, $allow_string])` and
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` and
   `get_parent_class($object_or_class)` and `get_declared_classes()` over the
@@ -180,10 +181,13 @@ string class names, uses case-insensitive declared method names, reports
 declared public/protected/private and static methods, and returns false for
 missing classes. `get_class_methods($object_or_class)` accepts current object
 values or declared string class names and returns public declared methods in
-declaration order. `is_a($object_or_class, $class_name[, $allow_string])` checks
-exact class identity only: object inputs are accepted, string object/class
-inputs are considered only when `allow_string` is true, and target class names
-use the current case-insensitive class metadata lookup.
+declaration order. `get_class_vars($class_name)` accepts declared string class
+names and returns public declared property names in declaration order with
+`null` values because property defaults are not implemented.
+`is_a($object_or_class, $class_name[, $allow_string])` checks exact class
+identity only: object inputs are accepted, string object/class inputs are
+considered only when `allow_string` is true, and target class names use the
+current case-insensitive class metadata lookup.
 `is_subclass_of($object_or_class, $class_name[, $allow_string])` validates the
 same object/string and class-name argument boundary, but because inheritance is
 not represented yet it returns false for exact-class and no-parent metadata
@@ -203,8 +207,9 @@ receivers such as `self::`, `parent::`, and `static::`, class constants, trait
 use inside classes, enum declarations, built-in/internal/extension classes in
 `get_declared_classes()`, non-public/context-sensitive method listing for
 `get_class_methods()`, inherited/trait/interface methods, anonymous classes,
-exact native class/method ordering, and native object lowering are not
-supported yet.
+exact native class/method/property ordering, `get_class_vars()` property
+defaults, inheritance/trait/interface properties, context-sensitive visibility,
+and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

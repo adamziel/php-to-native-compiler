@@ -20,6 +20,9 @@ $class_name[, $allow_string])` now validates the same relationship-check
 boundary and returns false for the current no-inheritance metadata model.
 `get_parent_class($object_or_class)` validates current object/declared-string
 inputs and returns false because no parent-class metadata is recorded yet.
+`get_class_vars($class_name)` accepts declared string class names and returns
+public declared properties with `null` values because property defaults are not
+represented yet.
 
 ## Runtime Metadata
 
@@ -56,6 +59,8 @@ The model follows the PHP lookup rules needed by the first object slice:
   class names;
 - `get_class_methods($object_or_class)` returns public declared method names in
   declaration order for current object values or declared string class names;
+- `get_class_vars($class_name)` returns public declared property names in
+  declaration order with `null` values for declared string class names;
 - `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity using case-insensitive class metadata lookup; string first
   arguments are considered only when `allow_string` is true;
@@ -111,7 +116,9 @@ is rejected through the same function-call boundary until method-list metadata
 lookup has native support. `is_a` and `is_subclass_of` are rejected through the
 same function-call boundary until class relationship lookup has native support.
 `get_parent_class` is rejected through that function-call boundary until parent
-metadata lookup has native support.
+metadata lookup has native support. `get_class_vars` is rejected through the
+same function-call boundary until property-list metadata lookup has native
+support.
 
 ## Unsupported Edge Cases
 
@@ -132,6 +139,8 @@ through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
 `get_class_methods` inheritance/trait/interface and non-public
-context-sensitive method listing,
+context-sensitive method listing, `get_class_vars` property defaults,
+inheritance/trait/interface properties, context-sensitive visibility, object
+inputs, exact native ordering,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.

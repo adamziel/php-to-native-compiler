@@ -9394,3 +9394,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:45:48Z
 
 - Post-round 56 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:45:57Z
+
+- Starting round 57 at 20260512T204557Z from HEAD `8525b8b`.
+
+## Loop Event 2026-05-12T20:46:06Z
+
+- Pre-round 57 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:49:11Z
+
+- Task attempted: implemented `get_class_vars($class_name)` over the current
+  declared property metadata. The supported slice accepts declared string class
+  names, returns public declared property names in declaration order with
+  `null` values because property defaults are not represented yet, includes
+  public static properties, is available through string-valued dynamic calls,
+  and rejects native lowering through the current function-call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone108/get_class_vars.*`,
+  `tests/fixtures/runtime_errors/get_class_vars_invalid_target.*`,
+  `tests/fixtures/runtime_errors/get_class_vars_missing_class.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model get_class_vars
+  -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone108` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone108` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test runtime_error_cli -- --nocapture`
+  passed; `tools/run-tests.sh` passed with 318 fixtures, 117 system PHP
+  comparisons, and 201 skips.
+- Remaining semantic gaps: `get_class_vars()` does not model property default
+  expressions, inherited/trait/interface properties, namespace/import aliases,
+  autoloading, object inputs, context-sensitive visibility, exact native
+  ordering or `TypeError` objects, references/copy-on-write, or native
+  lowering.
+- Next concrete task: add the next honest `get_object_vars($object)` boundary
+  over the current minimal object value model.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_class_vars boundary"`
+  after the full suite passes.

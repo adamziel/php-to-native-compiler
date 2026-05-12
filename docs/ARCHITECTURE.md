@@ -175,6 +175,9 @@ and does not trigger autoloading in the current subset.
 `property_exists($object_or_class, $property)` checks the same declared
 property metadata for current object values or string class names, with
 case-sensitive property names and no autoload side effects.
+`get_class_vars($class_name)` accepts declared string class names and returns
+public declared property names in declaration order with `null` values because
+property defaults are not implemented.
 `is_a($object_or_class, $class_name[, $allow_string])` performs exact-class
 identity checks against the current metadata table. `is_subclass_of(...)`
 shares the same argument boundary, but because inheritance metadata is not

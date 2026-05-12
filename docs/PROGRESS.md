@@ -2573,9 +2573,20 @@ Still fails:
   interfaces, aliases/imports, namespace-aware names, autoloading,
   non-public/context-sensitive visibility listing, exact native ordering and
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `get_class_vars($class_name)` over the current declared property
+  metadata. The supported slice accepts declared string class names, returns an
+  array of public declared property names in declaration order with `null`
+  values because property defaults are not represented yet, includes public
+  static properties, works through string-valued dynamic calls, has fixture CLI
+  coverage plus stable diagnostics for non-string arguments and missing string
+  classes, and rejects native lowering through the current function-call
+  boundary. Property defaults, inheritance, traits, interfaces,
+  aliases/imports, namespace-aware names, autoloading, context-sensitive
+  visibility, object inputs, exact native ordering and `TypeError` behavior,
+  and native lowering remain unsupported.
 
 Next:
 
-- Continue with the next small object/class metadata introspection boundary,
-  starting with `get_class_vars($class_name)` if it can be completed honestly
-  over the current property metadata.
+- Continue with the next small object/class value introspection boundary,
+  starting with `get_object_vars($object)` if it can be completed honestly over
+  the current minimal object value model.

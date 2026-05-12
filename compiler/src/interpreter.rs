@@ -2159,6 +2159,42 @@ impl Interpreter {
                     ),
                 )),
             },
+            "get_class_vars" => match args.as_slice() {
+                [Value::String(class_name)] => {
+                    let Some(class) = self.classes.lookup_class(class_name) else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "get_class_vars()",
+                                "string argument must name a declared class in the current subset",
+                            ),
+                        ));
+                    };
+
+                    let mut properties = PhpArray::new();
+                    for property in class.properties() {
+                        if property.visibility() == Visibility::Public {
+                            properties.insert(ArrayKey::from(property.name()), Value::Null);
+                        }
+                    }
+                    Ok(Value::Array(properties))
+                }
+                [other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "get_class_vars()",
+                        format!("class name argument must be string, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "get_class_vars()",
+                        ArityExpectation::Exactly(1),
+                        args.len(),
+                    ),
+                )),
+            },
             "is_a" => match args.as_slice() {
                 [object_or_class, Value::String(class_name)] => {
                     Ok(Value::Bool(self.value_is_exact_class(object_or_class, class_name, false)))
@@ -3002,6 +3038,7 @@ fn is_builtin(name: &str) -> bool {
             | "property_exists"
             | "method_exists"
             | "get_class_methods"
+            | "get_class_vars"
             | "is_a"
             | "is_subclass_of"
             | "get_parent_class"

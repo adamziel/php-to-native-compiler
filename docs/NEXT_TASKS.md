@@ -1028,10 +1028,20 @@ handled.
 
 ## Milestone 108: Class Property Default List Boundary
 
-- [ ] Add the next honest `get_class_vars($class_name)` boundary over the
+- [x] Add the next honest `get_class_vars($class_name)` boundary over the
   current property metadata: either a stable unsupported diagnostic or a narrow
   executable list slice for declared string class inputs, with string-valued
   dynamic-call coverage, invalid argument diagnostics, fixture CLI coverage,
   documentation, and explicit gaps for property defaults, visibility filtering
   differences, inheritance, traits, aliases/imports, autoloading, exact native
   ordering, and native lowering.
+
+## Milestone 109: Object Property Value List Boundary
+
+- [ ] Add the next honest `get_object_vars($object)` boundary over the current
+  minimal object value model: either a stable unsupported diagnostic or a
+  narrow executable public-property value slice for current object inputs, with
+  string-valued dynamic-call coverage, invalid argument diagnostics, fixture
+  CLI coverage, documentation, and explicit gaps for dynamic properties,
+  visibility context, references/copy-on-write, inheritance, traits,
+  aliases/imports, exact native ordering, and native lowering.

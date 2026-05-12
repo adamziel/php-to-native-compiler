@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+Array
+(
+    [name] => 
+    [shared] => 
+)
+2|1|1
+2|--- stdout end ---
+stderr:
+--- stderr end ---

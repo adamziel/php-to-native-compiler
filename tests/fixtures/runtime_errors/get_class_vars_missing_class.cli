@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/get_class_vars_missing_class.php:2:10: unsupported call get_class_vars(): string argument must name a declared class in the current subset
+--- stderr end ---
