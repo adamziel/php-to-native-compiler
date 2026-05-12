@@ -1198,6 +1198,33 @@ impl Interpreter {
                     ),
                 )),
             },
+            "array_pad" => {
+                expect_arity(name, &args, 3, span)?;
+                match args.as_slice() {
+                    [Value::Array(array), Value::Int(length), value] => array
+                        .padded(*length, value.clone())
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    [Value::Array(_), other, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_pad()",
+                            format!(
+                                "length argument must be int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                    [other, _, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_pad()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    _ => unreachable!("array_pad arity is checked above"),
+                }
+            },
             "array_merge" => {
                 let mut arrays = Vec::with_capacity(args.len());
                 for (index, arg) in args.iter().enumerate() {
@@ -1925,6 +1952,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_reverse"
             | "array_slice"
             | "array_chunk"
+            | "array_pad"
             | "array_merge"
             | "array_flip"
             | "array_fill_keys"

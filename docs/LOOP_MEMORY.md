@@ -5019,3 +5019,63 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T08:22:12Z
 
 - Post-round 79 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T08:22:17Z
+
+- Starting round 80 at 20260512T082217Z from HEAD `78f7010`.
+
+## Loop Event 2026-05-12T08:22:22Z
+
+- Pre-round 80 test exit code: `0`.
+
+## Loop Event 2026-05-12T08:37:52Z
+
+- Task attempted: implemented `array_pad($array, $length, $value)` over the
+  current ordered integer/string key model. The supported slice returns an
+  unchanged clone when `abs($length)` is not larger than the input size,
+  right-pads for positive lengths, left-pads for negative lengths, preserves
+  string keys, reindexes integer-keyed input entries from zero when padding is
+  needed, supports string-valued dynamic calls, preserves the original array,
+  and reports stable diagnostics for non-array operands, non-int lengths, and
+  oversized padding requests.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_pad.rs`,
+  `compiler/tests/array_padding_builtins_cli.rs`,
+  `tests/fixtures/milestone36/array_pad.php`,
+  `tests/fixtures/milestone36/array_pad.stdout`,
+  `tests/fixtures/milestone36/array_pad.cli`,
+  `tests/fixtures/runtime_errors/array_pad_non_array.*`,
+  `tests/fixtures/runtime_errors/array_pad_length_non_int.*`,
+  `tests/fixtures/runtime_errors/array_pad_length_too_large.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` passed; `cargo fmt --all --check`
+  passed; `git diff --check` passed; `cargo test -p php_runtime array_pad`
+  passed with 3 focused runtime tests; `cargo test -p php_runtime` passed with
+  54 runtime unit tests; `cargo test -p phpc --test array_pad` passed with 5
+  tests; `cargo test -p phpc --test array_padding_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone36` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone36` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 71 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone36/array_pad.php` printed the committed output;
+  `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_pad_length_too_large.php` exited `1`
+  with the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone36/array_pad.php --emit-ir` exited `1` with the
+  current explicit array native-lowering rejection; `tools/run-tests.sh`
+  passed with 180 fixtures, 75 system PHP comparisons, and 105 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_pad` requires an integer length and uses a
+  stable project diagnostic for requests that would insert more than 1,048,576
+  padding entries. Non-int length coercion, exact native
+  `ValueError`/`TypeError` objects, references, copy-on-write containers,
+  object handle identity preservation, resource values, and native lowering
+  remain unsupported.
+- Next concrete task: implement `array_combine($keys, $values)` over the
+  current ordered array value model while keeping exact native
+  `ValueError`/`TypeError` objects, references, copy-on-write, object/resource
+  keys, and native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_pad builtin"`
+  after the full suite passes.

@@ -1,0 +1,42 @@
+exit: 0
+stdout:
+Array
+(
+    [name] => Ada
+    [0] => five
+    [1] => two
+    [02] => zero two
+    [2] => negative
+    [3] => next
+    [4] => pad
+    [5] => pad
+)
+8|Ada|five|two|zero two|negative|next|pad|pad
+after
+Array
+(
+    [0] => pad
+    [1] => pad
+    [name] => Ada
+    [2] => five
+    [3] => two
+    [02] => zero two
+    [4] => negative
+    [5] => next
+)
+8|pad|pad|Ada|five|two|zero two|negative|next
+after-left
+noop-preserved
+Ada|five|two|zero two|negative|next
+after-noop
+3|pad|pad|pad
+2|left|left
+Array
+(
+    [first] => Ada
+    [0] => pad
+    [1] => pad
+)
+done--- stdout end ---
+stderr:
+--- stderr end ---

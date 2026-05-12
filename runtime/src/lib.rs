@@ -389,6 +389,8 @@ pub struct PhpArray {
     auto_index_exhausted: bool,
 }
 
+const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
+
 impl PhpArray {
     pub fn new() -> Self {
         Self {
@@ -569,6 +571,39 @@ impl PhpArray {
 
     pub fn chunked_preserving_keys(&self, length: usize) -> Self {
         self.chunked_with_key_mode(length, true)
+    }
+
+    pub fn padded(&self, length: i64, value: Value) -> RuntimeResult<Self> {
+        let requested_len = length.unsigned_abs();
+        let current_len = u64::try_from(self.entries.len()).expect("array length fits in u64");
+        if requested_len <= current_len {
+            return Ok(self.clone());
+        }
+
+        let padding = requested_len - current_len;
+        if padding > ARRAY_PAD_MAX_PADDING {
+            return Err(RuntimeError::unsupported_call(
+                "array_pad()",
+                format!(
+                    "padding length must be at most {ARRAY_PAD_MAX_PADDING} in the current subset, got {padding}"
+                ),
+            ));
+        }
+
+        let mut array = Self::new();
+        if length < 0 {
+            for _ in 0..padding {
+                array.append(value.clone())?;
+            }
+            array.merge_entries_from(self);
+        } else {
+            array.merge_entries_from(self);
+            for _ in 0..padding {
+                array.append(value.clone())?;
+            }
+        }
+
+        Ok(array)
     }
 
     fn chunked_with_key_mode(&self, length: usize, preserve_keys: bool) -> Self {
@@ -2811,6 +2846,114 @@ mod tests {
             .chunked_preserving_keys(2)
             .entries()
             .is_empty());
+    }
+
+    #[test]
+    fn array_pad_right_and_left_reindexes_integer_keys_and_preserves_string_keys() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = array
+            .padded(8, Value::String("pad".to_string()))
+            .expect("right padding succeeds");
+        let entries = right.entries();
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(2));
+        assert_eq!(entries[4].value, Value::String("negative".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::Int(3));
+        assert_eq!(entries[5].value, Value::String("next".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::Int(4));
+        assert_eq!(entries[6].value, Value::String("pad".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::Int(5));
+        assert_eq!(entries[7].value, Value::String("pad".to_string()));
+        assert_eq!(
+            right.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(6)
+        );
+
+        let mut left = array
+            .padded(-8, Value::String("pad".to_string()))
+            .expect("left padding succeeds");
+        let entries = left.entries();
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("pad".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::String("pad".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[2].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(2));
+        assert_eq!(entries[3].value, Value::String("five".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(3));
+        assert_eq!(entries[4].value, Value::String("two".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[5].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::Int(4));
+        assert_eq!(entries[6].value, Value::String("negative".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::Int(5));
+        assert_eq!(entries[7].value, Value::String("next".to_string()));
+        assert_eq!(
+            left.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(6)
+        );
+
+        assert_eq!(
+            array.get(5),
+            Some(&Value::String("five".to_string())),
+            "array_pad must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_pad_noop_preserves_original_array_shape_and_append_index() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut noop = array
+            .padded(3, Value::String("pad".to_string()))
+            .expect("no-op padding succeeds");
+        assert_eq!(noop.entries(), array.entries());
+        assert_eq!(
+            noop.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(7)
+        );
+
+        let empty = PhpArray::new()
+            .padded(0, Value::String("pad".to_string()))
+            .expect("zero-length empty padding succeeds");
+        assert!(empty.entries().is_empty());
+    }
+
+    #[test]
+    fn array_pad_rejects_padding_larger_than_current_limit() {
+        let error = PhpArray::new()
+            .padded(1_048_577, Value::String("pad".to_string()))
+            .expect_err("padding over the current limit fails");
+
+        assert_eq!(
+            error.message(),
+            "unsupported call array_pad(): padding length must be at most 1048576 in the current subset, got 1048577"
+        );
     }
 
     #[test]

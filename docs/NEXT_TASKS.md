@@ -415,9 +415,17 @@ handled.
 
 ## Milestone 36: Array Padding Builtin
 
-- [ ] Implement `array_pad($array, $length, $value)` over the current ordered
+- [x] Implement `array_pad($array, $length, $value)` over the current ordered
   integer/string key model, including positive right-padding, negative
   left-padding, no-op behavior when the requested size is not larger than the
   input, non-array/non-int diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for references/copy-on-write, exact native `ValueError` and
   `TypeError` objects, and native lowering.
+
+## Milestone 37: Array Pairing Builtin
+
+- [ ] Implement `array_combine($keys, $values)` over the current ordered array
+  value model, including integer/string key-value conversion, length mismatch
+  diagnostics, non-array diagnostics, fixture CLI coverage, documentation, and
+  explicit gaps for references/copy-on-write, exact native `ValueError` and
+  `TypeError` objects, object/resource keys, and native lowering.

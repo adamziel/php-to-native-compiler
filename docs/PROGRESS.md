@@ -364,6 +364,14 @@ Implemented:
   returns false for gaps, string keys, negative keys, and out-of-order integer
   keys, is available through string-valued dynamic calls, and has a stable
   diagnostic for non-array operands.
+- Added `array_pad($array, $length, $value)` support over the current ordered
+  integer/string key model. The supported slice returns an unchanged clone when
+  `abs($length)` is not larger than the input size, right-pads for positive
+  lengths, left-pads for negative lengths, preserves string keys, reindexes
+  integer-keyed input entries from zero when padding is needed, supports
+  string-valued dynamic calls, preserves the original array, and has stable
+  diagnostics for non-array operands, non-int lengths, and oversized padding
+  requests.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -515,10 +523,12 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 51 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 36 focused array value tests.
+- `cargo test -p php_runtime` passes with 54 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 39 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
+- `cargo test -p php_runtime array_pad` passes with 3 focused array-padding
+  runtime tests.
 - `cargo test -p php_runtime array_key_first` passes with 1 focused
   first-key runtime test.
 - `cargo test -p php_runtime array_key_last` passes with 1 focused last-key
@@ -549,7 +559,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 68 representative runtime error fixtures.
+  covering 71 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -697,6 +707,10 @@ Tested:
   string-key behavior, false results for gaps/string keys/negative
   keys/out-of-order integer keys, dynamic string-call coverage, non-array
   diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_pad` passes with positive right-padding,
+  negative left-padding, no-op key-shape preservation, empty-array padding,
+  dynamic string-call coverage, original-array preservation, non-array/non-int
+  diagnostics, oversized-padding diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -741,6 +755,8 @@ Tested:
   with 1 CLI snapshot test covering the Milestone 34 `array_chunk` fixture.
 - `cargo test -p phpc --test array_list_introspection_builtins_cli` passes with
   1 CLI snapshot test covering the Milestone 35 `array_is_list` fixture.
+- `cargo test -p phpc --test array_padding_builtins_cli` passes with 1 CLI
+  snapshot test covering the Milestone 36 `array_pad` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -879,7 +895,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 68
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 71
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -937,6 +953,12 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_chunk_length_non_positive.php:3:6: unsupported call array_chunk(): length argument must be greater than 0 in the current subset, got 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php:3:6: unsupported call array_chunk(): preserve_keys argument must be bool in the current subset, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_pad_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_pad_non_array.php:2:6: unsupported call array_pad(): first argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_pad_length_non_int.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_pad_length_non_int.php:3:6: unsupported call array_pad(): length argument must be int in the current subset, got string`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_pad_length_too_large.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_pad_length_too_large.php:2:6: unsupported call array_pad(): padding length must be at most 1048576 in the current subset, got 1048577`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_first_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_first_non_array.php:3:6: unsupported call array_merge(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_second_non_array.php`
@@ -1238,6 +1260,13 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone35` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone35` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone36/array_pad.php` prints
+  the committed `array_pad` output with positive right-padding, negative
+  left-padding, no-op key-shape preservation, empty-array padding, and
+  string-valued dynamic calls to `array_pad`.
+- `cargo run -p phpc -- test tests/fixtures/milestone36` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone36` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1354,8 +1383,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone35/array_is_list.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 176 fixtures, 74 system PHP comparisons,
-  and 102 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone36/array_pad.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 180 fixtures, 75 system PHP comparisons,
+  and 105 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1411,14 +1443,14 @@ Still fails:
   reference/copy-on-write container effects, exact native `TypeError` objects,
   or native lowering.
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
-  `array_slice`, and `array_chunk` are limited to array arguments, clone values
-  under the current by-value model, require boolean preserve-key flags for
-  `array_reverse`, `array_slice`, and `array_chunk` when those arguments are
-  supplied, and do not yet model PHP references, copy-on-write containers,
-  object handle identity preservation, resource values, non-bool preserve-key
-  coercion, exact native `TypeError` objects, or native lowering. `array_is_list`
-  detects only the current ordered integer/string key model and does not model
-  reference/copy-on-write container effects.
+  `array_slice`, `array_chunk`, and `array_pad` are limited to array arguments,
+  clone values under the current by-value model, require boolean preserve-key
+  flags for `array_reverse`, `array_slice`, and `array_chunk` when those
+  arguments are supplied, and do not yet model PHP references, copy-on-write
+  containers, object handle identity preservation, resource values, non-bool
+  preserve-key coercion, exact native `TypeError` objects, or native lowering.
+  `array_is_list` detects only the current ordered integer/string key model and
+  does not model reference/copy-on-write container effects.
   `array_slice` currently requires integer offsets and integer or null length
   arguments when supplied.
   `array_chunk` currently requires positive integer lengths and boolean
@@ -1426,6 +1458,11 @@ Still fails:
   non-bool preserve-key coercion, references, copy-on-write containers, object
   handle identity preservation, resource values, exact native
   `ValueError`/`TypeError` objects, and native lowering are not implemented.
+  `array_pad` currently requires an integer length, uses a stable diagnostic
+  for requests that would insert more than 1,048,576 padding entries, and does
+  not implement non-int length coercion, exact native `ValueError`/`TypeError`
+  objects, references, copy-on-write containers, object handle identity
+  preservation, resource values, or native lowering.
   `array_keys` search-value filtering is implemented for the current scalar
   loose-comparison and strict-identity subsets, but array, object, resource, or
   reference search values, array, object, resource, or reference array values,
@@ -1556,7 +1593,6 @@ Still fails:
 
 Next:
 
-- Implement `array_pad($array, $length, $value)` over the current ordered
-  integer/string key model while keeping exact native `ValueError`/`TypeError`
-  objects, references, copy-on-write, and native lowering explicitly
-  unsupported.
+- Implement `array_combine($keys, $values)` over the current ordered array
+  value model while keeping exact native `ValueError`/`TypeError` objects,
+  references, copy-on-write, and native lowering explicitly unsupported.

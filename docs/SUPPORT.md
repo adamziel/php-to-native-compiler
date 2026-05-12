@@ -75,9 +75,10 @@
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
-  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
-  `print_r`; `print_r` can render current minimal object values
+  `array_pad`, `array_merge`, `array_flip`, `array_fill_keys`,
+  `array_count_values`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
+  minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -90,14 +91,16 @@
   offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
   preserve-key flag values, non-array `array_chunk` operands,
   non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
-  preserve-key flag values, non-array `array_merge` operands, non-array
-  `array_flip` operands, unsupported non-int/string `array_flip` values,
-  non-array `array_fill_keys` operands, unsupported non-int/string
-  `array_fill_keys` key values, non-array `array_count_values` operands,
-  unsupported non-int/string `array_count_values` values, non-array
-  `array_filter` operands, non-string `array_filter` callbacks, unsupported
-  `array_filter` mode flags, non-array `array_map` operands, non-string or
-  unresolved `array_map` callbacks, non-array variadic `array_map` operands,
+  preserve-key flag values, non-array `array_pad` operands, non-int
+  `array_pad` lengths, oversized `array_pad` padding requests, non-array
+  `array_merge` operands, non-array `array_flip` operands, unsupported
+  non-int/string `array_flip` values, non-array `array_fill_keys` operands,
+  unsupported non-int/string `array_fill_keys` key values, non-array
+  `array_count_values` operands, unsupported non-int/string
+  `array_count_values` values, non-array `array_filter` operands, non-string
+  `array_filter` callbacks, unsupported `array_filter` mode flags, non-array
+  `array_map` operands, non-string or unresolved `array_map` callbacks,
+  non-array variadic `array_map` operands,
   non-array `in_array`/`array_search` haystacks,
   non-bool `in_array`/`array_search` strict-mode flag values, unsupported
   non-scalar `array_keys` search-value comparisons, non-bool `array_keys`
@@ -272,7 +275,12 @@
   input arrays, and is available through string-valued dynamic function calls.
   `array_chunk($array, $length, true)` preserves original integer and string
   keys inside each chunk; boolean `false` uses the default chunk-key
-  reindexing path.
+  reindexing path. `array_pad($array, $length, $value)` accepts arrays and
+  integer lengths, returns an unchanged copy when `abs($length)` is not larger
+  than the input size, right-pads for positive lengths, left-pads for negative
+  lengths, preserves string keys, and reindexes integer-keyed input entries
+  from zero when padding is needed. It is also available through string-valued
+  dynamic function calls.
   `array_merge()` returns an empty array. `array_merge($array, ...)` accepts
   zero or more array operands, processes them left to right in insertion order,
   appends and reindexes integer-keyed entries from zero, preserves string keys,
@@ -332,15 +340,14 @@
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_filter` in the current
-  no-callback and string-callback forms, `array_map` in the current one-array
-  null-callback identity form, variadic null-callback zip form, and one-array
-  and variadic string-callback forms, `in_array`, `array_search`, both current
-  `foreach` array forms, direct
-  array-offset
-  `unset`, multiple supported `unset(...)` operands, `print_r`, and `var_dump`
-  are implemented for this ordered value model.
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
+  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
+  `array_filter` in the current no-callback and string-callback forms,
+  `array_map` in the current one-array null-callback identity form, variadic
+  null-callback zip form, and one-array and variadic string-callback forms,
+  `in_array`, `array_search`, both current `foreach` array forms, direct
+  array-offset `unset`, multiple supported `unset(...)` operands, `print_r`,
+  and `var_dump` are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -399,9 +406,11 @@
   operands, non-int `array_slice` offsets, non-int/non-null `array_slice`
   lengths, non-bool `array_slice` preserve-key flag values, non-array
   `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
-  non-bool `array_chunk` preserve-key flag values, non-array `array_merge`
-  operands, non-array `array_flip` operands, unsupported
-  non-int/string `array_flip` values, non-array `array_fill_keys` operands,
+  non-bool `array_chunk` preserve-key flag values, non-array `array_pad`
+  operands, non-int `array_pad` lengths, oversized `array_pad` padding
+  requests, non-array `array_merge` operands, non-array `array_flip`
+  operands, unsupported non-int/string `array_flip` values, non-array
+  `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
   `array_count_values` operands, unsupported non-int/string
   `array_count_values` values, non-array `array_filter` operands, non-string
@@ -431,9 +440,9 @@
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
-  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, or
-  `print_r`.
+  `array_pad`, `array_merge`, `array_flip`, `array_fill_keys`,
+  `array_count_values`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -463,10 +472,10 @@
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_merge`,
-  `array_flip`, `array_fill_keys`, `array_count_values`, `array_filter`,
-  `array_map`, `in_array`, `array_search`, `var_dump`, and `print_r` cover
-  the documented scalar/array/object subset.
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
+  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
+  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
+  `print_r` cover the documented scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -537,6 +546,18 @@
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
+  `array_pad($array, $length, $value)` accepts arrays and integer lengths. When
+  `abs($length)` is not larger than the input size it returns a cloned array
+  with the original key shape and append index. Positive lengths right-pad and
+  negative lengths left-pad to the requested size, preserving string keys while
+  reindexing integer-keyed input entries from zero when padding is needed.
+  Padding values are cloned into each new slot. Requests that would insert more
+  than 1,048,576 padding entries fail with a stable project diagnostic instead
+  of allocating unbounded memory. Non-int length coercion, exact native
+  `ValueError`/`TypeError` objects, references, copy-on-write behavior, object
+  handle identity preservation, resource values, and native lowering are not
+  implemented. `array_pad` is also available through string-valued dynamic
+  function calls.
   `array_merge()` accepts zero arguments and returns an empty array.
   `array_merge($array, ...)` accepts any number of array operands, processes
   them left to right in insertion order, appends integer-keyed entries with new
@@ -650,17 +671,18 @@
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, and both current `foreach` array forms follow
-  the current by-value model; PHP
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
+  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
+  `array_filter`, `array_map`, `in_array`, `array_search`, and both current
+  `foreach` array forms follow the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
   `array_reverse` preserve-key flag coercion, non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
   coercion, non-bool `array_chunk` preserve-key flag coercion,
-  non-int/non-positive length coercion, exact native
+  non-int/non-positive length coercion, non-int `array_pad` length coercion,
+  oversized `array_pad` native `ValueError` objects, exact native
   `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
   behavior, `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
@@ -805,6 +827,9 @@
   coercion, exact native `ValueError`/`TypeError` objects,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, and native lowering
+- `array_pad` non-int length coercion, exact native `ValueError`/`TypeError`
+  objects, reference/copy-on-write behavior, object handle identity
+  preservation, resource values, and native lowering
 - `array_merge` reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
