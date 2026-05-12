@@ -2180,3 +2180,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   gaps around strict mode, objects, arrays, and references.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add in_array builtin"` after
   the full suite passes.
+
+## Loop Event 2026-05-12T02:12:20Z
+
+- Codex round 36 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T020538Z-36.log`.
+
+## Loop Event 2026-05-12T02:12:23Z
+
+- Post-round 36 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:12:23Z
+
+- Post-round 36 tests passed; running checkpoint for this round.
