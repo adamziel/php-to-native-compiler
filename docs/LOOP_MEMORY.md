@@ -8226,3 +8226,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:43:47Z
 
 - Post-round 35 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:43:54Z
+
+- Starting round 36 at 20260512T184354Z from HEAD `500d68c`.
+
+## Loop Event 2026-05-12T18:44:01Z
+
+- Pre-round 36 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:47:19Z
+
+- Task attempted: completed Milestone 87 by making the existing multiple-property
+  class declaration parser boundary first-class with parser regression coverage,
+  committed unsupported-object fixture snapshots, `phpc run` CLI coverage, and
+  documentation updates. The parser reports a stable diagnostic for declarations
+  like `public $name, $email;` before multi-property metadata parsing exists.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_multiple_property_declaration.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 19 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 19 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_multiple_property_declaration.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt -- --check`
+  passed; `git diff --check` passed; `tools/run-tests.sh` passed with 278
+  fixtures, 106 system PHP comparisons, and 172 skips.
+- Remaining semantic gaps: multi-property metadata parsing remains unsupported,
+  including per-property defaults, mixed visibility/static handling, typed
+  multi-property declarations, reflection behavior, exact PHP parse/error
+  objects, and native lowering.
+- Next concrete task: add explicit parse diagnostics and CLI coverage for
+  unsupported class constant declarations before class constant metadata or
+  lookup exists.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject multiple property declarations"` after
+  the full suite passes.

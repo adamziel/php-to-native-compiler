@@ -483,6 +483,16 @@ class Box {
         ),
         (
             r#"<?php
+class Box {
+    public $name, $email;
+}
+"#,
+            3,
+            17,
+            "unsupported property declaration: multiple properties in one declaration are not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,

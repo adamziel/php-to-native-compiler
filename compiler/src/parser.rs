@@ -269,7 +269,7 @@ impl Parser {
             if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 return Err(self.error_at(
                     self.previous().span,
-                    "unsupported property declaration: multiple properties in one declaration are not implemented",
+                    unsupported_multiple_properties_message(),
                 ));
             }
             self.consume_keyword(
@@ -1861,6 +1861,10 @@ fn unsupported_return_type_message() -> &'static str {
 
 fn unsupported_property_type_message() -> &'static str {
     "unsupported property type declaration: typed property storage and enforcement are not implemented"
+}
+
+fn unsupported_multiple_properties_message() -> &'static str {
+    "unsupported property declaration: multiple properties in one declaration are not implemented"
 }
 
 fn unsupported_static_local_message() -> &'static str {

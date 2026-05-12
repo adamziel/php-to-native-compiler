@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an explicit unsupported multiple property declaration boundary with
+  parser regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported property default boundary with parser
   regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added explicit unsupported `abstract`, `final`, and `readonly` class member

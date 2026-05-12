@@ -841,8 +841,16 @@ handled.
 
 ## Milestone 87: Multiple Property Declaration Boundary
 
-- [ ] Add explicit parse diagnostics and CLI coverage for unsupported multiple
+- [x] Add explicit parse diagnostics and CLI coverage for unsupported multiple
   properties in one class property declaration before multi-property metadata
   parsing exists, including documentation and named gaps for per-property
   defaults, mixed visibility/static handling, typed properties, reflection, and
   native lowering.
+
+## Milestone 88: Class Constant Declaration Boundary
+
+- [ ] Add explicit parse diagnostics and CLI coverage for unsupported class
+  constant declarations before class constant metadata or lookup exists,
+  including documentation and named gaps for visibility, typed constants,
+  inheritance/override behavior, interface constants, reflection, and native
+  lowering.

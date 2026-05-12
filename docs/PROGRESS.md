@@ -2426,8 +2426,14 @@ Still fails:
   array/object defaults, readonly initialization rules, inheritance/reflection
   behavior, exact PHP parse/error objects, and native lowering remain
   unsupported.
+- Added explicit parser coverage, fixture coverage, and a `phpc run` CLI
+  snapshot for unsupported multiple properties in one class property
+  declaration before multi-property metadata parsing exists. Per-property
+  defaults, mixed visibility/static handling, typed multi-property
+  declarations, reflection behavior, exact PHP parse/error objects, and native
+  lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics and CLI coverage for unsupported multiple
-  properties in one declaration before multi-property metadata parsing exists.
+- Add explicit parse diagnostics and CLI coverage for unsupported class
+  constant declarations before class constant metadata or lookup exists.
