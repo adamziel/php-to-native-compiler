@@ -8,8 +8,14 @@ fn array_numeric_aggregation_builtin_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone49");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir, workspace_root);
+    let fixture_dirs = [
+        workspace_root.join("tests/fixtures/milestone49"),
+        workspace_root.join("tests/fixtures/milestone50"),
+    ];
+    let mut fixtures = fixture_dirs
+        .iter()
+        .flat_map(|fixture_dir| cli_snapshot_fixtures(fixture_dir, workspace_root))
+        .collect::<Vec<_>>();
 
     fixtures.sort();
     assert!(

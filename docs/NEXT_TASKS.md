@@ -535,9 +535,17 @@ handled.
 
 ## Milestone 50: Array Numeric Product Builtins
 
-- [ ] Implement `array_product($array)` over the current scalar
+- [x] Implement `array_product($array)` over the current scalar
   numeric-coercion subset, including integer/float accumulation behavior,
   non-array diagnostics, fixture CLI coverage, documentation, and explicit
   gaps for PHP warning recovery, object/resource values,
   references/copy-on-write, exact native `TypeError` objects, and native
   lowering.
+
+## Milestone 51: Array Reduction Builtin
+
+- [ ] Implement `array_reduce($array, $callback)` for the current string-valued
+  callback subset, including accumulator/current value callback invocation,
+  non-array and callback diagnostics, fixture CLI coverage, documentation, and
+  explicit gaps for initial values, references/copy-on-write, array/object
+  callables, closures, exact native `TypeError` objects, and native lowering.

@@ -345,6 +345,13 @@ Implemented:
   integer zero for empty arrays, is available through string-valued dynamic
   function calls, and has stable diagnostics for non-array operands,
   non-numeric strings, and non-scalar input values.
+- Added `array_product($array)` support for the current scalar numeric-coercion
+  subset. The supported slice multiplies `null`, booleans, integers, floats,
+  and well-formed numeric strings in insertion order, returns an integer result
+  until float input or checked integer overflow promotes to float, returns
+  integer one for empty arrays, is available through string-valued dynamic
+  function calls, and has stable diagnostics for non-array operands,
+  non-numeric strings, and non-scalar input values.
 - Added `array_filter($array)` support without a callback for the current
   ordered array value model. The supported slice removes values that are falsey
   under the current PHP-shaped truthiness rules, preserves original
@@ -609,8 +616,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 70 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 54 focused array value tests.
+- `cargo test -p php_runtime` passes with 74 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 59 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
 - `cargo test -p php_runtime array_pad` passes with 3 focused array-padding
@@ -647,6 +654,8 @@ Tested:
   array-counting runtime tests.
 - `cargo test -p php_runtime array_sum` passes with 2 focused numeric
   aggregation runtime tests.
+- `cargo test -p php_runtime array_product` passes with 2 focused numeric
+  product runtime tests.
 - `cargo test -p php_runtime array_filter` passes with 1 focused
   array-filtering runtime test.
 - `cargo test -p php_runtime array_slice` passes with 4 focused array-slicing
@@ -663,7 +672,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 98 representative runtime error fixtures.
+  covering 101 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -785,6 +794,10 @@ Tested:
   accumulation, integer/float result behavior, empty-array behavior, dynamic
   string-call coverage, non-array diagnostics, unsupported-value diagnostics,
   and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_product` passes with scalar numeric
+  multiplication, integer/float result behavior, zero and empty-array behavior,
+  dynamic string-call coverage, non-array diagnostics, unsupported-value
+  diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_filter` passes with falsey-value removal,
   value-only string callback execution for user functions and callable
   builtins, key preservation, dynamic string-call coverage, original-array
@@ -888,7 +901,8 @@ Tested:
 - `cargo test -p phpc --test array_counting_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 19 `array_count_values` fixture.
 - `cargo test -p phpc --test array_numeric_aggregation_builtins_cli` passes
-  with 1 CLI snapshot test covering the Milestone 49 `array_sum` fixture.
+  with 1 CLI snapshot test covering the Milestone 49 `array_sum` fixture and
+  the Milestone 50 `array_product` fixture.
 - `cargo test -p phpc --test array_filtering_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 20 and Milestone 21 `array_filter`
   fixtures.
@@ -1069,7 +1083,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 81
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 101
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -1205,6 +1219,12 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_sum_non_numeric_string.php:3:6: unsupported call array_sum(): values must be numeric in the current subset, got non-numeric string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_sum_array_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_sum_array_value.php:3:6: unsupported call array_sum(): values must be numeric scalar in the current subset, got array`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_product_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_product_non_array.php:2:6: unsupported call array_product(): argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_product_non_numeric_string.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_product_non_numeric_string.php:3:6: unsupported call array_product(): values must be numeric in the current subset, got non-numeric string`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_product_array_value.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_product_array_value.php:3:6: unsupported call array_product(): values must be numeric scalar in the current subset, got array`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_non_array.php:2:6: unsupported call array_filter(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_callback_non_string.php`
@@ -1375,6 +1395,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone49` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone49` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone50/array_product.php`
+  prints the committed `array_product` output with scalar numeric
+  multiplication, integer/float result behavior, zero and empty-array behavior,
+  preserved source values, and dynamic string-call coverage.
+- `cargo run -p phpc -- test tests/fixtures/milestone50` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone50` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone20/array_filter.php`
   prints the committed `array_filter` output with falsey-value removal, key
@@ -1759,8 +1787,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone49/array_sum.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 220 fixtures, 88 system PHP comparisons,
-  and 132 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone50/array_product.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 224 fixtures, 89 system PHP comparisons,
+  and 135 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1902,6 +1933,11 @@ Still fails:
   references, copy-on-write containers, object/resource values, exact native
   `TypeError` objects, PHP warning recovery, and native lowering are not
   implemented.
+  `array_product` has the same numeric scalar input boundary as `array_sum`;
+  non-numeric strings and non-scalar values fail with stable project
+  diagnostics instead of PHP's warning/recovery behavior. References,
+  copy-on-write containers, object/resource values, exact native `TypeError`
+  objects, PHP warning recovery, and native lowering are not implemented.
   `array_filter` callback support is limited to string-valued user-function or
   callable-builtin names in value-only mode. Array/object callables, closures,
   first-class callables, method calls, key-only/key-value callback modes,
@@ -2006,6 +2042,7 @@ Still fails:
 
 Next:
 
-- Implement `array_product($array)` over the current scalar numeric-coercion
-  subset, including integer/float accumulation behavior, non-array diagnostics,
-  fixture CLI coverage, docs, and explicit unsupported gaps.
+- Implement `array_reduce($array, $callback)` for the current string-valued
+  callback subset, including accumulator/current value callback invocation,
+  non-array/callback diagnostics, fixture CLI coverage, docs, and explicit
+  unsupported gaps.

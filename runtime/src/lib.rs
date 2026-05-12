@@ -889,6 +889,16 @@ impl PhpArray {
         Ok(value_from_number(sum))
     }
 
+    pub fn product_values(&self) -> RuntimeResult<Value> {
+        let mut product = Number::Int(1);
+        for entry in &self.entries {
+            let value = array_product_number_from_value(&entry.value)?;
+            product = multiply_array_product_numbers(product, value);
+        }
+
+        Ok(value_from_number(product))
+    }
+
     pub fn filtered_without_callback(&self) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -1097,6 +1107,14 @@ fn array_count_values_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
 }
 
 fn array_sum_number_from_value(value: &Value) -> RuntimeResult<Number> {
+    array_numeric_number_from_value("array_sum()", value)
+}
+
+fn array_product_number_from_value(value: &Value) -> RuntimeResult<Number> {
+    array_numeric_number_from_value("array_product()", value)
+}
+
+fn array_numeric_number_from_value(callable: &'static str, value: &Value) -> RuntimeResult<Number> {
     match value {
         Value::Null => Ok(Number::Int(0)),
         Value::Bool(false) => Ok(Number::Int(0)),
@@ -1105,12 +1123,12 @@ fn array_sum_number_from_value(value: &Value) -> RuntimeResult<Number> {
         Value::Float(value) => Ok(Number::Float(*value)),
         Value::String(value) => parse_numeric_string(value).ok_or_else(|| {
             RuntimeError::unsupported_call(
-                "array_sum()",
+                callable,
                 "values must be numeric in the current subset, got non-numeric string",
             )
         }),
         other => Err(RuntimeError::unsupported_call(
-            "array_sum()",
+            callable,
             format!(
                 "values must be numeric scalar in the current subset, got {}",
                 other.type_name()
@@ -1126,6 +1144,16 @@ fn add_array_sum_numbers(left: Number, right: Number) -> Number {
             .map(Number::Int)
             .unwrap_or_else(|| Number::Float(left as f64 + right as f64)),
         (left, right) => Number::Float(left.as_float() + right.as_float()),
+    }
+}
+
+fn multiply_array_product_numbers(left: Number, right: Number) -> Number {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => left
+            .checked_mul(right)
+            .map(Number::Int)
+            .unwrap_or_else(|| Number::Float(left as f64 * right as f64)),
+        (left, right) => Number::Float(left.as_float() * right.as_float()),
     }
 }
 
@@ -4428,6 +4456,80 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_sum(): values must be numeric scalar in the current subset, got array"
+        );
+    }
+
+    #[test]
+    fn array_product_accumulates_supported_numeric_scalar_values() {
+        let mut integers = PhpArray::new();
+        integers.insert("true", Value::Bool(true));
+        integers.insert("int", Value::Int(2));
+        integers.insert("string-int", Value::String(" 4 ".to_string()));
+        integers.insert("negative", Value::String("-3".to_string()));
+
+        assert_eq!(integers.product_values().unwrap(), Value::Int(-24));
+
+        let mut with_zero = PhpArray::new();
+        with_zero.insert("null", Value::Null);
+        with_zero.insert("true", Value::Bool(true));
+        with_zero.insert("int", Value::Int(2));
+
+        assert_eq!(with_zero.product_values().unwrap(), Value::Int(0));
+
+        let mut mixed = PhpArray::new();
+        mixed.insert("int", Value::Int(2));
+        mixed.insert("float", Value::Float(3.5));
+        mixed.insert("exponent", Value::String("6e1".to_string()));
+        mixed.insert("decimal", Value::String(".25".to_string()));
+
+        assert_eq!(mixed.product_values().unwrap(), Value::Float(105.0));
+
+        let empty = PhpArray::new();
+        assert_eq!(empty.product_values().unwrap(), Value::Int(1));
+
+        let mut overflowing = PhpArray::new();
+        overflowing.insert("max", Value::Int(i64::MAX));
+        overflowing.insert("two", Value::Int(2));
+        assert!(matches!(
+            overflowing.product_values().unwrap(),
+            Value::Float(_)
+        ));
+    }
+
+    #[test]
+    fn array_product_rejects_values_outside_current_numeric_subset() {
+        let mut string = PhpArray::new();
+        string.insert("bad", Value::String("abc".to_string()));
+
+        let error = string.product_values().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_product()".to_string(),
+                reason: "values must be numeric in the current subset, got non-numeric string"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_product(): values must be numeric in the current subset, got non-numeric string"
+        );
+
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array.product_values().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_product()".to_string(),
+                reason: "values must be numeric scalar in the current subset, got array"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_product(): values must be numeric scalar in the current subset, got array"
         );
     }
 

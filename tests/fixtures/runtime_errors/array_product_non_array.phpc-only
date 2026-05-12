@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP raises a native TypeError for non-array array_product operands.

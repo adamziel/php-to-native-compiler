@@ -88,6 +88,7 @@ subset:
   `array_flip` over integer/string array values,
   `array_fill_keys` over integer/string key values, `array_count_values` over
   integer/string array values, `array_sum` over the current scalar
+  numeric-coercion subset, `array_product` over the current scalar
   numeric-coercion subset,
   `array_filter` without a callback and with string-valued value-only
   callbacks, `array_map` over the current one-array null-callback identity,

@@ -79,8 +79,9 @@
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
-  `print_r`; `print_r` can render current minimal object values
+  `array_product`, `array_filter`, `array_map`, `in_array`, `array_search`,
+  `var_dump`, and `print_r`; `print_r` can render current minimal object
+  values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -114,7 +115,9 @@
   `array_count_values` operands,
   unsupported non-int/string
   `array_count_values` values, non-array `array_sum` operands, unsupported
-  non-numeric/non-scalar `array_sum` values, non-array `array_filter`
+  non-numeric/non-scalar `array_sum` values, non-array `array_product`
+  operands, unsupported non-numeric/non-scalar `array_product` values,
+  non-array `array_filter`
   operands, non-string
   `array_filter` callbacks, unsupported `array_filter` mode flags, non-array
   `array_map` operands, non-string or unresolved `array_map` callbacks,
@@ -361,6 +364,11 @@
   numeric-coercion rules, accumulates as an integer until a float input or
   integer overflow promotes the result to float, returns integer zero for an
   empty array, and is available through string-valued dynamic function calls.
+  `array_product($array)` accepts the same current numeric scalar value subset,
+  multiplies values in insertion order, accumulates as an integer until a float
+  input or integer overflow promotes the result to float, returns integer one
+  for an empty array, and is available through string-valued dynamic function
+  calls.
   `array_filter($array)` without a callback accepts arrays only, removes values
   that are falsey under the current PHP-shaped truthiness rules, preserves the
   original integer/string keys and insertion order of kept entries, and is
@@ -405,8 +413,8 @@
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`,
   `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_sum`, `array_filter` in the
-  current no-callback and string-callback forms,
+  `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
+  `array_filter` in the current no-callback and string-callback forms,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic string-callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
@@ -491,7 +499,9 @@
   `array_count_values` operands,
   unsupported non-int/string
   `array_count_values` values, non-array `array_sum` operands, unsupported
-  non-numeric/non-scalar `array_sum` values, non-array `array_filter`
+  non-numeric/non-scalar `array_sum` values, non-array `array_product`
+  operands, unsupported non-numeric/non-scalar `array_product` values,
+  non-array `array_filter`
   operands, non-string `array_filter` callbacks, unsupported `array_filter`
   mode flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
@@ -522,8 +532,8 @@
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
-  `array_sum`, `array_filter`, `array_map`, `in_array`, `array_search`,
-  `var_dump`, or `print_r`.
+  `array_sum`, `array_product`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -557,8 +567,8 @@
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
-  `print_r` cover the documented scalar/array/object subset.
+  `array_product`, `array_filter`, `array_map`, `in_array`, `array_search`,
+  `var_dump`, and `print_r` cover the documented scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -780,6 +790,19 @@
   native `TypeError` objects, object/resource value recovery, PHP warning
   recovery, and native lowering are not implemented. `array_sum` is also
   available through string-valued dynamic function calls.
+  `array_product($array)` accepts arrays only, treats `null` and `false` as
+  zero, `true` as one, integers and floats as themselves, and well-formed
+  numeric strings through the current numeric-string parser. Pure integer
+  inputs return an integer result unless checked integer multiplication
+  overflows, at which point the result is promoted to float; any float-valued
+  input or float numeric string also produces a float result. Empty arrays
+  return integer one. Non-array operands, non-numeric strings, arrays, objects,
+  and future resources inside the input fail with stable project diagnostics
+  instead of PHP's warning/recovery behavior. References, copy-on-write
+  containers, exact native `TypeError` objects, object/resource value recovery,
+  PHP warning recovery, and native lowering are not implemented.
+  `array_product` is also available through string-valued dynamic function
+  calls.
   `array_filter($array)` without a callback accepts arrays only, removes
   `null`, `false`, zero integers and floats, empty strings, string `"0"`, and
   empty arrays using the current `Value::is_truthy` rules, preserves the
@@ -853,9 +876,9 @@
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_sum`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, and both current `foreach` array forms follow
-  the current by-value model; PHP
+  `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
+  `array_filter`, `array_map`, `in_array`, `array_search`, and both current
+  `foreach` array forms follow the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
@@ -877,8 +900,9 @@
   for unsupported source values, and `array_fill_keys` warning-and-skip
   behavior for unsupported key values, `array_count_values` warning-and-skip
   behavior for unsupported values, `array_sum` PHP warning recovery for
-  unsupported values, and `array_filter` callback forms outside the current
-  string function-name subset plus key/key-value modes, and `array_map`
+  unsupported values, `array_product` PHP warning recovery for unsupported
+  values, and `array_filter` callback forms outside the current string
+  function-name subset plus key/key-value modes, and `array_map`
   callback forms outside current null-callback and string-valued function-name
   forms are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
@@ -1057,6 +1081,9 @@
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering
 - `array_sum` PHP warning recovery for non-numeric strings and unsupported
+  value types, object/resource values, reference/copy-on-write behavior, exact
+  native `TypeError` objects, and native lowering
+- `array_product` PHP warning recovery for non-numeric strings and unsupported
   value types, object/resource values, reference/copy-on-write behavior, exact
   native `TypeError` objects, and native lowering
 - `array_filter` callbacks outside string-valued user-function/callable-builtin

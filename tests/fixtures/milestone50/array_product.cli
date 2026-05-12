@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+-24
+0
+105
+1
+6e1|.25
+105--- stdout end ---
+stderr:
+--- stderr end ---
