@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/get_class_non_object.php:2:6: unsupported call get_class(): argument must be object, got int
+--- stderr end ---

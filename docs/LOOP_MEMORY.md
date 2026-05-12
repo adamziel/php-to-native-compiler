@@ -8766,3 +8766,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:38:16Z
 
 - Post-round 45 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:38:28Z
+
+- Starting round 46 at 20260512T193828Z from HEAD `e55d19a`.
+
+## Loop Event 2026-05-12T19:38:40Z
+
+- Pre-round 46 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:52:35Z
+
+- Task attempted: implemented `get_class($object)` for the current minimal
+  object value model. The slice returns the declared class name for current
+  object values, works through string-valued dynamic function calls, rejects
+  non-object arguments with a stable runtime diagnostic, and keeps native
+  lowering explicitly rejected through the existing unsupported function/class
+  codegen paths.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone97/get_class.*`,
+  `tests/fixtures/runtime_errors/get_class_non_object.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model get_class`
+  passed; `cargo test -p phpc --test object_introspection_builtins_cli`
+  passed; `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone97` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone97`
+  passed with 1 system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 114 fixtures; direct `phpc run`
+  commands for the supported and non-object fixtures produced the expected
+  stdout/stderr/exit behavior; `cargo fmt` passed; `git diff --check` passed;
+  `tools/run-tests.sh` passed with 290 fixtures, 107 system PHP comparisons,
+  and 183 skips.
+- Remaining semantic gaps: `get_class()` is limited to current minimal object
+  values. Inheritance, aliases/imports, anonymous classes, magic class names,
+  object handle identity, exact native `TypeError` objects, and native lowering
+  remain unsupported.
+- Next concrete task: continue the next small object/class boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add get_class builtin"` after the full suite
+  passes.

@@ -2483,6 +2483,12 @@ Still fails:
   classes before trait composition exists. Trait methods/properties/constants,
   conflict resolution, aliases, visibility adaptations, namespace-aware traits,
   exact PHP parse/error objects, and native lowering remain unsupported.
+- Added `get_class($object)` support for the current minimal object value
+  model, including string-valued dynamic-call availability, non-object
+  diagnostics, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection. Inheritance, aliases/imports, anonymous classes, magic class
+  names, object handle identity, exact native `TypeError` objects, and native
+  lowering remain unsupported.
 
 Next:
 

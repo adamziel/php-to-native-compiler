@@ -1932,6 +1932,19 @@ impl Interpreter {
                     ),
                 )),
             },
+            "get_class" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Object(object) => Ok(Value::String(object.class_name().to_string())),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "get_class()",
+                            format!("argument must be object, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2629,6 +2642,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_map"
             | "in_array"
             | "array_search"
+            | "get_class"
             | "var_dump"
             | "print_r"
     )

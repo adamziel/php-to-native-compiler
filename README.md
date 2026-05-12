@@ -114,8 +114,9 @@ subset:
   one-array null-callback identity, variadic null-callback zip, and variadic
   string-callback subset with one-array key preservation and multi-array
   reindexing,
-  `in_array` and `array_search` including strict scalar searches, `var_dump`,
-  and `print_r`
+  `in_array` and `array_search` including strict scalar searches,
+  `get_class($object)` over the current minimal object value model,
+  `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, duplicate or unsupported `define(...)` constant
@@ -155,7 +156,8 @@ subset:
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,
 read/write public instance properties by static name, and check those public
-properties with `isset`, but constructors, `$this` object context binding,
+properties with `isset`. `get_class($object)` returns the declared class name
+for those minimal object values. Constructors, `$this` object context binding,
 method dispatch, dynamic property names, visibility enforcement for non-public
 properties, object handle identity, clone expressions, `instanceof`
 relationship checks, class-name constant resolution through `::class`,

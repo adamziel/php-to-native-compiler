@@ -919,3 +919,12 @@ handled.
   CLI coverage, documentation, and named gaps for trait
   methods/properties/constants, conflict resolution, aliases, visibility
   adaptations, namespaces, exact PHP parse/error objects, and native lowering.
+
+## Milestone 97: Object Introspection Builtins
+
+- [x] Implement `get_class($object)` over the current minimal object value
+  model, including declared class-name return behavior, string-valued
+  dynamic-call availability, non-object diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for inheritance, aliases/imports, anonymous
+  classes, magic class names, object handle identity, exact native `TypeError`
+  objects, and native lowering.

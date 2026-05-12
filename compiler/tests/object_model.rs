@@ -161,6 +161,53 @@ if (isset($missing->name)) {
 }
 
 #[test]
+fn get_class_returns_declared_class_name_for_minimal_objects() {
+    let source = r#"<?php
+class Box {}
+class Profile {
+    public $name;
+}
+
+$box = new box();
+$profile = new PROFILE();
+echo get_class($box), "\n";
+$call = "get_class";
+echo $call($profile), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "Box\nProfile\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_class_requires_object_argument() {
+    let error = runtime_error("<?php\necho get_class(42);\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call get_class(): argument must be object, got int"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_class(new Box());\n")
+        .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations")
+            || error.message.contains("object instantiation")
+            || error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php

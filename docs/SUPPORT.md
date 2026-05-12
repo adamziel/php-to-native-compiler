@@ -103,8 +103,9 @@
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
-  minimal object values
+  `array_search`, `get_class`, `var_dump`, and `print_r`; `get_class` returns
+  the declared class name for current minimal object values, and `print_r` can
+  render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -157,7 +158,8 @@
   comparisons, duplicate constants, undefined constants, unsupported
   `global` declarations, duplicate class/member metadata, undefined classes,
   unsupported object instantiation, undefined object properties, invalid
-  property targets, unsupported non-public property access,
+  property targets, unsupported non-public property access, non-object
+  `get_class` operands,
   object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
@@ -268,9 +270,12 @@
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
   false for `null` slots, missing property names, undefined target variables,
-  and non-object target variables. Undefined properties, property access on
-  non-object values, and non-public properties still fail with stable runtime
-  diagnostics for normal reads/writes. Static member expressions through `::`,
+  and non-object target variables. `get_class($object)` returns the declared
+  class name stored on the current minimal object value and is also available
+  through string-valued dynamic function calls. Undefined properties, property
+  access on non-object values, non-public properties, and non-object
+  `get_class` arguments still fail with stable runtime diagnostics. Static
+  member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
@@ -591,8 +596,8 @@
   targets, unresolved dynamic function callees, duplicate constants, undefined
   constants, division by zero, non-numeric string arithmetic, duplicate class
   metadata, undefined classes, undefined object properties, invalid property
-  targets, non-public property access, object-to-string conversion, invalid
-  `break`/`continue` outside a loop,
+  targets, non-public property access, non-object `get_class` operands,
+  object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. `if`/`elseif`/`else`, `while`,
@@ -600,8 +605,8 @@
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, global constants, top-level `const` declarations,
-  `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
-  rejected with explicit codegen errors.
+  `get_class(...)`, `constant(...)`, `defined(...)`, and `define(...)`
+  constant definitions are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -615,7 +620,7 @@
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, `var_dump`, or `print_r`.
+  `in_array`, `array_search`, `get_class`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -685,12 +690,13 @@
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
-  `print_r` cover the documented
+  `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
+  `var_dump`, and `print_r` cover the documented
   scalar/array/object subset.
-  `print_r` can also render the current minimal object values. `strlen`
-  remains scalar-only and rejects arrays and objects. `count` accepts arrays
-  only.
+  `get_class($object)` returns the declared class name for current minimal
+  object values and rejects non-object arguments. `print_r` can also render the
+  current minimal object values. `strlen` remains scalar-only and rejects
+  arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
   and string keys over the current ordered array value model, returns true for
   existing keys even when the stored value is `null`, returns false for missing
