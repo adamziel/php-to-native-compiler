@@ -610,6 +610,41 @@ fn get_parent_class_requires_object_or_string_argument() {
 }
 
 #[test]
+fn get_declared_classes_returns_current_program_classes_in_declaration_order() {
+    let source = r#"<?php
+class Box {}
+class Profile {}
+
+$declared = get_declared_classes();
+print_r($declared);
+echo count($declared), "|", $declared[0], "|", $declared[1], "\n";
+
+$call = "get_declared_classes";
+$dynamic = $call();
+echo $dynamic[0], "|", $dynamic[1];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => Box\n    [1] => Profile\n)\n2|Box|Profile\nBox|Profile"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_declared_classes_requires_no_arguments() {
+    let error = runtime_error("<?php\nvar_dump(get_declared_classes(42));\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "arity mismatch for get_declared_classes(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -724,6 +759,18 @@ fn emit_ir_rejects_is_subclass_of_until_native_object_lowering_exists() {
 fn emit_ir_rejects_get_parent_class_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\necho get_parent_class(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_get_declared_classes_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho get_declared_classes();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

@@ -2556,6 +2556,13 @@ Still fails:
   aliases/imports, namespace-aware names, autoloading, default `$this`
   behavior, exact native `TypeError` behavior, and native lowering remain
   unsupported.
+- Added `get_declared_classes()` over the current declared-class metadata. The
+  supported slice returns a zero-indexed array of classes declared in the
+  current parsed program in declaration order, works through string-valued
+  dynamic calls, has fixture CLI coverage, and rejects native lowering through
+  the current function-call boundary. Built-in/internal/extension classes,
+  anonymous classes, autoloading, namespaces/import aliases, exact native
+  ordering, and native lowering remain unsupported.
 
 Next:
 

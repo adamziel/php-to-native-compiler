@@ -121,8 +121,8 @@ subset:
   `method_exists($object_or_class, $method)` and
   `is_a($object_or_class, $class_name[, $allow_string])` and
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` and
-  `get_parent_class($object_or_class)` over the current minimal object value
-  model and declared-class metadata,
+  `get_parent_class($object_or_class)` and `get_declared_classes()` over the
+  current minimal object value model and declared-class metadata,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
@@ -186,8 +186,10 @@ same object/string and class-name argument boundary, but because inheritance is
 not represented yet it returns false for exact-class and no-parent metadata
 cases. `get_parent_class($object_or_class)` accepts current object values or
 declared string class names and returns false for all supported inputs until
-parent class metadata exists. Constructors, `$this` object context binding,
-method
+parent class metadata exists. `get_declared_classes()` returns a zero-indexed
+array of classes declared in the current parsed program in declaration order,
+and is also available through string-valued dynamic function calls.
+Constructors, `$this` object context binding, method
 dispatch, dynamic property names, visibility enforcement for non-public
 properties, inheritance and interface relationship checks, object handle
 identity, clone expressions, `instanceof` relationship checks, class-name
@@ -195,8 +197,9 @@ constant resolution through `::class`, property default values, constructor
 arguments, multiple properties in one declaration, class constant
 declarations, static property storage, static method dispatch, magic static
 receivers such as `self::`, `parent::`, and `static::`, class constants, trait
-use inside classes, enum declarations, and native object lowering are not
-supported yet.
+use inside classes, enum declarations, built-in/internal/extension classes in
+`get_declared_classes()`, anonymous classes, exact native class ordering, and
+native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

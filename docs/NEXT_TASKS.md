@@ -1008,10 +1008,20 @@ handled.
 
 ## Milestone 106: Declared Class List Introspection Boundary
 
-- [ ] Add the next honest `get_declared_classes()` boundary over the current
+- [x] Add the next honest `get_declared_classes()` boundary over the current
   declared-class metadata: either a stable unsupported diagnostic or a narrow
   executable list slice for classes declared in the current program, with
   string-valued dynamic-call coverage, fixture CLI coverage, documentation,
   and explicit gaps for built-in/internal classes, extension classes,
   anonymous classes, autoloading, namespaces/import aliases, exact native
   ordering, and native lowering.
+
+## Milestone 107: Class Method List Introspection Boundary
+
+- [ ] Add the next honest `get_class_methods($object_or_class)` boundary over
+  the current method metadata: either a stable unsupported diagnostic or a
+  narrow executable list slice for current object/string class inputs, with
+  string-valued dynamic-call coverage, invalid argument diagnostics, fixture
+  CLI coverage, documentation, and explicit gaps for inheritance, traits,
+  interfaces, visibility filtering differences, aliases/imports, autoloading,
+  exact native ordering, and native lowering.

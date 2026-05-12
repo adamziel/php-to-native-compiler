@@ -9284,3 +9284,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:36:16Z
 
 - Post-round 54 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:36:26Z
+
+- Starting round 55 at 20260512T203626Z from HEAD `20d249e`.
+
+## Loop Event 2026-05-12T20:36:35Z
+
+- Pre-round 55 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:39:30Z
+
+- Task attempted: implemented `get_declared_classes()` over the current
+  declared-class metadata. The supported slice returns a zero-indexed array of
+  classes declared in the current parsed program in declaration order, works
+  through string-valued dynamic calls, rejects extra arguments with the
+  existing arity diagnostic, and keeps native lowering on the current
+  function-call rejection path.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone106/get_declared_classes.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  get_declared_classes -- --nocapture` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli -- --nocapture` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone106` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone106` passed with one `.phpc-only`
+  comparison skip; `tools/run-tests.sh` passed with 312 fixtures, 115 system
+  PHP comparisons, and 197 skips.
+- Remaining semantic gaps: `get_declared_classes()` only reports classes
+  declared in the current parsed program. Built-in/internal/extension classes,
+  anonymous classes, autoloading, namespaces/import aliases, exact native
+  ordering, and native lowering remain unsupported.
+- Next concrete task: add the next honest `get_class_methods($object_or_class)`
+  boundary over the current method metadata.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_declared_classes boundary"`
+  after the full suite passes.

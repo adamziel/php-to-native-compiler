@@ -2012,6 +2012,16 @@ impl Interpreter {
                     )),
                 }
             }
+            "get_declared_classes" => {
+                expect_arity(name, &args, 0, span)?;
+                let mut classes = PhpArray::new();
+                for class in self.classes.classes() {
+                    classes
+                        .append(Value::String(class.name().to_string()))
+                        .expect("declared class count fits in array keys");
+                }
+                Ok(Value::Array(classes))
+            }
             "property_exists" => match args.as_slice() {
                 [object_or_class, Value::String(property_name)] => {
                     let exists = match object_or_class {
@@ -2941,6 +2951,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_object"
             | "get_debug_type"
             | "class_exists"
+            | "get_declared_classes"
             | "property_exists"
             | "method_exists"
             | "is_a"
