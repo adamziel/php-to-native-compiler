@@ -7427,3 +7427,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   constant using the current input path where available.
 - Checkpoint: pending `tools/checkpoint.sh "parser: execute __LINE__ magic constant"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T17:09:55Z
+
+- Codex round 21 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T170242Z-21.log`.
+
+## Loop Event 2026-05-12T17:10:02Z
+
+- Post-round 21 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:10:02Z
+
+- Post-round 21 tests passed; running checkpoint for this round.
