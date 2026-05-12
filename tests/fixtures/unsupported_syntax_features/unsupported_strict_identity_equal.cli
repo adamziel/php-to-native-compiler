@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_equal.php:2:8: unsupported strict comparison: strict identity operators === and !== are not implemented
+--- stderr end ---

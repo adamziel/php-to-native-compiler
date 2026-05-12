@@ -3051,3 +3051,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:52:04Z
 
 - Post-round 48 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:52:08Z
+
+- Starting round 49 at 20260512T035208Z from HEAD `ffd6076`.
+
+## Loop Event 2026-05-12T03:52:11Z
+
+- Pre-round 49 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:55:49Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  strict identity operators `===` and `!==` before implementing strict
+  comparison execution. The lexer now tokenizes the strict identity operators,
+  the parser rejects them at the equality-precedence layer with a stable
+  message, and unsupported syntax fixtures cover both operators through
+  `phpc run` CLI snapshots.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_equal.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_not_equal.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed after formatting;
+  `cargo test -p phpc --test syntax_boundaries unsupported_strict_identity_operators_are_rejected_with_stable_parse_error`
+  passed; `cargo test -p phpc --test unsupported_syntax_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 12 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 12 `.phpc-only`
+  PHP comparisons skipped; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_equal.php`
+  exited `1` with the expected stable parse diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_not_equal.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 117 fixtures, 47 system PHP comparisons, and 70 `.phpc-only`
+  skips.
+- Remaining semantic gaps: strict identity execution is still unsupported,
+  including PHP type-and-value identity semantics for scalars, arrays, objects,
+  resources, references, object handle identity, and native lowering.
+- Next concrete task: implement strict identity operators `===` and `!==` for
+  the current scalar value subset only, while keeping arrays, objects,
+  resources, references, and native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: reject strict identity operators"`
+  after the full suite passes.

@@ -112,6 +112,8 @@
   alternate colon/`endswitch` syntax
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
+- explicit parse diagnostics for unsupported strict identity comparison
+  operators `===` and `!==`
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -236,11 +238,13 @@
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and
-  floats. This is not PHP's full comparison matrix: strict identity operators,
+  floats. Strict identity operators `===` and `!==` are reserved and rejected
+  with a stable parse diagnostic until strict comparison execution exists. This
+  is not PHP's full comparison matrix: strict type-and-value identity semantics,
   arrays, objects, resources, and edge cases around `NAN`/`INF` and
   PHP-version-specific float string precision are not covered. Object
-  comparisons in `phpc run` fail with an explicit unsupported-comparison
-  runtime error.
+  comparisons in `phpc run` fail with an explicit unsupported-comparison runtime
+  error.
 - Conditionals: statement-form `if` supports zero or more `elseif` clauses and
   an optional `else` clause over the current expression and truthiness subset.
   Branch bodies may be brace blocks or single statements. Alternate
@@ -394,6 +398,10 @@
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
+- Scalar comparison gaps: strict identity operators `===` and `!==` fail with a
+  stable parse diagnostic instead of executing PHP's type-and-value identity
+  semantics. Strict identity for scalars, arrays, objects, resources,
+  references, object handle identity, and native lowering is not implemented.
 - Array gaps: array spread elements and array reference elements are rejected
   with stable parse diagnostics. `unset(...)` forms outside direct variables
   and direct array-offset operands, comma-separated `for` header expression

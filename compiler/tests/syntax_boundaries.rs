@@ -344,6 +344,43 @@ endif;
 }
 
 #[test]
+fn unsupported_strict_identity_operators_are_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+echo 1 === 1;
+"#,
+            2,
+            8,
+        ),
+        (
+            r#"<?php
+echo 1 !== 1;
+"#,
+            2,
+            8,
+        ),
+        (
+            r#"<?php
+$same = $left === $right;
+"#,
+            2,
+            15,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported strict comparison: strict identity operators === and !== are not implemented"
+        );
+    }
+}
+
+#[test]
 fn unsupported_break_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

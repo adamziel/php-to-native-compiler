@@ -309,6 +309,9 @@ Implemented:
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported alternate `if`/`elseif`/`else` colon/`endif`
   conditional syntax before alternate conditional execution is implemented.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
+  CLI snapshots for unsupported strict identity operators `===` and `!==`
+  before strict comparison execution is implemented.
 
 Tested:
 
@@ -353,7 +356,8 @@ Tested:
   expression-form `for`, expression-form `do ... while`, expression-form and
   alternate-syntax `switch`, unsupported switch case separators, alternate
   `if`/`elseif`/`else` colon/`endif` syntax, and unsupported
-  `break`/`continue` loop-depth arguments.
+  `break`/`continue` loop-depth arguments, and unsupported strict identity
+  operators.
 - `cargo test -p phpc --test for_loop` passes with C-style `for` loop
   coverage for initializer/condition/increment execution, optional header
   slots, uppercase `FOR`, single-statement bodies, and `break;`/`continue;`
@@ -368,7 +372,7 @@ Tested:
   skipped later-condition coverage, `else` fallback behavior,
   single-statement bodies, and uppercase tail keyword coverage.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 10 unsupported syntax fixtures.
+  snapshot test covering 12 unsupported syntax fixtures.
 - `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
   test covering the Milestone 10 syntax expansion fixtures.
 - `cargo test -p phpc --test conditional_refinements_cli` passes with 1 CLI
@@ -519,9 +523,9 @@ Tested:
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with the
   unsupported syntax CLI snapshots, including alternate conditional syntax.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 10 unsupported syntax fixtures.
+  passes with 12 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 10 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 12 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -656,6 +660,10 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_switch.php:3:16: unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_alternate_if.php:5:23: unsupported if: alternate if/elseif/else colon/endif syntax is not implemented; use brace blocks or single-statement bodies`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_equal.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_equal.php:2:8: unsupported strict comparison: strict identity operators === and !== are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_not_equal.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_strict_identity_not_equal.php:2:8: unsupported strict comparison: strict identity operators === and !== are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/break_while.php`
   prints `0,1,2,after:2`.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/continue_while.php`
@@ -747,8 +755,8 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 115 fixtures, 47 system PHP comparisons,
-  and 68 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 117 fixtures, 47 system PHP comparisons,
+  and 70 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -766,9 +774,11 @@ Still fails:
   `"10 apples"`, are rejected instead of warning and continuing with the leading
   number. PHP's warning/notice recovery mode and exact integer-overflow
   promotion rules remain unsupported.
-- Scalar comparisons do not implement strict identity (`===`, `!==`), arrays,
-  objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
-  float string precision.
+- Scalar comparisons do not execute strict identity (`===`, `!==`); those
+  operators now fail with stable parse diagnostics until strict comparison
+  runtime behavior exists. Arrays, objects, resources, references, object handle
+  identity, and edge cases around `NAN`/`INF` and PHP-version-specific float
+  string precision are not implemented.
 - Array literal spread elements and reference elements fail with stable parse
   diagnostics. `unset(...)` operands are limited to direct variables and direct
   array-offset operands on direct variables; object property removal,
@@ -891,5 +901,6 @@ Still fails:
 
 Next:
 
-- Add explicit parse diagnostics for strict identity operators `===` and `!==`
-  before implementing strict comparisons.
+- Implement strict identity operators `===` and `!==` for the current scalar
+  value subset only, while keeping arrays, objects, resources, references, and
+  native lowering explicitly unsupported.

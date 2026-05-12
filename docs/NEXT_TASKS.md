@@ -194,6 +194,10 @@ handled.
 
 ## Milestone 12: Comparison Refinements
 
-- [ ] Add explicit parse diagnostics for strict identity operators `===` and
+- [x] Add explicit parse diagnostics for strict identity operators `===` and
   `!==` before implementing strict comparisons, including parser coverage,
   fixture CLI coverage, documentation, and named unsupported gaps.
+- [ ] Implement strict identity operators `===` and `!==` for the current
+  scalar value subset only, including parser/runtime/fixture coverage,
+  documentation, and explicit gaps for arrays, objects, resources, references,
+  and native lowering.

@@ -73,7 +73,9 @@ pub enum TokenKind {
     Equal,
     FatArrow,
     EqualEqual,
+    StrictEqual,
     BangEqual,
+    StrictBangEqual,
     Less,
     LessEqual,
     Greater,
@@ -167,7 +169,11 @@ impl<'a> Lexer<'a> {
                 '\\' => TokenKind::Backslash,
                 '=' => {
                     if self.match_char('=') {
-                        TokenKind::EqualEqual
+                        if self.match_char('=') {
+                            TokenKind::StrictEqual
+                        } else {
+                            TokenKind::EqualEqual
+                        }
                     } else if self.match_char('>') {
                         TokenKind::FatArrow
                     } else {
@@ -176,7 +182,11 @@ impl<'a> Lexer<'a> {
                 }
                 '!' => {
                     if self.match_char('=') {
-                        TokenKind::BangEqual
+                        if self.match_char('=') {
+                            TokenKind::StrictBangEqual
+                        } else {
+                            TokenKind::BangEqual
+                        }
                     } else {
                         TokenKind::Bang
                     }

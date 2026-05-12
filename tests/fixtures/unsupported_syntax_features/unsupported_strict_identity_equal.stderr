@@ -1,0 +1,2 @@
+parse error at 2:8: unsupported strict comparison: strict identity operators === and !== are not implemented
+
