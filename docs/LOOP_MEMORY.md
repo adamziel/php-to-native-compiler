@@ -2099,3 +2099,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   strict mode, objects, arrays, and references.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_keys builtin"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T02:05:33Z
+
+- Codex round 35 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T020031Z-35.log`.
+
+## Loop Event 2026-05-12T02:05:35Z
+
+- Post-round 35 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:05:35Z
+
+- Post-round 35 tests passed; running checkpoint for this round.
