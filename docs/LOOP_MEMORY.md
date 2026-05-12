@@ -9611,3 +9611,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   tests, CLI coverage, docs, and named unsupported gaps.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add get_declared_traits boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T21:45:04Z
+
+- Codex round 2 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T213954Z-2.log`.
+
+## Loop Event 2026-05-12T21:45:13Z
+
+- Post-round 2 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:45:13Z
+
+- Post-round 2 tests passed; running checkpoint for this round.
