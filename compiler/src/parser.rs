@@ -2022,10 +2022,14 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
         TokenKind::Trait => unsupported_trait_declaration_message().to_string(),
         TokenKind::Enum => unsupported_enum_declaration_message().to_string(),
         TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly => {
-            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented".to_string()
+            unsupported_class_member_modifier_message().to_string()
         }
         _ => format!("expected class member, found {}", token_name(kind)),
     }
+}
+
+fn unsupported_class_member_modifier_message() -> &'static str {
+    "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented"
 }
 
 impl Parser {

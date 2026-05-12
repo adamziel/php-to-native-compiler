@@ -8072,3 +8072,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:26:25Z
 
 - Post-round 32 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:26:36Z
+
+- Starting round 33 at 20260512T182636Z from HEAD `b5f5c7c`.
+
+## Loop Event 2026-05-12T18:26:47Z
+
+- Pre-round 33 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:31:25Z
+
+- Task attempted: completed Milestone 84 by adding explicit unsupported
+  `abstract`, `final`, and `readonly` class member modifier coverage. The
+  parser now routes those member modifier tokens through a named stable
+  diagnostic, object-model parser tests cover abstract methods, final methods,
+  and readonly properties inside classes, and unsupported object/class fixtures
+  include committed `phpc run` CLI snapshots for all three forms.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_abstract_member_modifier.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_final_member_modifier.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_readonly_member_modifier.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo test -p phpc
+  --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 16 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 16 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_abstract_member_modifier.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 275 fixtures, 106 system PHP comparisons, and 169 skips.
+- Remaining semantic gaps: abstract methods, final methods, readonly
+  properties, property initialization rules, inheritance interactions, exact
+  PHP parse/error objects, and native lowering remain unsupported.
+- Next concrete task: continue object/class boundaries with the next
+  unsupported class feature that can be named and tested honestly.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject class member modifiers"` after the full
+  suite passes.

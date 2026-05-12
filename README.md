@@ -142,6 +142,7 @@ subset:
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, object method calls, dynamic property names, anonymous classes,
   unsupported class forms, `abstract`/`final`/`readonly` class modifiers,
+  unsupported `abstract`/`final`/`readonly` class member modifiers,
   trait declarations, interface declarations, enum declarations, static member
   access, and class constants
 

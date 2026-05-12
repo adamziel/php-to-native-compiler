@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added explicit unsupported `abstract`, `final`, and `readonly` class member
+  modifier boundaries with parser regression coverage, fixture coverage, and
+  `phpc run` CLI snapshots.
 - Added explicit unsupported `abstract`, `final`, and `readonly` class modifier
   boundaries with parser regression coverage, fixture coverage, and `phpc run`
   CLI snapshots.

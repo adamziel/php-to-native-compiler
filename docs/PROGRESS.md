@@ -2408,8 +2408,14 @@ Still fails:
   Abstract classes/methods, final inheritance restrictions, readonly
   classes/properties, namespace-aware classes, exact PHP parse/error objects,
   and native lowering remain unsupported.
+- Added explicit stable parse diagnostics, parser coverage, fixture coverage,
+  and `phpc run` CLI snapshots for unsupported `abstract`, `final`, and
+  `readonly` class member modifiers before modifier-aware member parsing
+  exists. Abstract methods, final methods, readonly properties, property
+  initialization rules, inheritance interactions, exact PHP parse/error
+  objects, and native lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics for unsupported `abstract`, `final`, and
-  `readonly` class member modifiers before modifier-aware member parsing exists.
+- Continue object/class boundaries with the next unsupported class feature that
+  can be named and tested honestly.

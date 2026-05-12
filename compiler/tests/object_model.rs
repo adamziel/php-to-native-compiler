@@ -423,6 +423,36 @@ class Box {
         ),
         (
             r#"<?php
+class Base {
+    abstract public function compute();
+}
+"#,
+            3,
+            5,
+            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented",
+        ),
+        (
+            r#"<?php
+class Leaf {
+    public final function seal() {}
+}
+"#,
+            3,
+            12,
+            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented",
+        ),
+        (
+            r#"<?php
+class Value {
+    public readonly $id;
+}
+"#,
+            3,
+            12,
+            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented",
+        ),
+        (
+            r#"<?php
 class Box {
     public $name = "Ada";
 }
