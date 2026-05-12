@@ -878,6 +878,19 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_key_first" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array.first_key_value()),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_key_first()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "array_keys" => match args.as_slice() {
                 [Value::Array(array)] => Ok(Value::Array(array.keys_reindexed())),
                 [Value::Array(array), search_value] => array
@@ -1392,6 +1405,7 @@ fn is_builtin(name: &str) -> bool {
             | "count"
             | "array_key_exists"
             | "array_values"
+            | "array_key_first"
             | "array_keys"
             | "array_reverse"
             | "array_merge"

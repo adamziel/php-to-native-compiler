@@ -3671,3 +3671,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:09:02Z
 
 - Post-round 58 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:09:06Z
+
+- Starting round 59 at 20260512T050905Z from HEAD `b333d00`.
+
+## Loop Event 2026-05-12T05:09:09Z
+
+- Pre-round 59 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:15:20Z
+
+- Task attempted: implemented `array_key_first($array)` for the current
+  ordered array value model. The supported slice returns the first inserted
+  integer or string key as an `int` or `string`, returns `null` for empty
+  arrays, is available through string-valued dynamic function calls, reports a
+  stable diagnostic for non-array arguments, and keeps native lowering rejected
+  through the existing function-call codegen boundary.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_key_first.rs`,
+  `compiler/tests/array_key_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone17/array_key_first.*`,
+  `tests/fixtures/runtime_errors/array_key_first_non_array.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p php_runtime
+  array_key_first` passed with 1 focused runtime test; `cargo test -p phpc
+  --test array_key_first` passed with 3 compiler tests; `cargo test -p phpc
+  --test array_key_introspection_builtins_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone17` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone17` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 44 fixtures; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone17/array_key_first.php` printed the committed
+  string-key, integer-key, empty-array, and dynamic-call output; `cargo run -p
+  phpc -- run tests/fixtures/runtime_errors/array_key_first_non_array.php`
+  exited `1` with the expected stable diagnostic; `cargo fmt --check` passed;
+  `cargo test -p php_runtime` passed with 36 runtime tests; `cargo test -p
+  php_runtime array_` passed with 21 focused array tests; `tools/run-tests.sh`
+  passed with 132 fixtures, 54 system PHP comparisons, and 78 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_key_first` is limited to arrays in the
+  current ordered integer/string key model. It does not model PHP references,
+  copy-on-write container effects, exact native `TypeError` objects for
+  invalid arguments, or native function-call lowering.
+- Next concrete task: implement `array_key_last($array)` for the current
+  ordered array value model, including last-key return behavior,
+  empty-array `null`, non-array diagnostics, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_key_first builtin"`
+  after the full suite passes.

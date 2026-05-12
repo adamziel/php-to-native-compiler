@@ -250,7 +250,11 @@ handled.
 
 ## Milestone 17: Array Key Introspection Builtins
 
-- [ ] Implement `array_key_first($array)` for the current ordered array value
+- [x] Implement `array_key_first($array)` for the current ordered array value
   model, including first-key return behavior for integer/string keys,
+  empty-array `null` behavior, non-array diagnostics, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.
+- [ ] Implement `array_key_last($array)` for the current ordered array value
+  model, including last-key return behavior for integer/string keys,
   empty-array `null` behavior, non-array diagnostics, fixture CLI coverage,
   documentation, and explicit native-codegen rejection.

@@ -479,6 +479,13 @@ impl PhpArray {
         array
     }
 
+    pub fn first_key_value(&self) -> Value {
+        self.entries
+            .first()
+            .map(|entry| array_key_to_value(&entry.key))
+            .unwrap_or(Value::Null)
+    }
+
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -2039,6 +2046,28 @@ mod tests {
             Some(&Value::String("Ada".to_string())),
             "array_keys must not mutate the original array"
         );
+    }
+
+    #[test]
+    fn array_key_first_returns_first_integer_or_string_key_or_null() {
+        let empty = PhpArray::new();
+        assert_eq!(empty.first_key_value(), Value::Null);
+
+        let mut string_first = PhpArray::new();
+        string_first.insert("name", Value::String("Ada".to_string()));
+        string_first.insert(5, Value::String("five".to_string()));
+        string_first.insert("2", Value::String("two".to_string()));
+        string_first.insert("02", Value::String("zero two".to_string()));
+        assert_eq!(
+            string_first.first_key_value(),
+            Value::String("name".to_string())
+        );
+
+        let mut int_first = PhpArray::new();
+        int_first.insert("2", Value::String("two".to_string()));
+        int_first.insert("name", Value::String("Ada".to_string()));
+        int_first.insert("02", Value::String("zero two".to_string()));
+        assert_eq!(int_first.first_key_value(), Value::Int(2));
     }
 
     #[test]

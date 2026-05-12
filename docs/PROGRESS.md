@@ -179,6 +179,12 @@ Implemented:
   missing keys, is available through string-valued dynamic function calls, and
   has stable diagnostics for unsupported key values and non-array second
   arguments.
+- Added `array_key_first($array)` support for the current ordered array value
+  model. The supported slice returns the first inserted integer or string key
+  as an `int` or `string`, returns `null` for an empty array, is available
+  through string-valued dynamic function calls, has a stable diagnostic for
+  non-array arguments, and still rejects native lowering explicitly through the
+  current function-call codegen boundary.
 - Added `array_values($array)` support for the current ordered array value
   model. The supported slice preserves value insertion order, returns a new
   array reindexed with integer keys starting at zero, is available through
@@ -376,8 +382,10 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 35 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 20 focused array value tests.
+- `cargo test -p php_runtime` passes with 36 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 21 focused array value tests.
+- `cargo test -p php_runtime array_key_first` passes with 1 focused
+  first-key runtime test.
 - `cargo test -p php_runtime array_keys` passes with 5 focused key-emission,
   loose key-filtering, and strict key-filtering runtime tests.
 - `cargo test -p php_runtime array_merge` passes with 2 focused
@@ -392,7 +400,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 43 representative runtime error fixtures.
+  covering 44 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -472,6 +480,10 @@ Tested:
   `array_key_exists` behavior, null-value contrast against `isset`, dynamic
   string-call coverage, and stable diagnostics for unsupported key values and
   non-array second arguments.
+- `cargo test -p phpc --test array_key_first` passes with first integer/string
+  key return behavior, empty-array `null` behavior, dynamic string-call
+  coverage, stable diagnostics for non-array arguments, and LLVM IR rejection
+  coverage.
 - `cargo test -p phpc --test array_values` passes with `array_values`
   reindexing behavior, dynamic string-call coverage, original-array
   preservation, and stable diagnostics for non-array arguments.
@@ -511,6 +523,8 @@ Tested:
   snapshot test covering the Milestone 15 `array_merge` fixture.
 - `cargo test -p phpc --test array_key_filtering_builtins_cli` passes with 1
   CLI snapshot test covering the Milestone 16 `array_keys` filter fixture.
+- `cargo test -p phpc --test array_key_introspection_builtins_cli` passes with
+  1 CLI snapshot test covering the Milestone 17 `array_key_first` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -555,9 +569,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 130 fixture tests.
+- `cargo run -p phpc -- test` passes with 132 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 53 fixtures and skipping 77 `.phpc-only` fixtures.
+  installed, comparing 54 fixtures and skipping 78 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -649,7 +663,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 43
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 44
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -661,6 +675,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3:6: invalid array key: bool keys are not supported; only int and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_non_array.php:2:6: unsupported call array_key_exists(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_first_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_first_non_array.php:2:6: unsupported call array_key_first(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_values_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_values_non_array.php:2:6: unsupported call array_values(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_non_array.php`
@@ -804,6 +820,14 @@ Tested:
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone16` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone17/array_key_first.php`
+  prints the committed `array_key_first` output with string-key return,
+  normalized integer-key return, empty-array `null`, and dynamic string-call
+  coverage.
+- `cargo run -p phpc -- test tests/fixtures/milestone17` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone17` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -899,8 +923,8 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 130 fixtures, 53 system PHP comparisons,
-  and 77 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 132 fixtures, 54 system PHP comparisons,
+  and 78 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -951,12 +975,15 @@ Still fails:
   expression operands, unsupported key coercions, and dynamic access to
   `empty` are not implemented. `array_key_exists` is limited to integer/string
   keys and array second arguments; PHP's broader key coercions and
-  warning/TypeError details are not modeled. `array_values`, `array_keys`, and
-  `array_reverse` are limited to array arguments, clone values under the
-  current by-value model, require a boolean `array_reverse` preserve-key flag
-  when that argument is supplied, and do not yet model PHP references,
-  copy-on-write containers, object handle identity preservation, resource
-  values, non-bool preserve-key coercion, or native lowering.
+  warning/TypeError details are not modeled. `array_key_first` is limited to
+  array arguments and does not yet model reference/copy-on-write container
+  effects, exact native `TypeError` objects, or native lowering.
+  `array_values`, `array_keys`, and `array_reverse` are limited to array
+  arguments, clone values under the current by-value model, require a boolean
+  `array_reverse` preserve-key flag when that argument is supplied, and do not
+  yet model PHP references, copy-on-write containers, object handle identity
+  preservation, resource values, non-bool preserve-key coercion, exact native
+  `TypeError` objects, or native lowering.
   `array_keys` search-value filtering is implemented for the current scalar
   loose-comparison and strict-identity subsets, but array, object, resource, or
   reference search values, array, object, resource, or reference array values,
@@ -1055,6 +1082,7 @@ Still fails:
 
 Next:
 
-- Implement `array_key_first($array)` for the current ordered array value
-  model, including empty-array `null` behavior, non-array diagnostics, fixture
-  CLI coverage, documentation, and explicit native-codegen rejection.
+- Implement `array_key_last($array)` for the current ordered array value model,
+  including last-key return behavior for integer/string keys, empty-array
+  `null` behavior, non-array diagnostics, fixture CLI coverage, documentation,
+  and explicit native-codegen rejection.
