@@ -1656,3 +1656,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "parser: reject break and continue syntax"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T01:22:13Z
+
+- Codex round 28 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T011845Z-28.log`.
+
+## Loop Event 2026-05-12T01:22:15Z
+
+- Post-round 28 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:22:15Z
+
+- Post-round 28 tests passed; running checkpoint for this round.
