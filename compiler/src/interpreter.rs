@@ -753,6 +753,18 @@ impl Interpreter {
         }
     }
 
+    fn call_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::User(function) => self.call_user_function_with_values(function, args, span),
+        }
+    }
+
     fn lookup_function(&self, name: &str) -> Option<Callable> {
         let key = name.to_ascii_lowercase();
         if is_builtin(&key) {
@@ -770,32 +782,38 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let function = function.as_ref();
-        let required_params = required_param_count(function);
-        if args.len() < required_params || args.len() > function.params.len() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::arity_mismatch(
-                    callable_name(&function.name),
-                    arity_expectation(required_params, function.params.len()),
-                    args.len(),
-                ),
-            ));
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        if self.call_depth >= MAX_USER_FUNCTION_CALL_DEPTH {
-            return Err(runtime_error(
-                span,
-                RuntimeError::call_depth_exceeded(
-                    callable_name(&function.name),
-                    MAX_USER_FUNCTION_CALL_DEPTH,
-                ),
-            ));
-        }
+        self.call_user_function_with_checked_values(function, values)
+    }
 
+    fn call_user_function_with_values(
+        &mut self,
+        function: Rc<FunctionDecl>,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values(function, args)
+    }
+
+    fn call_user_function_with_checked_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+    ) -> CompileResult<Value> {
         let mut local_scope = SymbolTable::new();
         for (index, param) in function.params.iter().enumerate() {
             let value = if let Some(arg) = args.get(index) {
-                self.evaluate(arg, caller_scope)?
+                arg.clone()
             } else {
                 let default = param
                     .default
@@ -823,6 +841,24 @@ impl Interpreter {
             )),
             Flow::Return(value) => Ok(value),
         }
+    }
+
+    fn ensure_user_function_call_depth(
+        &self,
+        function: &FunctionDecl,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self.call_depth >= MAX_USER_FUNCTION_CALL_DEPTH {
+            return Err(runtime_error(
+                span,
+                RuntimeError::call_depth_exceeded(
+                    callable_name(&function.name),
+                    MAX_USER_FUNCTION_CALL_DEPTH,
+                ),
+            ));
+        }
+
+        Ok(())
     }
 
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -1056,38 +1092,7 @@ impl Interpreter {
                     )),
                 }
             }
-            "array_filter" => match args.as_slice() {
-                [Value::Array(array)] => Ok(Value::Array(array.filtered_without_callback())),
-                [other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_filter()",
-                        format!("argument must be array, got {}", other.type_name()),
-                    ),
-                )),
-                [Value::Array(_), _] | [Value::Array(_), _, _] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_filter()",
-                        "callbacks and mode flags are not supported in the current subset",
-                    ),
-                )),
-                [other, _] | [other, _, _] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_filter()",
-                        format!("argument must be array, got {}", other.type_name()),
-                    ),
-                )),
-                _ => Err(runtime_error(
-                    span,
-                    RuntimeError::arity_mismatch(
-                        "array_filter()",
-                        ArityExpectation::Between { min: 1, max: 3 },
-                        args.len(),
-                    ),
-                )),
-            },
+            "array_filter" => self.call_array_filter(args, span),
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1221,6 +1226,84 @@ impl Interpreter {
             },
             _ => unreachable!("is_builtin keeps this match exhaustive for callers"),
         }
+    }
+
+    fn call_array_filter(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        match args.as_slice() {
+            [Value::Array(array)] => Ok(Value::Array(array.filtered_without_callback())),
+            [other] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_filter()",
+                    format!("argument must be array, got {}", other.type_name()),
+                ),
+            )),
+            [Value::Array(array), callback] => Ok(Value::Array(
+                self.filter_array_with_callback(array, callback, span)?,
+            )),
+            [Value::Array(_), _, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_filter()",
+                    "mode flags are not supported in the current subset",
+                ),
+            )),
+            [other, _] | [other, _, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_filter()",
+                    format!("argument must be array, got {}", other.type_name()),
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_filter()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn filter_array_with_callback(
+        &mut self,
+        array: &PhpArray,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let callback_name = match callback {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        format!(
+                            "callback must evaluate to string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let callable = self.lookup_function(callback_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(callback_name)),
+            )
+        })?;
+
+        let mut filtered = PhpArray::new();
+        for entry in array.entries() {
+            let result =
+                self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
+            if result.is_truthy() {
+                filtered.insert(entry.key.clone(), entry.value.clone());
+            }
+        }
+
+        Ok(filtered)
     }
 
     fn call_isset(
@@ -1538,6 +1621,26 @@ fn positional_argument_label(index: usize) -> String {
         4 => "fifth argument".to_string(),
         _ => format!("argument #{}", index + 1),
     }
+}
+
+fn ensure_user_function_arity(
+    function: &FunctionDecl,
+    actual: usize,
+    span: Span,
+) -> CompileResult<()> {
+    let required = required_param_count(function);
+    if actual < required || actual > function.params.len() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                callable_name(&function.name),
+                arity_expectation(required, function.params.len()),
+                actual,
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 fn required_param_count(function: &FunctionDecl) -> usize {

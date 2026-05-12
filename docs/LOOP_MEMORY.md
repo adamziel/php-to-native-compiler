@@ -4053,3 +4053,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:54:47Z
 
 - Post-round 64 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:54:51Z
+
+- Starting round 65 at 20260512T055451Z from HEAD `e78801d`.
+
+## Loop Event 2026-05-12T05:54:55Z
+
+- Pre-round 65 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:04:08Z
+
+- Task attempted: implemented `array_filter($array, $callback)` for the first
+  supported callback subset over the current ordered array value model. The
+  supported slice accepts callbacks that evaluate to string-valued user
+  functions or callable builtins, invokes the callback with the array value
+  only, preserves keys whose callback return value is truthy, supports
+  string-valued dynamic calls to `array_filter`, and reports stable diagnostics
+  for non-string callbacks, unresolved callback names, and unsupported mode
+  flags.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone21/array_filter_callback.*`,
+  `tests/fixtures/milestone21/array_filter_builtin_callback.*`,
+  `tests/fixtures/runtime_errors/array_filter_callback_non_string.*`,
+  `tests/fixtures/runtime_errors/array_filter_callback_undefined.*`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.*`, removed
+  `tests/fixtures/runtime_errors/array_filter_callback_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo fmt --check` passed; `cargo test
+  -p phpc --test array_filter` passed with 7 tests; `cargo test -p phpc
+  --test functions_and_scopes` passed with 17 tests; `cargo test -p phpc
+  --test array_filtering_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone21` passed with 2 fixtures; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone21` passed with 2 system PHP
+  comparisons; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 55 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone21/array_filter_callback.php` printed the committed
+  callback output; `tools/run-tests.sh` passed with 150 fixtures, 61 system PHP
+  comparisons, and 89 `.phpc-only` skips.
+- Remaining semantic gaps: `array_filter` callbacks are limited to
+  string-valued user-function or callable-builtin names in value-only mode.
+  Array/object callables, method calls, closures, first-class callables,
+  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, references,
+  copy-on-write containers, object handle identity preservation, resource
+  values, exact native `TypeError` objects, and native lowering remain
+  unsupported.
+- Next concrete task: implement `array_map($callback, $array)` for the first
+  one-array string-callback subset with fixture CLI coverage and explicit gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_filter callbacks"`
+  after the full suite passes.

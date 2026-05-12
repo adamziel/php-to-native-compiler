@@ -8,8 +8,14 @@ fn array_filtering_builtin_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone20");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let fixture_dirs = [
+        workspace_root.join("tests/fixtures/milestone20"),
+        workspace_root.join("tests/fixtures/milestone21"),
+    ];
+    let mut fixtures = Vec::new();
+    for fixture_dir in fixture_dirs {
+        fixtures.extend(cli_snapshot_fixtures(&fixture_dir));
+    }
 
     fixtures.sort();
     assert!(
@@ -22,7 +28,11 @@ fn array_filtering_builtin_cli_snapshots_match_committed_outputs() {
             .file_name()
             .and_then(|value| value.to_str())
             .expect("array-filtering fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone20/{file_name}");
+        let relative_dir = fixture
+            .parent()
+            .and_then(|path| path.strip_prefix(workspace_root).ok())
+            .expect("fixture lives under the workspace root");
+        let fixture_arg = format!("{}/{file_name}", relative_dir.display());
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])

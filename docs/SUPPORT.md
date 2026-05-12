@@ -90,13 +90,13 @@
   non-array `array_fill_keys` operands, unsupported non-int/string
   `array_fill_keys` key values, non-array `array_count_values` operands,
   unsupported non-int/string `array_count_values` values, non-array
-  `array_filter` operands, unsupported `array_filter` callback/mode operands,
-  non-array `in_array`/`array_search` haystacks, non-bool
-  `in_array`/`array_search` strict-mode flag values, unsupported non-scalar
-  `array_keys` search-value comparisons, non-bool `array_keys` strict-mode
-  flag values, unsupported non-scalar `in_array`/`array_search` comparisons,
-  unsupported `global` declarations,
-  duplicate class/member metadata, undefined classes, unsupported object
+  `array_filter` operands, non-string `array_filter` callbacks, unsupported
+  `array_filter` mode flags, non-array `in_array`/`array_search` haystacks,
+  non-bool `in_array`/`array_search` strict-mode flag values, unsupported
+  non-scalar `array_keys` search-value comparisons, non-bool `array_keys`
+  strict-mode flag values, unsupported non-scalar `in_array`/`array_search`
+  comparisons, unsupported `global` declarations, duplicate class/member
+  metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
   unsupported non-public property access, object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
@@ -266,6 +266,11 @@
   that are falsey under the current PHP-shaped truthiness rules, preserves the
   original integer/string keys and insertion order of kept entries, and is
   available through string-valued dynamic function calls.
+  `array_filter($array, $callback)` accepts callbacks that evaluate to string
+  function names resolving to current user functions or callable builtins,
+  invokes the callback once per value in insertion order with the value as the
+  only argument, preserves keys whose callback result is truthy, and is also
+  available through string-valued dynamic calls to `array_filter`.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
@@ -284,8 +289,9 @@
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
   `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `array_filter` without a callback, `in_array`,
-  `array_search`, both current `foreach` array forms, direct array-offset
+  `array_count_values`, `array_filter` in the current no-callback and
+  string-callback forms, `in_array`, `array_search`, both current `foreach`
+  array forms, direct array-offset
   `unset`, multiple supported `unset(...)` operands, `print_r`, and `var_dump`
   are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
@@ -346,8 +352,9 @@
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
   `array_count_values` operands, unsupported non-int/string
-  `array_count_values` values, non-array `array_filter` operands, unsupported
-  `array_filter` callback/mode operands, non-array `in_array` operands,
+  `array_count_values` values, non-array `array_filter` operands, non-string
+  `array_filter` callbacks, unsupported `array_filter` mode flags,
+  non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
   `in_array`/`array_search` strict-mode flag values, and array-value
   comparisons for `in_array`/`array_search`,
@@ -489,11 +496,19 @@
   `null`, `false`, zero integers and floats, empty strings, string `"0"`, and
   empty arrays using the current `Value::is_truthy` rules, preserves the
   original integer/string keys and insertion order of kept entries, and is
-  available through string-valued dynamic function calls. Callback arguments,
-  mode flags such as key-only or key/value callback mode, references,
-  copy-on-write containers, exact native `TypeError` objects, object handle
-  identity preservation, resource values, and native lowering are not
-  implemented.
+  available through string-valued dynamic function calls.
+  `array_filter($array, $callback)` accepts callback expressions that evaluate
+  to string function names resolving to current user functions or callable
+  builtins, invokes the callback with the value only, keeps entries whose
+  callback result is truthy, preserves original keys and insertion order, and
+  is available when `array_filter` itself is called through a string-valued
+  dynamic function name. Non-string callback values fail with a stable
+  diagnostic, and unresolved callback names fail with the current
+  undefined-function diagnostic. Array/object callables, closures, first-class
+  callables, method calls, key-only and key/value callback modes through
+  `ARRAY_FILTER_USE_KEY` or `ARRAY_FILTER_USE_BOTH`, references, copy-on-write
+  containers, exact native `TypeError` objects, object handle identity
+  preservation, resource values, and native lowering are not implemented.
   `in_array($needle, $array)` accepts an array haystack, scans values in
   insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
@@ -538,8 +553,8 @@
   reference/copy-on-write behavior, `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
   for unsupported key values, `array_count_values` warning-and-skip behavior
-  for unsupported values, and `array_filter` callback/mode forms are not
-  implemented.
+  for unsupported values, and `array_filter` callback forms outside the current
+  string function-name subset plus key/key-value modes are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -681,10 +696,10 @@
 - `array_count_values` warning-and-skip behavior for unsupported values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering
-- `array_filter` callback arguments, `ARRAY_FILTER_USE_KEY` and
-  `ARRAY_FILTER_USE_BOTH` callback modes, reference/copy-on-write behavior,
-  object handle identity preservation, resource values, exact native
-  `TypeError` objects, and native lowering
+- `array_filter` callbacks outside string-valued user-function/callable-builtin
+  names, `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` callback modes,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

@@ -69,15 +69,73 @@ fn array_filter_requires_array_argument() {
 }
 
 #[test]
-fn array_filter_rejects_callback_forms_for_now() {
-    let error =
-        runtime_error("<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, \"strlen\");\n");
+fn array_filter_callback_invokes_string_named_callables() {
+    let source = r#"<?php
+function keep_long($value) {
+    return strlen($value) > 3;
+}
+
+$items = [];
+$items["short"] = "Ada";
+$items["long"] = "Grace";
+$items["empty"] = "";
+$items[5] = "Linus";
+
+$callback = "keep_long";
+$filtered = array_filter($items, $callback);
+print_r(array_keys($filtered));
+echo $filtered["long"], "|", $filtered[5], "\n";
+$filtered[] = "after";
+echo $filtered[6], "\n";
+
+$call = "array_filter";
+$builtin = $call(["empty" => "", "zero" => "0", "space" => " "], "strlen");
+print_r(array_keys($builtin));
+echo count($builtin), "|", $builtin["zero"], "|", strlen($builtin["space"]);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => long\n    [1] => 5\n)\nGrace|Linus\nafter\nArray\n(\n    [0] => zero\n    [1] => space\n)\n2|0|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_filter_callback_requires_string_callable() {
+    let error = runtime_error("<?php\n$items = [\"Ada\"];\necho array_filter($items, 42);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_filter(): callbacks and mode flags are not supported in the current subset"
+        "unsupported call array_filter(): callback must evaluate to string, got int"
+    );
+}
+
+#[test]
+fn array_filter_callback_reports_unknown_function() {
+    let error = runtime_error(
+        "<?php\n$items = [\"Ada\"];\necho array_filter($items, \"missing_filter\");\n",
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, "undefined function missing_filter()");
+}
+
+#[test]
+fn array_filter_rejects_mode_flags_for_now() {
+    let error = runtime_error(
+        "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, \"strlen\", 1);\n",
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_filter(): mode flags are not supported in the current subset"
     );
 }
 
@@ -90,5 +148,14 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
         error.message.contains("function calls"),
         "{}",
         error.message
+    );
+
+    let callback_error =
+        emit_ir_source("<?php\necho array_filter([\"name\"], \"strlen\");\n").unwrap_err();
+    assert_eq!(callback_error.phase, Phase::Codegen);
+    assert!(
+        callback_error.message.contains("function calls"),
+        "{}",
+        callback_error.message
     );
 }

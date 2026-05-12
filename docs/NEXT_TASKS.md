@@ -286,9 +286,19 @@ handled.
 
 ## Milestone 21: Array Callback Builtins
 
-- [ ] Implement `array_filter($array, $callback)` for the first supported
+- [x] Implement `array_filter($array, $callback)` for the first supported
   callback subset over the current ordered array value model, including
   string-valued callable names, value-only callback mode, key preservation,
   callback return truthiness, unresolved/non-callable diagnostics, fixture CLI
   coverage, documentation, explicit gaps for `ARRAY_FILTER_USE_KEY` and
   `ARRAY_FILTER_USE_BOTH`, and explicit native-codegen rejection.
+
+## Milestone 22: Array Mapping Builtins
+
+- [ ] Implement `array_map($callback, $array)` for the first supported
+  one-array callback subset over the current ordered array value model,
+  including string-valued callable names, value callback arguments, integer
+  reindexing behavior, unresolved/non-callable diagnostics, fixture CLI
+  coverage, documentation, explicit gaps for multiple arrays, null callbacks,
+  key preservation differences, references/copy-on-write, and explicit
+  native-codegen rejection.
