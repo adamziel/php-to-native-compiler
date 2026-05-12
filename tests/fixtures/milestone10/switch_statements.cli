@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+two-default-tail
+matched
+fallback-after
+zero:one:many:
+--- stdout end ---
+stderr:
+--- stderr end ---

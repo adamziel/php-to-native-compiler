@@ -246,31 +246,33 @@ echo DO echo "tick"; WHILE (false);
 }
 
 #[test]
-fn switch_syntax_is_rejected_with_stable_parse_error() {
+fn unsupported_switch_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
 $value = 2;
-switch ($value) {
+switch ($value):
     case 1:
         echo "one";
         break;
     default:
         echo "other";
-}
+endswitch;
 "#,
             3,
-            1,
+            16,
+            "unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks",
         ),
         (
             r#"<?php
-SWITCH (1) {
-    CASE 1:
+switch (1) {
+    case 1;
         echo "one";
 }
 "#,
-            2,
-            1,
+            3,
+            11,
+            "expected ':' after switch case",
         ),
         (
             r#"<?php
@@ -281,17 +283,15 @@ echo switch ($value) {
 "#,
             2,
             6,
+            "unsupported switch: switch is only supported as a statement in the current subset",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported switch: switch/case control flow is not implemented"
-        );
+        assert_eq!(error.message, message);
     }
 }
 

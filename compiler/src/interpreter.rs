@@ -9,7 +9,7 @@ use php_runtime::{
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, Expr, ForAction,
-    FunctionDecl, Program, Span, Stmt, UnaryOp, UnsetTarget,
+    FunctionDecl, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -267,6 +267,7 @@ impl Interpreter {
 
                 Ok(Flow::Normal)
             }
+            Stmt::Switch { value, cases, .. } => self.execute_switch(value, cases, scope),
             Stmt::Foreach {
                 iterable,
                 key,
@@ -348,6 +349,58 @@ impl Interpreter {
                 Ok(())
             }
         }
+    }
+
+    fn execute_switch(
+        &mut self,
+        value: &Expr,
+        cases: &[SwitchCase],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        let switch_value = self.evaluate(value, scope)?;
+        let mut default_index = None;
+        let mut matched_index = None;
+
+        for (index, case) in cases.iter().enumerate() {
+            let Some(condition) = &case.condition else {
+                if default_index.is_none() {
+                    default_index = Some(index);
+                }
+                continue;
+            };
+
+            let case_value = self.evaluate(condition, scope)?;
+            let matched = switch_value
+                .php_cmp_checked(&case_value, Comparison::Eq)
+                .map_err(|error| runtime_error(condition.span(), error))?;
+            if matched {
+                matched_index = Some(index);
+                break;
+            }
+        }
+
+        let Some(mut index) = matched_index.or(default_index) else {
+            return Ok(Flow::Normal);
+        };
+
+        while index < cases.len() {
+            match self.execute_statements(&cases[index].body, scope)? {
+                Flow::Normal => {}
+                Flow::Break(_) => return Ok(Flow::Normal),
+                Flow::Continue(span) => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_loop_control(
+                            "continue inside switch is not implemented; use break for switch cases in the current subset",
+                        ),
+                    ));
+                }
+                flow @ Flow::Return(_) => return Ok(flow),
+            }
+            index += 1;
+        }
+
+        Ok(Flow::Normal)
     }
 
     fn execute_unset_target(

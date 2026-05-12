@@ -57,6 +57,11 @@ pub enum Stmt {
         body: Vec<Stmt>,
         span: Span,
     },
+    Switch {
+        value: Expr,
+        cases: Vec<SwitchCase>,
+        span: Span,
+    },
     Foreach {
         iterable: Expr,
         key: Option<String>,
@@ -130,6 +135,13 @@ pub enum UnsetTarget {
 pub enum ForAction {
     Assign { target: AssignTarget, expr: Expr },
     Expr { expr: Expr },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchCase {
+    pub condition: Option<Expr>,
+    pub body: Vec<Stmt>,
+    pub span: Span,
 }
 
 impl AssignTarget {

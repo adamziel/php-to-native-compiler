@@ -177,7 +177,13 @@ handled.
   after the body, `break;`/`continue;` behavior, fixture CLI coverage,
   documentation, and explicit native-codegen rejection while lowering remains
   unsupported.
-- [ ] Implement `switch (...)` over the current scalar comparison subset,
+- [x] Implement `switch (...)` over the current scalar comparison subset,
   including `case`, `default`, fallthrough, `break;` behavior, fixture CLI
   coverage, documentation, and explicit native-codegen rejection while lowering
   remains unsupported.
+
+## Milestone 11: Conditional Refinements
+
+- [ ] Implement `elseif` chains over the current `if` expression subset,
+  including parser/interpreter coverage, fixture CLI coverage, documentation,
+  and explicit native-codegen rejection while lowering remains unsupported.

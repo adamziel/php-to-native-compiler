@@ -143,6 +143,17 @@ fn emit_ir_rejects_do_while_until_native_loop_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_switch_until_native_switch_lowering_exists() {
+    let error = emit_ir_source("<?php\nswitch (1) { case 1: echo 1; break; }\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("switch statements"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_ir_rejects_arrays_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\necho [1];\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);

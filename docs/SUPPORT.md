@@ -27,10 +27,14 @@
   or assignment from the current assignment subset
 - `do ... while` loops with a block or single-statement body and a
   post-condition expression
+- `switch ($value) { case ...: ... default: ... }` statements over the current
+  scalar loose-comparison subset, including `case`, `default`, fallthrough, and
+  `break;` to exit the switch
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   ordered arrays
-- `break;` and `continue;` for the innermost currently executing `while`,
-  `for`, `do ... while`, or `foreach` loop
+- `break;` for the innermost currently executing `while`, `for`,
+  `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
+  currently executing loop
 - function declarations
 - positional function calls
 - dynamic function calls through string-valued expressions that resolve to the
@@ -81,8 +85,8 @@
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
   unsupported non-public property access, object-to-string conversion, invalid
-  `foreach` iterables, invalid `break`/`continue` outside a loop, and runaway
-  user-function recursion
+  `foreach` iterables, invalid `break`/`continue` outside a loop, unsupported
+  `continue;` inside `switch`, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, named arguments,
@@ -102,7 +106,8 @@
 - explicit parse diagnostics for unsupported expression-position `for` and
   comma-separated `for` header expression lists
 - explicit parse diagnostics for unsupported expression-position `do ... while`
-- explicit parse diagnostics for unsupported `switch (...)` syntax
+- explicit parse diagnostics for unsupported expression-position `switch` and
+  alternate colon/`endswitch` syntax
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -236,15 +241,25 @@
   runtime error.
 - Loop control: `break;` and `continue;` execute for the innermost currently
   executing `while`, supported `for`, supported `do ... while`, or supported
-  array `foreach` loop in `phpc run`. For `for` loops, `continue;` runs the
-  increment action before the next condition check. For `do ... while` loops,
-  `continue;` skips the rest of the body and evaluates the post-condition
-  before the next iteration. A `break;` or `continue;` that reaches top-level
-  code or a user-function body without an enclosing active loop fails with a
-  stable invalid-loop-control runtime error. Loop-depth arguments such as
-  `break 2;` and `continue 2;` are rejected with stable parse diagnostics.
-  Interaction with future `switch` execution, `finally`/exception behavior, and
-  native lowering are not implemented.
+  array `foreach` loop in `phpc run`; `break;` also exits the innermost
+  supported `switch`. For `for` loops, `continue;` runs the increment action
+  before the next condition check. For `do ... while` loops, `continue;` skips
+  the rest of the body and evaluates the post-condition before the next
+  iteration. A `break;` or `continue;` that reaches top-level code or a
+  user-function body without an enclosing active loop fails with a stable
+  invalid-loop-control runtime error. A `continue;` that reaches a `switch`
+  body is rejected with a stable runtime error instead of modeling PHP's
+  warning-and-break behavior. Loop-depth arguments such as `break 2;` and
+  `continue 2;` are rejected with stable parse diagnostics. `finally`/exception
+  behavior and native lowering are not implemented.
+- Switch: statement-form brace `switch` executes in `phpc run` over the current
+  scalar loose-comparison subset. The switch expression is evaluated once, case
+  expressions are evaluated in source order until the first loose `==` match,
+  `default` is used only when no case matches, and execution falls through
+  later labels until a `break;`, `return`, or the end of the switch body.
+  Arrays, objects, resources, strict identity matching, alternate
+  colon/`endswitch` syntax, semicolon case separators, `continue;` inside
+  switch, and native lowering are not implemented.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet. Representative runtime errors are covered by committed `phpc run`
@@ -259,14 +274,14 @@
   targets, unresolved dynamic function callees, division by zero, non-numeric
   string arithmetic, duplicate class metadata, undefined classes, undefined
   object properties, invalid property targets, non-public property access,
-  object-to-string conversion, invalid `break`/`continue` outside a loop, and
-  runaway user-function recursion.
+  object-to-string conversion, invalid `break`/`continue` outside a loop,
+  unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
   assignment, variable unset, array offset unset, multiple-operand unset,
-  `for`, `do ... while`, `foreach`, `break`, `continue`, class declarations,
-  object instantiation, object property reads, and object property writes are
-  rejected with explicit codegen errors.
+  `for`, `do ... while`, `switch`, `foreach`, `break`, `continue`, class
+  declarations, object instantiation, object property reads, and object
+  property writes are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -373,10 +388,10 @@
 - Array gaps: array spread elements and array reference elements are rejected
   with stable parse diagnostics. `unset(...)` forms outside direct variables
   and direct array-offset operands, comma-separated `for` header expression
-  lists, expression-form `do ... while`, and direct `switch (...)` syntax are
-  rejected with stable parse diagnostics; object property removal,
-  append-offset unset, nested/complex unset operands, and switch/case control
-  flow are not implemented.
+  lists, expression-form `do ... while`, expression-form `switch`, and
+  alternate switch syntax are rejected with stable parse diagnostics; object
+  property removal, append-offset unset, and nested/complex unset operands are
+  not implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
   expression, string offset access, by-reference `foreach`, object iteration,
@@ -449,12 +464,12 @@
 - expression-form `for`; `for` is only supported as a statement
 - expression-form `do ... while`; `do ... while` is only supported as a
   statement
-- `switch (...)`; direct syntax is rejected with a stable parse diagnostic
-  before switch/case control flow exists
+- expression-form `switch`, alternate colon/`endswitch` switch syntax,
+  semicolon case separators, and `continue;` behavior inside switch
 - `break`/`continue` loop-depth arguments such as `break 2;` and `continue 2;`;
-  only statement-form `break;` and `continue;` for the innermost active
-  `while`, supported `for`, supported `do ... while`, or supported array
-  `foreach` loop are implemented
+  only statement-form `break;` for the innermost active `while`, supported
+  `for`, supported `do ... while`, supported array `foreach`, or supported
+  `switch`, and `continue;` for the innermost active loop are implemented
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

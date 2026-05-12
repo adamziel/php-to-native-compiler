@@ -230,6 +230,25 @@ fn continue_outside_loop_has_stable_runtime_error() {
 }
 
 #[test]
+fn continue_inside_switch_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+switch (1) {
+    case 1:
+        continue;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 9);
+    assert_eq!(
+        error.message,
+        "invalid loop control: continue inside switch is not implemented; use break for switch cases in the current subset"
+    );
+}
+
+#[test]
 fn foreach_non_array_iterable_has_stable_runtime_error() {
     let error = runtime_error("<?php\nforeach (42 as $value) echo $value;\n");
 

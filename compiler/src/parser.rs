@@ -1,7 +1,7 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
-    ClassVisibility, Expr, ForAction, FunctionDecl, FunctionParam, Program, Span, Stmt, UnaryOp,
-    UnsetTarget,
+    ClassVisibility, Expr, ForAction, FunctionDecl, FunctionParam, Program, Span, Stmt, SwitchCase,
+    UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -44,7 +44,7 @@ impl Parser {
             TokenKind::Do => self.parse_do_while(),
             TokenKind::Foreach => self.parse_foreach(),
             TokenKind::For => self.parse_for(),
-            TokenKind::Switch => self.parse_unsupported_switch(),
+            TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Return => self.parse_return(),
@@ -55,7 +55,7 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("for") => self.parse_for(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("switch") => {
-                self.parse_unsupported_switch()
+                self.parse_switch()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("break") => self.parse_break(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
@@ -485,9 +485,81 @@ impl Parser {
         })
     }
 
-    fn parse_unsupported_switch(&mut self) -> CompileResult<Stmt> {
+    fn parse_switch(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after switch")?;
+        let value = self.parse_expression()?;
+        self.consume_keyword(TokenKind::RParen, "expected ')' after switch expression")?;
+
+        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            return Err(self.error_at(self.previous().span, unsupported_switch_alternate_message()));
+        }
+
+        self.consume_keyword(TokenKind::LBrace, "expected switch body")?;
+        let mut cases = Vec::new();
+        let mut saw_default = false;
+
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            let label = self.consume_switch_label()?;
+            match label {
+                SwitchLabel::Case(label_span) => {
+                    let condition = self.parse_expression()?;
+                    self.consume_keyword(TokenKind::Colon, "expected ':' after switch case")?;
+                    let body = self.parse_switch_case_body()?;
+                    cases.push(SwitchCase {
+                        condition: Some(condition),
+                        body,
+                        span: label_span,
+                    });
+                }
+                SwitchLabel::Default(label_span) => {
+                    if saw_default {
+                        return Err(self
+                            .error_at(label_span, "duplicate default label in switch statement"));
+                    }
+                    saw_default = true;
+                    self.consume_keyword(TokenKind::Colon, "expected ':' after switch default")?;
+                    let body = self.parse_switch_case_body()?;
+                    cases.push(SwitchCase {
+                        condition: None,
+                        body,
+                        span: label_span,
+                    });
+                }
+            }
+        }
+
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after switch body")?;
+        Ok(Stmt::Switch { value, cases, span })
+    }
+
+    fn parse_switch_case_body(&mut self) -> CompileResult<Vec<Stmt>> {
+        let mut statements = Vec::new();
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof))
+            && !self.check_switch_label()
+        {
+            if self.check(|kind| matches!(kind, TokenKind::Class)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "unsupported nested class declaration: only top-level class declarations are implemented",
+                ));
+            }
+            statements.push(self.parse_statement()?);
+        }
+        Ok(statements)
+    }
+
+    fn consume_switch_label(&mut self) -> CompileResult<SwitchLabel> {
         let token = self.advance().clone();
-        Err(self.error_at(token.span, unsupported_switch_message()))
+        match token.kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("case") => {
+                Ok(SwitchLabel::Case(token.span))
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("default") => {
+                Ok(SwitchLabel::Default(token.span))
+            }
+            _ => Err(self.error_at(token.span, "expected 'case' or 'default' in switch body")),
+        }
     }
 
     fn parse_break(&mut self) -> CompileResult<Stmt> {
@@ -926,7 +998,9 @@ impl Parser {
                 Err(self.error_at(token.span, unsupported_foreach_expression_message()))
             }
             TokenKind::For => Err(self.error_at(token.span, unsupported_for_expression_message())),
-            TokenKind::Switch => Err(self.error_at(token.span, unsupported_switch_message())),
+            TokenKind::Switch => {
+                Err(self.error_at(token.span, unsupported_switch_expression_message()))
+            }
             TokenKind::Break => {
                 Err(self.error_at(token.span, unsupported_break_expression_message()))
             }
@@ -964,7 +1038,7 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_for_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("switch") {
-                    return Err(self.error_at(token.span, unsupported_switch_message()));
+                    return Err(self.error_at(token.span, unsupported_switch_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("break") {
                     return Err(self.error_at(token.span, unsupported_break_expression_message()));
@@ -1303,6 +1377,13 @@ impl Parser {
         predicate(&self.peek().kind)
     }
 
+    fn check_switch_label(&self) -> bool {
+        matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("case") || name.eq_ignore_ascii_case("default")
+        )
+    }
+
     fn match_array_close(&mut self, delimiter: ArrayLiteralDelimiter) -> bool {
         self.match_token(|kind| same_variant(kind, &delimiter.close_token()))
     }
@@ -1342,6 +1423,12 @@ impl Parser {
 enum ArrayLiteralDelimiter {
     Short,
     Long,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SwitchLabel {
+    Case(Span),
+    Default(Span),
 }
 
 impl ArrayLiteralDelimiter {
@@ -1507,8 +1594,12 @@ fn unsupported_for_header_list_message() -> &'static str {
     "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot"
 }
 
-fn unsupported_switch_message() -> &'static str {
-    "unsupported switch: switch/case control flow is not implemented"
+fn unsupported_switch_expression_message() -> &'static str {
+    "unsupported switch: switch is only supported as a statement in the current subset"
+}
+
+fn unsupported_switch_alternate_message() -> &'static str {
+    "unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks"
 }
 
 fn unsupported_break_depth_message() -> &'static str {

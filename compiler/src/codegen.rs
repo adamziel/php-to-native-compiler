@@ -123,6 +123,10 @@ impl LlvmGenerator {
                 *span,
                 "for loops are supported by phpc run but not LLVM IR emission yet",
             )),
+            Stmt::Switch { span, .. } => Err(self.unsupported(
+                *span,
+                "switch statements are supported by phpc run but not LLVM IR emission yet",
+            )),
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,
                 "foreach array iteration is supported by phpc run but not LLVM IR emission yet",
@@ -646,6 +650,10 @@ impl CGenerator {
             Stmt::For { span, .. } => Err(self.unsupported(
                 *span,
                 "for loops are supported by phpc run but not assembly emission yet",
+            )),
+            Stmt::Switch { span, .. } => Err(self.unsupported(
+                *span,
+                "switch statements are supported by phpc run but not assembly emission yet",
             )),
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,

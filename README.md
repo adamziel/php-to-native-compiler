@@ -39,9 +39,10 @@ subset:
 - loose scalar comparisons used by control flow
 - `if` / `else`
 - `while`, C-style `for` loops over the documented header subset,
-  `do ... while` post-condition loops, and array `foreach` in value-only and
-  key/value forms, including `break;` and `continue;` for the innermost
-  executing loop
+  `do ... while` post-condition loops, `switch`/`case`/`default` statements
+  over the current scalar comparison subset, and array `foreach` in value-only
+  and key/value forms, including `break;` for innermost loops or switch
+  statements and `continue;` for the innermost executing loop
 - function declarations, positional calls with trailing default parameter
   values, recursive calls up to the documented guard, `return`, and isolated
   local scopes for user-function calls
@@ -77,9 +78,10 @@ subset:
   `unset(...)` forms such as property, append-offset, and nested unset,
   unsupported `foreach` by-reference/destructuring forms, unsupported
   comma-separated `for` header expression lists, expression-form
-  `do ... while`, `switch (...)`, `break`/`continue` depth arguments, object
-  method calls, dynamic property names, anonymous classes, and unsupported
-  class forms, static member access, and class constants
+  `do ... while`, expression-form or alternate-syntax `switch`,
+  `break`/`continue` depth arguments, object method calls, dynamic property
+  names, anonymous classes, and unsupported class forms, static member access,
+  and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

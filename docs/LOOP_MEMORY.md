@@ -2867,3 +2867,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:28:43Z
 
 - Post-round 45 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:28:46Z
+
+- Starting round 46 at 20260512T032846Z from HEAD `8c77d72`.
+
+## Loop Event 2026-05-12T03:28:49Z
+
+- Pre-round 46 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:38:45Z
+
+- Task attempted: implemented statement-form brace `switch` execution over the
+  current scalar loose-comparison subset. The parser now accepts `case` and
+  `default` labels, preserves fallthrough, supports default placement before
+  later matching cases, consumes `break;` at the switch boundary without
+  escaping an enclosing loop, rejects `continue;` reaching a switch body with a
+  stable runtime diagnostic, keeps expression-form and alternate
+  colon/`endswitch` switch syntax as stable parse diagnostics, and rejects
+  native lowering explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/switch.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone10/switch_statements.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_switch.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test switch` passed with 4 tests; `cargo test -p phpc --test
+  runtime_errors continue_inside_switch_has_stable_runtime_error` passed;
+  `cargo test -p phpc --test syntax_boundaries` passed with 9 tests; `cargo
+  test -p phpc --test milestone1
+  emit_ir_rejects_switch_until_native_switch_lowering_exists` passed; `cargo
+  run -p phpc -- test tests/fixtures/milestone10` passed with 4 fixtures;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone10` passed
+  with 4 system PHP comparisons; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 9 fixtures; `cargo
+  test -p phpc --test syntax_expansion_cli` passed; `cargo test -p phpc
+  --test unsupported_syntax_features_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone10/switch_statements.php` printed the committed
+  switch output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone10/switch_statements.php --emit-ir` exited `1` with
+  the expected explicit `switch statements` codegen rejection;
+  `tools/run-tests.sh` passed with 113 fixtures, 46 system PHP comparisons,
+  and 67 `.phpc-only` skips.
+- Remaining semantic gaps: `switch` is statement-only and limited to brace
+  syntax with colon case/default labels; alternate colon/`endswitch` syntax,
+  semicolon case separators, arrays/objects/resources as switch values or case
+  values, strict identity matching, PHP's warning-and-break behavior for
+  `continue;` inside switch, loop-depth arguments, `finally`/exception
+  behavior, and native switch lowering remain unsupported.
+- Next concrete task: implement `elseif` chains over the current `if`
+  expression subset, including parser/interpreter coverage, fixture CLI
+  coverage, documentation, and explicit native-codegen rejection while lowering
+  remains unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "control: add switch execution"`
+  after the full suite passes.
