@@ -1796,6 +1796,9 @@ fn unsupported_magic_constant_message(name: &str) -> String {
     if name == "__CLASS__" {
         return "unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented".to_string();
     }
+    if name == "__TRAIT__" {
+        return "unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented".to_string();
+    }
     format!(
         "unsupported magic constant {name}: source-aware magic constant evaluation is not implemented"
     )

@@ -1,0 +1,2 @@
+parse error at 4:16: unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented
+

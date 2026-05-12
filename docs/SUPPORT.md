@@ -647,9 +647,10 @@
   string outside a function. `__METHOD__` fails with a stable parse diagnostic
   tied to the current missing method-dispatch boundary. `__CLASS__` fails with
   a stable parse diagnostic tied to the current missing class-context tracking
-  boundary. Other magic constants such as `__TRAIT__` and `__NAMESPACE__` fail
-  with stable parse diagnostics before their source/context-aware evaluation
-  exists. Nullable,
+  boundary. `__TRAIT__` fails with a stable parse diagnostic tied to the
+  current missing trait declaration/use and trait-context tracking boundary.
+  Other magic constants such as `__NAMESPACE__` fail with stable parse
+  diagnostics before their source/context-aware evaluation exists. Nullable,
   union, and intersection
   types, `mixed`, `void`/`never`, class/interface type names, coercive versus
   strict typing, variance, static local initialization expressions,
@@ -1172,8 +1173,10 @@
   `__NAMESPACE__`; `__METHOD__` specifically fails with a stable parse
   diagnostic because method dispatch and method-context tracking are not
   implemented, and `__CLASS__` specifically fails because class-context
-  tracking is not implemented, while the remaining unsupported magic constants
-  fail before namespace/trait context or native lowering exists.
+  tracking is not implemented. `__TRAIT__` specifically fails because trait
+  declarations, trait use, and trait-context tracking are not implemented,
+  while the remaining unsupported magic constants fail before namespace
+  context or native lowering exists.
   `__FUNCTION__` is limited to user-function context and the top-level empty
   string behavior; closure context is not implemented. `__FILE__` currently
   reports the `phpc run` input path string, and `__DIR__` derives from that

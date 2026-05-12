@@ -578,14 +578,6 @@ fn magic_constants_except_line_file_dir_and_function_are_rejected_with_stable_pa
     let cases = [
         (
             r#"<?php
-echo __TRAIT__;
-"#,
-            2,
-            6,
-            "__TRAIT__",
-        ),
-        (
-            r#"<?php
 echo __NAMESPACE__;
 "#,
             2,
@@ -606,6 +598,26 @@ echo __NAMESPACE__;
             )
         );
     }
+}
+
+#[test]
+fn magic_trait_constant_is_rejected_until_trait_context_tracking_exists() {
+    let error = parse_error(
+        r#"<?php
+class Box {
+    public function label() {
+        return __TRAIT__;
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 16);
+    assert_eq!(
+        error.message,
+        "unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented"
+    );
 }
 
 #[test]

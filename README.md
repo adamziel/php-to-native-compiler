@@ -129,7 +129,8 @@ subset:
   variadics, references, parameter and return type declarations, static local
   variable declarations, magic constants other than executable `__LINE__`,
   `__FILE__`, `__DIR__`, and `__FUNCTION__`, with `__METHOD__` and
-  `__CLASS__` held on method/class-context-specific parse diagnostics,
+  `__CLASS__` held on method/class-context-specific parse diagnostics and
+  `__TRAIT__` held on a trait-context-specific parse diagnostic,
   closures, named arguments,
   `declare(strict_types=1)`,
   unsupported nested, namespace-aware, or dynamic-value `const` declarations,

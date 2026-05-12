@@ -2379,8 +2379,11 @@ Still fails:
   the current missing class-context tracking path, plus fixture and CLI
   snapshot coverage. `__CLASS__` remains unsupported until class-context magic
   constant evaluation exists.
+- Tightened the `__TRAIT__` boundary with a stable parse diagnostic tied to
+  the current missing trait declaration/use and trait-context tracking path,
+  plus fixture and CLI snapshot coverage. `__TRAIT__` remains unsupported until
+  trait-context magic constant evaluation exists.
 
 Next:
 
-- Define the next honest `__TRAIT__` boundary before executable trait-context
-  magic constant evaluation exists.
+- Continue with the next unchecked item in `docs/NEXT_TASKS.md`.

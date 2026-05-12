@@ -7743,3 +7743,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:46:02Z
 
 - Post-round 26 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:46:12Z
+
+- Starting round 27 at 20260512T174612Z from HEAD `fd77cb1`.
+
+## Loop Event 2026-05-12T17:46:23Z
+
+- Pre-round 27 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:50:57Z
+
+- Task attempted: completed Milestone 78 by tightening the `__TRAIT__` magic
+  constant boundary. The parser now reports a stable diagnostic tied to missing
+  trait declarations, trait use, and trait-context tracking instead of the
+  generic source-aware magic-constant fallback. Added parser coverage, fixture
+  coverage, and `phpc run` CLI snapshot coverage for the boundary.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone78/magic_trait_boundary.php`,
+  `tests/fixtures/milestone78/magic_trait_boundary.stdout`,
+  `tests/fixtures/milestone78/magic_trait_boundary.stderr`,
+  `tests/fixtures/milestone78/magic_trait_boundary.exit`,
+  `tests/fixtures/milestone78/magic_trait_boundary.phpc-only`,
+  `tests/fixtures/milestone78/magic_trait_boundary.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test functions_and_scopes
+  magic_trait_constant_is_rejected_until_trait_context_tracking_exists` passed;
+  `cargo test -p phpc --test magic_constants_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone78` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone78` passed
+  with 1 `.phpc-only` system PHP comparison skip; `cargo test -p phpc --test
+  functions_and_scopes
+  magic_constants_except_line_file_dir_and_function_are_rejected_with_stable_parse_error`
+  passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone78/magic_trait_boundary.php` exited `1` with the
+  expected stable parse diagnostic; `tools/run-tests.sh` passed with 265
+  fixtures, 106 system PHP comparisons, and 159 skips.
+- Remaining semantic gaps: `__TRAIT__` remains unsupported until trait
+  declaration parsing/execution, trait `use`, method/class/trait context
+  tracking, namespace-aware context names, eval/include source mapping,
+  canonical PHP behavior, and native lowering exist.
+- Next concrete task: `docs/NEXT_TASKS.md` currently has no unchecked tasks;
+  add the next narrow, testable milestone before continuing feature work.
+- Checkpoint: pending `tools/checkpoint.sh "parser: tighten __TRAIT__ magic constant boundary"`
+  after the full suite passes.
