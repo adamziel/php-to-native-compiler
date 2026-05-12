@@ -2192,3 +2192,73 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:12:23Z
 
 - Post-round 36 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:12:26Z
+
+- Starting round 37 at 20260512T021226Z from HEAD `b4a0a0c`.
+
+## Loop Event 2026-05-12T02:12:28Z
+
+- Pre-round 37 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:16:32Z
+
+- Task attempted: implemented `array_search($needle, $array)` for the current
+  ordered array value model. The supported slice scans haystack values in
+  insertion order, uses the existing PHP 8-style loose scalar comparison rules,
+  returns the first matching integer or string key, returns `false` for misses,
+  supports string-valued dynamic calls to `array_search`, and reports stable
+  diagnostics for non-array haystacks, unsupported strict mode, and unsupported
+  array/object needles or haystack values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_search.rs`,
+  `tests/fixtures/milestone7/array_search.php`,
+  `tests/fixtures/milestone7/array_search.stdout`,
+  `tests/fixtures/milestone7/array_search.cli`,
+  `tests/fixtures/runtime_errors/array_search_non_array.php`,
+  `tests/fixtures/runtime_errors/array_search_non_array.stderr`,
+  `tests/fixtures/runtime_errors/array_search_non_array.exit`,
+  `tests/fixtures/runtime_errors/array_search_non_array.phpc-only`,
+  `tests/fixtures/runtime_errors/array_search_non_array.cli`,
+  `tests/fixtures/runtime_errors/array_search_strict_mode.php`,
+  `tests/fixtures/runtime_errors/array_search_strict_mode.stderr`,
+  `tests/fixtures/runtime_errors/array_search_strict_mode.exit`,
+  `tests/fixtures/runtime_errors/array_search_strict_mode.phpc-only`,
+  `tests/fixtures/runtime_errors/array_search_strict_mode.cli`,
+  `tests/fixtures/runtime_errors/array_search_array_value.php`,
+  `tests/fixtures/runtime_errors/array_search_array_value.stderr`,
+  `tests/fixtures/runtime_errors/array_search_array_value.exit`,
+  `tests/fixtures/runtime_errors/array_search_array_value.phpc-only`,
+  `tests/fixtures/runtime_errors/array_search_array_value.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p
+  php_runtime array_search` passed with 2 focused tests; `cargo test -p
+  php_runtime array_` passed with 10 focused tests; `cargo test -p phpc --test
+  array_search` passed with 4 tests; `cargo run -p phpc -- run
+  tests/fixtures/milestone7/array_search.php` printed the committed key-return
+  output; `cargo run -p phpc -- test tests/fixtures/milestone7` passed with 7
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone7` passed with 7 system PHP comparisons; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 32 fixtures;
+  `cargo test -p phpc --test array_refinements_cli` passed; `cargo test -p
+  phpc --test runtime_error_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_search_non_array.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_search_strict_mode.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_search_array_value.php` exited `1` with
+  the expected stable diagnostic; `tools/run-tests.sh` passed with 101
+  fixtures, 37 system PHP comparisons, and 64 `.phpc-only` skips.
+- Remaining semantic gaps: `array_search` is limited to the two-argument loose
+  scalar search form over array haystacks. The third strict-mode argument,
+  array/object needles or haystack values, references, copy-on-write
+  containers, exact native `TypeError` objects, and native lowering for
+  function calls remain unsupported.
+- Next concrete task: implement `foreach ($array as $value)` over the current
+  ordered array value model with parser/interpreter support, non-array
+  diagnostics, fixture CLI coverage, documentation, unsupported gaps for
+  key/value and by-reference forms, and explicit native-codegen rejection
+  coverage while lowering remains unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_search builtin"`
+  after the full suite passes.

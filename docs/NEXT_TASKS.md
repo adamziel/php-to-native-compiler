@@ -128,7 +128,15 @@ handled.
   value model, including loose scalar comparison behavior, non-array
   diagnostics, fixture CLI coverage, and documented gaps around strict mode,
   objects, arrays, and references.
-- [ ] Implement `array_search($needle, $array)` over the current ordered array
+- [x] Implement `array_search($needle, $array)` over the current ordered array
   value model, including loose scalar comparison behavior, key return behavior,
   non-array diagnostics, fixture CLI coverage, and documented gaps around
   strict mode, objects, arrays, and references.
+
+## Milestone 8: Array Iteration
+
+- [ ] Implement `foreach ($array as $value)` over the current ordered array
+  value model, including parser/interpreter support, non-array diagnostics,
+  fixture CLI coverage, documentation, unsupported gaps for key/value and
+  by-reference forms, and explicit native-codegen rejection coverage while
+  lowering remains unsupported.

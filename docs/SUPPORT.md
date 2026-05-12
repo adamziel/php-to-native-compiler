@@ -51,14 +51,16 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
-  `array_key_exists`, `array_values`, `array_keys`, `in_array`, `var_dump`, and
-  `print_r`; `print_r` can render current minimal object values
+  `array_key_exists`, `array_values`, `array_keys`, `in_array`,
+  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
+  minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access, unsupported complex
-  `empty` operands, non-array `in_array` haystacks, unsupported `in_array`
-  strict-mode and non-scalar comparisons, unsupported `global` declarations,
+  `empty` operands, non-array `in_array`/`array_search` haystacks, unsupported
+  `in_array`/`array_search` strict-mode and non-scalar comparisons, unsupported
+  `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
   unsupported non-public property access, object-to-string conversion, invalid
@@ -176,11 +178,13 @@
   integer/string keys as values in insertion order with integer keys starting at
   zero. `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules and is also available through
-  string-valued dynamic function calls. Missing key reads still fail with a
-  stable runtime error instead of PHP's warning-and-`null` recovery. Array
-  truthiness, `count`, `array_key_exists`, `array_values`, `array_keys`,
-  `in_array`, `print_r`, and `var_dump` are implemented for this ordered value
-  model.
+  string-valued dynamic function calls. `array_search($needle, $array)` uses
+  the same loose scalar scan, returning the first matching integer/string key or
+  `false` when no value matches; it is also available through string-valued
+  dynamic function calls. Missing key reads still fail with a stable runtime
+  error instead of PHP's warning-and-`null` recovery. Array truthiness, `count`,
+  `array_key_exists`, `array_values`, `array_keys`, `in_array`, `array_search`,
+  `print_r`, and `var_dump` are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -208,7 +212,8 @@
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
   operands, non-array `array_keys` operands, non-array `in_array` operands,
-  unsupported `in_array` strict-mode and array-value comparisons, unsupported
+  non-array `array_search` operands, unsupported `in_array` and `array_search`
+  strict-mode and array-value comparisons, unsupported
   complex `empty` operands, unresolved dynamic function callees, division by
   zero, non-numeric string arithmetic, duplicate class metadata, undefined
   classes, undefined object properties, invalid property targets, non-public
@@ -225,8 +230,8 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
-  `array_key_exists`, `array_values`, `array_keys`, `in_array`, `var_dump`, or
-  `print_r`.
+  `array_key_exists`, `array_values`, `array_keys`, `in_array`, `array_search`,
+  `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -255,10 +260,11 @@
   syntax, `call_user_func`, namespace-qualified callable resolution, and
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
-  `array_values`, `array_keys`, `in_array`, `var_dump`, and `print_r` cover the
-  documented scalar/array/object subset. `print_r` can also render the current
-  minimal object values. `strlen` remains scalar-only and rejects arrays and
-  objects. `count` accepts arrays only. `array_key_exists($key, $array)` accepts integer
+  `array_values`, `array_keys`, `in_array`, `array_search`, `var_dump`, and
+  `print_r` cover the documented scalar/array/object subset. `print_r` can also
+  render the current minimal object values. `strlen` remains scalar-only and
+  rejects arrays and objects. `count` accepts arrays only.
+  `array_key_exists($key, $array)` accepts integer
   and string keys over the current ordered array value model, returns true for
   existing keys even when the stored value is `null`, returns false for missing
   keys, rejects non-array second arguments, and rejects unsupported key values
@@ -277,7 +283,14 @@
   non-array haystacks, rejects the third strict-mode argument, and rejects array
   or object needles/values when encountered instead of modeling PHP's full
   non-scalar comparison behavior. `in_array` is also available through
-  string-valued dynamic function calls. `isset` supports direct variable
+  string-valued dynamic function calls. `array_search($needle, $array)` accepts
+  the two-argument form with an array haystack, scans values in insertion order
+  with the same loose scalar comparison rules, returns the first matching
+  integer/string key as an `int` or `string`, and returns `false` when no value
+  matches. It rejects non-array haystacks, rejects the third strict-mode
+  argument, and rejects array or object needles/values when encountered.
+  `array_search` is also available through string-valued dynamic function
+  calls. `isset` supports direct variable
   operands, direct array offset operands such as `isset($array[$key])`,
   and direct public object-property
   operands such as `isset($object->name)`; it can safely check undefined
@@ -291,8 +304,9 @@
   values use the current PHP truthiness rules. Nested array offsets, object
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
-  `array_values`, `array_keys`, and `in_array` follow the current by-value
-  model; PHP references and copy-on-write containers are not implemented.
+  `array_values`, `array_keys`, `in_array`, and `array_search` follow the
+  current by-value model; PHP references and copy-on-write containers are not
+  implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -396,8 +410,8 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
-- `in_array` strict-mode searches and array/object needle or haystack-value
-  comparisons
+- `in_array` and `array_search` strict-mode searches and array/object needle or
+  haystack-value comparisons
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

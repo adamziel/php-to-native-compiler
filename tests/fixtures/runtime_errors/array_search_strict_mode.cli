@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_search_strict_mode.php:3:6: unsupported call array_search(): strict mode argument is not implemented
+--- stderr end ---

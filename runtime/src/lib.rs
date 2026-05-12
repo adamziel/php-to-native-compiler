@@ -463,13 +463,24 @@ impl PhpArray {
 
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            ensure_loose_array_search_values_supported(needle, &entry.value)?;
+            ensure_loose_array_search_values_supported("in_array()", needle, &entry.value)?;
             if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
                 return Ok(true);
             }
         }
 
         Ok(false)
+    }
+
+    pub fn search_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
+        for entry in &self.entries {
+            ensure_loose_array_search_values_supported("array_search()", needle, &entry.value)?;
+            if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
+                return Ok(Some(entry.key.clone()));
+            }
+        }
+
+        Ok(None)
     }
 
     fn bump_next_auto_index(&mut self, key: &ArrayKey) {
@@ -493,14 +504,18 @@ impl Default for PhpArray {
     }
 }
 
-fn ensure_loose_array_search_values_supported(needle: &Value, value: &Value) -> RuntimeResult<()> {
+fn ensure_loose_array_search_values_supported(
+    callable: &str,
+    needle: &Value,
+    value: &Value,
+) -> RuntimeResult<()> {
     match (needle, value) {
         (Value::Array(_), _) | (_, Value::Array(_)) => Err(RuntimeError::unsupported_call(
-            "in_array()",
+            callable,
             "array needles and array values are not implemented",
         )),
         (Value::Object(_), _) | (_, Value::Object(_)) => Err(RuntimeError::unsupported_call(
-            "in_array()",
+            callable,
             "object needles and object values are not implemented",
         )),
         _ => Ok(()),
@@ -1797,6 +1812,90 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call in_array(): array needles and array values are not implemented"
+        );
+    }
+
+    #[test]
+    fn array_search_returns_first_loose_scalar_match_key() {
+        let mut array = PhpArray::new();
+
+        array.insert("null", Value::Null);
+        array.insert("false", Value::Bool(false));
+        array.insert(0, Value::String("zero-key".to_string()));
+        array.insert("2", Value::String("two-key".to_string()));
+        array.insert("02", Value::String("zero-two-key".to_string()));
+        array.append(Value::String("appended".to_string())).unwrap();
+        array.insert("numeric", Value::String("10.0".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String(String::new()))
+                .unwrap(),
+            Some(ArrayKey::String("null".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("0".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("false".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("zero-key".to_string()))
+                .unwrap(),
+            Some(ArrayKey::Int(0))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("two-key".to_string()))
+                .unwrap(),
+            Some(ArrayKey::Int(2))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("zero-two-key".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("02".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("appended".to_string()))
+                .unwrap(),
+            Some(ArrayKey::Int(3))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("10".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("numeric".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_loose_scalar(&Value::String("missing".to_string()))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn array_search_rejects_array_comparison_gaps() {
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array
+            .search_value_loose_scalar(&Value::String("needle".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_search()".to_string(),
+                reason: "array needles and array values are not implemented".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_search(): array needles and array values are not implemented"
         );
     }
 

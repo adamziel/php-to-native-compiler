@@ -714,6 +714,45 @@ impl Interpreter {
                     ),
                 )),
             },
+            "array_search" => match args.as_slice() {
+                [needle, Value::Array(array)] => array
+                    .search_value_loose_scalar(needle)
+                    .map(|key| match key {
+                        Some(ArrayKey::Int(value)) => Value::Int(value),
+                        Some(ArrayKey::String(value)) => Value::String(value),
+                        None => Value::Bool(false),
+                    })
+                    .map_err(|error| runtime_error(span, error)),
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_search()",
+                        format!("second argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                [_, Value::Array(_), _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_search()",
+                        "strict mode argument is not implemented",
+                    ),
+                )),
+                [_, other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_search()",
+                        format!("second argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_search()",
+                        ArityExpectation::Between { min: 2, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -1018,6 +1057,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_values"
             | "array_keys"
             | "in_array"
+            | "array_search"
             | "var_dump"
             | "print_r"
     )
