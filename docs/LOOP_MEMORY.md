@@ -1932,3 +1932,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:48:32Z
 
 - Post-round 32 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:48:34Z
+
+- Starting round 33 at 20260512T014834Z from HEAD `72fedd1`.
+
+## Loop Event 2026-05-12T01:48:37Z
+
+- Pre-round 33 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:53:12Z
+
+- Task attempted: implemented `empty(...)` for direct variables and direct
+  array offsets over the current scalar/array value model. Undefined
+  variables, missing array keys, undefined array variables, non-array array
+  targets, `null`, `false`, zero, empty strings, string `"0"`, and empty arrays
+  are treated as empty; existing values use the current PHP truthiness rules;
+  complex lvalues fail with a stable unsupported-call diagnostic.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/empty.rs`,
+  `tests/fixtures/milestone7/empty.*`,
+  `tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test empty` passed with 2 tests; `cargo test -p phpc --test
+  array_refinements_cli` passed; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone7` passed with 3
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone7` passed with 3 system PHP comparisons; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 24 fixtures;
+  `cargo run -p phpc -- run tests/fixtures/milestone7/empty.php` printed the
+  committed `empty` output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php` exited
+  `1` with the expected stable diagnostic; `tools/run-tests.sh` passed with 89
+  fixtures, 33 system PHP comparisons, and 56 `.phpc-only` skips.
+- Remaining semantic gaps: `empty` is limited to one direct variable or direct
+  array-offset operand. Nested offsets, object properties, append offsets,
+  general expression operands, unsupported key coercions, dynamic access to
+  `empty`, exact warning behavior, references/copy-on-write effects, and native
+  lowering are not implemented.
+- Next concrete task: implement `array_values($array)` for the current ordered
+  array value model, including reindexing behavior, non-array diagnostics,
+  fixture CLI coverage, and documented gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add empty language construct"`
+  after the full suite passes.

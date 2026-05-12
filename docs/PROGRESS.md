@@ -174,6 +174,12 @@ Implemented:
   missing keys, is available through string-valued dynamic function calls, and
   has stable diagnostics for unsupported key values and non-array second
   arguments.
+- Added `empty(...)` support for direct variables and direct array offsets over
+  the current scalar/array value model. The supported slice treats undefined
+  variables, missing array keys, undefined array variables, non-array array
+  targets, `null`, `false`, zero, empty strings, string `"0"`, and empty arrays
+  as empty, uses current truthiness for existing values, and has a stable
+  diagnostic for unsupported complex lvalues.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
   snapshots for unsupported static property access, static method calls, and
   class constant access through `::`.
@@ -223,7 +229,7 @@ Tested:
   passes.
 - `cargo test -p phpc --test runtime_errors` passes with 21 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 22 representative runtime error fixtures.
+  covering 24 representative runtime error fixtures.
 - `cargo test -p phpc --test functions_and_scopes` passes with 17
   user-function scope/default-parameter tests.
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
@@ -261,6 +267,8 @@ Tested:
   `array_key_exists` behavior, null-value contrast against `isset`, dynamic
   string-call coverage, and stable diagnostics for unsupported key values and
   non-array second arguments.
+- `cargo test -p phpc --test empty` passes with direct variable and direct
+  array-offset `empty` behavior plus unsupported complex-lvalue coverage.
 - `cargo test -p phpc --test array_refinements_cli` passes with 1 CLI snapshot
   test covering the Milestone 7 array refinement fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
@@ -282,9 +290,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_continue_until_native_loop_control_lowering_exists`
   passes with rejection coverage for `continue` statements before native
   loop-control lowering exists.
-- `cargo run -p phpc -- test` passes with 87 fixture tests.
+- `cargo run -p phpc -- test` passes with 89 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 32 fixtures and skipping 55 `.phpc-only` fixtures.
+  installed, comparing 33 fixtures and skipping 56 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -302,10 +310,10 @@ Tested:
   loop-control fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone6` passes
   with 2 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone7` passes with 2
+- `cargo run -p phpc -- test tests/fixtures/milestone7` passes with 3
   array-refinement fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone7` passes
-  with 2 system PHP comparisons.
+  with 3 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -432,6 +440,10 @@ Tested:
   prints the committed direct array-offset `isset` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone7/array_key_exists.php`
   prints the committed `array_key_exists` output.
+- `cargo run -p phpc -- run tests/fixtures/milestone7/empty.php`
+  prints the committed direct-variable and direct array-offset `empty` output.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php:3:12: unsupported call empty(): only direct variables and direct array offset operands are supported`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/break_outside_loop.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/break_outside_loop.php:2:1: invalid loop control: break cannot be used outside a loop`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/continue_outside_loop.php`
@@ -511,12 +523,16 @@ Still fails:
   fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Direct array-offset `isset` is limited to direct
   variable targets and integer/string keys; nested/complex offset operands
-  remain unsupported. `array_key_exists` is limited to integer/string keys and
-  array second arguments; PHP's broader key coercions and warning/TypeError
-  details are not modeled. Writes to existing non-array scalar variables
-  other than `null` are rejected instead of following PHP's full automatic
-  conversion behavior. Negative-key auto-index behavior is not claimed beyond
-  the current non-negative allocator, and arrays still reject native lowering.
+  remain unsupported. Direct `empty` is limited to direct variables and direct
+  array offsets; nested offsets, object properties, append offsets, general
+  expression operands, unsupported key coercions, and dynamic access to
+  `empty` are not implemented. `array_key_exists` is limited to integer/string
+  keys and array second arguments; PHP's broader key coercions and
+  warning/TypeError details are not modeled. Writes to existing non-array
+  scalar variables other than `null` are rejected instead of following PHP's
+  full automatic conversion behavior. Negative-key auto-index behavior is not
+  claimed beyond the current non-negative allocator, and arrays still reject
+  native lowering.
 - Loop-control execution is limited to statement-form `break;` and `continue;`
   inside active `while` loops. Loop-depth arguments, invalid
   top-level/function-level loop control recovery beyond the stable runtime
@@ -542,8 +558,7 @@ Still fails:
   to current user functions or the documented callable builtins; array/object
   callables, method calls, first-class callable syntax, `call_user_func`,
   namespace-qualified callable resolution, autoload interaction, and dynamic
-  access to language constructs such as `isset` and future `empty` are
-  unsupported.
+  access to language constructs such as `isset` and `empty` are unsupported.
 - Variable variables remain unsupported. `$$name` and `${...}` fail with the
   current stable lex diagnostic instead of resolving a runtime-computed symbol
   name, and dynamic symbol-table lookup from PHP values is not implemented.
@@ -581,6 +596,5 @@ Still fails:
 
 Next:
 
-- Implement `empty(...)` for direct variables and direct array offsets over the
-  current scalar/array value model, with explicit unsupported diagnostics for
-  complex lvalues.
+- Implement `array_values($array)` for the current ordered array value model,
+  including reindexing behavior, fixture CLI coverage, and documented gaps.

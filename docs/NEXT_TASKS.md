@@ -114,7 +114,10 @@ handled.
   value model, including null-value contrast against `isset`, invalid key and
   non-array diagnostics, fixture CLI coverage, and docs for unsupported key
   coercions.
-- [ ] Implement `empty(...)` for direct variables and direct array offsets over
+- [x] Implement `empty(...)` for direct variables and direct array offsets over
   the current scalar/array value model, including undefined, missing, `null`,
   false, zero, empty string, and string `"0"` behavior, unsupported complex
   lvalue diagnostics, fixture CLI coverage, and documented gaps.
+- [ ] Implement `array_values($array)` for the current ordered array value
+  model, including integer reindexing behavior, non-array diagnostics, fixture
+  CLI coverage, and documented gaps.

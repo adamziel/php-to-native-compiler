@@ -1,0 +1,25 @@
+exit: 0
+stdout:
+missing:empty
+null:empty
+false:empty
+zero:empty
+empty-string:empty
+zero-string:empty
+true:not-empty
+one:not-empty
+text:not-empty
+empty-array:empty
+filled-array:not-empty
+offset-present:not-empty
+offset-null:empty
+offset-false:empty
+offset-zero:empty
+offset-empty-string:empty
+offset-zero-string:empty
+offset-missing:empty
+offset-undefined-array:empty
+offset-scalar-target:empty
+offset-int-normalized:not-empty--- stdout end ---
+stderr:
+--- stderr end ---

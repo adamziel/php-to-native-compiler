@@ -1,0 +1,2 @@
+runtime error at 3:12: unsupported call empty(): only direct variables and direct array offset operands are supported
+

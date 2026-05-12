@@ -487,6 +487,9 @@ impl Interpreter {
         if key == "isset" {
             return self.call_isset(args, span, caller_scope);
         }
+        if key == "empty" {
+            return self.call_empty(args, span, caller_scope);
+        }
 
         self.call_named_function(name, args, span, caller_scope)
     }
@@ -777,6 +780,69 @@ impl Interpreter {
                 .is_public_property_set(property)
                 .map_err(|error| runtime_error(span, error)),
             Some(_) | None => Ok(false),
+        }
+    }
+
+    fn call_empty(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("empty()", ArityExpectation::Exactly(1), args.len()),
+            ));
+        }
+
+        Ok(Value::Bool(self.is_empty_operand(&args[0], caller_scope)?))
+    }
+
+    fn is_empty_operand(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        match arg {
+            Expr::Variable(name, _) => Ok(caller_scope
+                .read_named(name)
+                .map_or(true, |value| !value.is_truthy())),
+            Expr::Index { target, index, .. } => {
+                self.is_direct_array_offset_empty(target, index, caller_scope)
+            }
+            _ => Err(runtime_error(
+                arg.span(),
+                RuntimeError::unsupported_call(
+                    "empty()",
+                    "only direct variables and direct array offset operands are supported",
+                ),
+            )),
+        }
+    }
+
+    fn is_direct_array_offset_empty(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Expr::Variable(name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "empty()",
+                    "only direct variables and direct array offset operands are supported",
+                ),
+            ));
+        };
+
+        match caller_scope.read_named(name).cloned() {
+            Some(Value::Array(array)) => {
+                let key = self.evaluate_array_key(index, caller_scope)?;
+                Ok(array.get(key).map_or(true, |value| !value.is_truthy()))
+            }
+            Some(_) | None => Ok(true),
         }
     }
 
