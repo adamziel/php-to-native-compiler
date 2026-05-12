@@ -41,6 +41,36 @@ echo count($lengths), "|", $lengths["empty"], "|", $lengths["zero"], "|", $lengt
 }
 
 #[test]
+fn array_map_null_callback_identity_preserves_one_array_keys_and_values() {
+    let source = r#"<?php
+$items = [];
+$items["first"] = "Ada";
+$items[5] = "Bob";
+$items["empty"] = "";
+$items[] = "Linus";
+
+$identity = array_map(null, $items);
+print_r(array_keys($identity));
+echo $identity["first"], "|", $identity[5], "|", $identity["empty"], "|", $identity[6], "\n";
+$identity[] = "after";
+echo $identity[7], "\n";
+$identity["first"] = "Changed";
+echo $items["first"], "|", $identity["first"], "\n";
+
+$call = "array_map";
+$dynamic = $call(null, ["x" => "A", 4 => "B"]);
+print_r($dynamic);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => first\n    [1] => 5\n    [2] => empty\n    [3] => 6\n)\nAda|Bob||Linus\nafter\nAda|Changed\nArray\n(\n    [x] => A\n    [4] => B\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_map_invokes_string_named_callback_with_two_arrays_and_null_padding() {
     let source = r#"<?php
 function pair_label($left, $right) {
@@ -116,14 +146,15 @@ fn array_map_callback_reports_unknown_function() {
 }
 
 #[test]
-fn array_map_rejects_null_callbacks_for_now() {
-    let error = runtime_error("<?php\n$items = [\"Ada\"];\necho array_map(null, $items);\n");
+fn array_map_rejects_null_callbacks_with_multiple_arrays_for_now() {
+    let error =
+        runtime_error("<?php\n$left = [\"Ada\"];\n$right = [\"Lovelace\"];\necho array_map(null, $left, $right);\n");
 
-    assert_eq!(error.line, 3);
+    assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_map(): null callbacks are not supported in the current subset"
+        "unsupported call array_map(): null callbacks with multiple arrays are not supported in the current subset"
     );
 }
 
@@ -173,5 +204,15 @@ fn emit_ir_rejects_array_map_until_native_call_lowering_exists() {
         two_array_error.message.contains("function calls"),
         "{}",
         two_array_error.message
+    );
+
+    let null_callback_error =
+        emit_ir_source("<?php\necho array_map(null, [\"name\"]);\n").unwrap_err();
+
+    assert_eq!(null_callback_error.phase, Phase::Codegen);
+    assert!(
+        null_callback_error.message.contains("function calls"),
+        "{}",
+        null_callback_error.message
     );
 }

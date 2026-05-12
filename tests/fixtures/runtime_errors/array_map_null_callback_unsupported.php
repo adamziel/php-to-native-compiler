@@ -1,3 +1,4 @@
 <?php
-$items = ["Ada"];
-echo array_map(null, $items);
+$left = ["Ada"];
+$right = ["Lovelace"];
+echo array_map(null, $left, $right);

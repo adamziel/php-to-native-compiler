@@ -294,6 +294,12 @@ Implemented:
   original integer/string keys and insertion order, including string-valued
   dynamic calls to `array_map`, while the existing two-array form remains
   reindexed from integer key zero.
+- Added `array_map(null, $array)` identity mapping for one input array over
+  the current ordered array value model. The supported slice preserves
+  integer/string keys, insertion order, append behavior after copied integer
+  keys, and is available when `array_map` itself is called dynamically by
+  string name; multi-array null-callback zip modes remain explicitly
+  unsupported.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -596,11 +602,12 @@ Tested:
   builtins, key preservation, dynamic string-call coverage, original-array
   preservation, non-array/callback/mode diagnostics, and LLVM IR rejection
   coverage.
-- `cargo test -p phpc --test array_map` passes with one-array value-only string
-  callback execution and key preservation, two-array string-callback execution
-  with longest-array `null` padding and integer reindexing, dynamic string-call
-  coverage, original-array preservation, non-array/callback/null-callback/extra
-  array diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_map` passes with one-array null-callback
+  identity mapping, one-array value-only string callback execution and key
+  preservation, two-array string-callback execution with longest-array `null`
+  padding and integer reindexing, dynamic string-call coverage, original-array
+  preservation, non-array/callback/multi-array null-callback/extra array
+  diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -634,8 +641,8 @@ Tested:
   snapshot test covering the Milestone 20 and Milestone 21 `array_filter`
   fixtures.
 - `cargo test -p phpc --test array_mapping_builtins_cli` passes with CLI
-  snapshot tests covering the Milestone 22 and Milestone 23 `array_map`
-  fixtures.
+  snapshot tests covering the Milestone 22, Milestone 23, and Milestone 25
+  `array_map` fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -847,7 +854,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_callback_undefined.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_callback_undefined.php:3:6: undefined function missing_map()`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_null_callback_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_null_callback_unsupported.php:3:6: unsupported call array_map(): null callbacks are not supported in the current subset`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_null_callback_unsupported.php:4:6: unsupported call array_map(): null callbacks with multiple arrays are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_third_non_array.php:3:6: unsupported call array_map(): third argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php`
@@ -1033,6 +1040,13 @@ Tested:
   dynamic calls to `array_map`.
 - `cargo run -p phpc -- test tests/fixtures/milestone23` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone23` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone25/array_map_null_callback.php`
+  prints the committed one-array `array_map(null, $array)` identity output
+  with key preservation, append behavior after copied integer keys,
+  original-array preservation, and string-valued dynamic calls to `array_map`.
+- `cargo run -p phpc -- test tests/fixtures/milestone25` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone25` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
@@ -1223,14 +1237,15 @@ Still fails:
   reference and copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
-  `array_map` callback support is limited to one or two input arrays and
-  string-valued user-function or callable-builtin names. The one-array form
-  preserves original integer/string keys, while the two-array form reindexes
-  mapped results from integer key zero. More than two input arrays, `null`
-  callback identity/zip modes, array/object callables, closures, first-class
-  callables, method calls, references, copy-on-write behavior, object handle
-  identity preservation, resource values, exact native `TypeError` objects, and
-  native lowering are not implemented.
+  `array_map` callback support is limited to one-array null-callback identity
+  mapping and one or two input arrays with string-valued user-function or
+  callable-builtin names. The one-array forms preserve original integer/string
+  keys, while the two-array string-callback form reindexes mapped results from
+  integer key zero. More than two input arrays, multi-array null-callback zip
+  modes, array/object callables, closures, first-class callables, method calls,
+  references, copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering are
+  not implemented.
   `in_array` and `array_search` are limited to loose scalar searches and strict
   scalar searches when the third argument is a boolean. Strict searches
   involving array/object needles or haystack values, resource/reference
@@ -1320,6 +1335,6 @@ Still fails:
 
 Next:
 
-- Implement `array_map(null, $array)` identity mapping for one input array while
-  keeping multi-array null-callback zip modes, references/copy-on-write
-  behavior, and native lowering explicitly documented.
+- Implement `array_map(null, $left, $right)` for the first multi-array
+  null-callback zip slice, keeping broader zip arities, references,
+  copy-on-write behavior, and native lowering explicitly documented.

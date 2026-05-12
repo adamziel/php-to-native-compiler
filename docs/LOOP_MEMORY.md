@@ -4305,3 +4305,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T06:27:49Z
 
 - Post-round 68 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T06:27:53Z
+
+- Starting round 69 at 20260512T062753Z from HEAD `80e533e`.
+
+## Loop Event 2026-05-12T06:27:57Z
+
+- Pre-round 69 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:33:07Z
+
+- Task attempted: implemented `array_map(null, $array)` identity mapping for
+  one input array over the current ordered array value model. The supported
+  slice returns an identity copy with integer/string keys, insertion order, and
+  append behavior after copied integer keys preserved, supports string-valued
+  dynamic calls to `array_map`, and keeps multi-array null-callback zip modes
+  explicitly unsupported with a stable diagnostic.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/array_map.rs`,
+  `compiler/tests/array_mapping_builtins_cli.rs`,
+  `tests/fixtures/milestone25/array_map_null_callback.php`,
+  `tests/fixtures/milestone25/array_map_null_callback.stdout`,
+  `tests/fixtures/milestone25/array_map_null_callback.cli`,
+  `tests/fixtures/runtime_errors/array_map_null_callback_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc --test
+  array_map` passed with 10 tests; `cargo test -p phpc --test
+  array_mapping_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone25` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone25` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 61 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone25/array_map_null_callback.php` printed the
+  committed output; `git diff --check` passed; `tools/run-tests.sh` passed
+  with 159 fixtures, 64 system PHP comparisons, and 95 `.phpc-only` skips.
+- Remaining semantic gaps: `array_map` supports one-array null-callback
+  identity and one- or two-array string-valued user-function/callable-builtin
+  callbacks only. Multi-array null-callback zip modes, more than two input
+  arrays, array/object callables, closures, first-class callables, method
+  calls, references, copy-on-write behavior, object handle identity
+  preservation, resource values, exact native `TypeError` objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement `array_map(null, $left, $right)` for the first
+  multi-array null-callback zip slice, including longest-array `null` padding
+  and integer reindexing while keeping broader zip arities explicitly
+  unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_map null identity"`
+  after the full suite passes.

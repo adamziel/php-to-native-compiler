@@ -1,2 +1,2 @@
-runtime error at 3:6: unsupported call array_map(): null callbacks are not supported in the current subset
+runtime error at 4:6: unsupported call array_map(): null callbacks with multiple arrays are not supported in the current subset
 

@@ -11,6 +11,7 @@ fn array_mapping_builtin_cli_snapshots_match_committed_outputs() {
     let fixture_dirs = [
         workspace_root.join("tests/fixtures/milestone22"),
         workspace_root.join("tests/fixtures/milestone23"),
+        workspace_root.join("tests/fixtures/milestone25"),
     ];
     let mut fixtures = Vec::new();
     for fixture_dir in fixture_dirs {

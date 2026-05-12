@@ -1,0 +1,20 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => first
+    [1] => 5
+    [2] => empty
+    [3] => 6
+)
+Ada|Bob||Linus
+after
+Ada|Changed
+Array
+(
+    [x] => A
+    [4] => B
+)
+--- stdout end ---
+stderr:
+--- stderr end ---

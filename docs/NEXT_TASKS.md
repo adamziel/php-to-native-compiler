@@ -320,7 +320,16 @@ handled.
 
 ## Milestone 25: Array Map Null Callback
 
-- [ ] Implement `array_map(null, $array)` identity mapping for one input array
+- [x] Implement `array_map(null, $array)` identity mapping for one input array
   over the current ordered array value model, including key behavior, fixture
   CLI coverage, documentation, and explicit gaps for multi-array zip modes,
   references/copy-on-write, and native lowering.
+
+## Milestone 26: Array Map Null Callback Zip
+
+- [ ] Implement `array_map(null, $left, $right)` for the first multi-array
+  null-callback zip slice over the current ordered array value model, including
+  longest-array `null` padding, integer reindexing, fixture CLI coverage,
+  documentation, and explicit gaps for broader zip arities,
+  references/copy-on-write, object handle identity preservation, and native
+  lowering.

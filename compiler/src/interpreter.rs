@@ -1363,6 +1363,10 @@ impl Interpreter {
         array: &PhpArray,
         span: Span,
     ) -> CompileResult<PhpArray> {
+        if matches!(callback, Value::Null) {
+            return Ok(array.clone());
+        }
+
         let callable = self.resolve_array_map_callback(callback, span)?;
 
         let mut mapped = PhpArray::new();
@@ -1418,7 +1422,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_map()",
-                        "null callbacks are not supported in the current subset",
+                        "null callbacks with multiple arrays are not supported in the current subset",
                     ),
                 ));
             }
