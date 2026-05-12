@@ -379,9 +379,18 @@ handled.
 
 ## Milestone 32: Array Slicing Preserve Keys
 
-- [ ] Extend `array_slice` with boolean preserve-key mode over the current
+- [x] Extend `array_slice` with boolean preserve-key mode over the current
   ordered integer/string key model, including default/false behavior,
   true-preserve behavior for integer and string keys, null-length interaction,
   non-bool diagnostics, fixture CLI coverage, documentation, and explicit gaps
   for references/copy-on-write, object handle identity preservation, resources,
   exact native `TypeError` objects, and native lowering.
+
+## Milestone 33: Array Chunking Builtins
+
+- [ ] Implement `array_chunk($array, $length)` over the current ordered array
+  value model, including positive length behavior, integer-key reindexing,
+  string-key behavior, non-array/non-int/non-positive diagnostics, fixture CLI
+  coverage, documentation, and explicit gaps for preserve-key mode,
+  references/copy-on-write, object handle identity preservation, resources,
+  exact native `ValueError`/`TypeError` objects, and native lowering.

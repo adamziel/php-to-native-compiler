@@ -549,6 +549,14 @@ impl PhpArray {
     }
 
     pub fn sliced(&self, offset: i64, length: Option<i64>) -> Self {
+        self.sliced_with_key_mode(offset, length, false)
+    }
+
+    pub fn sliced_preserving_keys(&self, offset: i64, length: Option<i64>) -> Self {
+        self.sliced_with_key_mode(offset, length, true)
+    }
+
+    fn sliced_with_key_mode(&self, offset: i64, length: Option<i64>, preserve_keys: bool) -> Self {
         let len = i64::try_from(self.entries.len()).expect("array length fits in i64");
         let start = if offset >= 0 {
             offset.min(len)
@@ -567,14 +575,18 @@ impl PhpArray {
 
         let mut array = Self::new();
         for entry in self.entries[start..end].iter() {
-            match &entry.key {
-                ArrayKey::Int(_) => {
-                    array
-                        .append(entry.value.clone())
-                        .expect("array length fits in i64");
-                }
-                ArrayKey::String(key) => {
-                    array.insert(key.clone(), entry.value.clone());
+            if preserve_keys {
+                array.insert(entry.key.clone(), entry.value.clone());
+            } else {
+                match &entry.key {
+                    ArrayKey::Int(_) => {
+                        array
+                            .append(entry.value.clone())
+                            .expect("array length fits in i64");
+                    }
+                    ArrayKey::String(key) => {
+                        array.insert(key.clone(), entry.value.clone());
+                    }
                 }
             }
         }
@@ -2550,6 +2562,51 @@ mod tests {
         assert_eq!(entries[3].value, Value::String("negative".to_string()));
         assert_eq!(entries[4].key, ArrayKey::Int(3));
         assert_eq!(entries[4].value, Value::String("next".to_string()));
+    }
+
+    #[test]
+    fn array_slice_can_preserve_integer_and_string_keys() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut middle = array.sliced_preserving_keys(1, Some(3));
+        let entries = middle.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::Int(5));
+        assert_eq!(entries[0].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(
+            middle.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(6)
+        );
+
+        let mut tail = array.sliced_preserving_keys(-3, None);
+        let entries = tail.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[0].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(-1));
+        assert_eq!(entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(6));
+        assert_eq!(entries[2].value, Value::String("next".to_string()));
+        assert_eq!(
+            tail.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(7)
+        );
+        assert_eq!(
+            array.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_slice preserve_keys must not mutate the original array"
+        );
     }
 
     #[test]

@@ -324,19 +324,25 @@ Implemented:
   supports negative offsets counted back from the end, reindexes integer-keyed
   entries from zero while preserving string keys, is available through
   string-valued dynamic function calls, and has stable diagnostics for
-  non-array first arguments, non-int offsets, and unsupported preserve-key
-  arguments.
+  non-array first arguments and non-int offsets.
 - Extended `array_slice` with the integer length argument over the current
   ordered array value model. The supported slice accepts positive, zero, and
   negative integer lengths, keeps default integer-key reindexing and string-key
   preservation, supports string-valued dynamic calls, preserves the original
-  array, and has stable diagnostics for non-int lengths and unsupported
-  preserve-key arguments.
+  array, has stable diagnostics for non-int lengths, and was later followed by
+  null-length and boolean preserve-key forms.
 - Extended `array_slice` with `null` length over the current ordered array
   value model. The supported slice treats `array_slice($array, $offset, null)`
   as a to-end slice, keeps default integer-key reindexing and string-key
   preservation, supports string-valued dynamic calls, preserves the original
-  array, and keeps preserve-key mode explicitly unsupported.
+  array, and was later followed by boolean preserve-key mode.
+- Extended `array_slice` with boolean preserve-key mode over the current
+  ordered integer/string key model. The supported slice preserves integer and
+  string keys when the fourth argument is `true`, keeps the default
+  integer-key reindexing and string-key preservation when it is `false`,
+  supports `null` length with preserve-key mode, supports string-valued dynamic
+  calls, preserves the original array, and has a stable diagnostic for
+  non-bool preserve-key flags.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -488,7 +494,7 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 47 runtime unit tests.
+- `cargo test -p php_runtime` passes with 48 runtime unit tests.
 - `cargo test -p php_runtime array_` passes with 32 focused array value tests.
 - `cargo test -p php_runtime array_key_first` passes with 1 focused
   first-key runtime test.
@@ -506,7 +512,7 @@ Tested:
   array-counting runtime tests.
 - `cargo test -p php_runtime array_filter` passes with 1 focused
   array-filtering runtime test.
-- `cargo test -p php_runtime array_slice` passes with 3 focused array-slicing
+- `cargo test -p php_runtime array_slice` passes with 4 focused array-slicing
   runtime tests.
 - `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
   array-search tests.
@@ -649,11 +655,12 @@ Tested:
   coverage, original-array preservation, non-array/callback/extra array
   diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_slice` passes with `array_slice` offset,
-  integer-length, and null-length behavior, positive/negative/out-of-range
-  offsets, positive/zero/negative lengths, default integer-key reindexing,
-  string-key preservation, dynamic string-call coverage, original-array
-  preservation, non-array/non-int/non-null diagnostics, unsupported
-  preserve-key diagnostics, and LLVM IR rejection coverage.
+  integer-length, null-length, and boolean preserve-key behavior,
+  positive/negative/out-of-range offsets, positive/zero/negative lengths,
+  default integer-key reindexing, string-key preservation, preserved integer
+  keys, dynamic string-call coverage, original-array preservation,
+  non-array/non-int/non-null diagnostics, non-bool preserve-key diagnostics,
+  and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -690,8 +697,8 @@ Tested:
   snapshot tests covering the Milestone 22, Milestone 23, Milestone 25,
   Milestone 26, Milestone 27, and Milestone 28 `array_map` fixtures.
 - `cargo test -p phpc --test array_slicing_builtins_cli` passes with 1 CLI
-  snapshot test covering the Milestone 29, Milestone 30, and Milestone 31
-  `array_slice` fixtures.
+  snapshot test covering the Milestone 29, Milestone 30, Milestone 31, and
+  Milestone 32 `array_slice` fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -876,8 +883,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_offset_non_int.php:3:6: unsupported call array_slice(): offset argument must be int in the current subset, got string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_length_non_int.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_length_non_int.php:3:6: unsupported call array_slice(): length argument must be int or null in the current subset, got string`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_preserve_keys_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_preserve_keys_unsupported.php:3:6: unsupported call array_slice(): preserve_keys argument is not supported in the current subset`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_preserve_keys_non_bool.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_preserve_keys_non_bool.php:3:6: unsupported call array_slice(): preserve_keys argument must be bool in the current subset, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_first_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_first_non_array.php:3:6: unsupported call array_merge(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_second_non_array.php`
@@ -1148,6 +1155,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone31` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone31` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone32/array_slice_preserve_keys.php`
+  prints the committed preserve-key `array_slice` output with preserved
+  integer/string keys, default `false` behavior, null-length preserve-key
+  behavior, original-array preservation, and string-valued dynamic calls to
+  `array_slice`.
+- `cargo run -p phpc -- test tests/fixtures/milestone32` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone32` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1252,7 +1267,10 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone31/array_slice_null_length.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 167 fixtures, 70 system PHP comparisons,
+- `cargo run -p phpc -- compile tests/fixtures/milestone32/array_slice_preserve_keys.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 168 fixtures, 71 system PHP comparisons,
   and 97 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -1309,13 +1327,13 @@ Still fails:
   reference/copy-on-write container effects, exact native `TypeError` objects,
   or native lowering.
   `array_values`, `array_keys`, `array_reverse`, and `array_slice` are limited
-  to array arguments, clone values under the current by-value model, require a
-  boolean `array_reverse` preserve-key flag when that argument is supplied, and
-  do not yet model PHP references, copy-on-write containers, object handle
-  identity preservation, resource values, non-bool preserve-key coercion, exact
-  native `TypeError` objects, or native lowering. `array_slice` currently
-  requires integer offsets and integer or null length arguments when supplied,
-  and still rejects preserve-key arguments until that form is implemented.
+  to array arguments, clone values under the current by-value model, require
+  boolean preserve-key flags for `array_reverse` and `array_slice` when those
+  arguments are supplied, and do not yet model PHP references, copy-on-write
+  containers, object handle identity preservation, resource values, non-bool
+  preserve-key coercion, exact native `TypeError` objects, or native lowering.
+  `array_slice` currently requires integer offsets and integer or null length
+  arguments when supplied.
   `array_keys` search-value filtering is implemented for the current scalar
   loose-comparison and strict-identity subsets, but array, object, resource, or
   reference search values, array, object, resource, or reference array values,
@@ -1446,6 +1464,7 @@ Still fails:
 
 Next:
 
-- Extend `array_slice` with boolean preserve-key mode over the current ordered
-  array value model while keeping references, copy-on-write, exact native
-  `TypeError` objects, and native lowering explicitly unsupported.
+- Implement `array_chunk($array, $length)` over the current ordered array value
+  model while keeping preserve-key mode, references, copy-on-write, exact
+  native `ValueError`/`TypeError` objects, and native lowering explicitly
+  unsupported.

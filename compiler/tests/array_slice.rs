@@ -122,6 +122,42 @@ echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $it
 }
 
 #[test]
+fn array_slice_supports_boolean_preserve_keys_argument() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items[-1] = "negative";
+$items[] = "next";
+
+$preserved = array_slice($items, 1, 3, true);
+echo count($preserved), "|", $preserved[5], "|", $preserved[2], "|", $preserved["02"], "\n";
+$preserved[] = "after";
+echo $preserved[6], "\n";
+
+$default_false = array_slice($items, 1, 3, false);
+echo count($default_false), "|", $default_false[0], "|", $default_false[1], "|", $default_false["02"], "\n";
+
+$tail = array_slice($items, -3, null, true);
+echo count($tail), "|", $tail["02"], "|", $tail[-1], "|", $tail[6], "\n";
+
+$call = "array_slice";
+$dynamic = $call($items, 0, null, true);
+echo count($dynamic), "|", $dynamic["name"], "|", $dynamic[5], "|", $dynamic[2], "|", $dynamic["02"], "|", $dynamic[-1], "|", $dynamic[6], "\n";
+echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $items[-1], "|", $items[6];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "3|five|two|zero two\nafter\n3|five|two|zero two\n3|zero two|negative|next\n6|Ada|five|two|zero two|negative|next\nAda|five|two|zero two|negative|next"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_slice_requires_array_first_argument() {
     let error = runtime_error("<?php\necho array_slice(42, 0);\n");
 
@@ -158,14 +194,14 @@ fn array_slice_requires_int_length_argument() {
 }
 
 #[test]
-fn array_slice_rejects_preserve_keys_argument_for_now() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, 1, true);\n");
+fn array_slice_requires_bool_preserve_keys_argument() {
+    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, 1, 1);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_slice(): preserve_keys argument is not supported in the current subset"
+        "unsupported call array_slice(): preserve_keys argument must be bool in the current subset, got int"
     );
 }
 

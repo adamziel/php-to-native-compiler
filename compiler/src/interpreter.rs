@@ -1031,12 +1031,29 @@ impl Interpreter {
                 [Value::Array(array), Value::Int(offset), Value::Null] => {
                     Ok(Value::Array(array.sliced(*offset, None)))
                 }
-                [Value::Array(_), Value::Int(_), Value::Int(_) | Value::Null, _] => {
+                [Value::Array(array), Value::Int(offset), Value::Int(length), Value::Bool(true)] => {
+                    Ok(Value::Array(
+                        array.sliced_preserving_keys(*offset, Some(*length)),
+                    ))
+                }
+                [Value::Array(array), Value::Int(offset), Value::Null, Value::Bool(true)] => {
+                    Ok(Value::Array(array.sliced_preserving_keys(*offset, None)))
+                }
+                [Value::Array(array), Value::Int(offset), Value::Int(length), Value::Bool(false)] => {
+                    Ok(Value::Array(array.sliced(*offset, Some(*length))))
+                }
+                [Value::Array(array), Value::Int(offset), Value::Null, Value::Bool(false)] => {
+                    Ok(Value::Array(array.sliced(*offset, None)))
+                }
+                [Value::Array(_), Value::Int(_), Value::Int(_) | Value::Null, other] => {
                     Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
                             "array_slice()",
-                            "preserve_keys argument is not supported in the current subset",
+                            format!(
+                                "preserve_keys argument must be bool in the current subset, got {}",
+                                other.type_name()
+                            ),
                         ),
                     ))
                 }

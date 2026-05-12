@@ -86,8 +86,8 @@
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
   non-array `array_reverse` operands, non-bool `array_reverse` preserve-key
   flag values, non-array `array_slice` operands, non-int `array_slice`
-  offsets, non-int/non-null `array_slice` lengths, unsupported `array_slice`
-  preserve-key arguments,
+  offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
+  preserve-key flag values,
   non-array `array_merge` operands, non-array
   `array_flip` operands, unsupported non-int/string `array_flip` values,
   non-array `array_fill_keys` operands, unsupported non-int/string
@@ -256,7 +256,9 @@
   positive lengths, zero, and negative lengths counted back from the end of the
   input array, while using the same default integer-key reindexing and
   string-key preservation. `array_slice($array, $offset, null)` treats the
-  null length as a to-end slice.
+  null length as a to-end slice. `array_slice($array, $offset, $length, true)`
+  and `array_slice($array, $offset, null, true)` preserve integer and string
+  keys; boolean `false` uses the default integer-key reindexing path.
   `array_merge()` returns an empty array. `array_merge($array, ...)` accepts
   zero or more array operands, processes them left to right in insertion order,
   appends and reindexes integer-keyed entries from zero, preserves string keys,
@@ -380,7 +382,7 @@
   non-array `array_reverse` operands, non-bool
   `array_reverse` preserve-key flag values, non-array `array_slice`
   operands, non-int `array_slice` offsets, non-int/non-null `array_slice`
-  lengths, unsupported `array_slice` preserve-key arguments, non-array
+  lengths, non-bool `array_slice` preserve-key flag values, non-array
   `array_merge` operands, non-array `array_flip` operands, unsupported
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
@@ -492,10 +494,13 @@
   lengths, with positive lengths limiting the number of returned entries, zero
   returning an empty array, and negative lengths excluding entries from the end
   of the input array. `array_slice($array, $offset, null)` treats the null
-  length as a to-end slice. Preserve-key arguments, non-int offset coercion,
-  non-int/non-null length coercion, references, copy-on-write containers,
-  object handle identity preservation, resource values, exact native
-  `TypeError` objects, and native lowering are not implemented.
+  length as a to-end slice. `array_slice($array, $offset, $length, true)` and
+  `array_slice($array, $offset, null, true)` preserve integer and string keys,
+  while boolean `false` uses the default integer-key reindexing path. Non-bool
+  preserve-key coercion, non-int offset coercion, non-int/non-null length
+  coercion, references, copy-on-write containers, object handle identity
+  preservation, resource values, exact native `TypeError` objects, and native
+  lowering are not implemented.
   `array_merge()` accepts zero arguments and returns an empty array.
   `array_merge($array, ...)` accepts any number of array operands, processes
   them left to right in insertion order, appends integer-keyed entries with new
@@ -616,9 +621,10 @@
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
-  `array_reverse` preserve-key flag coercion, `array_slice` preserve-key
-  forms, non-int offset coercion, non-int/non-null length coercion, `array_merge`
-  reference/copy-on-write behavior, `array_flip` warning-and-skip behavior for
+  `array_reverse` preserve-key flag coercion, non-bool `array_slice`
+  preserve-key flag coercion, non-int offset coercion, non-int/non-null length
+  coercion, `array_merge` reference/copy-on-write behavior,
+  `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
   for unsupported key values, `array_count_values` warning-and-skip behavior
   for unsupported values, and `array_filter` callback forms outside the current
@@ -753,7 +759,7 @@
 - `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
   lowering
-- `array_slice` preserve-key arguments, non-int offset coercion,
+- `array_slice` non-bool `preserve_keys` coercion, non-int offset coercion,
   non-int/non-null length coercion, reference/copy-on-write behavior, object
   handle identity preservation, resource values, exact native `TypeError`
   objects, and native lowering
