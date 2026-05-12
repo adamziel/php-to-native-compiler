@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP reports native TypeError object details for spl_object_id() non-object arguments.

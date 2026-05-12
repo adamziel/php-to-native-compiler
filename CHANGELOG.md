@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `spl_object_id($object)` as an explicit unsupported object-handle
+  identity boundary before PHP object handles exist, with direct-call and
+  dynamic-call runtime coverage, non-object diagnostics, fixture and CLI
+  snapshots, documentation, and native-codegen rejection coverage.
 - Added `get_called_class()` as an explicit unsupported boundary before
   method/static class context exists, with runtime coverage, dynamic-call
   coverage, fixture coverage, a `phpc run` CLI snapshot, and native-codegen

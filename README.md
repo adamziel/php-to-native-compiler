@@ -128,10 +128,14 @@ subset:
   `get_parent_class($object_or_class)` and `get_declared_classes()` and
   `get_declared_interfaces()` and `get_declared_traits()` over the current
   minimal object value model and declared-class metadata,
+  `spl_object_id($object)` as an explicit unsupported object-handle identity
+  boundary,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `get_called_class()` calls before method/static class context exists,
+  unsupported `spl_object_id($object)` calls before PHP object handle identity
+  exists,
   `global` declarations, duplicate or unsupported `define(...)` constant
   definitions, unsupported `defined(...)` name arguments, unknown bare global
   constants outside the current built-in/runtime-defined slice such as
@@ -220,6 +224,10 @@ available through string-valued dynamic function calls.
 `get_called_class()` is recognized as a zero-argument callable boundary, but
 direct and string-valued dynamic calls currently fail with a stable unsupported
 runtime diagnostic until method/static class context exists.
+`spl_object_id($object)` is recognized as a one-argument callable boundary, but
+object arguments currently fail with a stable unsupported runtime diagnostic
+until PHP object handle identity, reuse, clone behavior, and destruction are
+modeled; non-object arguments fail with a stable type-boundary diagnostic.
 Constructors, `$this` object context binding, method
 dispatch, dynamic property names, visibility enforcement for non-public
 properties, inheritance and interface relationship checks, object handle
@@ -236,6 +244,7 @@ declared/built-in/internal trait entries in
 `get_declared_traits()`, non-public/context-sensitive method listing for
 `get_class_methods()`, inherited/trait/interface methods, anonymous classes,
 `get_called_class()` class context and late static binding behavior,
+`spl_object_id()` handle reuse and clone/destructor interactions,
 exact native class/interface/method/property ordering, `get_class_vars()` property
 defaults, inheritance/trait/interface properties, context-sensitive visibility,
 `get_object_vars()` dynamic properties and non-public visibility context,

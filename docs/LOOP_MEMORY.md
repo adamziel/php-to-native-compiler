@@ -9859,3 +9859,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:07:54Z
 
 - Post-round 6 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:08:03Z
+
+- Starting round 7 at 20260512T220803Z from HEAD `29abd31`.
+
+## Loop Event 2026-05-12T22:08:11Z
+
+- Pre-round 7 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:12:06Z
+
+- Task attempted: added `spl_object_id($object)` as the next honest object
+  handle identity boundary. Direct calls and string-valued dynamic calls now
+  resolve as a known one-argument callable, validate non-object operands with a
+  stable diagnostic, and fail object inputs with a stable unsupported-call
+  diagnostic until PHP object handle identity exists; native lowering remains
+  rejected through the current function-call/object boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone116/spl_object_id_boundary.*`,
+  `tests/fixtures/runtime_errors/spl_object_id_non_object.*`,
+  `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`,
+  `docs/OBJECT_MODEL.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` completed; `cargo test -p phpc
+  --test object_model spl_object_id` passed with 3 focused tests; `cargo test
+  -p phpc --test object_introspection_builtins_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone116` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone116` passed with 1 PHP
+  comparison skipped; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 139 fixtures; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone116/spl_object_id_boundary.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone116/spl_object_id_boundary.php --emit-ir` exited `1`
+  with the expected explicit codegen rejection; `tools/run-tests.sh` passed
+  with 334 fixtures, 121 system PHP comparisons, and 213 skips.
+- Remaining semantic gaps: `spl_object_id()` is only an explicit unsupported
+  boundary; PHP object handle identity, handle reuse after destruction, clone
+  semantics, destructors, references/copy-on-write, exact native `TypeError`
+  behavior, and native lowering remain unsupported.
+- Next concrete task: add the documented `spl_object_hash($object)` boundary
+  before PHP object handle identity exists.
+- Known-good tag: not created; this is a narrow incremental boundary, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add spl_object_id boundary"`
+  after the full suite passes.

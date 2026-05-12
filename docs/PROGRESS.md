@@ -2642,9 +2642,16 @@ Still fails:
   current function-call boundary. Method dispatch, late static binding,
   inheritance, namespace/import aliases, exact native `Error` behavior, and
   native lowering remain unsupported.
+- Added `spl_object_id($object)` as an explicit object-handle identity
+  boundary. Direct calls and string-valued dynamic calls now resolve as a
+  known one-argument callable, validate non-object operands with a stable
+  diagnostic, and fail object inputs with a stable unsupported-call diagnostic
+  until PHP object handle identity exists. Handle reuse after destruction,
+  clone semantics, destructors, references/copy-on-write, exact native
+  `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest `spl_object_id($object)` boundary before PHP object
-  handle identity exists, keeping behavior, tests, CLI coverage, documentation,
-  and unsupported gaps narrow.
+- Add the next honest object identity/hash boundary before PHP object handle
+  identity exists, keeping behavior, tests, CLI coverage, documentation, and
+  unsupported gaps narrow.

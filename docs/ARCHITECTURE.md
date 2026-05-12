@@ -203,11 +203,16 @@ trait metadata is not represented yet.
 `get_called_class()` is reserved as a zero-argument runtime boundary and fails
 with a stable unsupported-call diagnostic until method/static class context and
 late static binding exist.
+`spl_object_id($object)` is reserved as a one-argument runtime boundary and
+fails with a stable unsupported-call diagnostic for object inputs until PHP
+object handle identity is represented; non-object inputs fail with the current
+stable type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public
 properties, expose reflection, implement dynamic property names, or model PHP
-object handles/aliasing. Static member syntax through `::`, including
+object handles/aliasing for executable identity builtins. Static member syntax
+through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
 with explicit parse diagnostics until static storage, dispatch, and class
 constants exist. Native lowering rejects class declarations, object

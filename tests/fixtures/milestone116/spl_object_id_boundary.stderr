@@ -1,0 +1,2 @@
+runtime error at 3:10: unsupported call spl_object_id(): PHP object handle identity is not implemented in the current subset
+

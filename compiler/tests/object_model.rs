@@ -1031,6 +1031,50 @@ fn get_called_class_requires_no_arguments() {
 }
 
 #[test]
+fn spl_object_id_has_stable_boundary_until_object_handles_exist() {
+    let error = runtime_error("<?php\nclass Box {}\nvar_dump(spl_object_id(new Box()));\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "unsupported call spl_object_id(): PHP object handle identity is not implemented in the current subset"
+    );
+
+    let dynamic_error = runtime_error(
+        "<?php\nclass Box {}\n$call = \"spl_object_id\";\nvar_dump($call(new Box()));\n",
+    );
+
+    assert_eq!(dynamic_error.line, 4);
+    assert_eq!(dynamic_error.column, 10);
+    assert_eq!(
+        dynamic_error.message,
+        "unsupported call spl_object_id(): PHP object handle identity is not implemented in the current subset"
+    );
+}
+
+#[test]
+fn spl_object_id_requires_one_object_argument() {
+    let arity_error = runtime_error("<?php\nvar_dump(spl_object_id());\n");
+
+    assert_eq!(arity_error.line, 2);
+    assert_eq!(arity_error.column, 10);
+    assert_eq!(
+        arity_error.message,
+        "arity mismatch for spl_object_id(): expected 1 argument(s), got 0"
+    );
+
+    let type_error = runtime_error("<?php\nvar_dump(spl_object_id(42));\n");
+
+    assert_eq!(type_error.line, 2);
+    assert_eq!(type_error.column, 10);
+    assert_eq!(
+        type_error.message,
+        "unsupported call spl_object_id(): argument must be object, got int"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -1276,6 +1320,22 @@ fn emit_ir_rejects_get_called_class_until_native_object_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
         error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_spl_object_id_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\nclass Box {}\necho spl_object_id(new Box());\n")
+            .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations")
+            || error.message.contains("object instantiation")
+            || error.message.contains("function calls"),
         "{}",
         error.message
     );

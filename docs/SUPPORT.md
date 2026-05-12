@@ -108,7 +108,7 @@
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
-  `var_dump`, and `print_r`;
+  `spl_object_id`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -730,7 +730,8 @@
   `get_class_vars` string classes, non-object `get_object_vars` arguments,
   extra `get_declared_interfaces` or `get_declared_traits` arguments,
   unsupported `get_called_class()` calls before method/static class context
-  exists,
+  exists, unsupported `spl_object_id($object)` calls before PHP object handle
+  identity exists, non-object `spl_object_id` operands,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -747,6 +748,7 @@
   `get_object_vars(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
   `get_declared_classes(...)`, `get_declared_interfaces(...)`,
   `get_declared_traits(...)`, `get_called_class(...)`,
+  `spl_object_id(...)`,
   `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
   rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -768,7 +770,7 @@
   `get_object_vars`,
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `get_called_class`,
-  `var_dump`, or `print_r`.
+  `spl_object_id`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -843,10 +845,11 @@
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
-  `var_dump`, and `print_r`
+  `spl_object_id`, `var_dump`, and `print_r`
   cover the documented scalar/array/object subset. `get_called_class` is
   recognized only as the explicit unsupported method/static class context
-  boundary described below.
+  boundary described below. `spl_object_id` is recognized only as the explicit
+  unsupported object-handle identity boundary described below.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -895,6 +898,10 @@
   `get_called_class()` is recognized as a zero-argument callable boundary, but
   direct and string-valued dynamic calls fail with a stable unsupported-call
   diagnostic until method/static class context exists.
+  `spl_object_id($object)` is recognized as a one-argument callable boundary,
+  but object arguments fail with a stable unsupported-call diagnostic until PHP
+  object handle identity exists; non-object arguments fail with a stable
+  type-boundary diagnostic.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -1561,6 +1568,9 @@
 - `get_called_class` method/static class context, late static binding,
   inheritance, aliases/imports, namespace-aware names, exact native `Error`
   behavior, and native lowering
+- `spl_object_id` object handle identity, handle reuse after destruction,
+  clone semantics, destructors, references/copy-on-write behavior, exact native
+  `TypeError` behavior, and native lowering
 - `interface_exists` declared interface metadata, built-in/internal interface
   entries, autoloading, namespaces/import aliases, exact native `TypeError`
   behavior, and native lowering

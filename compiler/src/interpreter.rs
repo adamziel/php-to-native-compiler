@@ -2130,6 +2130,25 @@ impl Interpreter {
                     ),
                 ))
             }
+            "spl_object_id" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Object(_) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "spl_object_id()",
+                            "PHP object handle identity is not implemented in the current subset",
+                        ),
+                    )),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "spl_object_id()",
+                            format!("argument must be object, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "property_exists" => match args.as_slice() {
                 [object_or_class, Value::String(property_name)] => {
                     let exists = match object_or_class {
@@ -3178,6 +3197,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_declared_interfaces"
             | "get_declared_traits"
             | "get_called_class"
+            | "spl_object_id"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"

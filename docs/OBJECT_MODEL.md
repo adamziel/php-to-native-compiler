@@ -28,6 +28,9 @@ instance property names with their current slot values in declaration order.
 `get_called_class()` is recognized as a zero-argument callable boundary, but it
 currently fails with a stable unsupported-call diagnostic until method/static
 class context and late static binding exist.
+`spl_object_id($object)` is recognized as a one-argument callable boundary, but
+it currently fails with a stable unsupported-call diagnostic for object inputs
+until PHP object handle identity exists.
 
 ## Runtime Metadata
 
@@ -81,6 +84,9 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_called_class()` validates its zero-argument call shape and then fails
   with a stable unsupported-call diagnostic because no method/static class
   context is tracked yet;
+- `spl_object_id($object)` validates its one-argument call shape and object
+  operand boundary, then fails with a stable unsupported-call diagnostic for
+  object inputs because PHP object handle identity is not represented yet;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -142,6 +148,8 @@ interface metadata lookup has native support.
 trait metadata lookup has native support.
 `get_called_class` is rejected through that function-call boundary until
 method/static class context lookup and late static binding have native support.
+`spl_object_id` is rejected through that function-call boundary until PHP object
+handle identity has native support.
 
 ## Unsupported Edge Cases
 
@@ -162,6 +170,8 @@ through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,
+`spl_object_id` object handle identity, handle reuse after destruction, clone
+semantics, destructors,
 `get_class_methods` inheritance/trait/interface and non-public
 context-sensitive method listing, `get_class_vars` property defaults,
 inheritance/trait/interface properties, context-sensitive visibility, object

@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP returns a native object handle id for spl_object_id().

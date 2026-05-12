@@ -1105,9 +1105,18 @@ handled.
 
 ## Milestone 116: Object Identity Boundary
 
-- [ ] Add the next honest `spl_object_id($object)` boundary before PHP object
+- [x] Add the next honest `spl_object_id($object)` boundary before PHP object
   handle identity exists: either a stable unsupported diagnostic or a narrow
   executable identity slice for current minimal objects, with runtime coverage,
   fixture CLI coverage, documentation, and explicit gaps for handle reuse,
   references/copy-on-write, clone semantics, destructors, exact native
+  `TypeError` behavior, and native lowering.
+
+## Milestone 117: Object Hash Boundary
+
+- [ ] Add the next honest `spl_object_hash($object)` boundary before PHP
+  object handle identity exists: either a stable unsupported diagnostic or a
+  narrow executable hash slice for current minimal objects, with runtime
+  coverage, fixture CLI coverage, documentation, and explicit gaps for handle
+  reuse, references/copy-on-write, clone semantics, destructors, exact native
   `TypeError` behavior, and native lowering.
