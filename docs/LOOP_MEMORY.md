@@ -7723,3 +7723,23 @@ injects this file into every prompt. Each Codex pass should update it with:
   executable trait-context magic constant evaluation exists.
 - Checkpoint: pending `tools/checkpoint.sh "parser: tighten __CLASS__ magic constant boundary"`
   after the full suite passes.
+
+## Loop Policy 2026-05-12
+
+- Maintain a human-readable changelog of work since the last known-good tag;
+  use `CHANGELOG.md` if it exists, otherwise create it.
+- Create annotated `known-good/...` Git tags only for major verified stable
+  states, never for every commit. Tag after the relevant full test suite passes,
+  and record the tag name plus covered changes in the changelog and loop memory.
+
+## Loop Event 2026-05-12T17:45:51Z
+
+- Codex round 26 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T173951Z-26.log`.
+
+## Loop Event 2026-05-12T17:46:02Z
+
+- Post-round 26 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:46:02Z
+
+- Post-round 26 tests passed; running checkpoint for this round.
