@@ -97,7 +97,7 @@
   `array_merge` operands, non-array `array_combine` operands,
   `array_combine` length mismatches, unsupported non-int/string
   `array_combine` key values, non-array `array_intersect_key` operands,
-  unsupported variadic `array_intersect_key` operands, non-array
+  non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, unsupported variadic `array_diff_key` operands,
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
@@ -300,10 +300,10 @@
   rules, stores cloned values from the second array, and overwrites duplicate
   result keys with later pairs without moving the first result-key position.
   It is also available through string-valued dynamic function calls.
-  `array_intersect_key($left, $right)` accepts two arrays, returns entries
-  from the first array whose integer/string keys are present in the second
-  array, preserves the first array's keys, values, and insertion order, and is
-  also available through string-valued dynamic function calls.
+  `array_intersect_key($array, ...$arrays)` accepts two or more arrays, returns
+  entries from the first array whose integer/string keys are present in every
+  subsequent array, preserves the first array's keys, values, and insertion
+  order, and is also available through string-valued dynamic function calls.
   `array_diff_key($left, $right)` accepts two arrays, returns entries from the
   first array whose integer/string keys are absent from the second array,
   preserves the first array's keys, values, and insertion order, and is also
@@ -434,7 +434,7 @@
   requests, non-array `array_merge` operands, non-array `array_combine`
   operands, `array_combine` length mismatches, unsupported non-int/string
   `array_combine` key values, non-array `array_intersect_key` operands,
-  unsupported variadic `array_intersect_key` operands, non-array
+  non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, unsupported variadic `array_diff_key` operands,
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
@@ -611,17 +611,17 @@
   object values, resource values, and native lowering are not implemented.
   `array_combine` is also available through string-valued dynamic function
   calls.
-  `array_intersect_key($left, $right)` accepts two array operands, checks
-  integer/string keys using the current normalized array-key model, and returns
-  a new ordered array containing entries from the first array whose keys exist
-  in the second array. The first array's key shape, values, and insertion order
-  are preserved, and the source arrays are not mutated. Non-array operands and
-  more than two operands fail with stable project diagnostics. Variadic
-  intersections across three or more arrays, references, copy-on-write
-  containers, object handle identity preservation for object values, resource
-  values, exact native `TypeError` objects, and native lowering are not
-  implemented. `array_intersect_key` is also available through string-valued
-  dynamic function calls.
+  `array_intersect_key($array, ...$arrays)` accepts two or more array operands,
+  checks integer/string keys using the current normalized array-key model, and
+  returns a new ordered array containing entries from the first array whose keys
+  exist in every subsequent array. The first array's key shape, values, and
+  insertion order are preserved, and the source arrays are not mutated.
+  Non-array operands, including variadic operands, fail with stable project
+  diagnostics naming the offending positional argument. References,
+  copy-on-write containers, object handle identity preservation for object
+  values, resource values, exact native `TypeError` objects, and native lowering
+  are not implemented. `array_intersect_key` is also available through
+  string-valued dynamic function calls.
   `array_diff_key($left, $right)` accepts two array operands, checks
   integer/string keys using the current normalized array-key model, and returns
   a new ordered array containing entries from the first array whose keys do not
@@ -752,7 +752,8 @@
   `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
   behavior, `array_combine` key coercions beyond integer/string values,
   `array_combine` object/resource key values, `array_intersect_key`
-  variadic operands beyond two arrays, `array_diff_key` variadic operands
+  exact native `TypeError` objects and reference/copy-on-write behavior,
+  `array_diff_key` variadic operands
   beyond two arrays, `array_flip` warning-and-skip behavior
   for unsupported source values, and `array_fill_keys` warning-and-skip
   behavior for unsupported key values, `array_count_values` warning-and-skip
@@ -907,10 +908,9 @@
   mismatch native `ValueError` objects, non-array native `TypeError` objects,
   reference/copy-on-write behavior, object handle identity preservation for
   object values, resource values, and native lowering
-- `array_intersect_key` variadic operands beyond two arrays, exact native
-  `TypeError` objects, reference/copy-on-write behavior, object handle
-  identity preservation for object values, resource values, and native
-  lowering
+- `array_intersect_key` exact native `TypeError` objects,
+  reference/copy-on-write behavior, object handle identity preservation for
+  object values, resource values, and native lowering
 - `array_diff_key` variadic operands beyond two arrays, exact native
   `TypeError` objects, reference/copy-on-write behavior, object handle
   identity preservation for object values, resource values, and native

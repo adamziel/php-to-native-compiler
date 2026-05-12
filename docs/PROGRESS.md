@@ -245,13 +245,13 @@ Implemented:
   later pairs without moving the first result-key slot, supports empty arrays
   and string-valued dynamic calls, and has stable diagnostics for non-array
   operands, length mismatches, and unsupported non-int/string key values.
-- Added `array_intersect_key($left, $right)` support for the current ordered
-  integer/string key model. The supported slice accepts two arrays, preserves
-  first-array entries whose normalized keys exist in the second array,
-  preserves the first array's keys, values, and insertion order, supports
-  empty and no-match results, is available through string-valued dynamic
-  function calls, preserves the source arrays, and has stable diagnostics for
-  non-array operands and unsupported variadic operands.
+- Added `array_intersect_key($array, ...$arrays)` support for the current
+  ordered integer/string key model. The supported slice accepts two or more
+  arrays, preserves first-array entries whose normalized keys exist in every
+  subsequent array, preserves the first array's keys, values, and insertion
+  order, supports empty and no-match results, is available through
+  string-valued dynamic function calls, preserves the source arrays, and has
+  stable diagnostics for non-array positional operands.
 - Added `array_diff_key($left, $right)` support for the current ordered
   integer/string key model. The supported slice accepts two arrays, preserves
   first-array entries whose normalized keys are absent from the second array,
@@ -561,8 +561,8 @@ Tested:
   array-combination runtime tests.
 - `cargo test -p php_runtime array_combine` passes with 2 focused
   array-pairing runtime tests.
-- `cargo test -p php_runtime array_intersect_key` passes with 1 focused
-  array-key-set runtime test.
+- `cargo test -p php_runtime array_intersect_key` passes with 2 focused
+  array-key-set runtime tests.
 - `cargo test -p php_runtime array_diff_key` passes with 1 focused
   array-key-difference runtime test.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
@@ -747,7 +747,7 @@ Tested:
 - `cargo test -p phpc --test array_intersect_key` passes with first-array
   key/value preservation, normalized integer/string key matching, empty and
   no-match result behavior, dynamic string-call coverage, original-array
-  preservation, non-array diagnostics, unsupported variadic-operand
+  preservation, variadic intersection behavior, non-array positional operand
   diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_diff_key` passes with first-array key/value
   preservation for keys absent from the second array, normalized integer/string
@@ -804,6 +804,9 @@ Tested:
   snapshot test covering the Milestone 37 `array_combine` fixture.
 - `cargo test -p phpc --test array_key_set_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 38 `array_intersect_key` fixture.
+- `cargo test -p phpc --test array_key_set_variadic_builtins_cli` passes with
+  1 CLI snapshot test covering the Milestone 40 variadic
+  `array_intersect_key` fixture.
 - `cargo test -p phpc --test array_key_difference_builtins_cli` passes with 1
   CLI snapshot test covering the Milestone 39 `array_diff_key` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
@@ -1026,8 +1029,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_first_non_array.php:3:6: unsupported call array_intersect_key(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_key_second_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_second_non_array.php:3:6: unsupported call array_intersect_key(): second argument must be array, got int`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_key_variadic_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_variadic_unsupported.php:5:6: arity mismatch for array_intersect_key(): expected 2 argument(s), got 3`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_key_third_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_third_non_array.php:4:6: unsupported call array_intersect_key(): third argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_key_first_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_key_first_non_array.php:3:6: unsupported call array_diff_key(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_key_second_non_array.php`
@@ -1351,6 +1354,13 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone38` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone38` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone40/array_intersect_key_variadic.php`
+  prints the committed variadic `array_intersect_key` output with
+  intersection across all subsequent arrays, original-array preservation, and
+  string-valued dynamic calls to `array_intersect_key`.
+- `cargo run -p phpc -- test tests/fixtures/milestone40` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone40` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone39/array_diff_key.php`
   prints the committed `array_diff_key` output with first-array key/value
   preservation for keys absent from the second array, normalized integer/string
@@ -1484,6 +1494,9 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone38/array_intersect_key.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
+- `cargo run -p phpc -- compile tests/fixtures/milestone40/array_intersect_key_variadic.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
 - `cargo run -p phpc -- compile tests/fixtures/milestone39/array_diff_key.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
@@ -1580,11 +1593,10 @@ Still fails:
   behavior; references, copy-on-write containers, object handle identity
   preservation for object values, resource values, exact native
   `ValueError`/`TypeError` objects, and native lowering are not implemented.
-  `array_intersect_key` is limited to two array operands over the current
-  integer/string key model. Variadic intersections across three or more arrays,
-  references, copy-on-write containers, object handle identity preservation for
-  object values, resource values, exact native `TypeError` objects, and native
-  lowering are not implemented.
+  `array_intersect_key` accepts two or more array operands over the current
+  integer/string key model, but references, copy-on-write containers, object
+  handle identity preservation for object values, resource values, exact native
+  `TypeError` objects, and native lowering are not implemented.
   `array_diff_key` is limited to two array operands over the current
   integer/string key model. Variadic differences across three or more arrays,
   references, copy-on-write containers, object handle identity preservation for
@@ -1711,7 +1723,7 @@ Still fails:
 
 Next:
 
-- Extend `array_intersect_key` beyond the current two-array slice with
-  variadic array operands while keeping references, copy-on-write, exact native
+- Extend `array_diff_key` beyond the current two-array slice with variadic
+  array operands while keeping references, copy-on-write, exact native
   `TypeError` objects, object/resource values, and native lowering explicitly
   unsupported.

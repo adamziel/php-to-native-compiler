@@ -1,0 +1,24 @@
+Array
+(
+    [name] => Ada
+    [2] => two
+    [02] => zero two
+)
+3
+Ada|two|zero two
+after
+Array
+(
+    [name] => Ada
+    [1] => one
+    [2] => two
+    [02] => zero two
+    [-1] => negative
+    [3] => next
+)
+Ada|two|zero two
+Array
+(
+)
+0
+done

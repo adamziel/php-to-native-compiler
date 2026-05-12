@@ -40,6 +40,29 @@ $call = "array_intersect_key";
 $again = $call($left, $right);
 echo $again["name"], "|", $again[5], "|", $again[2], "|", $again["02"], "|", $again[-1], "\n";
 
+$third = [];
+$third["name"] = "third";
+$third["2"] = "third";
+$third["02"] = "third";
+$third["drop"] = "third";
+
+$fourth = [];
+$fourth["name"] = "fourth";
+$fourth[2] = "fourth";
+$fourth["02"] = "fourth";
+$fourth[-1] = "fourth";
+
+$variadic = array_intersect_key($left, $right, $third, $fourth);
+print_r($variadic);
+echo count($variadic), "\n";
+echo $variadic["name"], "|", $variadic[2], "|", $variadic["02"], "\n";
+$variadic[] = "after variadic";
+echo $variadic[3], "\n";
+echo $third["drop"], "|", $fourth[-1], "\n";
+
+$again_variadic = $call($left, $right, $third, $fourth);
+echo $again_variadic["name"], "|", $again_variadic[2], "|", $again_variadic["02"], "\n";
+
 $empty = array_intersect_key([], $right);
 print_r($empty);
 echo count($empty), "\n";
@@ -52,7 +75,7 @@ echo count($none);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [name] => Ada\n    [5] => five\n    [2] => two\n    [02] => zero two\n    [-1] => negative\n)\n5\nAda|five|two|zero two|negative\nafter\nArray\n(\n    [name] => Ada\n    [5] => five\n    [2] => two\n    [02] => zero two\n    [-1] => negative\n    [drop] => drop\n    [6] => next\n)\nArray\n(\n    [name] => ignored\n    [5] => ignored\n    [2] => ignored\n    [02] => ignored\n    [-1] => ignored\n    [extra] => ignored\n)\nAda|five|two|zero two|negative\nArray\n(\n)\n0\nArray\n(\n)\n0"
+        "Array\n(\n    [name] => Ada\n    [5] => five\n    [2] => two\n    [02] => zero two\n    [-1] => negative\n)\n5\nAda|five|two|zero two|negative\nafter\nArray\n(\n    [name] => Ada\n    [5] => five\n    [2] => two\n    [02] => zero two\n    [-1] => negative\n    [drop] => drop\n    [6] => next\n)\nArray\n(\n    [name] => ignored\n    [5] => ignored\n    [2] => ignored\n    [02] => ignored\n    [-1] => ignored\n    [extra] => ignored\n)\nAda|five|two|zero two|negative\nArray\n(\n    [name] => Ada\n    [2] => two\n    [02] => zero two\n)\n3\nAda|two|zero two\nafter variadic\nthird|fourth\nAda|two|zero two\nArray\n(\n)\n0\nArray\n(\n)\n0"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -82,16 +105,16 @@ fn array_intersect_key_requires_array_second_argument() {
 }
 
 #[test]
-fn array_intersect_key_rejects_variadic_operands_until_supported() {
+fn array_intersect_key_requires_array_variadic_arguments() {
     let error = runtime_error(
-        "<?php\n$left = [];\n$right = [];\n$third = [];\necho array_intersect_key($left, $right, $third);\n",
+        "<?php\n$left = [];\n$right = [];\necho array_intersect_key($left, $right, 42);\n",
     );
 
-    assert_eq!(error.line, 5);
+    assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "arity mismatch for array_intersect_key(): expected 2 argument(s), got 3"
+        "unsupported call array_intersect_key(): third argument must be array, got int"
     );
 }
 

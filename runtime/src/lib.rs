@@ -716,9 +716,17 @@ impl PhpArray {
     }
 
     pub fn intersect_keys_with(&self, right: &Self) -> Self {
+        self.intersect_keys_with_all([right])
+    }
+
+    pub fn intersect_keys_with_all<'a>(&self, others: impl IntoIterator<Item = &'a Self>) -> Self {
+        let others = others.into_iter().collect::<Vec<_>>();
         let mut array = Self::new();
         for entry in &self.entries {
-            if right.contains_key(entry.key.clone()) {
+            if others
+                .iter()
+                .all(|other| other.contains_key(entry.key.clone()))
+            {
                 array.insert(entry.key.clone(), entry.value.clone());
             }
         }
@@ -3376,6 +3384,67 @@ mod tests {
         assert!(
             right.contains_key("extra"),
             "array_intersect_key must not mutate the right array"
+        );
+    }
+
+    #[test]
+    fn array_intersect_key_accepts_variadic_arrays() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(5, Value::String("five".to_string()));
+        left.insert("2", Value::String("two".to_string()));
+        left.insert("02", Value::String("zero two".to_string()));
+        left.insert(-1, Value::String("negative".to_string()));
+        left.insert("drop", Value::String("drop".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.insert("name", Value::String("ignored".to_string()));
+        right.insert("5", Value::String("ignored".to_string()));
+        right.insert(2, Value::String("ignored".to_string()));
+        right.insert("02", Value::String("ignored".to_string()));
+        right.insert(-1, Value::String("ignored".to_string()));
+
+        let mut third = PhpArray::new();
+        third.insert("name", Value::String("third".to_string()));
+        third.insert("2", Value::String("third".to_string()));
+        third.insert("02", Value::String("third".to_string()));
+        third.insert("drop", Value::String("third".to_string()));
+
+        let mut fourth = PhpArray::new();
+        fourth.insert("name", Value::String("fourth".to_string()));
+        fourth.insert(2, Value::String("fourth".to_string()));
+        fourth.insert("02", Value::String("fourth".to_string()));
+        fourth.insert(-1, Value::String("fourth".to_string()));
+
+        let mut intersected = left.intersect_keys_with_all([&right, &third, &fourth]);
+        let entries = intersected.entries();
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(
+            intersected
+                .append(Value::String("after".to_string()))
+                .unwrap(),
+            ArrayKey::Int(3)
+        );
+        assert_eq!(
+            left.get("drop"),
+            Some(&Value::String("drop".to_string())),
+            "array_intersect_key must not mutate the left array"
+        );
+        assert!(
+            third.contains_key("drop"),
+            "array_intersect_key must not mutate variadic operands"
+        );
+        assert!(
+            fourth.contains_key(-1),
+            "array_intersect_key must not mutate later variadic operands"
         );
     }
 
