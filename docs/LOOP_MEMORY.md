@@ -3095,3 +3095,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   resources, references, and native lowering explicitly unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "syntax: reject strict identity operators"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T03:56:51Z
+
+- Codex round 49 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T035208Z-49.log`.
+
+## Loop Event 2026-05-12T03:56:54Z
+
+- Post-round 49 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:56:54Z
+
+- Post-round 49 tests passed; running checkpoint for this round.
