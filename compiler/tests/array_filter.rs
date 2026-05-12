@@ -57,6 +57,47 @@ echo count($again), "|", count($again["nested-array"]);
 }
 
 #[test]
+fn array_filter_null_callback_uses_falsey_filtering_path() {
+    let source = r#"<?php
+$items = [];
+$items["null"] = null;
+$items["false"] = false;
+$items["true"] = true;
+$items["zero"] = 0;
+$items["zero-string"] = "0";
+$items["space"] = " ";
+$items["text"] = "Ada";
+$items[] = "tail";
+
+$filtered = array_filter($items, null);
+print_r(array_keys($filtered));
+echo count($filtered), "\n";
+echo $filtered["true"], "|", strlen($filtered["space"]), "|", $filtered["text"], "|", $filtered[0], "\n";
+
+$call = "array_filter";
+$again = $call($items, null);
+echo count($again), "\n";
+if (array_key_exists("null", $again)) {
+    echo "null kept\n";
+} else {
+    echo "null removed\n";
+}
+if (array_key_exists("zero-string", $again)) {
+    echo "zero string kept\n";
+} else {
+    echo "zero string removed\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => true\n    [1] => space\n    [2] => text\n    [3] => 0\n)\n4\n1|1|Ada|tail\n4\nnull removed\nzero string removed\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_filter_requires_array_argument() {
     let error = runtime_error("<?php\necho array_filter(42);\n");
 
@@ -157,5 +198,14 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
         callback_error.message.contains("function calls"),
         "{}",
         callback_error.message
+    );
+
+    let null_callback_error =
+        emit_ir_source("<?php\necho array_filter([\"name\"], null);\n").unwrap_err();
+    assert_eq!(null_callback_error.phase, Phase::Codegen);
+    assert!(
+        null_callback_error.message.contains("function calls"),
+        "{}",
+        null_callback_error.message
     );
 }

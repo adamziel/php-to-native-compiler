@@ -6212,3 +6212,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T13:01:35Z
 
 - Post-round 1 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T13:01:40Z
+
+- Starting round 2 at 20260512T130140Z from HEAD `e8940c6`.
+
+## Loop Event 2026-05-12T13:01:46Z
+
+- Pre-round 2 test exit code: `0`.
+
+## Loop Event 2026-05-12T13:10:37Z
+
+- Task attempted: implemented `array_filter($array, null)` as the same
+  falsey-value filtering path as omitted callbacks for the current ordered
+  array value model.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone53/array_filter_null_callback.php`,
+  `tests/fixtures/milestone53/array_filter_null_callback.stdout`,
+  `tests/fixtures/milestone53/array_filter_null_callback.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  array_filter` passed with 8 tests; `cargo test -p phpc --test
+  array_filtering_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone53` passed with 1 fixture; `cargo run -p phpc --
+  run tests/fixtures/milestone53/array_filter_null_callback.php` printed the
+  committed output; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone53` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- compile tests/fixtures/milestone53/array_filter_null_callback.php
+  --emit-ir` exited `1` with the current explicit array native-lowering
+  rejection; `tools/run-tests.sh` passed with 230 fixtures, 92 system PHP
+  comparisons, and 138 `.phpc-only` skips.
+- Remaining semantic gaps: `array_filter` mode flags are still unsupported,
+  including key-only and key/value callback modes. Array/object callables,
+  closures, first-class callables, method calls, references, copy-on-write
+  containers, object handle identity preservation, resource values, exact
+  native `TypeError` objects, and native lowering remain unsupported.
+- Next concrete task: extend `array_filter` with integer mode flag `0` for the
+  current null-callback and value-only string-callback paths while keeping
+  key-only and key/value callback modes unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_filter null callback"`
+  after the full suite passes.

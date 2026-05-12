@@ -560,7 +560,15 @@ handled.
 
 ## Milestone 53: Array Filtering Null Callback
 
-- [ ] Implement `array_filter($array, null)` as the same falsey-value filtering
+- [x] Implement `array_filter($array, null)` as the same falsey-value filtering
   path as omitted callbacks, including fixture CLI coverage, documentation,
   and explicit gaps for callback modes, references/copy-on-write, exact native
+  `TypeError` objects, and native lowering.
+
+## Milestone 54: Array Filtering Mode Follow-ups
+
+- [ ] Extend `array_filter` with integer mode flag `0` for the current
+  null-callback and value-only string-callback paths, including fixture CLI
+  coverage, documentation, and explicit gaps for key/key-value callback modes,
+  named `ARRAY_FILTER_*` constants, references/copy-on-write, exact native
   `TypeError` objects, and native lowering.

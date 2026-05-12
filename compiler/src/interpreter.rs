@@ -1792,6 +1792,9 @@ impl Interpreter {
     fn call_array_filter(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match args.as_slice() {
             [Value::Array(array)] => Ok(Value::Array(array.filtered_without_callback())),
+            [Value::Array(array), Value::Null] => {
+                Ok(Value::Array(array.filtered_without_callback()))
+            }
             [other] => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(

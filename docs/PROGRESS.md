@@ -370,6 +370,11 @@ Implemented:
   integer/string keys and insertion order for kept entries, is available
   through string-valued dynamic function calls, and has a stable diagnostic for
   non-array arguments.
+- Extended `array_filter` with `array_filter($array, null)` support over the
+  current ordered array value model. The supported slice reuses the no-callback
+  falsey-value filtering path, preserves original integer/string keys and
+  insertion order, and is available through string-valued dynamic calls to
+  `array_filter`.
 - Added `array_filter($array, $callback)` support for the first callback slice
   over the current ordered array value model. The supported slice accepts
   callbacks that evaluate to string-valued user-function or callable-builtin
@@ -817,10 +822,10 @@ Tested:
   string-call coverage, original-array preservation, non-array/callback
   diagnostics, callback arity diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_filter` passes with falsey-value removal,
-  value-only string callback execution for user functions and callable
-  builtins, key preservation, dynamic string-call coverage, original-array
-  preservation, non-array/callback/mode diagnostics, and LLVM IR rejection
-  coverage.
+  explicit `null` callback falsey filtering, value-only string callback
+  execution for user functions and callable builtins, key preservation,
+  dynamic string-call coverage, original-array preservation,
+  non-array/callback/mode diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_map` passes with one-array null-callback
   identity mapping, variadic null-callback zip mapping with longest-array
   `null` padding and integer reindexing, one-array value-only string callback
@@ -925,8 +930,8 @@ Tested:
   snapshot test covering the Milestone 51 and Milestone 52 `array_reduce`
   fixtures.
 - `cargo test -p phpc --test array_filtering_builtins_cli` passes with 1 CLI
-  snapshot test covering the Milestone 20 and Milestone 21 `array_filter`
-  fixtures.
+  snapshot test covering the Milestone 20, Milestone 21, and Milestone 53
+  `array_filter` fixtures.
 - `cargo test -p phpc --test array_mapping_builtins_cli` passes with CLI
   snapshot tests covering the Milestone 22, Milestone 23, Milestone 25,
   Milestone 26, Milestone 27, and Milestone 28 `array_map` fixtures.
@@ -1459,6 +1464,13 @@ Tested:
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone21` passes
   with 2 system PHP comparisons.
+- `cargo run -p phpc -- run tests/fixtures/milestone53/array_filter_null_callback.php`
+  prints the committed `array_filter($array, null)` output with falsey-value
+  removal, key preservation, and string-valued dynamic calls to `array_filter`.
+- `cargo run -p phpc -- test tests/fixtures/milestone53` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone53` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone22/array_map.php` prints
   the committed `array_map` output with string-named user-function callbacks,
   one-array key preservation, append behavior after preserved integer keys,
@@ -1990,12 +2002,12 @@ Still fails:
   callables, method calls, reference and copy-on-write behavior, object handle
   identity preservation, resource values, exact native `TypeError` objects,
   and native lowering are not implemented.
-  `array_filter` callback support is limited to string-valued user-function or
-  callable-builtin names in value-only mode. Array/object callables, closures,
-  first-class callables, method calls, key-only/key-value callback modes,
-  reference and copy-on-write behavior, object handle identity preservation,
-  resource values, exact native `TypeError` objects, and native lowering are
-  not implemented.
+  `array_filter` callback support is limited to omitted callbacks, explicit
+  `null` callbacks, and string-valued user-function or callable-builtin names
+  in value-only mode. Array/object callables, closures, first-class callables,
+  method calls, key-only/key-value callback modes, reference and copy-on-write
+  behavior, object handle identity preservation, resource values, exact native
+  `TypeError` objects, and native lowering are not implemented.
   `array_map` callback support is limited to one-array null-callback identity
   mapping, variadic null-callback zip mapping, and variadic input arrays with
   string-valued user-function or callable-builtin names. The one-array forms
@@ -2094,7 +2106,6 @@ Still fails:
 
 Next:
 
-- Implement `array_filter($array, null)` as the same falsey-value filtering
-  path as omitted callbacks, with fixture CLI coverage, docs, and explicit
-  unsupported gaps for callback modes, references/copy-on-write, and native
-  lowering.
+- Extend `array_filter` with integer mode flag `0` for the current
+  null-callback and value-only string-callback paths, while keeping key-only
+  and key/value callback modes unsupported.
