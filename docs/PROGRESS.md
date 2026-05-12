@@ -2584,9 +2584,19 @@ Still fails:
   aliases/imports, namespace-aware names, autoloading, context-sensitive
   visibility, object inputs, exact native ordering and `TypeError` behavior,
   and native lowering remain unsupported.
+- Added `get_object_vars($object)` over the current minimal object value model.
+  The supported slice accepts current object values, returns public instance
+  property names in declaration order with their current slot values, excludes
+  protected/private slots and static properties, works through string-valued
+  dynamic calls, has fixture CLI coverage plus a stable non-object diagnostic,
+  and rejects native lowering through the current function-call boundary.
+  Dynamic properties, non-public visibility context, inheritance, traits,
+  interfaces, aliases/imports, namespace-aware names, references/copy-on-write,
+  exact native ordering and `TypeError` behavior, and native lowering remain
+  unsupported.
 
 Next:
 
 - Continue with the next small object/class value introspection boundary,
-  starting with `get_object_vars($object)` if it can be completed honestly over
-  the current minimal object value model.
+  choosing the next documented metadata/value slice that can be completed with
+  executable behavior, tests, CLI coverage, and named unsupported gaps.

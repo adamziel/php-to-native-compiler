@@ -1038,7 +1038,7 @@ handled.
 
 ## Milestone 109: Object Property Value List Boundary
 
-- [ ] Add the next honest `get_object_vars($object)` boundary over the current
+- [x] Add the next honest `get_object_vars($object)` boundary over the current
   minimal object value model: either a stable unsupported diagnostic or a
   narrow executable public-property value slice for current object inputs, with
   string-valued dynamic-call coverage, invalid argument diagnostics, fixture

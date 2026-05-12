@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call get_object_vars(): argument must be object, got int
+

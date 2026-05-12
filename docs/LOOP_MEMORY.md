@@ -9447,3 +9447,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:50:16Z
 
 - Post-round 57 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:50:24Z
+
+- Starting round 58 at 20260512T205024Z from HEAD `9fcf4b9`.
+
+## Loop Event 2026-05-12T20:50:32Z
+
+- Pre-round 58 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:54:36Z
+
+- Task attempted: implemented `get_object_vars($object)` over the current
+  minimal object value model. The supported slice accepts current object
+  values, returns public instance property names in declaration order with
+  their current slot values, excludes protected/private slots and static
+  properties, works through string-valued dynamic calls, has fixture CLI
+  coverage plus a stable non-object diagnostic, and rejects native lowering
+  through the current function-call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone109/get_object_vars.*`,
+  `tests/fixtures/runtime_errors/get_object_vars_invalid_target.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  get_object_vars -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone109` passed; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 132 fixtures; `cargo test -p
+  phpc --test object_introspection_builtins_cli -- --nocapture` passed;
+  `cargo test -p phpc --test runtime_error_cli -- --nocapture` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone109`
+  passed with 1 system PHP comparison; `cargo run -p phpc -- run
+  tests/fixtures/milestone109/get_object_vars.php` printed the committed
+  object-vars output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/get_object_vars_invalid_target.php` exited
+  `1` with the expected stable diagnostic; `cargo test -p phpc --test
+  object_model -- --nocapture` passed; `tools/run-tests.sh` passed with 320
+  fixtures, 118 system PHP comparisons, and 202 skips.
+- Remaining semantic gaps: `get_object_vars()` only reports current public
+  instance property slots on the minimal object value model. Dynamic
+  properties, non-public visibility context, inheritance, traits, interfaces,
+  aliases/imports, namespace-aware names, references/copy-on-write, exact
+  native ordering and `TypeError` objects, and native lowering remain
+  unsupported.
+- Next concrete task: choose the next small documented object/class metadata or
+  value introspection slice that can be completed with executable behavior,
+  tests, CLI coverage, and named unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_object_vars boundary"`
+  after the full suite passes.

@@ -121,6 +121,7 @@ subset:
   `method_exists($object_or_class, $method)` and
   `get_class_methods($object_or_class)` and
   `get_class_vars($class_name)` and
+  `get_object_vars($object)` and
   `is_a($object_or_class, $class_name[, $allow_string])` and
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` and
   `get_parent_class($object_or_class)` and `get_declared_classes()` over the
@@ -184,6 +185,8 @@ values or declared string class names and returns public declared methods in
 declaration order. `get_class_vars($class_name)` accepts declared string class
 names and returns public declared property names in declaration order with
 `null` values because property defaults are not implemented.
+`get_object_vars($object)` accepts current object values and returns public
+instance property names with their current slot values in declaration order.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
 identity only: object inputs are accepted, string object/class inputs are
 considered only when `allow_string` is true, and target class names use the
@@ -209,6 +212,7 @@ use inside classes, enum declarations, built-in/internal/extension classes in
 `get_class_methods()`, inherited/trait/interface methods, anonymous classes,
 exact native class/method/property ordering, `get_class_vars()` property
 defaults, inheritance/trait/interface properties, context-sensitive visibility,
+`get_object_vars()` dynamic properties and non-public visibility context,
 and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects

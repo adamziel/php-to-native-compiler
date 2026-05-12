@@ -2195,6 +2195,35 @@ impl Interpreter {
                     ),
                 )),
             },
+            "get_object_vars" => match args.as_slice() {
+                [Value::Object(object)] => {
+                    let mut properties = PhpArray::new();
+                    for property in object.properties() {
+                        if property.visibility() == Visibility::Public {
+                            properties.insert(
+                                ArrayKey::from(property.name()),
+                                property.value().clone(),
+                            );
+                        }
+                    }
+                    Ok(Value::Array(properties))
+                }
+                [other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "get_object_vars()",
+                        format!("argument must be object, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "get_object_vars()",
+                        ArityExpectation::Exactly(1),
+                        args.len(),
+                    ),
+                )),
+            },
             "is_a" => match args.as_slice() {
                 [object_or_class, Value::String(class_name)] => {
                     Ok(Value::Bool(self.value_is_exact_class(object_or_class, class_name, false)))
@@ -3039,6 +3068,7 @@ fn is_builtin(name: &str) -> bool {
             | "method_exists"
             | "get_class_methods"
             | "get_class_vars"
+            | "get_object_vars"
             | "is_a"
             | "is_subclass_of"
             | "get_parent_class"

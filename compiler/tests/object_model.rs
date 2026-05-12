@@ -528,6 +528,49 @@ fn get_class_vars_requires_declared_class_string_argument() {
 }
 
 #[test]
+fn get_object_vars_lists_current_public_instance_property_values() {
+    let source = r#"<?php
+class Box {
+    public $name;
+    protected $secret;
+    private $token;
+    public $count;
+    public static $shared;
+}
+
+$box = new box();
+$box->name = "Ada";
+$box->count = 3;
+$vars = get_object_vars($box);
+print_r($vars);
+echo count($vars), "|", $vars["name"], "|", $vars["count"], "|", array_key_exists("secret", $vars), "\n";
+
+$call = "get_object_vars";
+$dynamic = $call($box);
+echo count($dynamic), "|", $dynamic["name"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [name] => Ada\n    [count] => 3\n)\n2|Ada|3|\n2|Ada"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_object_vars_requires_object_argument() {
+    let target_error = runtime_error("<?php\nvar_dump(get_object_vars(42));\n");
+
+    assert_eq!(target_error.line, 2);
+    assert_eq!(target_error.column, 10);
+    assert_eq!(
+        target_error.message,
+        "unsupported call get_object_vars(): argument must be object, got int"
+    );
+}
+
+#[test]
 fn is_a_checks_exact_current_class_relationships() {
     let source = r#"<?php
 class Box {}
@@ -849,6 +892,22 @@ fn emit_ir_rejects_get_class_vars_until_native_object_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
         error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_get_object_vars_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_object_vars(new Box());\n")
+            .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations")
+            || error.message.contains("object instantiation")
+            || error.message.contains("function calls"),
         "{}",
         error.message
     );
