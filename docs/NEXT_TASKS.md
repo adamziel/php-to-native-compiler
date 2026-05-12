@@ -327,9 +327,17 @@ handled.
 
 ## Milestone 26: Array Map Null Callback Zip
 
-- [ ] Implement `array_map(null, $left, $right)` for the first multi-array
+- [x] Implement `array_map(null, $left, $right)` for the first multi-array
   null-callback zip slice over the current ordered array value model, including
   longest-array `null` padding, integer reindexing, fixture CLI coverage,
   documentation, and explicit gaps for broader zip arities,
   references/copy-on-write, object handle identity preservation, and native
   lowering.
+
+## Milestone 27: Array Map Variadic Follow-ups
+
+- [ ] Extend `array_map(null, ...)` beyond two input arrays over the current
+  ordered array value model, including longest-array `null` padding,
+  integer reindexing, fixture CLI coverage, documentation, and explicit gaps
+  for variadic string-callback mapping, references/copy-on-write, object handle
+  identity preservation, and native lowering.

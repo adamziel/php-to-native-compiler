@@ -1,0 +1,31 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => 0
+    [1] => 1
+    [2] => 2
+)
+3|2|2|2
+L1|R1
+right-null
+left-null
+R3
+4|1|after
+Array
+(
+    [first] => L1
+    [5] => L2
+)
+Array
+(
+    [a] => R1
+    [b] => 
+    [c] => R3
+)
+3|2|2|2
+A|1
+dynamic-right-null
+C|dynamic-right-null--- stdout end ---
+stderr:
+--- stderr end ---

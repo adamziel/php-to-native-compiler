@@ -1386,6 +1386,10 @@ impl Interpreter {
         right: &PhpArray,
         span: Span,
     ) -> CompileResult<PhpArray> {
+        if matches!(callback, Value::Null) {
+            return self.zip_two_arrays_for_array_map(left, right, span);
+        }
+
         let callable = self.resolve_array_map_callback(callback, span)?;
         let max_len = left.entries().len().max(right.entries().len());
 
@@ -1408,6 +1412,42 @@ impl Interpreter {
             )?;
             mapped
                 .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(mapped)
+    }
+
+    fn zip_two_arrays_for_array_map(
+        &self,
+        left: &PhpArray,
+        right: &PhpArray,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let max_len = left.entries().len().max(right.entries().len());
+        let mut mapped = PhpArray::new();
+
+        for index in 0..max_len {
+            let left_value = left
+                .entries()
+                .get(index)
+                .map(|entry| entry.value.clone())
+                .unwrap_or(Value::Null);
+            let right_value = right
+                .entries()
+                .get(index)
+                .map(|entry| entry.value.clone())
+                .unwrap_or(Value::Null);
+
+            let mut tuple = PhpArray::new();
+            tuple
+                .append(left_value)
+                .map_err(|error| runtime_error(span, error))?;
+            tuple
+                .append(right_value)
+                .map_err(|error| runtime_error(span, error))?;
+            mapped
+                .append(Value::Array(tuple))
                 .map_err(|error| runtime_error(span, error))?;
         }
 

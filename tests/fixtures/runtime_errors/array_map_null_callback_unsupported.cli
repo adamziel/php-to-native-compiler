@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/runtime_errors/array_map_null_callback_unsupported.php:4:6: unsupported call array_map(): null callbacks with multiple arrays are not supported in the current subset
---- stderr end ---
