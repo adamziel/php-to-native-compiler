@@ -7845,3 +7845,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   declarations before trait parsing or trait use execution exists.
 - Checkpoint: pending `tools/checkpoint.sh "parser: tighten __NAMESPACE__ magic constant boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T17:58:13Z
+
+- Codex round 28 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T175232Z-28.log`.
+
+## Loop Event 2026-05-12T17:58:34Z
+
+- Post-round 28 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:58:34Z
+
+- Post-round 28 tests passed; running checkpoint for this round.
