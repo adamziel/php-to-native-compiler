@@ -148,8 +148,9 @@ subset:
   declarations, unsupported `$this` usage, unsupported `clone` expressions,
   unsupported `instanceof` expressions, unsupported `ClassName::class`
   expressions, unsupported magic static receivers such as `self::`,
-  `parent::`, and `static::`, trait declarations, interface declarations, enum
-  declarations, static member access, and class constants
+  `parent::`, and `static::`, trait declarations, interface declarations,
+  interface implementation clauses, enum declarations, static member access,
+  and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

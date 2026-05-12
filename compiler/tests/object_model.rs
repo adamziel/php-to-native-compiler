@@ -413,6 +413,14 @@ class Child extends Base {}
         ),
         (
             r#"<?php
+class Service implements Logger {}
+"#,
+            2,
+            15,
+            "unsupported interface implementation: implements clauses are not implemented",
+        ),
+        (
+            r#"<?php
 class Box {
     public string $name;
 }

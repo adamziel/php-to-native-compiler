@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_interface_implementation.php:2:15: unsupported interface implementation: implements clauses are not implemented
+--- stderr end ---

@@ -8658,3 +8658,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:27:33Z
 
 - Post-round 43 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:27:40Z
+
+- Starting round 44 at 20260512T192740Z from HEAD `d2c9008`.
+
+## Loop Event 2026-05-12T19:27:48Z
+
+- Pre-round 44 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:38:52Z
+
+- Task attempted: completed Milestone 95 by making unsupported class
+  `implements` clauses an explicit object/class boundary. The parser now uses
+  a named stable diagnostic helper for `implements`, object parser regression
+  coverage includes `class Service implements Logger {}`, and unsupported-object
+  fixture coverage includes a committed `phpc run` CLI snapshot.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_interface_implementation.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run so far: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with 28 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 28 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_interface_implementation.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt --
+  --check` passed; `git diff --check` passed; `tools/run-tests.sh` passed
+  with 287 fixtures, 106 system PHP comparisons, and 181 skips.
+- Remaining semantic gaps: `implements` execution remains unsupported,
+  including interface metadata, method signature enforcement, inheritance
+  interactions, namespace-aware interface names, autoloading, exact PHP
+  `Error` objects, and native lowering.
+- Next concrete task: continue the next small object/class boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject unsupported interface implementations"`
+  after the full suite passes.

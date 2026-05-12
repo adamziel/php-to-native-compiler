@@ -903,3 +903,11 @@ handled.
   coverage, fixture CLI coverage, documentation, and named gaps for static
   property storage, static method dispatch, class constants, inheritance, exact
   PHP `Error` objects, and native lowering.
+
+## Milestone 95: Interface Implementation Boundary
+
+- [x] Add explicit parse diagnostics for unsupported `implements` clauses
+  before interface metadata and class/interface relationship checks exist,
+  including parser coverage, fixture CLI coverage, documentation, and named
+  gaps for interface method enforcement, inheritance, namespaces, autoloading,
+  exact PHP `Error` objects, and native lowering.

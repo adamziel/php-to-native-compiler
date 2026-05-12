@@ -2472,6 +2472,12 @@ Still fails:
   parent-class, or late-static-binding resolution exists. Static property
   storage, static method dispatch, class constants, inheritance, exact PHP
   `Error` objects, and native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported `implements`
+  clauses before interface metadata or class/interface relationship checks
+  exist. Interface method enforcement, inheritance interactions, namespace-aware
+  interface names, autoloading, exact PHP `Error` objects, and native lowering
+  remain unsupported.
 
 Next:
 

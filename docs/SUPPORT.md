@@ -1087,11 +1087,12 @@
   not implemented.
 - Object/class gaps: nested and conditional class declarations, method calls,
   `$this`, constructor execution, constructor arguments, inheritance,
-  interface declarations, interface constants, interface method signatures,
-  interface inheritance, namespace-aware interfaces, trait declarations, trait
-  methods/properties/constants, trait conflict resolution, aliases, visibility
-  changes, namespace-aware traits, enum declarations, enum cases, backed enum
-  values, enum methods, enum interface implementations, namespace-aware enums,
+  interface declarations, `implements` clauses, interface constants,
+  interface method signatures, interface inheritance, namespace-aware
+  interfaces, trait declarations, trait methods/properties/constants, trait
+  conflict resolution, aliases, visibility changes, namespace-aware traits,
+  enum declarations, enum cases, backed enum values, enum methods, enum
+  interface implementations, namespace-aware enums,
   `abstract`/`final`/`readonly` class modifiers,
   `abstract`/`final`/`readonly` class member modifiers, abstract methods, final
   methods, readonly properties, typed property storage and enforcement,
@@ -1184,9 +1185,10 @@
   currently fail with stable runtime diagnostics when a declared constructor is
   present or arguments are supplied
 - unsupported class forms including nested/conditional declarations,
-  inheritance, interface declarations and implementation, interface constants,
-  interface method signatures, interface inheritance, trait declarations, enum
-  declarations, enum cases/backing values/methods/interface implementation,
+  inheritance, interface declarations and `implements` clauses, interface
+  constants, interface method signatures, interface inheritance, trait
+  declarations, enum declarations, enum cases/backing values/methods/interface
+  implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   class constant declarations, constants, `$this` object context binding, and

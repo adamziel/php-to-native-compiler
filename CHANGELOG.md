@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an explicit unsupported `implements` clause boundary with parser
+  regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported magic static receiver boundary for `self::`,
   `parent::`, and `static::`, with parser regression coverage, fixture
   coverage, and a `phpc run` CLI snapshot.

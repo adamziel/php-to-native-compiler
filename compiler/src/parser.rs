@@ -196,7 +196,7 @@ impl Parser {
         if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
             return Err(self.error_at(
                 self.previous().span,
-                "unsupported interface implementation: implements is not implemented",
+                unsupported_interface_implementation_message(),
             ));
         }
 
@@ -2047,6 +2047,10 @@ fn unsupported_trait_declaration_message() -> &'static str {
 
 fn unsupported_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: interface parsing and implementation execution are not implemented"
+}
+
+fn unsupported_interface_implementation_message() -> &'static str {
+    "unsupported interface implementation: implements clauses are not implemented"
 }
 
 fn unsupported_enum_declaration_message() -> &'static str {
