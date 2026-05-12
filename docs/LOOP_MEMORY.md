@@ -6749,3 +6749,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   unqualified constants over the current name/value subset.
 - Checkpoint: pending `tools/checkpoint.sh "dynamic: add runtime-defined constants"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T14:56:44Z
+
+- Codex round 10 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T143929Z-10.log`.
+
+## Loop Event 2026-05-12T14:56:51Z
+
+- Post-round 10 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:56:51Z
+
+- Post-round 10 tests passed; running checkpoint for this round.
