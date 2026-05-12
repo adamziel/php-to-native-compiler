@@ -10032,3 +10032,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   object-variable operands over the current public instance property model.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add get_mangled_object_vars boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T22:25:45Z
+
+- Codex round 9 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T221928Z-9.log`.
+
+## Loop Event 2026-05-12T22:25:58Z
+
+- Post-round 9 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:25:58Z
+
+- Post-round 9 tests passed; running checkpoint for this round.
