@@ -70,6 +70,7 @@
 - explicit parse diagnostics for unsupported `unset(...)` syntax
 - explicit parse diagnostics for unsupported `foreach (...)` syntax
 - explicit parse diagnostics for unsupported `for (...)` syntax
+- explicit parse diagnostics for unsupported `do ... while` syntax
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -241,12 +242,13 @@
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
 - Array gaps: long `array(...)` literal syntax, `unset(...)` syntax, direct
-  `foreach (...)` syntax, and direct `for (...)` syntax are rejected with stable
-  parse diagnostics; executing long array literals, variable/offset/property
-  removal, and iteration is not implemented. Nested indexed writes, complex
-  assignment lvalues, `$array[]` as a read expression, string offset access,
-  `for`/`foreach` iteration behavior, destructuring, spread, references,
-  copy-on-write containers, and object/resource keys are not implemented. Array
+  `foreach (...)` syntax, direct `for (...)` syntax, and direct `do ... while`
+  syntax are rejected with stable parse diagnostics; executing long array
+  literals, variable/offset/property removal, and iteration is not implemented.
+  Nested indexed writes, complex assignment lvalues, `$array[]` as a read
+  expression, string offset access, `for`/`foreach`/`do ... while` iteration
+  behavior, destructuring, spread, references, copy-on-write containers, and
+  object/resource keys are not implemented. Array
   keys are currently limited to values that evaluate to integers or strings;
   PHP's boolean, null, float, object, and resource key coercions are rejected
   with a stable runtime error.
@@ -309,6 +311,8 @@
   before array/object iteration exists
 - `for (...)`; direct syntax is rejected with a stable parse diagnostic before
   C-style loops exist
+- `do ... while`; direct syntax is rejected with a stable parse diagnostic
+  before post-condition loops exist
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

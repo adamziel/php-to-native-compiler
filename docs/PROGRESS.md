@@ -177,6 +177,9 @@ Implemented:
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported `for (...)` syntax before C-style loops are
   implemented.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
+  CLI snapshots for unsupported `do ... while` syntax before post-condition
+  loops are implemented.
 
 Tested:
 
@@ -211,10 +214,10 @@ Tested:
   snapshot test covering 7 unsupported object/class fixtures.
 - `cargo test -p phpc --test syntax_boundaries` passes with stable parse
   diagnostic coverage for unsupported long `array(...)` literal syntax,
-  unsupported `unset(...)` syntax, unsupported `foreach (...)` syntax, and
-  unsupported `for (...)` syntax.
+  unsupported `unset(...)` syntax, unsupported `foreach (...)` syntax,
+  unsupported `for (...)` syntax, and unsupported `do ... while` syntax.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 4 unsupported syntax fixtures.
+  snapshot test covering 5 unsupported syntax fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
@@ -228,9 +231,9 @@ Tested:
   passes with rejection coverage for object instantiation.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_object_property`
   passes with rejection coverage for object property reads and writes.
-- `cargo run -p phpc -- test` passes with 74 fixture tests.
+- `cargo run -p phpc -- test` passes with 75 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 28 fixtures and skipping 46 `.phpc-only` fixtures.
+  installed, comparing 28 fixtures and skipping 47 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -260,9 +263,9 @@ Tested:
   tests/fixtures/unsupported_object_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 4 unsupported syntax fixtures.
+  passes with 5 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 4 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 5 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -354,6 +357,8 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:1: unsupported foreach: array and object iteration are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_for.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_for.php:3:1: unsupported for: C-style loops are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_do_while.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_do_while.php:3:1: unsupported do-while: post-condition loops are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_anonymous_class.php`
@@ -405,12 +410,14 @@ Still fails:
   now fails with a stable parse diagnostic before execution. `unset(...)` also
   fails with a stable parse diagnostic before variable, array offset, or object
   property removal exists, `foreach (...)` fails with a stable parse diagnostic
-  before array/object iteration exists, and `for (...)` fails with a stable
-  parse diagnostic before C-style loops exist. Nested indexed writes, complex
-  assignment lvalues, `$array[]` as a read expression, string offset access,
-  `for`/`foreach` iteration behavior, destructuring, spread, references,
-  copy-on-write containers, and object/resource keys are also unsupported, as
-  are PHP's full boolean/null/float key coercion rules. Missing array-key reads
+  before array/object iteration exists, `for (...)` fails with a stable parse
+  diagnostic before C-style loops exist, and `do ... while` fails with a stable
+  parse diagnostic before post-condition loops exist. Nested indexed writes,
+  complex assignment lvalues, `$array[]` as a read expression, string offset
+  access, `for`/`foreach`/`do ... while` iteration behavior, destructuring,
+  spread, references, copy-on-write containers, and object/resource keys are
+  also unsupported, as are PHP's full boolean/null/float key coercion rules.
+  Missing array-key reads
   fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Writes to existing non-array scalar variables
   other than `null` are rejected instead of following PHP's full automatic
@@ -473,5 +480,5 @@ Still fails:
 
 Next:
 
-- Continue by adding explicit parse diagnostics for unsupported `for` syntax
-  before implementing C-style loops.
+- Continue by adding explicit parse diagnostics for unsupported `switch` syntax
+  before implementing switch/case control flow.

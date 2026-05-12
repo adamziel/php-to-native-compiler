@@ -40,10 +40,14 @@ impl Parser {
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
+            TokenKind::Do => self.parse_unsupported_do_while(),
             TokenKind::Foreach => self.parse_unsupported_foreach(),
             TokenKind::For => self.parse_unsupported_for(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => {
+                self.parse_unsupported_do_while()
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
                 self.parse_unsupported_foreach()
             }
@@ -347,6 +351,11 @@ impl Parser {
     fn parse_unsupported_foreach(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
         Err(self.error_at(token.span, unsupported_foreach_message()))
+    }
+
+    fn parse_unsupported_do_while(&mut self) -> CompileResult<Stmt> {
+        let token = self.advance().clone();
+        Err(self.error_at(token.span, unsupported_do_while_message()))
     }
 
     fn parse_unsupported_for(&mut self) -> CompileResult<Stmt> {
@@ -698,6 +707,7 @@ impl Parser {
                 "unsupported closure: arrow functions are not implemented",
             )),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
+            TokenKind::Do => Err(self.error_at(token.span, unsupported_do_while_message())),
             TokenKind::Foreach => Err(self.error_at(token.span, unsupported_foreach_message())),
             TokenKind::For => Err(self.error_at(token.span, unsupported_for_message())),
             TokenKind::Include => {
@@ -719,6 +729,9 @@ impl Parser {
                 "unsupported reference expression: references are not implemented",
             )),
             TokenKind::Identifier(name) => {
+                if name.eq_ignore_ascii_case("do") {
+                    return Err(self.error_at(token.span, unsupported_do_while_message()));
+                }
                 if name.eq_ignore_ascii_case("foreach") {
                     return Err(self.error_at(token.span, unsupported_foreach_message()));
                 }
@@ -1081,6 +1094,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::If => "if",
         TokenKind::Else => "else",
         TokenKind::While => "while",
+        TokenKind::Do => "do",
         TokenKind::Foreach => "foreach",
         TokenKind::For => "for",
         TokenKind::Null => "null",
@@ -1161,6 +1175,10 @@ fn unsupported_unset_message() -> &'static str {
 
 fn unsupported_foreach_message() -> &'static str {
     "unsupported foreach: array and object iteration are not implemented"
+}
+
+fn unsupported_do_while_message() -> &'static str {
+    "unsupported do-while: post-condition loops are not implemented"
 }
 
 fn unsupported_for_message() -> &'static str {

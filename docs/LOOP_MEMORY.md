@@ -1509,3 +1509,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:12:09Z
 
 - Post-round 25 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:12:11Z
+
+- Starting round 26 at 20260512T011211Z from HEAD `bb4b610`.
+
+## Loop Event 2026-05-12T01:12:13Z
+
+- Pre-round 26 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:14:50Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  `do ... while` syntax before post-condition loop support exists. The parser
+  now rejects lowercase `do`, uppercase identifier-form `DO`, and
+  expression-position `do` with the same stable unsupported-do-while
+  diagnostic.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_do_while.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test syntax_boundaries` passed with 5 parse-boundary tests; `cargo test -p
+  phpc --test unsupported_syntax_features_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/unsupported_syntax_features` passed with 5 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 5 `.phpc-only`
+  comparison skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_do_while.php` exited
+  `1` with the expected stable parse diagnostic; `tools/run-tests.sh` passed
+  with 75 fixtures, 28 system PHP comparisons, and 47 `.phpc-only` skips.
+- Remaining semantic gaps: `do ... while` execution is still unsupported,
+  including guaranteed first body execution, post-condition truthiness, nested
+  loops, interaction with `break`/`continue`, side effects during condition
+  evaluation, references/copy-on-write interactions, and native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported `switch`
+  syntax before implementing switch/case control flow.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject do-while syntax"`
+  after the full suite passes.

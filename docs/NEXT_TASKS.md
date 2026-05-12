@@ -89,5 +89,7 @@ handled.
   implementing iteration.
 - [x] Add explicit parse diagnostics for unsupported `for` syntax before
   implementing C-style loops.
-- [ ] Add explicit parse diagnostics for unsupported `do ... while` syntax
+- [x] Add explicit parse diagnostics for unsupported `do ... while` syntax
   before implementing do-while loops.
+- [ ] Add explicit parse diagnostics for unsupported `switch` syntax before
+  implementing switch/case control flow.

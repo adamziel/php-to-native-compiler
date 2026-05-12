@@ -185,3 +185,46 @@ echo for ($i = 0; $i < 3; $i = $i + 1);
         );
     }
 }
+
+#[test]
+fn do_while_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+$i = 0;
+do {
+    echo $i;
+    $i = $i + 1;
+} while ($i < 3);
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+DO echo "tick"; WHILE (false);
+"#,
+            2,
+            1,
+        ),
+        (
+            r#"<?php
+echo do {
+    echo "tick";
+} while (false);
+"#,
+            2,
+            6,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported do-while: post-condition loops are not implemented"
+        );
+    }
+}
