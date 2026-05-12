@@ -244,6 +244,8 @@
   alternate colon/`endswitch` syntax
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
+- explicit parse diagnostics for unsupported exception syntax: `throw`,
+  `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface declarations and implementation, trait
   declarations, trait use inside classes, enum declarations,
@@ -665,8 +667,8 @@
   invalid-loop-control runtime error. A `continue;` that reaches a `switch`
   body is rejected with a stable runtime error instead of modeling PHP's
   warning-and-break behavior. Loop-depth arguments such as `break 2;` and
-  `continue 2;` are rejected with stable parse diagnostics. `finally`/exception
-  behavior and native lowering are not implemented.
+  `continue 2;` are rejected with stable parse diagnostics. Exception syntax
+  is rejected separately at parse time, and native lowering is not implemented.
 - Switch: statement-form brace `switch` executes in `phpc run` over the current
   scalar loose-comparison subset. The switch expression is evaluated once, case
   expressions are evaluated in source order until the first loose `==` match,
@@ -1496,6 +1498,11 @@
   only statement-form `break;` for the innermost active `while`, supported
   `for`, supported `do ... while`, supported array `foreach`, or supported
   `switch`, and `continue;` for the innermost active loop are implemented
+- exception execution; `throw`, throw expressions, `try` blocks, `catch`
+  clauses, and `finally` blocks currently fail with stable parse diagnostics
+  before `Throwable`, `Exception`, custom exception classes, stack unwinding,
+  `finally` execution, stack traces, exact native error objects, or native
+  lowering exist
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
@@ -1653,7 +1660,7 @@
   executable qualified/fully qualified function or class references
 - closures and arrow functions
 - configurable recursion/call-stack limits matching PHP deployments
-- exceptions
+- exception objects and exception handling beyond the current parse boundary
 - traits/interfaces/enums
 - generators
 - attributes

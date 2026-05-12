@@ -281,6 +281,16 @@ include/require inside eval, references/copy-on-write interactions,
 `GLOBALS`/superglobal behavior, namespaces/use declarations, opcache behavior,
 and PHP's exact warning/fatal recovery details.
 
+## Exception Boundary
+
+Exception syntax is reserved by the lexer/parser today and rejected with stable
+parse diagnostics before execution. `throw` statements/expressions and
+`try`/`catch`/`finally` blocks do not build AST nodes yet because the runtime
+does not model `Throwable`/`Exception` objects, stack unwinding, `finally`
+execution, stack traces, or exact native error objects. Native lowering must
+continue rejecting these constructs until exception control flow has explicit
+runtime and IR semantics.
+
 ## Fixture Tests
 
 Fixture tests are stored as `.php` files with sibling `.stdout`, `.stderr`, and

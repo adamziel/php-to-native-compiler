@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added explicit unsupported exception syntax diagnostics for `throw`
+  statements/expressions and `try`/`catch`/`finally` blocks before exception
+  objects or stack unwinding exist, with parser regression coverage,
+  fixture/CLI coverage, documentation, and native emission rejection at the
+  parse boundary.
 - Added an explicit unsupported `unset($object->publicProperty)` boundary
   before object property uninitialization semantics exist, with parser
   regression coverage, fixture/CLI coverage, documentation, and native

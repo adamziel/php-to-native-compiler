@@ -842,8 +842,8 @@ Tested:
   forms, expression-form `foreach`, unsupported `for` header expression lists,
   expression-form `for`, expression-form `do ... while`, expression-form and
   alternate-syntax `switch`, unsupported switch case separators, alternate
-  `if`/`elseif`/`else` colon/`endif` syntax, and unsupported
-  `break`/`continue` loop-depth arguments.
+  `if`/`elseif`/`else` colon/`endif` syntax, unsupported
+  `break`/`continue` loop-depth arguments, and unsupported exception syntax.
 - `cargo test -p phpc --test for_loop` passes with C-style `for` loop
   coverage for initializer/condition/increment execution, optional header
   slots, uppercase `FOR`, single-statement bodies, and `break;`/`continue;`
@@ -858,7 +858,7 @@ Tested:
   skipped later-condition coverage, `else` fallback behavior,
   single-statement bodies, and uppercase tail keyword coverage.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 10 unsupported syntax fixtures.
+  snapshot test covering 14 unsupported syntax fixtures.
 - `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
   test covering the Milestone 10 syntax expansion fixtures.
 - `cargo test -p phpc --test conditional_refinements_cli` passes with 1 CLI
@@ -1198,9 +1198,9 @@ Tested:
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with the
   unsupported syntax CLI snapshots, including alternate conditional syntax.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 10 unsupported syntax fixtures.
+  passes with 14 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 10 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 14 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -2683,6 +2683,14 @@ Still fails:
   the same parse boundary. Typed/uninitialized properties, dynamic property
   names, non-public visibility context, magic `__unset`,
   references/copy-on-write, exact native error behavior, and native lowering remain
+  unsupported.
+- Added explicit parse diagnostics for unsupported exception syntax before
+  exception objects or stack unwinding exist. `throw` statements/expressions,
+  `try` blocks, `catch` clauses, and `finally` blocks now fail at the parse
+  boundary with stable diagnostics, fixture and CLI snapshot coverage record
+  the behavior, and native emission rejects the same syntax at parse time.
+  `Throwable`, `Exception`, custom exception classes, `finally` execution,
+  stack traces, exact native error objects, and native lowering remain
   unsupported.
 
 Next:

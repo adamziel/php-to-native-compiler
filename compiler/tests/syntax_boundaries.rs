@@ -141,6 +141,60 @@ fn emit_ir_rejects_object_property_unset_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_exception_syntax_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nthrow new Exception('boom');\n",
+            2,
+            1,
+            "unsupported throw: exception objects and stack unwinding are not implemented",
+        ),
+        (
+            "<?php\n$value = throw new Exception('boom');\n",
+            2,
+            10,
+            "unsupported throw: exception objects and stack unwinding are not implemented",
+        ),
+        (
+            "<?php\ntry {\n    echo 'work';\n} catch (Exception $e) {\n    echo 'caught';\n} finally {\n    echo 'done';\n}\n",
+            2,
+            1,
+            "unsupported try/catch/finally: exception handling and stack unwinding are not implemented",
+        ),
+        (
+            "<?php\nCATCH (Exception $e) {\n    echo 'caught';\n}\n",
+            2,
+            1,
+            "unsupported try/catch/finally: exception handling and stack unwinding are not implemented",
+        ),
+        (
+            "<?php\nFINALLY {\n    echo 'done';\n}\n",
+            2,
+            1,
+            "unsupported try/catch/finally: exception handling and stack unwinding are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_exception_syntax_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\nthrow new Exception('boom');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported throw: exception objects and stack unwinding are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

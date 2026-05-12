@@ -1,0 +1,2 @@
+parse error at 2:10: unsupported throw: exception objects and stack unwinding are not implemented
+

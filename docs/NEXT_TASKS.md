@@ -1153,9 +1153,17 @@ handled.
 
 ## Milestone 121: Exception Syntax Boundary
 
-- [ ] Add explicit diagnostics for unsupported exception syntax before
+- [x] Add explicit diagnostics for unsupported exception syntax before
   exception objects or stack unwinding exist, including `throw`,
   `try`/`catch`/`finally`, parser coverage, fixture CLI coverage,
   documentation, and named gaps for `Throwable`, `Exception`, custom
   exception classes, `finally` execution, stack traces, exact native error
   objects, and native lowering.
+
+## Milestone 122: Match Expression Boundary
+
+- [ ] Add explicit diagnostics for unsupported PHP 8 `match` expressions
+  before expression-form branching exists, including parser coverage, fixture
+  CLI coverage, documentation, and named gaps for strict arm matching,
+  default arms, exhaustiveness errors, thrown expressions inside arms, value
+  evaluation order, exact native error objects, and native lowering.

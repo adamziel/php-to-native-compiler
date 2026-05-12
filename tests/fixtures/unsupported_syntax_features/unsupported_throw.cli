@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_throw.php:2:1: unsupported throw: exception objects and stack unwinding are not implemented
+--- stderr end ---

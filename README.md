@@ -162,7 +162,8 @@ subset:
   comma-separated `for` header expression lists, expression-form
   `do ... while`, alternate `if`/`elseif`/`else` colon/`endif` syntax,
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
-  arguments, object method calls, dynamic property names, anonymous classes,
+  arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
+  `finally`), object method calls, dynamic property names, anonymous classes,
   unsupported class forms, `abstract`/`final`/`readonly` class modifiers,
   unsupported `abstract`/`final`/`readonly` class member modifiers,
   unsupported typed property declarations, unsupported property defaults,

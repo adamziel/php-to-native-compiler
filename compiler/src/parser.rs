@@ -62,6 +62,10 @@ impl Parser {
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
+            TokenKind::Throw => self.parse_unsupported_throw(),
+            TokenKind::Try | TokenKind::Catch | TokenKind::Finally => {
+                self.parse_unsupported_try_catch_finally()
+            }
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
             TokenKind::Static
@@ -81,6 +85,17 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("break") => self.parse_break(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
                 self.parse_continue()
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("throw") => {
+                self.parse_unsupported_throw()
+            }
+            TokenKind::Identifier(name)
+                if matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "try" | "catch" | "finally"
+                ) =>
+            {
+                self.parse_unsupported_try_catch_finally()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => {
                 if self.nested_statement_depth == 0 {
@@ -363,6 +378,16 @@ impl Parser {
             .consume_keyword(TokenKind::Eval, "expected 'eval'")?
             .span;
         Err(self.error_at(span, unsupported_eval_message()))
+    }
+
+    fn parse_unsupported_throw(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_throw_message()))
+    }
+
+    fn parse_unsupported_try_catch_finally(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_try_catch_finally_message()))
     }
 
     fn parse_unsupported_nested_const_declaration(&mut self) -> CompileResult<Stmt> {
@@ -1249,6 +1274,10 @@ impl Parser {
             TokenKind::Continue => {
                 Err(self.error_at(token.span, unsupported_continue_expression_message()))
             }
+            TokenKind::Throw => Err(self.error_at(token.span, unsupported_throw_message())),
+            TokenKind::Try | TokenKind::Catch | TokenKind::Finally => {
+                Err(self.error_at(token.span, unsupported_try_catch_finally_message()))
+            }
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_require_message("include")))
             }
@@ -1306,6 +1335,15 @@ impl Parser {
                     return Err(
                         self.error_at(token.span, unsupported_continue_expression_message())
                     );
+                }
+                if name.eq_ignore_ascii_case("throw") {
+                    return Err(self.error_at(token.span, unsupported_throw_message()));
+                }
+                if matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "try" | "catch" | "finally"
+                ) {
+                    return Err(self.error_at(token.span, unsupported_try_catch_finally_message()));
                 }
                 if name.eq_ignore_ascii_case("clone") {
                     return Err(self.error_at(token.span, unsupported_clone_message()));
@@ -1834,6 +1872,10 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Switch => "switch",
         TokenKind::Break => "break",
         TokenKind::Continue => "continue",
+        TokenKind::Throw => "throw",
+        TokenKind::Try => "try",
+        TokenKind::Catch => "catch",
+        TokenKind::Finally => "finally",
         TokenKind::Null => "null",
         TokenKind::True => "true",
         TokenKind::False => "false",
@@ -1953,6 +1995,14 @@ fn unsupported_magic_constant_message(name: &str) -> String {
 
 fn unsupported_eval_message() -> &'static str {
     "unsupported eval: eval parsing and caller-scope execution are not implemented"
+}
+
+fn unsupported_throw_message() -> &'static str {
+    "unsupported throw: exception objects and stack unwinding are not implemented"
+}
+
+fn unsupported_try_catch_finally_message() -> &'static str {
+    "unsupported try/catch/finally: exception handling and stack unwinding are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

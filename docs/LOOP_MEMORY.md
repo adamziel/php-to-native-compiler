@@ -10165,3 +10165,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:42:40Z
 
 - Post-round 11 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:43:06Z
+
+- Starting round 12 at 20260512T224305Z from HEAD `5d55350`.
+
+## Loop Event 2026-05-12T22:43:21Z
+
+- Pre-round 12 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:47:36Z
+
+- Task attempted: added explicit parse diagnostics for unsupported exception
+  syntax before exception objects or stack unwinding exist. The parser now
+  rejects `throw` statements, throw expressions, `try` blocks, standalone
+  `catch` clauses, and standalone `finally` blocks with stable diagnostics,
+  and `compile --emit-ir` rejects the same syntax at the parse boundary.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_throw.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_throw_expression.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_try_catch_finally.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` completed; `cargo test -p phpc
+  --test syntax_boundaries exception -- --nocapture` passed; `cargo test -p
+  phpc --test unsupported_syntax_features_cli
+  unsupported_syntax_feature_cli_snapshots_match_committed_outputs` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 14 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 14 `.phpc-only` PHP
+  comparisons skipped; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_try_catch_finally.php`
+  exited `1` with the expected parse diagnostic; `cargo run -p phpc --
+  compile tests/fixtures/unsupported_syntax_features/unsupported_throw.php
+  --emit-ir` exited `1` with the expected parse diagnostic; `tools/run-tests.sh`
+  passed with 343 fixtures, 123 system PHP comparisons, and 220 skips.
+- Remaining semantic gaps: exception support is only an explicit parse
+  boundary. `Throwable`, `Exception`, custom exception classes, stack
+  unwinding, `finally` execution, stack traces, exact native error objects,
+  thrown expressions inside broader expression contexts, and native lowering
+  remain unsupported.
+- Next concrete task: add explicit diagnostics for unsupported PHP 8 `match`
+  expressions before expression-form branching exists.
+- Known-good tag: not created; this is a narrow syntax boundary, not a major
+  verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add exception boundary"`.
