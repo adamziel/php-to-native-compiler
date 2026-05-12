@@ -1,0 +1,38 @@
+exit: 0
+stdout:
+Array
+(
+    [name] => duplicate
+    [2] => two int
+    [02] => zero two
+    [-1] => negative
+)
+4
+duplicate|two int|zero two|negative
+after
+Array
+(
+    [first] => name
+    [5] => 2
+    [two] => 2
+    [02] => 02
+    [6] => -1
+    [dup-string] => name
+)
+Array
+(
+    [a] => Ada
+    [10] => two string
+    [11] => two int
+    [d] => zero two
+    [-3] => negative
+    [12] => duplicate
+)
+duplicate|two int|zero two|negative
+Array
+(
+)
+0
+done--- stdout end ---
+stderr:
+--- stderr end ---

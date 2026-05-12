@@ -695,6 +695,26 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn combined_with(&self, values: &Self) -> RuntimeResult<Self> {
+        if self.entries.len() != values.entries.len() {
+            return Err(RuntimeError::unsupported_call(
+                "array_combine()",
+                format!(
+                    "keys and values must have the same number of elements in the current subset, got {} and {}",
+                    self.entries.len(),
+                    values.entries.len()
+                ),
+            ));
+        }
+
+        let mut array = Self::new();
+        for (key_entry, value_entry) in self.entries.iter().zip(values.entries.iter()) {
+            let key = array_combine_key_from_value(&key_entry.value)?;
+            array.insert(key, value_entry.value.clone());
+        }
+        Ok(array)
+    }
+
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -862,6 +882,20 @@ fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
         Value::String(value) => Ok(ArrayKey::string(value.clone())),
         other => Err(RuntimeError::unsupported_call(
             "array_fill_keys()",
+            format!(
+                "key values must be int or string in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+    match value {
+        Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::String(value) => Ok(ArrayKey::string(value.clone())),
+        other => Err(RuntimeError::unsupported_call(
+            "array_combine()",
             format!(
                 "key values must be int or string in the current subset, got {}",
                 other.type_name()
@@ -3179,6 +3213,98 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_combine_uses_int_string_key_values_and_overwrites_duplicates() {
+        let mut keys = PhpArray::new();
+        keys.insert("first", Value::String("name".to_string()));
+        keys.insert(5, Value::String("2".to_string()));
+        keys.insert("two", Value::Int(2));
+        keys.insert("02", Value::String("02".to_string()));
+        keys.append(Value::Int(-1)).unwrap();
+        keys.insert("dup-string", Value::String("name".to_string()));
+
+        let mut values = PhpArray::new();
+        values.insert("a", Value::String("Ada".to_string()));
+        values.insert(10, Value::String("two string".to_string()));
+        values.append(Value::String("two int".to_string())).unwrap();
+        values.insert("d", Value::String("zero two".to_string()));
+        values.insert(-3, Value::String("negative".to_string()));
+        values
+            .append(Value::String("duplicate".to_string()))
+            .unwrap();
+
+        let mut combined = keys.combined_with(&values).unwrap();
+        let entries = combined.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("duplicate".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("two int".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(-1));
+        assert_eq!(entries[3].value, Value::String("negative".to_string()));
+        assert_eq!(
+            combined.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(3)
+        );
+        assert_eq!(
+            keys.get("dup-string"),
+            Some(&Value::String("name".to_string())),
+            "array_combine must not mutate the key array"
+        );
+        assert_eq!(
+            values.get(12),
+            Some(&Value::String("duplicate".to_string())),
+            "array_combine must not mutate the value array"
+        );
+
+        assert!(PhpArray::new()
+            .combined_with(&PhpArray::new())
+            .unwrap()
+            .entries()
+            .is_empty());
+    }
+
+    #[test]
+    fn array_combine_rejects_length_mismatches_and_unsupported_key_value_types() {
+        let mut keys = PhpArray::new();
+        keys.append(Value::String("name".to_string())).unwrap();
+        keys.append(Value::String("extra".to_string())).unwrap();
+
+        let mut values = PhpArray::new();
+        values.append(Value::String("Ada".to_string())).unwrap();
+
+        let error = keys.combined_with(&values).unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1"
+        );
+
+        let mut bad_keys = PhpArray::new();
+        bad_keys.append(Value::String("name".to_string())).unwrap();
+        bad_keys.append(Value::Bool(true)).unwrap();
+
+        let mut values = PhpArray::new();
+        values.append(Value::String("Ada".to_string())).unwrap();
+        values.append(Value::String("bad".to_string())).unwrap();
+
+        let error = bad_keys.combined_with(&values).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_combine()".to_string(),
+                reason: "key values must be int or string in the current subset, got bool"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_combine(): key values must be int or string in the current subset, got bool"
         );
     }
 

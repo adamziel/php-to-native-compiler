@@ -424,8 +424,16 @@ handled.
 
 ## Milestone 37: Array Pairing Builtin
 
-- [ ] Implement `array_combine($keys, $values)` over the current ordered array
+- [x] Implement `array_combine($keys, $values)` over the current ordered array
   value model, including integer/string key-value conversion, length mismatch
   diagnostics, non-array diagnostics, fixture CLI coverage, documentation, and
   explicit gaps for references/copy-on-write, exact native `ValueError` and
   `TypeError` objects, object/resource keys, and native lowering.
+
+## Milestone 38: Array Key Set Builtins
+
+- [ ] Implement `array_intersect_key($left, $right)` over the current ordered
+  integer/string key model, including first-array key/value preservation,
+  non-array diagnostics, fixture CLI coverage, documentation, and explicit
+  gaps for variadic operands, references/copy-on-write, exact native
+  `TypeError` objects, object/resource values, and native lowering.

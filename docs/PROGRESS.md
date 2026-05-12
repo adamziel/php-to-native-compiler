@@ -237,6 +237,14 @@ Implemented:
   are merged left to right with the same integer reindexing and string-key
   overwrite rules, string-valued dynamic calls use the same path, and stable
   diagnostics name the first non-array positional operand.
+- Added `array_combine($keys, $values)` support for the current ordered array
+  value model. The supported slice accepts two equal-length arrays, reads key
+  values and value values in insertion-order lockstep, converts integer and
+  string key values through the current array-key normalization rules, stores
+  cloned values from the second array, overwrites duplicate result keys with
+  later pairs without moving the first result-key slot, supports empty arrays
+  and string-valued dynamic calls, and has stable diagnostics for non-array
+  operands, length mismatches, and unsupported non-int/string key values.
 - Added `array_flip($array)` support for the current ordered array value model.
   The supported slice uses integer and string source values as result keys with
   the current string-key normalization rules, writes original integer/string
@@ -523,8 +531,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 54 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 39 focused array value tests.
+- `cargo test -p php_runtime` passes with 56 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 41 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
 - `cargo test -p php_runtime array_pad` passes with 3 focused array-padding
@@ -537,6 +545,8 @@ Tested:
   loose key-filtering, and strict key-filtering runtime tests.
 - `cargo test -p php_runtime array_merge` passes with 2 focused
   array-combination runtime tests.
+- `cargo test -p php_runtime array_combine` passes with 2 focused
+  array-pairing runtime tests.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
   runtime tests.
 - `cargo test -p php_runtime array_fill_keys` passes with 2 focused
@@ -711,6 +721,11 @@ Tested:
   negative left-padding, no-op key-shape preservation, empty-array padding,
   dynamic string-call coverage, original-array preservation, non-array/non-int
   diagnostics, oversized-padding diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_combine` passes with integer/string
+  key-value conversion, duplicate-key overwrite behavior, empty-array
+  behavior, dynamic string-call coverage, original-array preservation,
+  non-array diagnostics, length-mismatch diagnostics, unsupported-key
+  diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -757,6 +772,8 @@ Tested:
   1 CLI snapshot test covering the Milestone 35 `array_is_list` fixture.
 - `cargo test -p phpc --test array_padding_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 36 `array_pad` fixture.
+- `cargo test -p phpc --test array_pairing_builtins_cli` passes with 1 CLI
+  snapshot test covering the Milestone 37 `array_combine` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -965,6 +982,14 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_second_non_array.php:3:6: unsupported call array_merge(): second argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_third_non_array.php:4:6: unsupported call array_merge(): third argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_first_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_first_non_array.php:3:6: unsupported call array_combine(): first argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_second_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_second_non_array.php:3:6: unsupported call array_combine(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_length_mismatch.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_length_mismatch.php:4:6: unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_unsupported_key.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_unsupported_key.php:4:6: unsupported call array_combine(): key values must be int or string in the current subset, got bool`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
@@ -1267,6 +1292,13 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone36` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone36` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone37/array_combine.php`
+  prints the committed `array_combine` output with integer/string key-value
+  conversion, duplicate-key overwrites, empty-array behavior, original-array
+  preservation, and string-valued dynamic calls to `array_combine`.
+- `cargo run -p phpc -- test tests/fixtures/milestone37` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone37` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1386,8 +1418,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone36/array_pad.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 180 fixtures, 75 system PHP comparisons,
-  and 105 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone37/array_combine.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 185 fixtures, 76 system PHP comparisons,
+  and 109 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1472,6 +1507,13 @@ Still fails:
   copy-on-write containers, object handle identity preservation, resource
   values, exact native `TypeError` objects, and native lowering are not
   implemented.
+  `array_combine` is limited to equal-length array operands whose key values
+  are integers or strings. Unsupported `null`, bool, float, array, object,
+  future resource, and reference key values fail with a stable project
+  diagnostic instead of PHP's broader key coercions or native exception
+  behavior; references, copy-on-write containers, object handle identity
+  preservation for object values, resource values, exact native
+  `ValueError`/`TypeError` objects, and native lowering are not implemented.
   `array_flip` is limited to arrays whose source values are integers or
   strings. Unsupported `null`, bool, float, array, object, future resource, and
   reference values fail with a stable project diagnostic instead of PHP's
@@ -1593,6 +1635,7 @@ Still fails:
 
 Next:
 
-- Implement `array_combine($keys, $values)` over the current ordered array
-  value model while keeping exact native `ValueError`/`TypeError` objects,
-  references, copy-on-write, and native lowering explicitly unsupported.
+- Implement `array_intersect_key($left, $right)` over the current ordered
+  integer/string key model while keeping variadic operands, references,
+  copy-on-write, exact native `TypeError` objects, and native lowering
+  explicitly unsupported.

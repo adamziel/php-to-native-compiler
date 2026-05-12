@@ -1280,6 +1280,30 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_combine" => {
+                expect_arity(name, &args, 2, span)?;
+                match args.as_slice() {
+                    [Value::Array(keys), Value::Array(values)] => keys
+                        .combined_with(values)
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    [Value::Array(_), other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_combine()",
+                            format!("second argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    [other, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_combine()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    _ => unreachable!("array_combine arity is checked above"),
+                }
+            }
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -1956,6 +1980,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_merge"
             | "array_flip"
             | "array_fill_keys"
+            | "array_combine"
             | "array_count_values"
             | "array_filter"
             | "array_map"

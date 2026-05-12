@@ -5091,3 +5091,64 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T08:39:22Z
 
 - Post-round 80 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T08:39:27Z
+
+- Starting round 81 at 20260512T083927Z from HEAD `c873211`.
+
+## Loop Event 2026-05-12T08:39:32Z
+
+- Pre-round 81 test exit code: `0`.
+
+## Loop Event 2026-05-12T08:53:21Z
+
+- Task attempted: implemented `array_combine($keys, $values)` over the current
+  ordered array value model. The supported slice accepts two equal-length
+  arrays, reads key values and value values in insertion-order lockstep,
+  converts integer and string key values through current array-key
+  normalization, stores cloned values from the second array, overwrites
+  duplicate result keys with later pairs without moving the first result-key
+  slot, supports empty arrays and string-valued dynamic calls, and reports
+  stable diagnostics for non-array operands, length mismatches, and unsupported
+  non-int/string key values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_combine.rs`,
+  `compiler/tests/array_pairing_builtins_cli.rs`,
+  `tests/fixtures/milestone37/array_combine.*`,
+  `tests/fixtures/runtime_errors/array_combine_first_non_array.*`,
+  `tests/fixtures/runtime_errors/array_combine_second_non_array.*`,
+  `tests/fixtures/runtime_errors/array_combine_length_mismatch.*`,
+  `tests/fixtures/runtime_errors/array_combine_unsupported_key.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime array_combine` passed with
+  2 focused runtime tests; `cargo test -p phpc --test array_combine` passed
+  with 6 tests; `cargo run -p phpc -- test tests/fixtures/milestone37` passed
+  with 1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone37` passed with 1 system PHP comparison; `cargo test
+  -p phpc --test array_pairing_builtins_cli` passed; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo fmt --all` applied formatting;
+  `cargo fmt --all --check` passed; `git diff --check` passed; `cargo run -p
+  phpc -- run tests/fixtures/milestone37/array_combine.php` printed the
+  committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_combine_length_mismatch.php` exited `1`
+  with the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone37/array_combine.php --emit-ir` exited `1` with the
+  current explicit array native-lowering rejection; `cargo test -p
+  php_runtime` passed with 56 runtime unit tests; `cargo test -p php_runtime
+  array_` passed with 41 focused array tests; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 75 fixtures; `tools/run-tests.sh`
+  passed with 185 fixtures, 76 system PHP comparisons, and 109 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_combine` is limited to equal-length array
+  operands whose key values are integers or strings. Bool/null/float
+  key-value coercions, array/object/resource/reference key values, exact native
+  `ValueError`/`TypeError` objects, references, copy-on-write containers,
+  object handle identity preservation for object values, resource values, and
+  native lowering remain unsupported.
+- Next concrete task: implement `array_intersect_key($left, $right)` over the
+  current ordered integer/string key model while keeping variadic operands,
+  references, copy-on-write, exact native `TypeError` objects, object/resource
+  values, and native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_combine builtin"`
+  after the full suite passes.

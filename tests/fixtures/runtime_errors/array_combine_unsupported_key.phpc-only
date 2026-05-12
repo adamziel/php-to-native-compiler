@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; broader PHP key coercions beyond int/string values are not implemented.

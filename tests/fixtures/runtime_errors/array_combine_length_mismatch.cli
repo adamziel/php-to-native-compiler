@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_combine_length_mismatch.php:4:6: unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1
+--- stderr end ---

@@ -75,10 +75,10 @@
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
-  `array_pad`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
-  minimal object values
+  `array_pad`, `array_merge`, `array_combine`, `array_flip`,
+  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
+  `in_array`, `array_search`, `var_dump`, and `print_r`; `print_r` can render
+  current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -93,7 +93,9 @@
   non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
   preserve-key flag values, non-array `array_pad` operands, non-int
   `array_pad` lengths, oversized `array_pad` padding requests, non-array
-  `array_merge` operands, non-array `array_flip` operands, unsupported
+  `array_merge` operands, non-array `array_combine` operands,
+  `array_combine` length mismatches, unsupported non-int/string
+  `array_combine` key values, non-array `array_flip` operands, unsupported
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
   `array_count_values` operands, unsupported non-int/string
@@ -286,7 +288,14 @@
   appends and reindexes integer-keyed entries from zero, preserves string keys,
   and overwrites duplicate string-key values with later values without moving
   the original string-key slot. It is also available through string-valued
-  dynamic function calls. `array_flip($array)` accepts arrays, converts
+  dynamic function calls. `array_combine($keys, $values)` accepts two arrays
+  with the same number of entries, reads key values and value values in
+  insertion-order lockstep, uses integer key values directly as result keys,
+  normalizes string key values through the current PHP-style decimal string key
+  rules, stores cloned values from the second array, and overwrites duplicate
+  result keys with later pairs without moving the first result-key position.
+  It is also available through string-valued dynamic function calls.
+  `array_flip($array)` accepts arrays, converts
   integer and string array values into result keys using the current array-key
   normalization rules, writes each original integer/string key as the result
   value, overwrites duplicate flipped keys with later values without moving the
@@ -408,9 +417,10 @@
   `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
   non-bool `array_chunk` preserve-key flag values, non-array `array_pad`
   operands, non-int `array_pad` lengths, oversized `array_pad` padding
-  requests, non-array `array_merge` operands, non-array `array_flip`
-  operands, unsupported non-int/string `array_flip` values, non-array
-  `array_fill_keys` operands,
+  requests, non-array `array_merge` operands, non-array `array_combine`
+  operands, `array_combine` length mismatches, unsupported non-int/string
+  `array_combine` key values, non-array `array_flip` operands, unsupported
+  non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
   `array_count_values` operands, unsupported non-int/string
   `array_count_values` values, non-array `array_filter` operands, non-string
@@ -440,7 +450,7 @@
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
-  `array_pad`, `array_merge`, `array_flip`, `array_fill_keys`,
+  `array_pad`, `array_merge`, `array_combine`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
@@ -473,9 +483,10 @@
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
-  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
-  `print_r` cover the documented scalar/array/object subset.
+  `array_merge`, `array_combine`, `array_flip`, `array_fill_keys`,
+  `array_count_values`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, `var_dump`, and `print_r` cover the documented
+  scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -568,6 +579,19 @@
   positional argument. References, copy-on-write containers, object handle
   identity preservation, resource values, exact native `TypeError` objects, and
   native lowering are not implemented.
+  `array_combine($keys, $values)` accepts two array operands with equal entry
+  counts, reads both arrays in insertion order, converts integer and string
+  values from the first array into result keys using the current key
+  normalization rules, and stores cloned values from the second array.
+  Duplicate result keys are overwritten by later pairs without moving the first
+  result-key position. Empty key/value arrays return an empty array. Non-array
+  operands, length mismatches, and unsupported key values fail with stable
+  project diagnostics. Bool, null, float, array, object, future resource, and
+  reference key-value coercions, exact native `ValueError`/`TypeError` objects,
+  references, copy-on-write containers, object handle identity preservation for
+  object values, resource values, and native lowering are not implemented.
+  `array_combine` is also available through string-valued dynamic function
+  calls.
   `array_flip($array)` accepts arrays only, uses integer values directly as
   result keys, normalizes string values through the current PHP-style decimal
   string key rules, and writes each original integer/string key as the result
@@ -672,9 +696,10 @@
   expression operands, and unsupported array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
-  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, and both current
-  `foreach` array forms follow the current by-value model; PHP
+  `array_merge`, `array_combine`, `array_flip`, `array_fill_keys`,
+  `array_count_values`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, and both current `foreach` array forms follow the current
+  by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
@@ -684,7 +709,8 @@
   non-int/non-positive length coercion, non-int `array_pad` length coercion,
   oversized `array_pad` native `ValueError` objects, exact native
   `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
-  behavior, `array_flip` warning-and-skip behavior for
+  behavior, `array_combine` key coercions beyond integer/string values,
+  `array_combine` object/resource key values, `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
   for unsupported key values, `array_count_values` warning-and-skip behavior
   for unsupported values, and `array_filter` callback forms outside the current
@@ -833,6 +859,10 @@
 - `array_merge` reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
+- `array_combine` key-value coercions beyond integers and strings, length
+  mismatch native `ValueError` objects, non-array native `TypeError` objects,
+  reference/copy-on-write behavior, object handle identity preservation for
+  object values, resource values, and native lowering
 - `array_flip` warning-and-skip behavior for unsupported source values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering
