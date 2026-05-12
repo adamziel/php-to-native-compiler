@@ -3722,3 +3722,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   documentation, and explicit native-codegen rejection.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_key_first builtin"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T05:16:25Z
+
+- Codex round 59 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T050905Z-59.log`.
+
+## Loop Event 2026-05-12T05:16:29Z
+
+- Post-round 59 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:16:29Z
+
+- Post-round 59 tests passed; running checkpoint for this round.
