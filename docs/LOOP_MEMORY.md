@@ -990,3 +990,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   visibility enforcement unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add minimal instantiation"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T00:23:54Z
+
+- Codex round 16 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T001245Z-16.log`.
+
+## Loop Event 2026-05-12T00:23:56Z
+
+- Post-round 16 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:23:56Z
+
+- Post-round 16 tests passed; running checkpoint for this round.
