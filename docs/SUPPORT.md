@@ -69,8 +69,9 @@
 - top-level single and grouped `const NAME = value;` declarations for
   unqualified constant names whose values use the current constant-expression
   subset: `null`, booleans, integers, floats, strings, short and long arrays
-  with supported keys, unary expressions, and binary expressions over those
-  values
+  with supported keys, unary expressions, binary expressions over those values,
+  and bare references to previously defined unqualified constants or the
+  current built-in `ARRAY_FILTER_*` constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -911,16 +912,20 @@
   Top-level single and grouped `const NAME = value;` declarations accept
   unqualified names and the current constant-expression subset (`null`,
   booleans, integers, floats, strings, arrays, unary expressions, and binary
-  expressions over those values). Grouped declarations execute left to right,
-  so duplicate diagnostics point to the later duplicate declarator in the
-  current group. Duplicate definitions, redefinition of the built-in constants,
-  non-string or unsupported names, unsupported object-containing values,
-  unknown `constant(...)` names, non-string or unsupported `defined(...)`
-  names, unknown bare constants, and the legacy third `define(...)` flag fail
-  with stable diagnostics. Constant names that are lexed as language keywords
-  or literals cannot be read bare, and case-insensitive legacy constants,
-  namespace-qualified constants, extension constants, nested declarations,
-  dynamic declaration values, class constants through
+  expressions over those values, plus bare references to previously defined
+  unqualified constants and the current exact built-in `ARRAY_FILTER_*`
+  constants). Grouped declarations execute left to right, so references to
+  earlier declarators in the same group work and duplicate diagnostics point to
+  the later duplicate declarator in the current group. Duplicate definitions,
+  redefinition of the built-in constants, forward or otherwise undefined const
+  declaration references, non-string or unsupported names, unsupported
+  object-containing values, unknown `constant(...)` names, non-string or
+  unsupported `defined(...)` names, unknown bare constants, and the legacy
+  third `define(...)` flag fail with stable diagnostics. Constant names that
+  are lexed as language keywords or literals cannot be read bare, and
+  case-insensitive legacy constants, namespace-qualified constants, extension
+  constants, nested declarations, dynamic declaration values, class constants
+  through
   `constant(...)`/`defined(...)`, references/copy-on-write behavior, and native
   lowering are not implemented.
   Array/object callables, closures, first-class callables, method calls,

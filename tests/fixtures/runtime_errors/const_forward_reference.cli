@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/const_forward_reference.php:2:17: undefined constant LATER
+--- stderr end ---

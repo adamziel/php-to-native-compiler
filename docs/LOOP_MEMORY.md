@@ -7089,3 +7089,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T16:16:05Z
 
 - Post-round 15 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T16:16:12Z
+
+- Starting round 16 at 20260512T161612Z from HEAD `72926a6`.
+
+## Loop Event 2026-05-12T16:16:20Z
+
+- Pre-round 16 test exit code: `0`.
+
+## Loop Event 2026-05-12T16:24:43Z
+
+- Task attempted: implemented Milestone 67 constant-expression references for
+  top-level `const` declarations. Const declaration values may now reference
+  previously defined unqualified constants from earlier `define(...)` calls,
+  earlier `const` declarations, earlier declarators in the same grouped
+  declaration, and the exact built-in `ARRAY_FILTER_*` constant slice. Forward
+  references fail with the existing stable undefined-constant diagnostic.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`, `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone67/const_declaration_references.*`,
+  `tests/fixtures/runtime_errors/const_forward_reference.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed;
+  `cargo test -p phpc --test dynamic_features` passed with 31 tests;
+  `cargo test -p phpc --test user_constants_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone67` passed with 1
+  fixture after fixing expected stdout newline formatting;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone67` passed
+  with 1 system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 112 fixtures; `cargo run -p phpc
+  -- run tests/fixtures/milestone67/const_declaration_references.php` printed
+  the committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/const_forward_reference.php` exited `1` with
+  the expected stable diagnostic; `tools/run-tests.sh` passed with 252
+  fixtures, 103 system PHP comparisons, and 149 `.phpc-only` skips.
+- Remaining semantic gaps: forward references, namespace-aware constants,
+  class constants, constants whose names lex as language keywords/literals for
+  bare reads, dynamic declaration values, references/copy-on-write behavior,
+  exact native PHP error objects, and native lowering remain unsupported.
+- Next concrete task: allow user-function default parameter values to
+  reference previously defined unqualified constants and the current built-in
+  global constant slice.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: allow const declaration references"`
+  after the full suite passes.

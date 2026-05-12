@@ -541,6 +541,47 @@ echo read_grouped_const(), "\n";
 }
 
 #[test]
+fn top_level_const_declaration_values_can_reference_prior_constants() {
+    let execution = run_source(
+        r#"<?php
+define("RUNTIME_BASE", 3);
+const FROM_DEFINE = RUNTIME_BASE + 1;
+const BASE = "compiler";
+const VERSION = 2, DOUBLE_VERSION = VERSION * 2, LABEL = BASE . ":" . DOUBLE_VERSION;
+const FILTER_MODE = ARRAY_FILTER_USE_BOTH;
+const ITEMS = [BASE => LABEL, "mode" => FILTER_MODE, "key-mode" => ARRAY_FILTER_USE_KEY, "from-define" => FROM_DEFINE];
+echo LABEL, "|", FILTER_MODE, "|", ITEMS["compiler"], "|", ITEMS["mode"], "|", ITEMS["key-mode"], "|", ITEMS["from-define"], "\n";
+function read_referenced_const() {
+    return LABEL . ":" . ARRAY_FILTER_USE_KEY;
+}
+echo read_referenced_const(), "\n";
+$name = "DOUBLE_VERSION";
+echo constant($name), "|", FROM_DEFINE, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "compiler:4|1|compiler:4|1|2|4\ncompiler:4:2\n4|4\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn forward_const_declaration_references_have_stable_runtime_diagnostics() {
+    let error = runtime_error(
+        r#"<?php
+const FORWARD = LATER, LATER = "done";
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 17);
+    assert_eq!(error.message, "undefined constant LATER");
+}
+
+#[test]
 fn duplicate_top_level_const_declarations_have_stable_diagnostics() {
     let duplicate = runtime_error(
         r#"<?php

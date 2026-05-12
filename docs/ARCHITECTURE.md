@@ -110,7 +110,8 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   string-name and scalar/array value subset. Top-level single and grouped
   `const NAME = value;` declarations define unqualified constants at statement
   execution time over the current constant-expression and scalar/array value
-  subset
+  subset, including references to previously defined unqualified constants and
+  the current built-in constant slice
 
 Only the string-valued dynamic function lookup slice is executable today.
 Variable-variable execution, include/require execution, and `eval` remain design

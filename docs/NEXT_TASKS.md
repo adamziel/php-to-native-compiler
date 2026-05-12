@@ -675,9 +675,18 @@ handled.
 
 ## Milestone 67: Constant Expression References
 
-- [ ] Allow top-level `const` declaration values to reference previously
-  declared unqualified constants and the current built-in global constant
+- [x] Allow top-level `const` declaration values to reference previously
+  defined unqualified constants and the current built-in global constant
   slice, including left-to-right grouped declaration behavior, undefined-name
   diagnostics, fixture CLI coverage, documentation, and explicit gaps for
   forward references, namespace-aware constants, class constants,
   references/copy-on-write, dynamic values, and native lowering.
+
+## Milestone 68: Default Parameter Constant References
+
+- [ ] Allow user-function default parameter values to reference previously
+  defined unqualified constants and the current built-in global constant slice,
+  including omitted-argument behavior, undefined-name diagnostics, fixture CLI
+  coverage, documentation, and explicit gaps for forward references,
+  namespace-aware constants, class constants, dynamic defaults,
+  references/copy-on-write, and native lowering.

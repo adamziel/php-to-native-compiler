@@ -60,7 +60,8 @@ subset:
   user-constant reads support unqualified names over the documented
   scalar/array value subset; top-level single and grouped `const NAME = value;`
   declarations are executable over the current constant-expression and
-  scalar/array value subset
+  scalar/array value subset, including references to previously defined
+  unqualified constants and the current built-in constant slice
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
