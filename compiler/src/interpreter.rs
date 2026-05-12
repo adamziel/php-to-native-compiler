@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
 
 use php_runtime::{
@@ -543,6 +544,7 @@ impl Interpreter {
             Expr::MagicFile { .. } => {
                 Ok(Value::String(self.source_file.clone().unwrap_or_default()))
             }
+            Expr::MagicDir { .. } => Ok(Value::String(self.magic_dir_value())),
             Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
@@ -721,6 +723,20 @@ impl Interpreter {
         }
 
         Ok(Value::Array(array))
+    }
+
+    fn magic_dir_value(&self) -> String {
+        let Some(source_file) = &self.source_file else {
+            return String::new();
+        };
+        let Some(parent) = Path::new(source_file).parent() else {
+            return ".".to_string();
+        };
+        if parent.as_os_str().is_empty() {
+            ".".to_string()
+        } else {
+            parent.to_string_lossy().into_owned()
+        }
     }
 
     fn evaluate_array_index(

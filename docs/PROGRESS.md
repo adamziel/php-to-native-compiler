@@ -2290,15 +2290,16 @@ Still fails:
   arguments, and `declare(strict_types=1)` now fail with explicit parse
   diagnostics. Static local variable declarations inside functions also fail
   with an explicit parse diagnostic before static local storage exists.
-  `__LINE__` evaluates from expression source spans, and `__FILE__` evaluates
-  from the current `phpc run` input path string when one is available. Other
-  magic constants fail with explicit parse diagnostics before
-  source/context-aware magic constant evaluation exists.
+  `__LINE__` evaluates from expression source spans, `__FILE__` evaluates
+  from the current `phpc run` input path string when one is available, and
+  `__DIR__` evaluates as that path's parent directory. Other magic constants
+  fail with explicit parse diagnostics before source/context-aware magic
+  constant evaluation exists.
   Nullable, union, and intersection types, `mixed`, `void`/`never`,
   class/interface type names, coercive versus strict typing, variance, runtime
   type enforcement, static local initialization expressions, per-function
   persistence, references, recursion/reentrancy behavior, canonical absolute
-  `__FILE__` paths matching PHP exactly, `__DIR__` magic constant source
+  `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source
   mapping, function/method/class magic constant context,
   namespace and trait magic constants, native static-local lowering, magic
   constant lowering, and native type lowering are not implemented.
@@ -2340,11 +2341,11 @@ Still fails:
   previously defined unqualified constants and the current built-in
   `ARRAY_FILTER_*` constants. Forward references, other built-in constants,
   names lexed as language keywords or literals for bare reads, magic constants
-  other than `__LINE__` and `__FILE__`, case-insensitive legacy constants,
-  extension constants, namespace-qualified constants, nested declarations, dynamic
-  declaration values, class constants through `constant()`/`defined()`,
-  references/copy-on-write behavior for constant values, and native lowering
-  for constants are not implemented.
+  other than `__LINE__`, `__FILE__`, and `__DIR__`, case-insensitive legacy
+  constants, extension constants, namespace-qualified constants, nested
+  declarations, dynamic declaration values, class constants through
+  `constant()`/`defined()`, references/copy-on-write behavior for constant
+  values, and native lowering for constants are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
@@ -2358,8 +2359,16 @@ Still fails:
   object-to-string conversion, object callables, reflection, and native lowering
   are not implemented.
 
+- Added `__DIR__` as the third executable magic constant, evaluated from the
+  current `phpc run` input path's parent directory in ordinary expressions,
+  default parameter values, and top-level `const` declarations. Path-less
+  library execution currently evaluates it as an empty string, paths without a
+  parent directory evaluate to `.`, canonical PHP absolute path behavior and
+  eval/include source mapping remain unsupported, and native lowering still
+  rejects it explicitly.
+
 Next:
 
-- Implement `__DIR__` as the next executable magic constant over the current
-  input path boundary while keeping eval/include source mapping and
-  function/method/class context constants explicitly unsupported.
+- Implement `__FUNCTION__` as the next executable magic constant for the
+  current user-function context while keeping method/class/trait/namespace
+  context constants and native lowering explicitly unsupported.

@@ -490,16 +490,52 @@ fn emit_ir_rejects_magic_file_until_native_source_mapping_exists() {
 }
 
 #[test]
-fn magic_constants_except_line_and_file_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-echo __dir__;
+fn magic_dir_constant_evaluates_from_current_source_file_directory_when_available() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+echo __DIR__, "\n";
+$dir = __DIR__;
+echo $dir, "\n";
+function default_dir($dir = __DIR__) {
+    echo $dir, "\n";
+}
+const DECLARED_DIR = __DIR__;
+default_dir();
+echo DECLARED_DIR, "\n";
 "#,
-            2,
-            6,
-            "__DIR__",
-        ),
+        "virtual/input.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "virtual\nvirtual\nvirtual\nvirtual\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_dir_constant_uses_dot_for_source_file_without_parent_directory() {
+    let execution =
+        run_source_with_source_file("<?php\necho __DIR__, \"\\n\";\n", "input.php").unwrap();
+
+    assert_eq!(execution.stdout, ".\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_magic_dir_until_native_source_mapping_exists() {
+    let error = emit_ir_source("<?php\necho __DIR__;\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert!(
+        error.message.contains("__DIR__") && error.message.contains("not LLVM IR emission yet"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn magic_constants_except_line_file_and_dir_are_rejected_with_stable_parse_error() {
+    let cases = [
         (
             r#"<?php
 function current_name() {

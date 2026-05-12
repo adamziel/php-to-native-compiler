@@ -7496,3 +7496,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:18:40Z
 
 - Post-round 22 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:18:48Z
+
+- Starting round 23 at 20260512T171848Z from HEAD `d97ff83`.
+
+## Loop Event 2026-05-12T17:18:55Z
+
+- Pre-round 23 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:24:41Z
+
+- Task attempted: completed Milestone 74 by implementing `__DIR__` as the
+  third executable magic constant. The parser now emits a dedicated magic-dir
+  expression, the interpreter derives it from the current `phpc run` input
+  path's parent directory for ordinary expressions, default parameter values,
+  and top-level `const` declarations, and LLVM/assembly emission reject it
+  explicitly until native source mapping exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone74/magic_dir.*`, `README.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo check -p phpc` passed; `cargo test -p phpc
+  --test functions_and_scopes magic_dir` passed; `cargo test -p phpc --test
+  functions_and_scopes magic` passed; `cargo test -p phpc --test
+  magic_constants_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone74` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone74` passed with 1 `.phpc-only`
+  skip; direct `cargo run -p phpc -- run
+  tests/fixtures/milestone74/magic_dir.php` printed the current input path's
+  parent directory four times; direct `cargo run -p phpc -- compile
+  tests/fixtures/milestone74/magic_dir.php --emit-ir` exited `1` with the
+  expected `__DIR__` native-lowering rejection; `tools/run-tests.sh` passed
+  with 261 fixtures, 105 system PHP comparisons, and 156 skips.
+- Remaining semantic gaps: `__DIR__` derives from the current input path string
+  and does not guarantee PHP's canonical absolute directory in all entry paths.
+  Path-less library execution evaluates it as an empty string. Eval/include
+  source mapping, `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`,
+  `__NAMESPACE__`, references/copy-on-write interactions, exact PHP error
+  objects, and native lowering for magic constants remain unsupported.
+- Next concrete task: implement `__FUNCTION__` as the next executable magic
+  constant for the current user-function context.
+- Checkpoint: pending `tools/checkpoint.sh "parser: execute __DIR__ magic constant"`
+  after the full suite passes.
