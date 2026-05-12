@@ -439,6 +439,15 @@ impl PhpArray {
         Ok(key)
     }
 
+    pub fn values_reindexed(&self) -> Self {
+        let mut array = Self::new();
+        for (index, entry) in self.entries.iter().enumerate() {
+            let key = i64::try_from(index).expect("array length fits in i64");
+            array.insert(key, entry.value.clone());
+        }
+        array
+    }
+
     fn bump_next_auto_index(&mut self, key: &ArrayKey) {
         let ArrayKey::Int(value) = key else {
             return;
@@ -1638,6 +1647,39 @@ mod tests {
                 ArrayKey::Int(5),
                 ArrayKey::Int(6),
             ]
+        );
+    }
+
+    #[test]
+    fn array_values_reindexes_entries_in_insertion_order() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert("2", Value::String("two updated".to_string()));
+
+        let values = array.values_reindexed();
+        let entries = values.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(2));
+        assert_eq!(entries[2].value, Value::String("two updated".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(3));
+        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert!(values.contains_key(0));
+        assert!(values.contains_key(3));
+        assert!(!values.contains_key("name"));
+        assert!(!values.contains_key(5));
+        assert_eq!(
+            array.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_values must not mutate the original array"
         );
     }
 

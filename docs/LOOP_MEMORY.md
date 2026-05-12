@@ -1988,3 +1988,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:53:49Z
 
 - Post-round 33 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:53:52Z
+
+- Starting round 34 at 20260512T015352Z from HEAD `706120d`.
+
+## Loop Event 2026-05-12T01:53:54Z
+
+- Pre-round 34 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:59:39Z
+
+- Task attempted: implemented `array_values($array)` for the current ordered
+  array value model. The supported slice preserves value insertion order,
+  returns a new array reindexed with integer keys starting at zero, participates
+  in string-valued dynamic function lookup, and has a stable diagnostic for
+  non-array arguments.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_values.rs`,
+  `tests/fixtures/milestone7/array_values.*`,
+  `tests/fixtures/runtime_errors/array_values_non_array.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed after formatting was required;
+  `cargo test -p php_runtime array_values_reindexes_entries_in_insertion_order`
+  passed; `cargo test -p phpc --test array_values` passed with 2 tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone7` passed with 4
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone7` passed with 4 system PHP comparisons; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 25 fixtures;
+  `cargo test -p phpc --test array_refinements_cli` passed; `cargo test -p
+  phpc --test runtime_error_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone7/array_values.php` printed the committed
+  `array_values` reindexing output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_values_non_array.php` exited `1` with
+  the expected stable diagnostic; `tools/run-tests.sh` passed with 91
+  fixtures, 34 system PHP comparisons, and 57 `.phpc-only` skips.
+- Remaining semantic gaps: `array_values` is limited to array arguments in the
+  current ordered array value model. It clones values under the current
+  by-value model and does not implement PHP references, copy-on-write
+  containers, exact native `TypeError` objects, or native lowering for function
+  calls.
+- Next concrete task: implement `array_keys($array)` for the current ordered
+  array value model, including integer/string key value emission, non-array
+  diagnostics, fixture CLI coverage, and documented gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_values builtin"`
+  after the full suite passes.

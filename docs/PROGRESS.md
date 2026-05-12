@@ -174,6 +174,11 @@ Implemented:
   missing keys, is available through string-valued dynamic function calls, and
   has stable diagnostics for unsupported key values and non-array second
   arguments.
+- Added `array_values($array)` support for the current ordered array value
+  model. The supported slice preserves value insertion order, returns a new
+  array reindexed with integer keys starting at zero, is available through
+  string-valued dynamic function calls, and has a stable diagnostic for
+  non-array arguments.
 - Added `empty(...)` support for direct variables and direct array offsets over
   the current scalar/array value model. The supported slice treats undefined
   variables, missing array keys, undefined array variables, non-array array
@@ -223,13 +228,13 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 17 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 4 focused array value tests.
+- `cargo test -p php_runtime` passes with 18 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 5 focused array value tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
 - `cargo test -p phpc --test runtime_errors` passes with 21 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 24 representative runtime error fixtures.
+  covering 25 representative runtime error fixtures.
 - `cargo test -p phpc --test functions_and_scopes` passes with 17
   user-function scope/default-parameter tests.
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
@@ -267,6 +272,9 @@ Tested:
   `array_key_exists` behavior, null-value contrast against `isset`, dynamic
   string-call coverage, and stable diagnostics for unsupported key values and
   non-array second arguments.
+- `cargo test -p phpc --test array_values` passes with `array_values`
+  reindexing behavior, dynamic string-call coverage, original-array
+  preservation, and stable diagnostics for non-array arguments.
 - `cargo test -p phpc --test empty` passes with direct variable and direct
   array-offset `empty` behavior plus unsupported complex-lvalue coverage.
 - `cargo test -p phpc --test array_refinements_cli` passes with 1 CLI snapshot
@@ -290,9 +298,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_continue_until_native_loop_control_lowering_exists`
   passes with rejection coverage for `continue` statements before native
   loop-control lowering exists.
-- `cargo run -p phpc -- test` passes with 89 fixture tests.
+- `cargo run -p phpc -- test` passes with 91 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 33 fixtures and skipping 56 `.phpc-only` fixtures.
+  installed, comparing 34 fixtures and skipping 57 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -310,10 +318,10 @@ Tested:
   loop-control fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone6` passes
   with 2 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone7` passes with 3
+- `cargo run -p phpc -- test tests/fixtures/milestone7` passes with 4
   array-refinement fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone7` passes
-  with 3 system PHP comparisons.
+  with 4 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -348,7 +356,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 23
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 25
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -360,6 +368,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3:6: invalid array key: bool keys are not supported; only int and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_non_array.php:2:6: unsupported call array_key_exists(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_values_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_values_non_array.php:2:6: unsupported call array_values(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -440,6 +450,8 @@ Tested:
   prints the committed direct array-offset `isset` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone7/array_key_exists.php`
   prints the committed `array_key_exists` output.
+- `cargo run -p phpc -- run tests/fixtures/milestone7/array_values.php`
+  prints the committed `array_values` reindexing output.
 - `cargo run -p phpc -- run tests/fixtures/milestone7/empty.php`
   prints the committed direct-variable and direct array-offset `empty` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php`
@@ -528,11 +540,13 @@ Still fails:
   expression operands, unsupported key coercions, and dynamic access to
   `empty` are not implemented. `array_key_exists` is limited to integer/string
   keys and array second arguments; PHP's broader key coercions and
-  warning/TypeError details are not modeled. Writes to existing non-array
-  scalar variables other than `null` are rejected instead of following PHP's
-  full automatic conversion behavior. Negative-key auto-index behavior is not
-  claimed beyond the current non-negative allocator, and arrays still reject
-  native lowering.
+  warning/TypeError details are not modeled. `array_values` is limited to array
+  arguments, clones values under the current by-value model, and does not yet
+  model PHP references or copy-on-write containers. Writes to existing
+  non-array scalar variables other than `null` are rejected instead of following
+  PHP's full automatic conversion behavior. Negative-key auto-index behavior is
+  not claimed beyond the current non-negative allocator, and arrays still
+  reject native lowering.
 - Loop-control execution is limited to statement-form `break;` and `continue;`
   inside active `while` loops. Loop-depth arguments, invalid
   top-level/function-level loop control recovery beyond the stable runtime
@@ -596,5 +610,6 @@ Still fails:
 
 Next:
 
-- Implement `array_values($array)` for the current ordered array value model,
-  including reindexing behavior, fixture CLI coverage, and documented gaps.
+- Implement `array_keys($array)` for the current ordered array value model,
+  including integer/string key value emission, fixture CLI coverage, and
+  documented gaps.

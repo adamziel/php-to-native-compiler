@@ -118,6 +118,9 @@ handled.
   the current scalar/array value model, including undefined, missing, `null`,
   false, zero, empty string, and string `"0"` behavior, unsupported complex
   lvalue diagnostics, fixture CLI coverage, and documented gaps.
-- [ ] Implement `array_values($array)` for the current ordered array value
+- [x] Implement `array_values($array)` for the current ordered array value
   model, including integer reindexing behavior, non-array diagnostics, fixture
+  CLI coverage, and documented gaps.
+- [ ] Implement `array_keys($array)` for the current ordered array value model,
+  including integer/string key value emission, non-array diagnostics, fixture
   CLI coverage, and documented gaps.
