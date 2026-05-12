@@ -48,8 +48,8 @@ Implemented now:
 - `Float`
 - `String`
 - ordered PHP arrays with integer/string keys
-- internal class metadata and object-shape descriptors; PHP object syntax is
-  not executable yet
+- class metadata and object-shape descriptors; top-level class declarations can
+  register metadata, but PHP object syntax is not executable yet
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -107,17 +107,24 @@ implemented dynamic-call subset.
 
 ## Object/Class Metadata Boundary
 
-The first object/class step is a runtime metadata model, not executable PHP
+The current object/class step is metadata registration, not executable PHP
 object syntax. `php_runtime` has a `PhpClassTable`, stable `ClassId` handles,
 class metadata, property metadata, method metadata, visibility markers, and
 derived object shapes for instance-property layout. Class and method lookup are
 case-insensitive, property lookup is case-sensitive, and duplicate class/member
 metadata produces structured runtime errors.
 
-`phpc run` still rejects `class`, `new`, and `->` syntax with stable parse
-diagnostics. See `docs/OBJECT_MODEL.md` for the initial model and the named
-unsupported edge cases that must stay rejected until object values and dispatch
-exist.
+`phpc run` parses top-level `class Name { ... }` declarations into that
+metadata registry. The accepted member subset records public/protected/private
+visibility, static flags, property names without defaults, and method names
+whose parameters/bodies use the existing function parser subset. Class
+declarations do not allocate objects, bind `$this`, execute methods, or expose
+reflection.
+
+`phpc run` still rejects `new` and `->` syntax with stable parse diagnostics,
+and native lowering rejects class declarations explicitly. See
+`docs/OBJECT_MODEL.md` for the named unsupported edge cases that must stay
+rejected until object values and dispatch exist.
 
 ## Include/Require Resolution Design
 

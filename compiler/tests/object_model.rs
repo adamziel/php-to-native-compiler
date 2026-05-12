@@ -1,5 +1,6 @@
 use php_compiler::error::{Diagnostic, Phase};
-use php_compiler::run_source;
+use php_compiler::{class_metadata_source, run_source};
+use php_runtime::Visibility;
 
 fn parse_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -8,16 +9,107 @@ fn parse_error(source: &str) -> Diagnostic {
 }
 
 #[test]
-fn object_and_class_syntax_is_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+fn class_declarations_register_metadata_without_object_execution() {
+    let source = r#"<?php
+class Box {
+    public $value;
+    private static $cache;
+    protected function compute($input = "x") {
+        return $input;
+    }
+    public static function make() {
+        return "ok";
+    }
+}
+echo "ready\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "ready\n");
+
+    let classes = class_metadata_source(source).unwrap();
+    assert_eq!(classes.classes().len(), 1);
+
+    let class = classes.lookup_class("box").unwrap();
+    assert_eq!(class.name(), "Box");
+    assert_eq!(class.properties().len(), 2);
+    assert_eq!(class.methods().len(), 2);
+
+    let value = class.property("value").unwrap();
+    assert_eq!(value.visibility(), Visibility::Public);
+    assert!(!value.is_static());
+
+    let cache = class.property("cache").unwrap();
+    assert_eq!(cache.visibility(), Visibility::Private);
+    assert!(cache.is_static());
+
+    let compute = class.method("COMPUTE").unwrap();
+    assert_eq!(compute.visibility(), Visibility::Protected);
+    assert!(!compute.is_static());
+
+    let make = class.method("make").unwrap();
+    assert_eq!(make.visibility(), Visibility::Public);
+    assert!(make.is_static());
+}
+
+#[test]
+fn duplicate_class_metadata_has_stable_runtime_errors() {
+    let error = run_source(
+        r#"<?php
 class Box {}
+class box {}
 "#,
-            2,
-            1,
-            "unsupported class declaration: object/class syntax is not implemented",
-        ),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "class box is already defined");
+}
+
+#[test]
+fn duplicate_class_members_have_stable_runtime_errors() {
+    let property_error = run_source(
+        r#"<?php
+class Packet {
+    public $value;
+    private $value;
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(property_error.phase, Phase::Runtime);
+    assert_eq!(property_error.line, 4);
+    assert_eq!(property_error.column, 13);
+    assert_eq!(
+        property_error.message,
+        "class Packet already defines property value"
+    );
+
+    let method_error = run_source(
+        r#"<?php
+class Packet {
+    public function Send() {}
+    private function send() {}
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(method_error.phase, Phase::Runtime);
+    assert_eq!(method_error.line, 4);
+    assert_eq!(method_error.column, 13);
+    assert_eq!(
+        method_error.message,
+        "class Packet already defines method send"
+    );
+}
+
+#[test]
+fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
+    let cases = [
         (
             r#"<?php
 $box = new Box();
@@ -33,6 +125,44 @@ $box->name;
             2,
             5,
             "unsupported object access: object property and method access are not implemented",
+        ),
+        (
+            r#"<?php
+if (true) {
+    class Nested {}
+}
+"#,
+            3,
+            5,
+            "unsupported nested class declaration: only top-level class declarations are implemented",
+        ),
+        (
+            r#"<?php
+class Child extends Base {}
+"#,
+            2,
+            13,
+            "unsupported class inheritance: extends is not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public string $name;
+}
+"#,
+            3,
+            12,
+            "unsupported class member: typed properties, constants, and modifiers beyond visibility/static are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public $name = "Ada";
+}
+"#,
+            3,
+            18,
+            "unsupported property default: property default values are not implemented",
         ),
     ];
 

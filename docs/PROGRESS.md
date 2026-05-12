@@ -120,8 +120,15 @@ Implemented:
   class/member diagnostics, and derived object shapes for future instance
   property layout.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
-  snapshots for unsupported object/class syntax: `class` declarations, `new`
-  expressions, and `->` object access.
+  snapshots for unsupported object/class syntax; after class declarations became
+  metadata-only, the unsupported coverage remains focused on `new`, `->`, and
+  unsupported class forms such as inheritance.
+- Parsed top-level class declarations into the runtime metadata registry while
+  keeping object execution unsupported. The accepted class-member subset records
+  property names, method names, visibility, and static flags; duplicate class
+  and member names route through stable runtime metadata diagnostics. Nested
+  classes, inheritance, typed/default/multiple properties, object
+  instantiation, member access, and native lowering still reject explicitly.
 
 Tested:
 
@@ -130,9 +137,9 @@ Tested:
 - `cargo test -p php_runtime array_` passes with 4 focused array value tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
-- `cargo test -p phpc --test runtime_errors` passes with 10 runtime error tests.
+- `cargo test -p phpc --test runtime_errors` passes with 11 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 12 representative runtime error fixtures.
+  covering 13 representative runtime error fixtures.
 - `cargo test -p phpc --test functions_and_scopes` passes with 17
   user-function scope/default-parameter tests.
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
@@ -146,8 +153,9 @@ Tested:
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
   CLI snapshot test covering 7 unsupported variable-variable,
   include/require, and eval fixtures.
-- `cargo test -p phpc --test object_model` passes with 1 test covering stable
-  parse diagnostics for unsupported object/class syntax.
+- `cargo test -p phpc --test object_model` passes with 4 tests covering class
+  metadata registration, duplicate metadata diagnostics, and stable parse
+  diagnostics for unsupported object/class syntax.
 - `cargo test -p phpc --test unsupported_object_features_cli` passes with 1 CLI
   snapshot test covering 3 unsupported object/class fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
@@ -157,9 +165,11 @@ Tested:
   passes with rejection coverage for `global` declarations.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists`
   passes with rejection coverage for dynamic function calls.
-- `cargo run -p phpc -- test` passes with 52 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_class_declarations_until_native_metadata_lowering_exists`
+  passes with rejection coverage for class declarations.
+- `cargo run -p phpc -- test` passes with 54 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 24 fixtures and skipping 28 `.phpc-only` fixtures.
+  installed, comparing 25 fixtures and skipping 29 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -168,10 +178,10 @@ Tested:
   scope/default-parameter fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
   with 3 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 2 static
-  symbol-table and dynamic-function fixtures.
+- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 3 static
+  symbol-table, dynamic-function, and class-declaration fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone5` passes
-  with 2 system PHP comparisons.
+  with 3 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -201,7 +211,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 12
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 13
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -223,12 +233,16 @@ Tested:
   prints the committed static symbol-table output.
 - `cargo run -p phpc -- run tests/fixtures/milestone5/dynamic_function_lookup.php`
   prints the committed dynamic user-function and builtin lookup output.
+- `cargo run -p phpc -- run tests/fixtures/milestone5/class_declarations.php`
+  prints the committed class metadata registration output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_dynamic_function.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_dynamic_function.php:3:6: undefined function missing()`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/invalid_dynamic_callable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/invalid_dynamic_callable.php:3:6: unsupported call dynamic function call: callable expression must evaluate to string, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/runaway_recursion.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/runaway_recursion.php:3:12: maximum user function call depth exceeded for loop(): limit 128`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/duplicate_class.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/duplicate_class.php:3:1: class box is already defined`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_named_argument.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_function_features/unsupported_named_argument.php:5:12: unsupported named argument: named arguments are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_function_features/unsupported_strict_types.php`
@@ -241,8 +255,8 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval.php:2:1: unsupported eval: eval parsing and caller-scope execution are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2:11: unsupported eval: eval parsing and caller-scope execution are not implemented`.
-- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_declaration.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_declaration.php:2:1: unsupported class declaration: object/class syntax is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_new_expression.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_new_expression.php:2:8: unsupported object instantiation: object/class syntax is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_object_access.php`
@@ -252,6 +266,9 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
   exits 1 with an explicit array codegen rejection before emitting misleading
   native code.
+- `cargo run -p phpc -- compile tests/fixtures/milestone5/class_declarations.php --emit-ir`
+  exits 1 with an explicit class-declaration codegen rejection before emitting
+  misleading native code.
 - `tools/run-tests.sh` passes and now includes optional system PHP comparison.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -318,15 +335,16 @@ Still fails:
   strings, functions/classes declared from evaluated code, nested eval,
   include/require inside eval, and exact PHP `ParseError`/warning behavior are
   not implemented.
-- Object/class execution remains unsupported. The runtime metadata sketch is
-  not wired to PHP syntax yet; `class`, `new`, and `->` fail with stable parse
-  diagnostics. Object values, property storage, `$this`, constructors,
-  inheritance, interfaces, traits, typed properties, constants, static property
-  storage, visibility enforcement, method dispatch, magic methods,
-  namespaces/autoloading, object callables, reflection, and native lowering are
-  not implemented.
+- Object/class execution remains unsupported. Top-level class declarations are
+  metadata-only and do not allocate objects, bind `$this`, execute methods, or
+  expose reflection. `new` and `->` fail with stable parse diagnostics. Nested
+  and conditional classes, inheritance, interfaces, traits, typed/default/
+  multiple properties, constants, static property storage, visibility
+  enforcement, method dispatch, magic methods, namespaces/autoloading, object
+  callables, reflection, and native lowering are not implemented.
 
 Next:
 
-- Continue Milestone 5+ by parsing class declarations into the metadata
-  registry while keeping object instantiation and member access unsupported.
+- Continue Milestone 5+ by adding a minimal object value/instantiation boundary
+  for `new ClassName()` while keeping property access and method dispatch
+  unsupported.

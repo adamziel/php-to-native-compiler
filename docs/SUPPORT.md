@@ -30,6 +30,9 @@
 - `return`
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
+- top-level class declarations registered into the runtime metadata table:
+  `class Name { ... }` with property names, method names, visibility, and static
+  flags for the documented subset
 - short array literals: `[]`, `[value]`, and `[key => value]` for the currently
   supported expression subset
 - ordered arrays with integer and string keys
@@ -42,7 +45,8 @@
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access, unsupported `global`
-  declarations, and runaway user-function recursion
+  declarations, duplicate class/member metadata, and runaway user-function
+  recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, named arguments,
@@ -50,8 +54,10 @@
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
-- explicit parse diagnostics for unsupported object/class syntax: `class`
-  declarations, `new` expressions, and `->` object access
+- explicit parse diagnostics for unsupported object/class syntax: nested class
+  declarations, inheritance, interface implementation, typed/default/multiple
+  property declarations, anonymous class expressions, `new` expressions, and
+  `->` object access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -83,14 +89,18 @@
   references/copy-on-write interactions, `GLOBALS`/superglobal behavior,
   namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
   recovery behavior are not implemented.
-- Object/class metadata: `php_runtime` has a small internal metadata model for
-  future object syntax. It records an ordered class table with stable `ClassId`
+- Object/class metadata: `php_runtime` has a small metadata model for future
+  object syntax. It records an ordered class table with stable `ClassId`
   handles, declared class names with case-insensitive class lookup, ordered
   property metadata with case-sensitive property lookup, ordered method metadata
   with case-insensitive method lookup, visibility flags, static/instance flags,
   object-shape derivation for instance properties, and structured duplicate
-  class/member diagnostics. This metadata is not connected to executable PHP
-  syntax yet. `class`, `new`, and `->` still fail with stable parse diagnostics.
+  class/member diagnostics. `phpc run` now registers top-level class
+  declarations into this metadata table. The accepted member subset records
+  properties without defaults and methods whose parameters/bodies use the
+  existing function parser subset. Class declarations do not allocate objects,
+  bind `$this`, execute methods, or expose reflection. `new` and `->` still
+  fail with stable parse diagnostics.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -119,10 +129,11 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, unresolved dynamic function
   names, non-string dynamic function callees, division by zero, non-numeric
-  string arithmetic, and runaway user-function recursion.
+  string arithmetic, duplicate class metadata, and runaway user-function
+  recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions. Arrays, array indexing, and
-  array assignment are rejected with explicit codegen errors.
+  with statically lowerable scalar expressions. Arrays, array indexing, array
+  assignment, and class declarations are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -164,9 +175,10 @@
   as a special static form, it is not available through dynamic function
   lookup. Object formatting and PHP's complete warning behavior are not
   implemented.
-- Object/class gaps: class declarations, object instantiation, property access,
-  method calls, `$this`, constructors, inheritance, interfaces, traits,
-  abstract/final/readonly modifiers, typed properties, property defaults,
+- Object/class gaps: nested and conditional class declarations, object
+  instantiation, property access, method calls, `$this`, constructors,
+  inheritance, interfaces, traits, abstract/final/readonly modifiers, typed
+  properties, property defaults, multiple properties in one declaration,
   constants, static property storage, late static binding, magic methods,
   namespaces, autoloading, anonymous classes, attributes, reflection, dynamic
   properties, cloning, destructors, serialization hooks, visibility
@@ -213,8 +225,11 @@
   `require_once` currently fail with stable parse diagnostics
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
-- object/class execution; `class`, `new`, and `->` currently fail with stable
-  parse diagnostics
+- object execution; class declarations are metadata-only, while `new` and `->`
+  currently fail with stable parse diagnostics
+- unsupported class forms including nested/conditional declarations,
+  inheritance, interface implementation, typed properties, property defaults,
+  multiple properties in one declaration, constants, and anonymous classes
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

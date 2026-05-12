@@ -103,6 +103,10 @@ impl LlvmGenerator {
                 function.span,
                 "function declarations are not lowered to LLVM IR yet",
             )),
+            Stmt::Class(class) => Err(self.unsupported(
+                class.span,
+                "class declarations are supported by phpc run metadata registration but not LLVM IR emission yet",
+            )),
             Stmt::If { span, .. } => Err(self.unsupported(
                 *span,
                 "if/else is supported by phpc run but not LLVM IR emission yet",
@@ -578,6 +582,10 @@ impl CGenerator {
             Stmt::Function(function) => Err(self.unsupported(
                 function.span,
                 "function declarations are not lowered to assembly yet",
+            )),
+            Stmt::Class(class) => Err(self.unsupported(
+                class.span,
+                "class declarations are supported by phpc run metadata registration but not assembly emission yet",
             )),
             Stmt::If { span, .. } => Err(self.unsupported(
                 *span,

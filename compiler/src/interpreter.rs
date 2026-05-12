@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use php_runtime::{
-    ArityExpectation, ArrayKey, Comparison, PhpArray, RuntimeError, RuntimeResult, Value,
+    ArityExpectation, ArrayKey, Comparison, PhpArray, PhpClassTable, PhpMethodMetadata,
+    PhpPropertyMetadata, RuntimeError, RuntimeResult, Value, Visibility,
 };
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, Expr, FunctionDecl, Program, Span, Stmt, UnaryOp,
+    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, Expr, FunctionDecl,
+    Program, Span, Stmt, UnaryOp,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -23,8 +25,13 @@ pub fn run_program(program: &Program) -> CompileResult<Execution> {
     interpreter.run(program)
 }
 
+pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
+    Interpreter::from_program(program).map(|interpreter| interpreter.classes)
+}
+
 struct Interpreter {
     functions: HashMap<String, FunctionDecl>,
+    classes: PhpClassTable,
     call_depth: usize,
     stdout: String,
 }
@@ -84,21 +91,27 @@ enum Flow {
 impl Interpreter {
     fn from_program(program: &Program) -> CompileResult<Self> {
         let mut functions = HashMap::new();
+        let mut classes = PhpClassTable::new();
         for stmt in &program.statements {
-            if let Stmt::Function(function) = stmt {
-                let key = function.name.to_ascii_lowercase();
-                if functions.contains_key(&key) {
-                    return Err(runtime_error(
-                        function.span,
-                        RuntimeError::duplicate_function(callable_name(&function.name)),
-                    ));
+            match stmt {
+                Stmt::Function(function) => {
+                    let key = function.name.to_ascii_lowercase();
+                    if functions.contains_key(&key) {
+                        return Err(runtime_error(
+                            function.span,
+                            RuntimeError::duplicate_function(callable_name(&function.name)),
+                        ));
+                    }
+                    functions.insert(key, function.clone());
                 }
-                functions.insert(key, function.clone());
+                Stmt::Class(class) => register_class(&mut classes, class)?,
+                _ => {}
             }
         }
 
         Ok(Self {
             functions,
+            classes,
             call_depth: 0,
             stdout: String::new(),
         })
@@ -175,6 +188,7 @@ impl Interpreter {
                 Ok(Flow::Continue)
             }
             Stmt::Function(_) => Ok(Flow::Continue),
+            Stmt::Class(_) => Ok(Flow::Continue),
             Stmt::Return { value, .. } => {
                 let value = match value {
                     Some(expr) => self.evaluate(expr, scope)?,
@@ -585,6 +599,52 @@ impl Interpreter {
         };
 
         result.map_err(|error| runtime_error(span, error))
+    }
+}
+
+fn register_class(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<()> {
+    let id = classes
+        .declare_class(&class.name)
+        .map_err(|error| runtime_error(class.span, error))?;
+    let metadata = classes
+        .get_mut(id)
+        .expect("declared class id should resolve to class metadata");
+
+    for member in &class.members {
+        match member {
+            ClassMember::Property(property) => {
+                let visibility = runtime_visibility(property.visibility);
+                let metadata_property = if property.is_static {
+                    PhpPropertyMetadata::static_property(&property.name, visibility)
+                } else {
+                    PhpPropertyMetadata::instance(&property.name, visibility)
+                };
+                metadata
+                    .add_property(metadata_property)
+                    .map_err(|error| runtime_error(property.span, error))?;
+            }
+            ClassMember::Method(method) => {
+                let visibility = runtime_visibility(method.visibility);
+                let metadata_method = if method.is_static {
+                    PhpMethodMetadata::static_method(&method.function.name, visibility)
+                } else {
+                    PhpMethodMetadata::instance(&method.function.name, visibility)
+                };
+                metadata
+                    .add_method(metadata_method)
+                    .map_err(|error| runtime_error(method.span, error))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn runtime_visibility(visibility: ClassVisibility) -> Visibility {
+    match visibility {
+        ClassVisibility::Public => Visibility::Public,
+        ClassVisibility::Protected => Visibility::Protected,
+        ClassVisibility::Private => Visibility::Private,
     }
 }
 

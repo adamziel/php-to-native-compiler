@@ -1,12 +1,13 @@
 # Object/Class Metadata Model
 
-This document records the first object/class boundary before PHP object syntax
-is executable.
+This document records the current object/class boundary before PHP object
+syntax is executable.
 
-The current implementation does not run class declarations, `new`, object
-property access, or method calls. Those constructs fail with explicit parse
-diagnostics. The runtime model below exists so the next syntax slice has a
-small, tested target instead of inventing object semantics inside the parser.
+The current implementation parses top-level class declarations into metadata,
+but it does not instantiate objects, store object properties, bind `$this`, or
+dispatch methods. `new`, object property access, and method calls still fail
+with explicit parse diagnostics. The runtime model below keeps object work
+separate from parser scaffolding.
 
 ## Runtime Metadata
 
@@ -35,24 +36,31 @@ The model follows the PHP lookup rules needed by the first object slice:
 
 ## First Syntax Slice Target
 
-The next executable step should parse class declarations into this metadata
-model without enabling object execution. A conservative first slice can accept:
+The current syntax slice accepts:
 
 - top-level `class Name { ... }` declarations only;
-- property declarations with explicit or implicit `public` visibility;
+- property declarations with explicit or implicit visibility and no default
+  values;
 - method declarations that reuse the existing function parameter/body subset;
 - duplicate-name diagnostics routed through the runtime metadata model.
 
-Object instantiation and member access should remain unsupported until object
-values, property storage, `$this`, method dispatch, constructor calls, and
-visibility checks have tests.
+`phpc run` registers those declarations in `PhpClassTable` before executing
+top-level statements. Class declarations themselves are no-op statements at
+runtime after registration. Native lowering rejects class declarations until
+metadata, object values, and dispatch have explicit lowering support.
+
+Object instantiation and member access remain unsupported until object values,
+property storage, `$this`, method dispatch, constructor calls, and visibility
+checks have tests.
 
 ## Unsupported Edge Cases
 
-The metadata sketch intentionally excludes inheritance, interfaces, traits,
+The implemented class-declaration parser intentionally excludes nested and
+conditional class declarations, inheritance, interfaces, traits,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
-default property values, constants, static property storage, late static
-binding, magic methods, namespaces, autoloading, anonymous classes, attributes,
-reflection, dynamic properties, cloning, destructors, serialization hooks,
-visibility enforcement, `self`/`parent`/`static`, `$this`, method dispatch, and
-native lowering.
+default property values, multiple properties in one declaration, constants,
+static property storage, late static binding, magic methods, namespaces,
+autoloading, anonymous classes, attributes, reflection, dynamic properties,
+cloning, destructors, serialization hooks, visibility enforcement,
+`self`/`parent`/`static`, `$this`, object values, method dispatch, and native
+lowering.

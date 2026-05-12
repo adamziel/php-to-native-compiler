@@ -96,6 +96,17 @@ fn emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_class_declarations_until_native_metadata_lowering_exists() {
+    let error = emit_ir_source("<?php\nclass Box {}\necho 1;\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("class declarations"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_asm_through_available_native_toolchain() {
     let has_backend = ["clang", "llc", "cc"]
         .iter()

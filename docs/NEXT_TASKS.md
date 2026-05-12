@@ -59,5 +59,7 @@ handled.
 - [x] Define the `eval` fallback boundary: parser entry point, caller scope
   behavior, diagnostics, and unsupported cases.
 - [x] Sketch the minimal object/class metadata model before adding syntax.
-- [ ] Parse class declarations into a metadata registry while keeping object
+- [x] Parse class declarations into a metadata registry while keeping object
   instantiation and member access unsupported.
+- [ ] Add a minimal object value/instantiation boundary for `new ClassName()`
+  while keeping property access and method dispatch unsupported.

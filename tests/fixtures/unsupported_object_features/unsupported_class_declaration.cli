@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_class_declaration.php:2:1: unsupported class declaration: object/class syntax is not implemented
---- stderr end ---

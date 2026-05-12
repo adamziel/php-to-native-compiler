@@ -9,6 +9,7 @@ pub mod test_runner;
 use ast::Program;
 use error::CompileResult;
 use interpreter::Execution;
+use php_runtime::PhpClassTable;
 
 pub fn parse(source: &str) -> CompileResult<Program> {
     parser::parse_source(source)
@@ -17,6 +18,11 @@ pub fn parse(source: &str) -> CompileResult<Program> {
 pub fn run_source(source: &str) -> CompileResult<Execution> {
     let program = parse(source)?;
     interpreter::run_program(&program)
+}
+
+pub fn class_metadata_source(source: &str) -> CompileResult<PhpClassTable> {
+    let program = parse(source)?;
+    interpreter::class_metadata(&program)
 }
 
 pub fn emit_ir_source(source: &str) -> CompileResult<String> {

@@ -1,6 +1,6 @@
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, Expr, FunctionDecl, FunctionParam, Program, Span, Stmt,
-    UnaryOp,
+    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
+    ClassVisibility, Expr, FunctionDecl, FunctionParam, Program, Span, Stmt, UnaryOp,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -31,7 +31,7 @@ impl Parser {
     fn parse_statement(&mut self) -> CompileResult<Stmt> {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
-            TokenKind::Class => self.parse_unsupported_class_declaration(),
+            TokenKind::Class => self.parse_class(),
             TokenKind::Declare => self.parse_unsupported_declare(),
             TokenKind::Eval => self.parse_unsupported_eval(),
             TokenKind::Echo => self.parse_echo(),
@@ -51,6 +51,10 @@ impl Parser {
         let start = self
             .consume_keyword(TokenKind::Function, "expected 'function'")?
             .span;
+        Ok(Stmt::Function(self.parse_function_after_keyword(start)?))
+    }
+
+    fn parse_function_after_keyword(&mut self, start: Span) -> CompileResult<FunctionDecl> {
         if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
             let span = self.advance().span;
             return Err(self.error_at(
@@ -109,19 +113,130 @@ impl Parser {
         self.consume_keyword(TokenKind::RParen, "expected ')' after parameter list")?;
         let body = self.parse_required_block("expected function body")?;
 
-        Ok(Stmt::Function(FunctionDecl {
+        Ok(FunctionDecl {
             name,
             params,
             body,
             span: start,
-        }))
+        })
     }
 
-    fn parse_unsupported_class_declaration(&mut self) -> CompileResult<Stmt> {
+    fn parse_class(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Class, "expected 'class'")?
             .span;
-        Err(self.error_at(span, unsupported_class_declaration_message()))
+        let name = self.consume_identifier("expected class name")?;
+
+        if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported class inheritance: extends is not implemented",
+            ));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported interface implementation: implements is not implemented",
+            ));
+        }
+
+        self.consume_keyword(TokenKind::LBrace, "expected class body")?;
+        let mut members = Vec::new();
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            members.push(self.parse_class_member()?);
+        }
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after class body")?;
+
+        Ok(Stmt::Class(ClassDecl {
+            name,
+            members,
+            span,
+        }))
+    }
+
+    fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
+        let (visibility, is_static) = self.parse_class_member_modifiers()?;
+
+        if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
+            let span = self.previous().span;
+            let function = self.parse_function_after_keyword(span)?;
+            return Ok(ClassMember::Method(ClassMethodDecl {
+                function,
+                visibility,
+                is_static,
+                span,
+            }));
+        }
+
+        if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            let (name, span) = self.consume_variable_with_span("expected property name")?;
+            if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    "unsupported property default: property default values are not implemented",
+                ));
+            }
+            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    "unsupported property declaration: multiple properties in one declaration are not implemented",
+                ));
+            }
+            self.consume_keyword(
+                TokenKind::Semicolon,
+                "expected ';' after property declaration",
+            )?;
+            return Ok(ClassMember::Property(ClassPropertyDecl {
+                name,
+                visibility,
+                is_static,
+                span,
+            }));
+        }
+
+        let token = self.peek().clone();
+        Err(self.error_at(token.span, unsupported_class_member_message(&token.kind)))
+    }
+
+    fn parse_class_member_modifiers(&mut self) -> CompileResult<(ClassVisibility, bool)> {
+        let mut visibility = None;
+        let mut is_static = false;
+
+        loop {
+            let modifier = match &self.peek().kind {
+                TokenKind::Public => Some(ClassVisibility::Public),
+                TokenKind::Protected => Some(ClassVisibility::Protected),
+                TokenKind::Private => Some(ClassVisibility::Private),
+                TokenKind::Static => {
+                    if is_static {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate static modifier in class member declaration",
+                        ));
+                    }
+                    is_static = true;
+                    self.advance();
+                    continue;
+                }
+                _ => None,
+            };
+
+            if let Some(next_visibility) = modifier {
+                if visibility.is_some() {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "duplicate visibility modifier in class member declaration",
+                    ));
+                }
+                visibility = Some(next_visibility);
+                self.advance();
+                continue;
+            }
+
+            break;
+        }
+
+        Ok((visibility.unwrap_or(ClassVisibility::Public), is_static))
     }
 
     fn parse_unsupported_declare(&mut self) -> CompileResult<Stmt> {
@@ -310,6 +425,12 @@ impl Parser {
     fn parse_block_after_open(&mut self) -> CompileResult<Vec<Stmt>> {
         let mut statements = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            if self.check(|kind| matches!(kind, TokenKind::Class)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "unsupported nested class declaration: only top-level class declarations are implemented",
+                ));
+            }
             statements.push(self.parse_statement()?);
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after block")?;
@@ -509,7 +630,7 @@ impl Parser {
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LBracket => self.parse_array_literal(token.span),
             TokenKind::Class => {
-                Err(self.error_at(token.span, unsupported_class_declaration_message()))
+                Err(self.error_at(token.span, unsupported_class_expression_message()))
             }
             TokenKind::New => Err(self.error_at(token.span, unsupported_new_message())),
             TokenKind::Function => Err(self.error_at(
@@ -747,6 +868,12 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Fn => "fn",
         TokenKind::Class => "class",
         TokenKind::New => "new",
+        TokenKind::Public => "public",
+        TokenKind::Protected => "protected",
+        TokenKind::Private => "private",
+        TokenKind::Static => "static",
+        TokenKind::Extends => "extends",
+        TokenKind::Implements => "implements",
         TokenKind::Return => "return",
         TokenKind::Global => "global",
         TokenKind::Declare => "declare",
@@ -808,8 +935,8 @@ fn unsupported_eval_message() -> &'static str {
     "unsupported eval: eval parsing and caller-scope execution are not implemented"
 }
 
-fn unsupported_class_declaration_message() -> &'static str {
-    "unsupported class declaration: object/class syntax is not implemented"
+fn unsupported_class_expression_message() -> &'static str {
+    "unsupported class expression: anonymous classes are not implemented"
 }
 
 fn unsupported_new_message() -> &'static str {
@@ -818,4 +945,18 @@ fn unsupported_new_message() -> &'static str {
 
 fn unsupported_object_access_message() -> &'static str {
     "unsupported object access: object property and method access are not implemented"
+}
+
+fn unsupported_class_member_message(kind: &TokenKind) -> String {
+    match kind {
+        TokenKind::Identifier(_) => {
+            "unsupported class member: typed properties, constants, and modifiers beyond visibility/static are not implemented"
+                .to_string()
+        }
+        TokenKind::Extends => "unsupported class inheritance: extends is not implemented".to_string(),
+        TokenKind::Implements => {
+            "unsupported interface implementation: implements is not implemented".to_string()
+        }
+        _ => format!("expected class member, found {}", token_name(kind)),
+    }
 }

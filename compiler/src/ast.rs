@@ -46,6 +46,7 @@ pub enum Stmt {
         span: Span,
     },
     Function(FunctionDecl),
+    Class(ClassDecl),
     Return {
         value: Option<Expr>,
         span: Span,
@@ -75,6 +76,42 @@ impl AssignTarget {
             AssignTarget::Variable { span, .. } | AssignTarget::ArrayIndex { span, .. } => *span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDecl {
+    pub name: String,
+    pub members: Vec<ClassMember>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClassMember {
+    Property(ClassPropertyDecl),
+    Method(ClassMethodDecl),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassPropertyDecl {
+    pub name: String,
+    pub visibility: ClassVisibility,
+    pub is_static: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassMethodDecl {
+    pub function: FunctionDecl,
+    pub visibility: ClassVisibility,
+    pub is_static: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassVisibility {
+    Public,
+    Protected,
+    Private,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -846,3 +846,68 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:04:21Z
 
 - Post-round 14 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:04:23Z
+
+- Starting round 15 at 20260512T000423Z from HEAD `600d1fd`.
+
+## Loop Event 2026-05-12T00:04:25Z
+
+- Pre-round 15 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:11:21Z
+
+- Task attempted: parsed top-level class declarations into the runtime metadata
+  registry while keeping object execution unsupported. The accepted class
+  member subset records property names, method names, visibility, and static
+  flags; duplicate class/member declarations route through stable runtime
+  metadata diagnostics. `new`, `->`, nested class declarations, inheritance,
+  typed/default/multiple properties, and native lowering still reject
+  explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/lib.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/runtime_errors.rs`,
+  `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone5/class_declarations.*`,
+  `tests/fixtures/runtime_errors/duplicate_class.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_inheritance.*`,
+  removed
+  `tests/fixtures/unsupported_object_features/unsupported_class_declaration.*`,
+  and updated `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo check` passed;
+  `cargo test -p phpc --test object_model` passed with 4 tests; `cargo test -p
+  phpc --test runtime_errors` passed with 11 tests; `cargo test -p phpc --test
+  milestone1 emit_ir_rejects_class_declarations_until_native_metadata_lowering_exists`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone5` passed with 3
+  fixtures; `cargo run -p phpc -- test --compare-php tests/fixtures/milestone5`
+  passed with 3 system PHP comparisons; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with 3 fixtures; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`
+  passed with 3 `.phpc-only` skips; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 13 fixtures; `cargo test -p phpc
+  --test unsupported_object_features_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone5/class_declarations.php` printed the committed class
+  metadata registration output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/duplicate_class.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
+  exited `1` with the expected stable diagnostic; `cargo run -p phpc --
+  compile tests/fixtures/milestone5/class_declarations.php --emit-ir` exited
+  `1` with the expected explicit codegen rejection; `tools/run-tests.sh` passed
+  with 54 fixtures, 25 system PHP comparisons, and 29 `.phpc-only` skips.
+- Remaining semantic gaps: class declarations are metadata-only and do not
+  allocate objects, bind `$this`, execute methods, or expose reflection.
+  Object instantiation, property access, method calls, nested/conditional class
+  declarations, inheritance, interfaces, traits, typed/default/multiple
+  properties, constants, static property storage, visibility enforcement,
+  magic methods, namespaces/autoloading, object callables, and native lowering
+  remain unsupported.
+- Next concrete task: add a minimal object value/instantiation boundary for
+  `new ClassName()` while keeping property access and method dispatch
+  unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "objects: parse class declarations"`
+  after the full suite passes.
