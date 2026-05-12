@@ -14,6 +14,7 @@ cd "$repo_root" || exit 1
 memory_file="${CODEX_YOLO_MEMORY:-$repo_root/docs/LOOP_MEMORY.md}"
 log_dir="${CODEX_YOLO_LOG_DIR:-$repo_root/.codex-yolo/logs}"
 codex_bin="${CODEX_BIN:-codex}"
+codex_reasoning_effort="${CODEX_REASONING_EFFORT:-high}"
 test_script="$repo_root/tools/run-tests.sh"
 checkpoint_script="$repo_root/tools/checkpoint.sh"
 
@@ -217,6 +218,7 @@ while :; do
   if command -v "$codex_bin" >/dev/null 2>&1; then
     printf 'codex-yolo: running %s exec in yolo mode\n' "$codex_bin" | tee -a "$round_log"
     "$codex_bin" exec \
+      -c "model_reasoning_effort=\"$codex_reasoning_effort\"" \
       --dangerously-bypass-approvals-and-sandbox \
       -C "$repo_root" \
       <"$prompt_file" >>"$round_log" 2>&1

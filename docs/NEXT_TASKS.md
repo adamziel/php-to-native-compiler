@@ -849,8 +849,16 @@ handled.
 
 ## Milestone 88: Class Constant Declaration Boundary
 
-- [ ] Add explicit parse diagnostics and CLI coverage for unsupported class
+- [x] Add explicit parse diagnostics and CLI coverage for unsupported class
   constant declarations before class constant metadata or lookup exists,
   including documentation and named gaps for visibility, typed constants,
   inheritance/override behavior, interface constants, reflection, and native
   lowering.
+
+## Milestone 89: Object Context Boundary
+
+- [ ] Add an explicit diagnostic boundary for unsupported `$this` usage before
+  method execution and object context binding exist, including parser/runtime
+  coverage, fixture CLI coverage, documentation, and named gaps for method
+  dispatch, constructor context, closures, static methods, inheritance, and
+  native lowering.

@@ -493,6 +493,26 @@ class Box {
         ),
         (
             r#"<?php
+class Box {
+    public const VERSION = 1;
+}
+"#,
+            3,
+            12,
+            "unsupported class constant declaration: class constant metadata and lookup are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    private const string NAME = "box";
+}
+"#,
+            3,
+            13,
+            "unsupported class constant declaration: class constant metadata and lookup are not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,

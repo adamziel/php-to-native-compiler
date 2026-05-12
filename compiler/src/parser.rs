@@ -243,6 +243,13 @@ impl Parser {
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
         let (visibility, is_static) = self.parse_class_member_modifiers()?;
 
+        if self.check_unsupported_class_constant_declaration() {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_class_constant_declaration_message(),
+            ));
+        }
+
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
             let function = self.parse_function_after_keyword(span)?;
@@ -2044,6 +2051,10 @@ fn unsupported_class_member_modifier_message() -> &'static str {
     "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented"
 }
 
+fn unsupported_class_constant_declaration_message() -> &'static str {
+    "unsupported class constant declaration: class constant metadata and lookup are not implemented"
+}
+
 impl Parser {
     fn check_unsupported_class_modifier_declaration(&self) -> bool {
         matches!(
@@ -2063,5 +2074,9 @@ impl Parser {
             .iter()
             .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
             .any(|token| matches!(token.kind, TokenKind::Variable(_)))
+    }
+
+    fn check_unsupported_class_constant_declaration(&self) -> bool {
+        matches!(&self.peek().kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
     }
 }

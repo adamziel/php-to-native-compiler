@@ -2432,8 +2432,14 @@ Still fails:
   defaults, mixed visibility/static handling, typed multi-property
   declarations, reflection behavior, exact PHP parse/error objects, and native
   lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported class constant
+  declarations before class constant metadata or lookup exists. Visibility,
+  typed constants, inheritance/override behavior, interface constants,
+  reflection behavior, exact PHP parse/error objects, and native lowering
+  remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics and CLI coverage for unsupported class
-  constant declarations before class constant metadata or lookup exists.
+- Add an explicit diagnostic boundary for unsupported `$this` usage before
+  method execution and object context binding exist.

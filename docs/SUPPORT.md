@@ -199,7 +199,7 @@
   declarations, enum declarations, `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
-  declarations,
+  declarations, class constant declarations,
   anonymous class expressions, method calls, dynamic property names, static
   property access,
   static method calls, and class constant access
@@ -1084,8 +1084,8 @@
   methods, readonly properties, typed property storage and enforcement,
   property initialization rules, inheritance interactions, property defaults,
   multiple properties in one declaration, per-property defaults in
-  multi-property declarations, constants, static property storage, late static
-  binding, magic methods, namespaces,
+  multi-property declarations, class constant declarations, constants, static
+  property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, non-public property access, static member execution
   through `::`, `::class`, property assignment targets other than a direct
@@ -1166,7 +1166,7 @@
   declarations, enum cases/backing values/methods/interface implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  constants, and anonymous classes
+  class constant declarations, constants, and anonymous classes
 - static property access, static method calls, and class constant access through
   `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex

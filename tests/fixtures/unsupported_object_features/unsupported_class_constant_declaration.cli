@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_class_constant_declaration.php:3:12: unsupported class constant declaration: class constant metadata and lookup are not implemented
+--- stderr end ---

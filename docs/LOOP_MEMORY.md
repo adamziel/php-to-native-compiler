@@ -8279,3 +8279,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:48:08Z
 
 - Post-round 36 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:48:15Z
+
+- Starting round 37 at 20260512T184815Z from HEAD `7f032ab`.
+
+## Loop Event 2026-05-12T18:48:22Z
+
+- Pre-round 37 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:52:47Z
+
+- Task attempted: completed Milestone 88 by adding a named unsupported class
+  constant declaration boundary before class constant metadata or lookup exists.
+  The parser now reports a stable diagnostic for class-body declarations such
+  as `public const VERSION = 1;`, parser regression coverage includes
+  untyped and typed declaration forms, and unsupported-object fixture coverage
+  includes committed `phpc run` CLI snapshots.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_constant_declaration.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+  A concurrent dirty loop-script change in `tools/codex-yolo-forever.sh` was
+  present before checkpoint inspection and was left intact.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 20 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 20 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_class_constant_declaration.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt --
+  --check` passed; `git diff --check` passed; `tools/run-tests.sh` passed with
+  279 fixtures, 106 system PHP comparisons, and 173 skips.
+- Remaining semantic gaps: class constant metadata and lookup remain
+  unsupported, including visibility, typed constants, inheritance/override
+  behavior, interface constants, reflection behavior, exact PHP parse/error
+  objects, and native lowering.
+- Next concrete task: add an explicit diagnostic boundary for unsupported
+  `$this` usage before method execution and object context binding exist.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject class constant declarations"` after the
+  full suite passes.
