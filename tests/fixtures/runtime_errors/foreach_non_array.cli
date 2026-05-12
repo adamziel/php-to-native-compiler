@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/foreach_non_array.php:2:1: invalid foreach: can only iterate arrays in the current subset, got int
+--- stderr end ---

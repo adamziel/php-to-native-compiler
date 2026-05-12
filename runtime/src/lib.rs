@@ -114,6 +114,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn invalid_foreach(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidForeach {
+            reason: reason.into(),
+        })
+    }
+
     pub fn call_depth_exceeded(callable: impl Into<String>, limit: usize) -> Self {
         Self::from_kind(RuntimeErrorKind::CallDepthExceeded {
             callable: callable.into(),
@@ -219,6 +225,9 @@ pub enum RuntimeErrorKind {
         reason: String,
     },
     InvalidLoopControl {
+        reason: String,
+    },
+    InvalidForeach {
         reason: String,
     },
     CallDepthExceeded {
@@ -335,6 +344,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::InvalidLoopControl { reason } => {
             format!("invalid loop control: {reason}")
+        }
+        RuntimeErrorKind::InvalidForeach { reason } => {
+            format!("invalid foreach: {reason}")
         }
         RuntimeErrorKind::CallDepthExceeded { callable, limit } => {
             format!("maximum user function call depth exceeded for {callable}: limit {limit}")

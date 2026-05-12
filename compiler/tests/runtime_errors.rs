@@ -208,6 +208,18 @@ fn continue_outside_loop_has_stable_runtime_error() {
 }
 
 #[test]
+fn foreach_non_array_iterable_has_stable_runtime_error() {
+    let error = runtime_error("<?php\nforeach (42 as $value) echo $value;\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid foreach: can only iterate arrays in the current subset, got int"
+    );
+}
+
+#[test]
 fn invalid_arithmetic_has_stable_runtime_error() {
     let error = runtime_error("<?php\necho 1 / 0;\n");
 

@@ -41,7 +41,7 @@ impl Parser {
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
             TokenKind::Do => self.parse_unsupported_do_while(),
-            TokenKind::Foreach => self.parse_unsupported_foreach(),
+            TokenKind::Foreach => self.parse_foreach(),
             TokenKind::For => self.parse_unsupported_for(),
             TokenKind::Switch => self.parse_unsupported_switch(),
             TokenKind::Break => self.parse_break(),
@@ -52,7 +52,7 @@ impl Parser {
                 self.parse_unsupported_do_while()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
-                self.parse_unsupported_foreach()
+                self.parse_foreach()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("for") => {
                 self.parse_unsupported_for()
@@ -358,9 +358,36 @@ impl Parser {
         })
     }
 
-    fn parse_unsupported_foreach(&mut self) -> CompileResult<Stmt> {
-        let token = self.advance().clone();
-        Err(self.error_at(token.span, unsupported_foreach_message()))
+    fn parse_foreach(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after foreach")?;
+        let iterable = self.parse_expression()?;
+        self.consume_foreach_as()?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_foreach_reference_message(),
+            ));
+        }
+        let (value, _) = self.consume_variable_with_span("expected foreach value variable")?;
+        if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_foreach_key_value_message(),
+            ));
+        }
+        self.consume_keyword(
+            TokenKind::RParen,
+            "expected ')' after foreach value variable",
+        )?;
+        let body = self.parse_block_or_statement()?;
+
+        Ok(Stmt::Foreach {
+            iterable,
+            value,
+            body,
+            span,
+        })
     }
 
     fn parse_unsupported_do_while(&mut self) -> CompileResult<Stmt> {
@@ -741,7 +768,9 @@ impl Parser {
             )),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Do => Err(self.error_at(token.span, unsupported_do_while_message())),
-            TokenKind::Foreach => Err(self.error_at(token.span, unsupported_foreach_message())),
+            TokenKind::Foreach => {
+                Err(self.error_at(token.span, unsupported_foreach_expression_message()))
+            }
             TokenKind::For => Err(self.error_at(token.span, unsupported_for_message())),
             TokenKind::Switch => Err(self.error_at(token.span, unsupported_switch_message())),
             TokenKind::Break => {
@@ -773,7 +802,7 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_do_while_message()));
                 }
                 if name.eq_ignore_ascii_case("foreach") {
-                    return Err(self.error_at(token.span, unsupported_foreach_message()));
+                    return Err(self.error_at(token.span, unsupported_foreach_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("for") {
                     return Err(self.error_at(token.span, unsupported_for_message()));
@@ -1060,6 +1089,14 @@ impl Parser {
         }
     }
 
+    fn consume_foreach_as(&mut self) -> CompileResult<()> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("as") => Ok(()),
+            _ => Err(self.error_at(token.span, "expected 'as' in foreach")),
+        }
+    }
+
     fn consume_keyword(&mut self, expected: TokenKind, message: &str) -> CompileResult<Token> {
         if same_variant(&self.peek().kind, &expected) {
             Ok(self.advance().clone())
@@ -1227,8 +1264,16 @@ fn unsupported_unset_message() -> &'static str {
     "unsupported unset: variable, array offset, and property removal are not implemented"
 }
 
-fn unsupported_foreach_message() -> &'static str {
-    "unsupported foreach: array and object iteration are not implemented"
+fn unsupported_foreach_expression_message() -> &'static str {
+    "unsupported foreach: foreach is only supported as a statement in the current subset"
+}
+
+fn unsupported_foreach_key_value_message() -> &'static str {
+    "unsupported foreach: key/value iteration is not implemented; only foreach ($array as $value) is supported"
+}
+
+fn unsupported_foreach_reference_message() -> &'static str {
+    "unsupported foreach: by-reference iteration is not implemented; only by-value iteration is supported"
 }
 
 fn unsupported_do_while_message() -> &'static str {

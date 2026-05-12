@@ -215,6 +215,37 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
+            Stmt::Foreach {
+                iterable,
+                value,
+                body,
+                span,
+            } => {
+                let iterable = self.evaluate(iterable, scope)?;
+                let array = match iterable {
+                    Value::Array(array) => array,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_foreach(format!(
+                                "can only iterate arrays in the current subset, got {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+
+                for entry in array.entries() {
+                    scope.write_static(value, entry.value.clone());
+                    match self.execute_statements(body, scope)? {
+                        Flow::Normal | Flow::Continue(_) => {}
+                        Flow::Break(_) => break,
+                        flow @ Flow::Return(_) => return Ok(flow),
+                    }
+                }
+
+                Ok(Flow::Normal)
+            }
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {

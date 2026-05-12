@@ -45,6 +45,12 @@ pub enum Stmt {
         body: Vec<Stmt>,
         span: Span,
     },
+    Foreach {
+        iterable: Expr,
+        value: String,
+        body: Vec<Stmt>,
+        span: Span,
+    },
     Function(FunctionDecl),
     Class(ClassDecl),
     Return {

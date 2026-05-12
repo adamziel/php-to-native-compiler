@@ -96,25 +96,16 @@ UNSET($value);
 }
 
 #[test]
-fn foreach_syntax_is_rejected_with_stable_parse_error() {
+fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
-        (
-            r#"<?php
-$items = [1, 2];
-foreach ($items as $item) {
-    echo $item;
-}
-"#,
-            3,
-            1,
-        ),
         (
             r#"<?php
 $items = ["name" => "Ada"];
 foreach ($items as $key => $value) echo $value;
 "#,
             3,
-            1,
+            25,
+            "unsupported foreach: key/value iteration is not implemented; only foreach ($array as $value) is supported",
         ),
         (
             r#"<?php
@@ -124,7 +115,8 @@ FOREACH ($items as &$item) {
 }
 "#,
             3,
-            1,
+            20,
+            "unsupported foreach: by-reference iteration is not implemented; only by-value iteration is supported",
         ),
         (
             r#"<?php
@@ -133,17 +125,15 @@ echo foreach ($items as $item);
 "#,
             3,
             6,
+            "unsupported foreach: foreach is only supported as a statement in the current subset",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported foreach: array and object iteration are not implemented"
-        );
+        assert_eq!(error.message, message);
     }
 }
 

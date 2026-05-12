@@ -2274,3 +2274,74 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:18:04Z
 
 - Post-round 37 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:18:06Z
+
+- Starting round 38 at 20260512T021806Z from HEAD `5f35371`.
+
+## Loop Event 2026-05-12T02:18:09Z
+
+- Pre-round 38 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:26:57Z
+
+- Task attempted: implemented value-only `foreach ($array as $value)` over the
+  current ordered array value model. The parser accepts the supported statement
+  form, the interpreter iterates values in insertion order over a snapshot of
+  array entries, writes the loop value variable in the active scope, and
+  consumes innermost `break;`/`continue;`. Non-array iterables now fail with a
+  stable `invalid foreach` runtime diagnostic. Key/value and by-reference
+  forms remain explicit parse diagnostics, and native lowering rejects
+  `foreach` explicitly.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/foreach.rs`,
+  `compiler/tests/foreach_cli.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone8/foreach_values.php`,
+  `tests/fixtures/milestone8/foreach_values.stdout`,
+  `tests/fixtures/milestone8/foreach_values.cli`,
+  `tests/fixtures/runtime_errors/foreach_non_array.php`,
+  `tests/fixtures/runtime_errors/foreach_non_array.stderr`,
+  `tests/fixtures/runtime_errors/foreach_non_array.exit`,
+  `tests/fixtures/runtime_errors/foreach_non_array.phpc-only`,
+  `tests/fixtures/runtime_errors/foreach_non_array.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_foreach.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_foreach.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test foreach` passed; `cargo
+  test -p phpc --test syntax_boundaries
+  unsupported_foreach_forms_are_rejected_with_stable_parse_error` passed;
+  `cargo test -p phpc --test milestone1
+  emit_ir_rejects_foreach_until_native_iteration_lowering_exists` passed;
+  `cargo test -p phpc --test runtime_errors
+  foreach_non_array_iterable_has_stable_runtime_error` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone8` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone8` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 33 fixtures; `cargo test -p phpc --test foreach_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo test -p phpc
+  --test unsupported_syntax_features_cli` passed; `cargo fmt --check` passed;
+  `cargo run -p phpc -- run tests/fixtures/milestone8/foreach_values.php`
+  printed the committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/foreach_non_array.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/runtime_errors/foreach_non_array.php --emit-ir` exited `1`
+  with the expected explicit `foreach` codegen rejection. The first
+  `tools/run-tests.sh` attempt caught a missing fixture newline in
+  `unsupported_foreach.stderr`; after repairing that fixture, `tools/run-tests.sh`
+  passed with 103 fixtures, 38 system PHP comparisons, and 65 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `foreach` only supports the value-only array form.
+  Key/value iteration, by-reference iteration, object/Traversable iteration,
+  destructuring targets, complex value targets, exact mutation/aliasing and
+  copy-on-write behavior while iterating, loop-depth arguments, and native
+  lowering remain unsupported.
+- Next concrete task: implement `foreach ($array as $key => $value)` key/value
+  iteration over the current ordered array value model with integer/string key
+  emission, fixture CLI coverage, documentation, unsupported gaps for
+  by-reference/object/destructuring forms, and explicit native-codegen
+  rejection coverage while lowering remains unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add foreach value iteration"`
+  after the full suite passes.

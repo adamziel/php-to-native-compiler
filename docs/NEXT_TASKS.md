@@ -135,8 +135,13 @@ handled.
 
 ## Milestone 8: Array Iteration
 
-- [ ] Implement `foreach ($array as $value)` over the current ordered array
+- [x] Implement `foreach ($array as $value)` over the current ordered array
   value model, including parser/interpreter support, non-array diagnostics,
   fixture CLI coverage, documentation, unsupported gaps for key/value and
   by-reference forms, and explicit native-codegen rejection coverage while
   lowering remains unsupported.
+- [ ] Implement `foreach ($array as $key => $value)` key/value iteration over
+  the current ordered array value model, including integer/string key emission,
+  non-array diagnostics reuse, fixture CLI coverage, documentation,
+  unsupported gaps for by-reference/object/destructuring forms, and explicit
+  native-codegen rejection coverage while lowering remains unsupported.
