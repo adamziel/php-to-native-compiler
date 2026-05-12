@@ -448,6 +448,19 @@ impl PhpArray {
         array
     }
 
+    pub fn keys_reindexed(&self) -> Self {
+        let mut array = Self::new();
+        for (index, entry) in self.entries.iter().enumerate() {
+            let key = i64::try_from(index).expect("array length fits in i64");
+            let value = match &entry.key {
+                ArrayKey::Int(value) => Value::Int(*value),
+                ArrayKey::String(value) => Value::String(value.clone()),
+            };
+            array.insert(key, value);
+        }
+        array
+    }
+
     fn bump_next_auto_index(&mut self, key: &ArrayKey) {
         let ArrayKey::Int(value) = key else {
             return;
@@ -1680,6 +1693,38 @@ mod tests {
             array.get("name"),
             Some(&Value::String("Ada".to_string())),
             "array_values must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_keys_reindexes_integer_and_string_keys_in_insertion_order() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert("2", Value::String("two updated".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+
+        let keys = array.keys_reindexed();
+        let entries = keys.entries();
+
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("name".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::Int(5));
+        assert_eq!(entries[2].key, ArrayKey::Int(2));
+        assert_eq!(entries[2].value, Value::Int(2));
+        assert_eq!(entries[3].key, ArrayKey::Int(3));
+        assert_eq!(entries[3].value, Value::String("02".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(4));
+        assert_eq!(entries[4].value, Value::Int(-1));
+        assert_eq!(
+            array.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_keys must not mutate the original array"
         );
     }
 

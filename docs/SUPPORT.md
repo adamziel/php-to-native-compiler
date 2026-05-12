@@ -51,8 +51,8 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
-  `array_key_exists`, `array_values`, `var_dump`, and `print_r`; `print_r` can
-  render current minimal object values
+  `array_key_exists`, `array_values`, `array_keys`, `var_dump`, and `print_r`;
+  `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -170,11 +170,13 @@
   $array)` checks existing integer/string keyed slots without filtering out
   `null` values and is also available through string-valued dynamic function
   calls. `array_values($array)` returns a new ordered array containing the
-  original values in insertion order with integer keys starting at zero. Missing
-  key reads still fail with a stable runtime error instead of PHP's
-  warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_values`, `print_r`, and `var_dump` are implemented for this ordered
-  value model.
+  original values in insertion order with integer keys starting at zero.
+  `array_keys($array)` returns a new ordered array containing the original
+  integer/string keys as values in insertion order with integer keys starting at
+  zero. Missing key reads still fail with a stable runtime error instead of
+  PHP's warning-and-`null` recovery. Array truthiness, `count`,
+  `array_key_exists`, `array_values`, `array_keys`, `print_r`, and `var_dump`
+  are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -201,11 +203,12 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
-  operands, unsupported complex `empty` operands, unresolved dynamic function
-  callees, division by zero, non-numeric string arithmetic, duplicate class
-  metadata, undefined classes, undefined object properties, invalid property
-  targets, non-public property access, object-to-string conversion, invalid
-  `break`/`continue` outside a loop, and runaway user-function recursion.
+  operands, non-array `array_keys` operands, unsupported complex `empty`
+  operands, unresolved dynamic function callees, division by zero, non-numeric
+  string arithmetic, duplicate class metadata, undefined classes, undefined
+  object properties, invalid property targets, non-public property access,
+  object-to-string conversion, invalid `break`/`continue` outside a loop, and
+  runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
   assignment, `break`, `continue`, class declarations, object instantiation,
@@ -217,11 +220,11 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
-  `array_key_exists`, `array_values`, `var_dump`, or `print_r`. Unresolved names
-  fail with a stable undefined-function runtime error, and non-string callees
-  fail with a stable unsupported-call runtime error. Required parameters and
-  trailing default parameter values are supported. Defaults may use the current
-  constant-expression subset: `null`,
+  `array_key_exists`, `array_values`, `array_keys`, `var_dump`, or `print_r`.
+  Unresolved names fail with a stable undefined-function runtime error, and
+  non-string callees fail with a stable unsupported-call runtime error. Required
+  parameters and trailing default parameter values are supported. Defaults may
+  use the current constant-expression subset: `null`,
   booleans, integers, floats, strings, short arrays with supported keys, unary
   expressions, and binary expressions over those values. Omitted arguments bind
   to their defaults; calls outside the supported required-to-total arity range
@@ -246,7 +249,7 @@
   syntax, `call_user_func`, namespace-qualified callable resolution, and
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
-  `array_values`, `var_dump`, and `print_r` cover the documented
+  `array_values`, `array_keys`, `var_dump`, and `print_r` cover the documented
   scalar/array/object subset. `print_r` can also render the current minimal
   object values. `strlen` remains scalar-only and rejects arrays and objects.
   `count` accepts arrays only. `array_key_exists($key, $array)` accepts integer
@@ -257,8 +260,13 @@
   applying PHP's full key coercions. `array_values($array)` accepts arrays only,
   preserves value insertion order, and returns a new ordered array reindexed
   with integer keys `0..n-1`; it is also available through string-valued dynamic
-  function calls. `isset` supports direct variable operands, direct array offset
-  operands such as `isset($array[$key])`, and direct public object-property
+  function calls. `array_keys($array)` accepts arrays only, preserves insertion
+  order, and returns a new ordered array reindexed with integer keys `0..n-1`
+  whose values are the original integer/string keys; it is also available
+  through string-valued dynamic function calls. Search-value filtering and the
+  strict flag for `array_keys` are not implemented. `isset` supports direct
+  variable operands, direct array offset operands such as `isset($array[$key])`,
+  and direct public object-property
   operands such as `isset($object->name)`; it can safely check undefined
   variables, missing/null array slots, undefined array variables, non-array
   array targets, and undefined object-property targets. Nested array offsets,
@@ -270,9 +278,9 @@
   values use the current PHP truthiness rules. Nested array offsets, object
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
-  `array_values` follows the current by-value clone model; PHP references and
-  copy-on-write containers are not implemented. Because `isset` and `empty` are
-  modeled as special static forms, they are not available through dynamic
+  `array_values` and `array_keys` follow the current by-value clone model; PHP
+  references and copy-on-write containers are not implemented. Because `isset`
+  and `empty` are modeled as special static forms, they are not available through dynamic
   function lookup. PHP's complete warning behavior is not implemented.
 - Object/class gaps: nested and conditional class declarations, method calls,
   `$this`, constructor execution, constructor arguments, inheritance,

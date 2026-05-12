@@ -2046,3 +2046,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:00:29Z
 
 - Post-round 34 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:00:31Z
+
+- Starting round 35 at 20260512T020031Z from HEAD `ee67102`.
+
+## Loop Event 2026-05-12T02:00:33Z
+
+- Pre-round 35 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:04:51Z
+
+- Task attempted: implemented `array_keys($array)` for the current ordered
+  array value model. The supported slice preserves key insertion order, emits
+  integer and string keys as values in a new zero-indexed array, supports
+  string-valued dynamic calls to `array_keys`, and reports a stable diagnostic
+  for non-array arguments.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_keys.rs`,
+  `tests/fixtures/milestone7/array_keys.php`,
+  `tests/fixtures/milestone7/array_keys.stdout`,
+  `tests/fixtures/milestone7/array_keys.cli`,
+  `tests/fixtures/runtime_errors/array_keys_non_array.php`,
+  `tests/fixtures/runtime_errors/array_keys_non_array.stderr`,
+  `tests/fixtures/runtime_errors/array_keys_non_array.exit`,
+  `tests/fixtures/runtime_errors/array_keys_non_array.phpc-only`,
+  `tests/fixtures/runtime_errors/array_keys_non_array.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime array_keys` passed;
+  `cargo test -p phpc --test array_keys` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone7` passed with 5 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 26 fixtures; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone7` passed with 5 system PHP
+  comparisons; `cargo test -p phpc --test array_refinements_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  run tests/fixtures/milestone7/array_keys.php` printed the committed
+  key-emission output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_keys_non_array.php` exited `1` with the
+  expected stable diagnostic; `cargo test -p php_runtime` passed with 19
+  runtime unit tests; `cargo test -p php_runtime array_` passed with 6 focused
+  array value tests; `tools/run-tests.sh` passed with 93 fixtures, 35 system PHP
+  comparisons, and 58 `.phpc-only` skips.
+- Remaining semantic gaps: `array_keys` is limited to the one-argument array
+  form over the current ordered int/string keyed array model. Search-value
+  filtering, the strict flag, references, copy-on-write containers, exact
+  native `TypeError` objects, and native lowering for function calls remain
+  unsupported.
+- Next concrete task: implement `in_array($needle, $array)` over the current
+  ordered array value model, including loose scalar comparison behavior,
+  non-array diagnostics, fixture CLI coverage, and documented gaps around
+  strict mode, objects, arrays, and references.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_keys builtin"`
+  after the full suite passes.

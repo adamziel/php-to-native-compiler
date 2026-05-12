@@ -666,6 +666,19 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_keys" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(Value::Array(array.keys_reindexed())),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_keys()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -964,7 +977,13 @@ impl From<RuntimeError> for Diagnostic {
 fn is_builtin(name: &str) -> bool {
     matches!(
         name,
-        "strlen" | "count" | "array_key_exists" | "array_values" | "var_dump" | "print_r"
+        "strlen"
+            | "count"
+            | "array_key_exists"
+            | "array_values"
+            | "array_keys"
+            | "var_dump"
+            | "print_r"
     )
 }
 
