@@ -500,6 +500,14 @@ impl PhpArray {
         array
     }
 
+    pub fn reversed_preserving_keys(&self) -> Self {
+        let mut array = Self::new();
+        for entry in self.entries.iter().rev() {
+            array.insert(entry.key.clone(), entry.value.clone());
+        }
+        array
+    }
+
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
             ensure_array_search_values_supported("in_array()", needle, &entry.value)?;
@@ -1989,6 +1997,45 @@ mod tests {
             array.get("name"),
             Some(&Value::String("Ada".to_string())),
             "array_reverse must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_reverse_can_preserve_integer_and_string_keys() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert("2", Value::String("two updated".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut reversed = array.reversed_preserving_keys();
+        let entries = reversed.entries();
+
+        assert_eq!(entries.len(), 6);
+        assert_eq!(entries[0].key, ArrayKey::Int(6));
+        assert_eq!(entries[0].value, Value::String("next".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(-1));
+        assert_eq!(entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(2));
+        assert_eq!(entries[3].value, Value::String("two updated".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(5));
+        assert_eq!(entries[4].value, Value::String("five".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[5].value, Value::String("Ada".to_string()));
+        assert_eq!(
+            reversed.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(7)
+        );
+        assert_eq!(
+            array.get(6),
+            Some(&Value::String("next".to_string())),
+            "array_reverse preserve_keys must not mutate the original array"
         );
     }
 

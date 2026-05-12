@@ -20,3 +20,17 @@ Array
     [6] => next
 )
 next|Ada
+Array
+(
+    [6] => next
+    [-1] => negative
+    [02] => zero two
+    [2] => two updated
+    [5] => five
+    [name] => Ada
+)
+6
+next|negative|zero two|two updated|five|Ada
+after
+next|Ada
+next|Ada

@@ -3359,3 +3359,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:27:41Z
 
 - Post-round 53 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T04:27:44Z
+
+- Starting round 54 at 20260512T042744Z from HEAD `d0872a3`.
+
+## Loop Event 2026-05-12T04:27:48Z
+
+- Pre-round 54 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:33:55Z
+
+- Task attempted: implemented `array_reverse($array, true)` preserve-key
+  behavior for the current ordered integer/string key model. The supported
+  slice reverses insertion order while preserving integer and string keys,
+  supports string-valued dynamic calls with a boolean `true` second argument,
+  treats boolean `false` as the existing default reindexing path, and replaces
+  the old unsupported preserve-key diagnostic with a stable non-bool
+  `preserve_keys` diagnostic.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_reverse.rs`,
+  `tests/fixtures/milestone14/array_reverse.*`,
+  `tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.*`,
+  removed `tests/fixtures/runtime_errors/array_reverse_preserve_keys.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime array_reverse` passed with
+  2 focused runtime tests; `cargo test -p phpc --test array_reverse` passed
+  with 5 compiler tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone14` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone14` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test array_ordering_builtins_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 38
+  fixtures; `cargo test -p phpc --test runtime_error_cli` passed; `cargo run
+  -p phpc -- run tests/fixtures/milestone14/array_reverse.php` printed the
+  committed default and preserve-key `array_reverse` output; `cargo run -p
+  phpc -- run
+  tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.php`
+  exited `1` with the expected stable diagnostic; `tools/run-tests.sh` passed
+  with 123 fixtures, 51 system PHP comparisons, and 72 `.phpc-only` skips.
+- Remaining semantic gaps: `array_reverse` still requires the optional
+  `preserve_keys` argument to evaluate to a boolean instead of applying PHP's
+  broader scalar coercions; references, copy-on-write containers, object handle
+  identity preservation, resource values, variadic/extra arguments beyond the
+  documented arity, and native function-call lowering remain unsupported.
+- Next concrete task: implement `array_merge($left, $right)` for two arrays
+  over the current ordered integer/string key model.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: preserve keys in array_reverse"`
+  after the full suite passes.

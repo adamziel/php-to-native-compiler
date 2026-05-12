@@ -217,9 +217,17 @@ handled.
 
 - [x] Implement `array_reverse($array)` for the current ordered array value
   model with default reindexing behavior, non-array diagnostics, fixture CLI
-  coverage, documentation, and explicit gaps for `preserve_keys`, references,
-  copy-on-write containers, objects/resources, and native lowering.
-- [ ] Implement `array_reverse($array, true)` preserve-key behavior for the
+  coverage, documentation, and explicit gaps for references, copy-on-write
+  containers, objects/resources, and native lowering.
+- [x] Implement `array_reverse($array, true)` preserve-key behavior for the
   current ordered integer/string key model, including fixture CLI coverage,
   documentation, and explicit gaps for references, copy-on-write containers,
   objects/resources, and native lowering.
+
+## Milestone 15: Array Combination Builtins
+
+- [ ] Implement `array_merge($left, $right)` for two arrays over the current
+  ordered integer/string key model, including string-key overwrite behavior,
+  integer-key reindexing, non-array diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for variadic merges, references,
+  copy-on-write containers, objects/resources, and native lowering.

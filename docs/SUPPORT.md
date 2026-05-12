@@ -81,8 +81,8 @@
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
-  `empty` operands, non-array `array_reverse` operands, unsupported
-  `array_reverse` preserve-key requests, non-array `in_array`/`array_search`
+  `empty` operands, non-array `array_reverse` operands, non-bool
+  `array_reverse` preserve-key flag values, non-array `in_array`/`array_search`
   haystacks, non-bool `in_array`/`array_search` strict-mode flag values,
   unsupported non-scalar `in_array`/`array_search` comparisons, unsupported
   `global` declarations,
@@ -218,10 +218,11 @@
   original values in insertion order with integer keys starting at zero.
   `array_keys($array)` returns a new ordered array containing the original
   integer/string keys as values in insertion order with integer keys starting at
-  zero. `array_reverse($array)` returns a new ordered array in reverse
-  insertion order, reindexes integer-keyed entries from zero, preserves string
-  keys, and is available through string-valued dynamic function calls; the
-  optional `preserve_keys` argument is not implemented.
+  zero. `array_reverse($array)` and `array_reverse($array, false)` return a new
+  ordered array in reverse insertion order, reindex integer-keyed entries from
+  zero, preserve string keys, and are available through string-valued dynamic
+  function calls. `array_reverse($array, true)` returns a new ordered array in
+  reverse insertion order while preserving both integer and string keys.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
@@ -292,7 +293,7 @@
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
   operands, non-array `array_keys` operands, non-array `array_reverse`
-  operands, unsupported `array_reverse` preserve-key requests, non-array
+  operands, non-bool `array_reverse` preserve-key flag values, non-array
   `in_array` operands, non-array `array_search` operands, non-array `foreach`
   iterables, non-bool `in_array`/`array_search` strict-mode flag values, and
   array-value comparisons for `in_array`/`array_search`,
@@ -361,14 +362,17 @@
   order, and returns a new ordered array reindexed with integer keys `0..n-1`
   whose values are the original integer/string keys; it is also available
   through string-valued dynamic function calls. Search-value filtering and the
-  strict flag for `array_keys` are not implemented. `array_reverse($array)`
-  accepts arrays only, returns a new array in reverse insertion order,
-  reindexes integer-keyed entries from zero, preserves string keys, and is also
-  available through string-valued dynamic function calls. The optional
-  `preserve_keys` argument, reference/copy-on-write behavior, object handle
-  identity preservation, resource values, and native lowering are not
-  implemented. `in_array($needle, $array)`
-  accepts an array haystack, scans values in insertion order, and uses the
+  strict flag for `array_keys` are not implemented. `array_reverse($array)` and
+  `array_reverse($array, false)` accept arrays only, return a new array in
+  reverse insertion order, reindex integer-keyed entries from zero, preserve
+  string keys, and are also available through string-valued dynamic function
+  calls. `array_reverse($array, true)` preserves both integer and string keys
+  while reversing insertion order. The optional `preserve_keys` argument must
+  evaluate to a boolean in the current subset; non-bool flag coercion,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, and native lowering are not implemented.
+  `in_array($needle, $array)` accepts an array haystack, scans values in
+  insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
   integers, floats, and strings. `in_array($needle, $array, true)` uses the
   current scalar strict identity rules with no numeric/string coercion;
@@ -403,7 +407,8 @@
   `array_values`, `array_keys`, `array_reverse`, `in_array`, `array_search`,
   and both current `foreach` array forms follow the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
-  and resource values are not implemented.
+  resource values, and non-bool `array_reverse` preserve-key flag coercion are
+  not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -525,7 +530,7 @@
   array/object/resource/reference values, non-bool strict-flag coercion, and
   array/object needle or haystack-value comparisons for the current
   array-search builtins
-- `array_reverse($array, true)` preserve-key behavior, reference/copy-on-write
+- `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
   lowering
 - named arguments

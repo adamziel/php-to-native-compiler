@@ -40,6 +40,41 @@ echo $again[0], "|", $again["name"];
 }
 
 #[test]
+fn array_reverse_can_preserve_integer_and_string_keys() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items["2"] = "two updated";
+$items[-1] = "negative";
+$items[] = "next";
+
+$preserved = array_reverse($items, true);
+echo count($preserved), "\n";
+echo $preserved[6], "|", $preserved[-1], "|", $preserved["02"], "|", $preserved[2], "|", $preserved[5], "|", $preserved["name"], "\n";
+$preserved[] = "after";
+echo $preserved[7], "\n";
+echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $items[-1], "|", $items[6], "\n";
+
+$default = array_reverse($items, false);
+echo $default[0], "|", $default["name"], "\n";
+
+$call = "array_reverse";
+$again = $call($items, true);
+echo $again[6], "|", $again["name"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "6\nnext|negative|zero two|two updated|five|Ada\nafter\nAda|five|two updated|zero two|negative|next\nnext|Ada\nnext|Ada"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_reverse_requires_array_argument() {
     let error = runtime_error("<?php\necho array_reverse(42);\n");
 
@@ -52,14 +87,14 @@ fn array_reverse_requires_array_argument() {
 }
 
 #[test]
-fn array_reverse_rejects_preserve_keys_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_reverse($items, true);\n");
+fn array_reverse_requires_bool_preserve_keys_argument() {
+    let error = runtime_error("<?php\n$items = [1];\necho array_reverse($items, 1);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_reverse(): preserve_keys argument is not implemented"
+        "unsupported call array_reverse(): preserve_keys argument must be bool in the current subset, got int"
     );
 }
 

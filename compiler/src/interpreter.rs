@@ -893,6 +893,12 @@ impl Interpreter {
             }
             "array_reverse" => match args.as_slice() {
                 [Value::Array(array)] => Ok(Value::Array(array.reversed_reindexed())),
+                [Value::Array(array), Value::Bool(false)] => {
+                    Ok(Value::Array(array.reversed_reindexed()))
+                }
+                [Value::Array(array), Value::Bool(true)] => {
+                    Ok(Value::Array(array.reversed_preserving_keys()))
+                }
                 [other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -900,11 +906,14 @@ impl Interpreter {
                         format!("argument must be array, got {}", other.type_name()),
                     ),
                 )),
-                [Value::Array(_), _] => Err(runtime_error(
+                [Value::Array(_), other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_reverse()",
-                        "preserve_keys argument is not implemented",
+                        format!(
+                            "preserve_keys argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
                     ),
                 )),
                 [other, _] => Err(runtime_error(

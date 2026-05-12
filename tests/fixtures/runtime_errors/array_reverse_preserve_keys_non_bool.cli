@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.php:3:6: unsupported call array_reverse(): preserve_keys argument must be bool in the current subset, got int
+--- stderr end ---
