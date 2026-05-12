@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_function_features/unsupported_magic_constant.php:3:12: unsupported magic constant __METHOD__: source-aware magic constant evaluation is not implemented
+parse error at tests/fixtures/unsupported_function_features/unsupported_magic_constant.php:3:12: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented
 --- stderr end ---

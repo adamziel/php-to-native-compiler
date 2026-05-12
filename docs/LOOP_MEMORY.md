@@ -7620,3 +7620,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:33:31Z
 
 - Post-round 24 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:33:41Z
+
+- Starting round 25 at 20260512T173341Z from HEAD `9c35f4b`.
+
+## Loop Event 2026-05-12T17:33:50Z
+
+- Pre-round 25 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:48:20Z
+
+- Task attempted: completed Milestone 76 by tightening the `__METHOD__`
+  boundary. The parser now reports a method-dispatch-specific stable parse
+  diagnostic for `__METHOD__`, the unsupported magic-constant regression
+  fixture was updated, and a dedicated `milestone76` fixture plus CLI snapshot
+  records the current no-method-dispatch behavior.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone76/magic_method_boundary.*`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.cli`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.stderr`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo test -p phpc
+  --test functions_and_scopes magic` passed; `cargo test -p phpc --test
+  magic_constants_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone76` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone76` passed with 1 `.phpc-only`
+  skip; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 10 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 10 skips; direct
+  `cargo run -p phpc -- run
+  tests/fixtures/milestone76/magic_method_boundary.php` exited `1` with the
+  expected stable parse diagnostic; `tools/run-tests.sh` passed with 263
+  fixtures, 106 system PHP comparisons, and 157 skips.
+- Remaining semantic gaps: `__METHOD__` remains unsupported until real method
+  dispatch and method-context tracking exist. `__CLASS__`, `__TRAIT__`, and
+  `__NAMESPACE__` still use the broader stable magic-constant parse boundary.
+  Traits, namespaces, closures, eval/include source mapping, canonical PHP path
+  behavior, exact PHP error objects, and native lowering for magic constants
+  remain unsupported.
+- Next concrete task: define the next honest `__CLASS__` boundary before
+  executable class-context magic constant evaluation exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: tighten __METHOD__ magic constant boundary"`
+  after the full suite passes.

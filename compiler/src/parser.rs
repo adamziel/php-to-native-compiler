@@ -1790,6 +1790,9 @@ fn magic_constant_name(name: &str) -> Option<&'static str> {
 }
 
 fn unsupported_magic_constant_message(name: &str) -> String {
+    if name == "__METHOD__" {
+        return "unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented".to_string();
+    }
     format!(
         "unsupported magic constant {name}: source-aware magic constant evaluation is not implemented"
     )

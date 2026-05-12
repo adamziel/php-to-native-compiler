@@ -580,18 +580,6 @@ fn magic_constants_except_line_file_dir_and_function_are_rejected_with_stable_pa
             r#"<?php
 class Box {
     public function label() {
-        return __METHOD__;
-    }
-}
-"#,
-            4,
-            16,
-            "__METHOD__",
-        ),
-        (
-            r#"<?php
-class Box {
-    public function label() {
         return __CLASS__;
     }
 }
@@ -630,6 +618,26 @@ echo __NAMESPACE__;
             )
         );
     }
+}
+
+#[test]
+fn magic_method_constant_is_rejected_until_method_dispatch_exists() {
+    let error = parse_error(
+        r#"<?php
+class Box {
+    public function label() {
+        return __METHOD__;
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 16);
+    assert_eq!(
+        error.message,
+        "unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented"
+    );
 }
 
 #[test]

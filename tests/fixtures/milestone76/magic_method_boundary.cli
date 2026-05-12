@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/milestone76/magic_method_boundary.php:4:16: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented
+--- stderr end ---

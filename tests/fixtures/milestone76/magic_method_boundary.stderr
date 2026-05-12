@@ -1,0 +1,2 @@
+parse error at 4:16: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented
+

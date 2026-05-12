@@ -644,8 +644,9 @@
   directory, and evaluates to an empty string for path-less library execution.
   The `__FUNCTION__` magic constant evaluates to the current user-function
   name in ordinary expressions and default parameter values, and to an empty
-  string outside a function. Other magic constants such as `__METHOD__`,
-  `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__` fail with stable parse
+  string outside a function. `__METHOD__` fails with a stable parse diagnostic
+  tied to the current missing method-dispatch boundary. Other magic constants
+  such as `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__` fail with stable parse
   diagnostics before their source/context-aware evaluation exists. Nullable,
   union, and intersection
   types, `mixed`, `void`/`never`, class/interface type names, coercive versus
@@ -1166,8 +1167,10 @@
   recursion/reentrancy behavior, and native lowering
 - magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
   `__FUNCTION__`, such as `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
-  `__NAMESPACE__`; these fail with stable parse diagnostics before
-  method/class context, namespace/trait context, or native lowering exists.
+  `__NAMESPACE__`; `__METHOD__` specifically fails with a stable parse
+  diagnostic because method dispatch and method-context tracking are not
+  implemented, while the remaining unsupported magic constants fail before
+  class, namespace/trait context, or native lowering exists.
   `__FUNCTION__` is limited to user-function context and the top-level empty
   string behavior; closure context is not implemented. `__FILE__` currently
   reports the `phpc run` input path string, and `__DIR__` derives from that

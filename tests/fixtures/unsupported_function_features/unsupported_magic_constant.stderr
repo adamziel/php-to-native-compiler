@@ -1,2 +1,2 @@
-parse error at 3:12: unsupported magic constant __METHOD__: source-aware magic constant evaluation is not implemented
+parse error at 3:12: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented
 

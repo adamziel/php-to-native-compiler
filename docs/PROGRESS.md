@@ -2371,9 +2371,12 @@ Still fails:
   values, and as an empty string outside a function. Method/class/trait/
   namespace context constants, closure context, eval/include source mapping,
   exact canonical PHP behavior, and native lowering remain unsupported.
+- Tightened the `__METHOD__` boundary with a stable parse diagnostic tied to
+  the current missing method-dispatch and method-context execution path, plus
+  fixture and CLI snapshot coverage. `__METHOD__` remains unsupported until a
+  real method execution slice exists.
 
 Next:
 
-- Implement `__METHOD__` as the next executable magic constant only after the
-  method execution boundary exists; otherwise add a narrower object-method
-  execution task first.
+- Define the next honest `__CLASS__` boundary before executable class-context
+  magic constant evaluation exists.

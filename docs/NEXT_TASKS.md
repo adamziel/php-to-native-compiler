@@ -751,10 +751,18 @@ handled.
 
 ## Milestone 76: Magic Constant Method Boundary
 
-- [ ] Define the next honest `__METHOD__` path, either by adding a stable
+- [x] Define the next honest `__METHOD__` path, either by adding a stable
   unsupported diagnostic tied to the current no-method-dispatch boundary or by
   first implementing a minimal method execution slice that can evaluate
   `__METHOD__` honestly, including parser/interpreter support, fixture CLI
   coverage, documentation, and explicit gaps for class/trait/namespace
   contexts, closures, eval/include source mapping, canonical PHP behavior, and
+  native lowering.
+
+## Milestone 77: Magic Constant Class Boundary
+
+- [ ] Define the next honest `__CLASS__` path before executable class-context
+  magic constant evaluation exists, including parser coverage, fixture CLI
+  coverage, documentation, and explicit gaps for method/class context tracking,
+  traits, namespaces, eval/include source mapping, canonical PHP behavior, and
   native lowering.

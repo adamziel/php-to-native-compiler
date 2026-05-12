@@ -128,7 +128,8 @@ subset:
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, parameter and return type declarations, static local
   variable declarations, magic constants other than executable `__LINE__`,
-  `__FILE__`, `__DIR__`, and `__FUNCTION__`,
+  `__FILE__`, `__DIR__`, and `__FUNCTION__`, with `__METHOD__` held on a
+  method-dispatch-specific parse diagnostic,
   closures, named arguments,
   `declare(strict_types=1)`,
   unsupported nested, namespace-aware, or dynamic-value `const` declarations,
