@@ -833,8 +833,16 @@ handled.
 
 ## Milestone 86: Property Default Boundary
 
-- [ ] Add explicit parse diagnostics and CLI coverage for unsupported property
+- [x] Add explicit parse diagnostics and CLI coverage for unsupported property
   default values before property initializer execution exists, including
   documentation and named gaps for constant-expression defaults, array/object
   defaults, readonly initialization rules, inheritance/reflection behavior, and
+  native lowering.
+
+## Milestone 87: Multiple Property Declaration Boundary
+
+- [ ] Add explicit parse diagnostics and CLI coverage for unsupported multiple
+  properties in one class property declaration before multi-property metadata
+  parsing exists, including documentation and named gaps for per-property
+  defaults, mixed visibility/static handling, typed properties, reflection, and
   native lowering.

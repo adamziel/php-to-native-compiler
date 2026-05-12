@@ -198,7 +198,8 @@
   declarations, inheritance, interface declarations and implementation, trait
   declarations, enum declarations, `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
-  typed property declarations, default/multiple property declarations,
+  typed property declarations, property default values, multiple property
+  declarations,
   anonymous class expressions, method calls, dynamic property names, static
   property access,
   static method calls, and class constant access

@@ -2420,8 +2420,14 @@ Still fails:
   storage or enforcement exists. Nullable/union/intersection enforcement,
   default values, readonly interactions, inheritance, reflection, exact PHP
   parse/error objects, and native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture coverage,
+  and a `phpc run` CLI snapshot for unsupported property default values before
+  property initializer execution exists. Constant-expression defaults,
+  array/object defaults, readonly initialization rules, inheritance/reflection
+  behavior, exact PHP parse/error objects, and native lowering remain
+  unsupported.
 
 Next:
 
-- Add explicit parse diagnostics and CLI coverage for unsupported property
-  default values before property initializer execution exists.
+- Add explicit parse diagnostics and CLI coverage for unsupported multiple
+  properties in one declaration before multi-property metadata parsing exists.

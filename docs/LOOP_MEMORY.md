@@ -8174,3 +8174,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:40:04Z
 
 - Post-round 34 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:40:22Z
+
+- Starting round 35 at 20260512T184022Z from HEAD `05f9808`.
+
+## Loop Event 2026-05-12T18:40:36Z
+
+- Pre-round 35 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:42:55Z
+
+- Task attempted: completed Milestone 86 by adding committed fixture and CLI
+  coverage for unsupported property default values. The parser already emitted
+  the stable property-default diagnostic; this round added the missing
+  unsupported object fixture snapshots, documented the boundary, marked the
+  task complete, and queued the next multiple-property declaration boundary.
+- Files changed: `tests/fixtures/unsupported_object_features/unsupported_property_default.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 18 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 18 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_property_default.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt -- --check`
+  passed; `tools/run-tests.sh` passed with 277 fixtures, 106 system PHP
+  comparisons, and 171 skips.
+- Remaining semantic gaps: property initializer execution remains unsupported,
+  including constant-expression defaults, array/object defaults, readonly
+  initialization rules, inheritance/reflection behavior, exact PHP parse/error
+  objects, and native lowering.
+- Next concrete task: add explicit parse diagnostics and CLI coverage for
+  unsupported multiple properties in one declaration before multi-property
+  metadata parsing exists.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject property defaults"` after the full
+  suite passes.
