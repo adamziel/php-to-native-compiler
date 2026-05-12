@@ -419,7 +419,27 @@ class Box {
 "#,
             3,
             12,
-            "unsupported class member: typed properties, constants, and modifiers beyond visibility/static are not implemented",
+            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public ?string $name;
+}
+"#,
+            3,
+            12,
+            "unsupported property type declaration: typed property storage and enforcement are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public int|string $id;
+}
+"#,
+            3,
+            12,
+            "unsupported property type declaration: typed property storage and enforcement are not implemented",
         ),
         (
             r#"<?php

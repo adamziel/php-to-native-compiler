@@ -2414,8 +2414,14 @@ Still fails:
   exists. Abstract methods, final methods, readonly properties, property
   initialization rules, inheritance interactions, exact PHP parse/error
   objects, and native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage for named,
+  nullable, and union type forms, fixture coverage, and a `phpc run` CLI
+  snapshot for unsupported typed property declarations before typed property
+  storage or enforcement exists. Nullable/union/intersection enforcement,
+  default values, readonly interactions, inheritance, reflection, exact PHP
+  parse/error objects, and native lowering remain unsupported.
 
 Next:
 
-- Continue object/class boundaries with the next unsupported class feature that
-  can be named and tested honestly.
+- Add explicit parse diagnostics and CLI coverage for unsupported property
+  default values before property initializer execution exists.

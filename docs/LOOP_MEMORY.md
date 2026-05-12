@@ -8126,3 +8126,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:32:47Z
 
 - Post-round 33 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:33:05Z
+
+- Starting round 34 at 20260512T183304Z from HEAD `f1f94e2`.
+
+## Loop Event 2026-05-12T18:33:17Z
+
+- Pre-round 34 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:42:11Z
+
+- Task attempted: tightened the typed-property class boundary with a specific
+  stable parse diagnostic before typed property storage/enforcement exists,
+  including parser coverage for named, nullable, and union type forms plus a
+  committed `phpc run` CLI snapshot.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_typed_property.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 17 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_typed_property.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 276 fixtures, 106 system PHP comparisons, and 170 skips.
+- Remaining semantic gaps: typed property storage and runtime enforcement are
+  unsupported, including nullable/union/intersection enforcement, property
+  default values, readonly interactions, inheritance/reflection behavior, exact
+  PHP parse/error objects, and native lowering.
+- Next concrete task: add explicit parse diagnostics and CLI coverage for
+  unsupported property default values before property initializer execution
+  exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject typed properties"`
+  after the full suite passes.

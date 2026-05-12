@@ -143,8 +143,8 @@ subset:
   arguments, object method calls, dynamic property names, anonymous classes,
   unsupported class forms, `abstract`/`final`/`readonly` class modifiers,
   unsupported `abstract`/`final`/`readonly` class member modifiers,
-  trait declarations, interface declarations, enum declarations, static member
-  access, and class constants
+  unsupported typed property declarations, trait declarations, interface
+  declarations, enum declarations, static member access, and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

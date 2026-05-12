@@ -821,3 +821,20 @@ handled.
   including parser coverage, fixture CLI coverage, documentation, and named
   gaps for abstract methods, final methods, readonly properties, property
   initialization rules, inheritance interactions, and native lowering.
+
+## Milestone 85: Typed Property Boundary
+
+- [x] Add explicit parse diagnostics for unsupported typed property
+  declarations before typed property storage or enforcement exists, including
+  parser coverage for named, nullable, and union type forms, fixture CLI
+  coverage, documentation, and named gaps for nullable/union/intersection
+  enforcement, default values, readonly interactions, inheritance, reflection,
+  exact PHP parse/error objects, and native lowering.
+
+## Milestone 86: Property Default Boundary
+
+- [ ] Add explicit parse diagnostics and CLI coverage for unsupported property
+  default values before property initializer execution exists, including
+  documentation and named gaps for constant-expression defaults, array/object
+  defaults, readonly initialization rules, inheritance/reflection behavior, and
+  native lowering.

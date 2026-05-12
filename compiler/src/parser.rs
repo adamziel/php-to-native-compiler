@@ -254,6 +254,10 @@ impl Parser {
             }));
         }
 
+        if self.check_unsupported_property_type_declaration() {
+            return Err(self.error_at(self.peek().span, unsupported_property_type_message()));
+        }
+
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             let (name, span) = self.consume_variable_with_span("expected property name")?;
             if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
@@ -1855,6 +1859,10 @@ fn unsupported_return_type_message() -> &'static str {
     "unsupported return type declaration: return type enforcement is not implemented"
 }
 
+fn unsupported_property_type_message() -> &'static str {
+    "unsupported property type declaration: typed property storage and enforcement are not implemented"
+}
+
 fn unsupported_static_local_message() -> &'static str {
     "unsupported static local variable declaration: function-local static storage is not implemented"
 }
@@ -2038,5 +2046,18 @@ impl Parser {
             self.peek().kind,
             TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
         ) && matches!(self.peek_next().kind, TokenKind::Class)
+    }
+
+    fn check_unsupported_property_type_declaration(&self) -> bool {
+        match &self.peek().kind {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
+            TokenKind::Identifier(_) | TokenKind::Question | TokenKind::Backslash => {}
+            _ => return false,
+        }
+
+        self.tokens[self.current..]
+            .iter()
+            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
+            .any(|token| matches!(token.kind, TokenKind::Variable(_)))
     }
 }
