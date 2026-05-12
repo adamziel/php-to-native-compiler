@@ -30,6 +30,11 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    NullCoalesceAssign {
+        name: String,
+        expr: Expr,
+        span: Span,
+    },
     Expr {
         expr: Expr,
         span: Span,

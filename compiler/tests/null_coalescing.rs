@@ -105,6 +105,52 @@ echo ($number->value ?? "non-object-fallback");
 }
 
 #[test]
+fn null_coalescing_assignment_handles_direct_variables_lazily() {
+    let source = r#"<?php
+function fallback($label, $value) {
+    echo $label, "\n";
+    return $value;
+}
+
+$missing ??= fallback("missing-called", "missing-value");
+echo $missing, "\n";
+
+$nullable = null;
+$nullable ??= fallback("null-called", "null-value");
+echo $nullable, "\n";
+
+$kept = "kept-value";
+$kept ??= fallback("kept-called", "replacement");
+echo $kept, "\n";
+
+$false = false;
+$false ??= fallback("false-called", true);
+if ($false === false) {
+    echo "false-kept\n";
+}
+
+$zero = 0;
+$zero ??= fallback("zero-called", 9);
+if ($zero === 0) {
+    echo "zero-kept\n";
+}
+
+$empty = "";
+$empty ??= fallback("empty-called", "replacement");
+if ($empty === "") {
+    echo "empty-string-kept";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "missing-called\nmissing-value\nnull-called\nnull-value\nkept-value\nfalse-kept\nzero-kept\nempty-string-kept"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn complex_null_coalescing_left_operands_remain_explicitly_unsupported() {
     let error = runtime_error("<?php\n$items = [[1]];\necho $items[0][0] ?? 'fallback';\n");
 
@@ -139,5 +185,18 @@ fn emit_ir_rejects_object_property_null_coalescing_until_native_lowering_exists(
     assert_eq!(
         error.message,
         "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_null_coalescing_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value ??= 'fallback';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "null coalescing assignment is supported by phpc run for direct variables but not LLVM IR emission yet"
     );
 }

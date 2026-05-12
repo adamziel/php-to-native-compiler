@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.php:3:8: unsupported null coalescing expression: null-aware expression-form branching is not implemented
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.php:3:29: unsupported null coalescing expression: null-aware expression-form branching is not implemented
 --- stderr end ---

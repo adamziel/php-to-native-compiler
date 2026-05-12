@@ -10500,3 +10500,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:21:39Z
 
 - Post-round 17 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:21:52Z
+
+- Starting round 18 at 20260512T232152Z from HEAD `25b6e7a`.
+
+## Loop Event 2026-05-12T23:22:00Z
+
+- Pre-round 18 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:40:12Z
+
+- Task attempted: implemented the first executable null coalescing assignment
+  slice for direct static variables. `$name ??= expr` now assigns only when
+  the variable is undefined or `null`, preserves existing non-null values
+  including falsey values, and evaluates the right-hand expression lazily.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/null_coalescing.rs`,
+  `compiler/tests/null_coalescing_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone127/null_coalescing_assignment.php`,
+  `tests/fixtures/milestone127/null_coalescing_assignment.stdout`,
+  `tests/fixtures/milestone127/null_coalescing_assignment.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test null_coalescing` passed;
+  `cargo test -p phpc --test syntax_boundaries null_coalescing -- --nocapture`
+  passed; `cargo test -p phpc --test null_coalescing_cli` passed; `cargo run
+  -p phpc -- test tests/fixtures/milestone127` passed with 1 fixture; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/milestone127` passed with 1
+  system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 18 fixtures;
+  `tools/run-tests.sh` passed with 350 fixtures, 126 system PHP comparisons,
+  and 224 skips.
+- Remaining semantic gaps: `??=` is limited to direct static variable
+  statements. Array-offset and object-property `??=` targets, append offsets,
+  nested offsets/properties, expression-position assignment results, dynamic
+  lvalues, references/copy-on-write, exact native error objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement direct array-offset `$array[$key] ??= expr`
+  over the current ordered array model, or keep a more precise boundary if
+  materialization semantics need to be narrowed first.
+- Known-good tag: not created; this is a narrow null-aware assignment follow-up,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add direct variable null coalescing assignment"`.

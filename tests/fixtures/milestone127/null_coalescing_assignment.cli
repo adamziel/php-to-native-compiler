@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+missing-called
+missing-value
+null-called
+null-value
+kept-value
+false-kept
+zero-kept
+empty-string-kept--- stdout end ---
+stderr:
+--- stderr end ---

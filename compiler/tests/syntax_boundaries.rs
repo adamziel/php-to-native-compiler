@@ -274,14 +274,21 @@ fn emit_ir_rejects_ternary_expression_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_null_coalescing_assignment_and_chains_have_stable_parse_errors() {
+fn unsupported_chained_null_coalescing_has_stable_parse_error() {
+    let error = parse_error("<?php\n$first = null;\n$result = $first ?? $second ?? 'fallback';\n");
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 29);
+    assert_eq!(
+        error.message,
+        "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+    );
+}
+
+#[test]
+fn unsupported_null_coalescing_assignment_targets_have_stable_parse_errors() {
     let cases = [
-        (
-            "<?php\n$first = null;\n$result = $first ?? $second ?? 'fallback';\n",
-            3,
-            29,
-        ),
-        ("<?php\n$value ??= 'fallback';\n", 2, 8),
+        ("<?php\n$items[\"x\"] ??= 'fallback';\n", 2, 13),
+        ("<?php\n$box->value ??= 'fallback';\n", 2, 13),
     ];
 
     for (source, line, column) in cases {
@@ -290,7 +297,7 @@ fn unsupported_null_coalescing_assignment_and_chains_have_stable_parse_errors() 
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+            "unsupported null coalescing assignment: only direct variable targets are implemented"
         );
     }
 }

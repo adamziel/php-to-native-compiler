@@ -245,6 +245,13 @@ impl Interpreter {
                 self.execute_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::NullCoalesceAssign { name, expr, .. } => {
+                if !matches!(scope.read_named(name), Some(value) if !matches!(value, Value::Null)) {
+                    let value = self.evaluate(expr, scope)?;
+                    scope.write_static(name, value);
+                }
+                Ok(Flow::Normal)
+            }
             Stmt::Expr { expr, .. } => {
                 self.evaluate(expr, scope)?;
                 Ok(Flow::Normal)

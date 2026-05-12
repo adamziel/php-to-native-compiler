@@ -2709,9 +2709,8 @@ Still fails:
   error objects, and native lowering remain unsupported.
 - Added explicit parse diagnostics for unsupported null coalescing expressions
   before null-aware expression-form branching exists. The lexer now tokenizes
-  `??` distinctly from ternary `?`; after the first executable slice, the
-  parser still rejects unparenthesized chained coalescing and `??=`
-  assignment-form syntax at the `??` token with a stable diagnostic.
+  `??` distinctly from ternary `?`; the parser still rejects unparenthesized
+  chained coalescing at the second `??` token with a stable diagnostic.
 - Implemented the first executable null coalescing expression slice for direct
   static variables and direct array-variable offsets over the current value
   model. Undefined variables, missing array keys, null variables, null array
@@ -2730,7 +2729,18 @@ Still fails:
   returned without evaluating the fallback. Fixture and CLI snapshot coverage
   record the behavior, and LLVM IR emission still rejects `??` explicitly until
   native null-aware lowering exists. Complex/nested left operands, dynamic
-  property names, non-public visibility context, magic methods, `??=`,
+  property names, non-public visibility context, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain unsupported.
+- Implemented the first executable null coalescing assignment slice for direct
+  static variables: `$name ??= expr` evaluates and stores the right-hand
+  expression only when the variable is undefined or `null`, and preserves
+  existing non-null values including `false`, `0`, and `""` without evaluating
+  the fallback. Fixture and CLI snapshot coverage record the behavior, parser
+  coverage keeps array-offset and object-property `??=` targets on an explicit
+  unsupported diagnostic, and LLVM IR emission rejects `??=` explicitly until
+  native null-aware assignment lowering exists. Array-offset/object-property
+  `??=` targets, dynamic lvalues, expression-position assignment results,
   references/copy-on-write, exact native error objects, and native lowering
   remain unsupported.
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Implemented the first executable `??=` slice for direct static variables,
+  with lazy right-hand evaluation, preservation of non-null falsey values,
+  fixture/CLI coverage, documentation, native-codegen rejection, and explicit
+  unsupported diagnostics for array-offset and object-property assignment
+  targets.
 - Extended `??` to direct public object-property operands, with fallback
   behavior for missing properties, undefined/non-object targets, and null
   property slots, preservation of falsey non-null property values, fixture/CLI
@@ -10,9 +15,9 @@
   direct array offsets, with isset-like fallback behavior for undefined,
   missing, and null values, lazy fallback evaluation for present non-null
   values, fixture/CLI coverage, documentation, and native-codegen rejection.
-- Kept explicit unsupported diagnostics for `??=` assignment and
-  unparenthesized chained null coalescing while broader null-aware lvalue
-  behavior remains unimplemented.
+- Kept explicit unsupported diagnostics for unparenthesized chained null
+  coalescing while broader null-aware expression behavior remains
+  unimplemented.
 - Added explicit unsupported ternary conditional expression diagnostics for
   full and short ternary forms before expression-form branching exists, with
   parser regression coverage, fixture/CLI coverage, documentation, and native

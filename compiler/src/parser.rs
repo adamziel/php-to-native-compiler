@@ -921,6 +921,24 @@ impl Parser {
         let saved = self.current;
         let target = self.parse_assignment_target()?;
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+                && matches!(self.peek_next().kind, TokenKind::Equal)
+            {
+                let operator_span = self.advance().span;
+                self.advance();
+                let AssignTarget::Variable { name, span } = target else {
+                    return Err(self.error_at(
+                        operator_span,
+                        unsupported_null_coalescing_assignment_message(),
+                    ));
+                };
+                let expr = self.parse_expression()?;
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after null coalescing assignment",
+                )?;
+                return Ok(Some(Stmt::NullCoalesceAssign { name, expr, span }));
+            }
             self.current = saved;
             return Ok(None);
         }
@@ -2063,6 +2081,10 @@ fn unsupported_ternary_message() -> &'static str {
 
 fn unsupported_null_coalescing_message() -> &'static str {
     "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+}
+
+fn unsupported_null_coalescing_assignment_message() -> &'static str {
+    "unsupported null coalescing assignment: only direct variable targets are implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {
