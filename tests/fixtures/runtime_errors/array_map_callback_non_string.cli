@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_map_callback_non_string.php:3:6: unsupported call array_map(): callback must evaluate to string, got int
+--- stderr end ---

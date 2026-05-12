@@ -72,8 +72,9 @@ subset:
   integer/string array values, `array_fill_keys` over integer/string key
   values, `array_count_values` over integer/string array values,
   `array_filter` without a callback and with string-valued value-only
-  callbacks, `in_array` and `array_search` including strict scalar searches,
-  `var_dump`, and `print_r`
+  callbacks, `array_map` over the current one-array string-callback subset,
+  `in_array` and `array_search` including strict scalar searches, `var_dump`,
+  and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, invalid `break`/`continue` outside a loop, and runaway

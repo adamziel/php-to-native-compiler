@@ -1,0 +1,21 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => 0
+    [1] => 1
+    [2] => 2
+    [3] => 3
+)
+mapped:Ada|mapped:Bob|mapped:|mapped:Linus
+after
+Array
+(
+    [first] => Ada
+    [5] => Bob
+    [empty] => 
+    [6] => Linus
+)
+3|0|1|1--- stdout end ---
+stderr:
+--- stderr end ---

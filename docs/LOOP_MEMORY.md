@@ -4118,3 +4118,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T06:04:57Z
 
 - Post-round 65 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T06:05:01Z
+
+- Starting round 66 at 20260512T060501Z from HEAD `4908102`.
+
+## Loop Event 2026-05-12T06:05:05Z
+
+- Pre-round 66 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:13:13Z
+
+- Task attempted: implemented `array_map($callback, $array)` for the first
+  one-array string-callback subset over the current ordered array value model.
+  The supported slice resolves string-valued user-function or callable-builtin
+  callbacks, invokes each callback with the value only, returns mapped values
+  reindexed from integer key zero, supports string-valued dynamic calls to
+  `array_map`, and reports stable diagnostics for non-array operands,
+  non-string callbacks, unresolved callback names, unsupported `null`
+  callbacks, and unsupported multiple input arrays.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/array_map.rs`,
+  `compiler/tests/array_mapping_builtins_cli.rs`,
+  `tests/fixtures/milestone22/array_map.*`,
+  `tests/fixtures/runtime_errors/array_map_*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo fmt --check` passed; `cargo test
+  -p phpc --test array_map` passed with 7 tests; `cargo test -p phpc --test
+  array_mapping_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone22` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone22` passed with 1 `.phpc-only`
+  skip; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with
+  60 fixtures; `cargo test -p phpc --test array_map
+  emit_ir_rejects_array_map_until_native_call_lowering_exists` passed; `cargo
+  run -p phpc -- run tests/fixtures/milestone22/array_map.php` printed the
+  committed output; `tools/run-tests.sh` passed with 156 fixtures, 61 system
+  PHP comparisons, and 95 `.phpc-only` skips.
+- Remaining semantic gaps: `array_map` currently supports one input array only
+  and string-valued user-function or callable-builtin callbacks in value-only
+  mode. It reindexes mapped results from integer key zero instead of preserving
+  keys for one-array calls as PHP does. Multiple input arrays, `null` callback
+  identity/zip modes, array/object callables, closures, first-class callables,
+  method calls, references, copy-on-write behavior, object handle identity
+  preservation, resource values, exact native `TypeError` objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement `array_map($callback, $left, $right)` for the
+  first two-array string-callback subset, including PHP-aligned length
+  behavior and integer reindexing while keeping broader mapping forms
+  explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_map builtin"`
+  after the full suite passes.

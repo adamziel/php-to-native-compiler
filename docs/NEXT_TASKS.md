@@ -295,10 +295,18 @@ handled.
 
 ## Milestone 22: Array Mapping Builtins
 
-- [ ] Implement `array_map($callback, $array)` for the first supported
+- [x] Implement `array_map($callback, $array)` for the first supported
   one-array callback subset over the current ordered array value model,
   including string-valued callable names, value callback arguments, integer
   reindexing behavior, unresolved/non-callable diagnostics, fixture CLI
   coverage, documentation, explicit gaps for multiple arrays, null callbacks,
   key preservation differences, references/copy-on-write, and explicit
   native-codegen rejection.
+
+## Milestone 23: Array Mapping Follow-ups
+
+- [ ] Implement `array_map($callback, $left, $right)` for the first
+  two-array string-callback subset, including lockstep value arguments,
+  shortest/longest-array behavior documented against PHP, integer reindexing,
+  diagnostics for unsupported extra arrays and callbacks, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.

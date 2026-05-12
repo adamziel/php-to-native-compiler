@@ -1,0 +1,1 @@
+Project-specific current array_map slice rejects PHP's null-callback identity/zip modes.

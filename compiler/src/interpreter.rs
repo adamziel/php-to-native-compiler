@@ -1093,6 +1093,7 @@ impl Interpreter {
                 }
             }
             "array_filter" => self.call_array_filter(args, span),
+            "array_map" => self.call_array_map(args, span),
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1304,6 +1305,85 @@ impl Interpreter {
         }
 
         Ok(filtered)
+    }
+
+    fn call_array_map(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        match args.as_slice() {
+            [callback, Value::Array(array)] => Ok(Value::Array(
+                self.map_array_with_callback(callback, array, span)?,
+            )),
+            [_, Value::Array(_), ..] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_map()",
+                    "multiple input arrays are not supported in the current subset",
+                ),
+            )),
+            [_, other] | [_, other, ..] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_map()",
+                    format!("second argument must be array, got {}", other.type_name()),
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_map()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn map_array_with_callback(
+        &mut self,
+        callback: &Value,
+        array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let callback_name = match callback {
+            Value::String(name) => name,
+            Value::Null => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_map()",
+                        "null callbacks are not supported in the current subset",
+                    ),
+                ));
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_map()",
+                        format!(
+                            "callback must evaluate to string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        let callable = self.lookup_function(callback_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(callback_name)),
+            )
+        })?;
+
+        let mut mapped = PhpArray::new();
+        for entry in array.entries() {
+            let value =
+                self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
+            mapped
+                .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(mapped)
     }
 
     fn call_isset(
@@ -1590,6 +1670,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_fill_keys"
             | "array_count_values"
             | "array_filter"
+            | "array_map"
             | "in_array"
             | "array_search"
             | "var_dump"
