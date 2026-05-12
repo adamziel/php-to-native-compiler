@@ -834,3 +834,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   keeping object instantiation and member access unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add metadata sketch"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T00:04:19Z
+
+- Codex round 14 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260511T235722Z-14.log`.
+
+## Loop Event 2026-05-12T00:04:21Z
+
+- Post-round 14 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:04:21Z
+
+- Post-round 14 tests passed; running checkpoint for this round.
