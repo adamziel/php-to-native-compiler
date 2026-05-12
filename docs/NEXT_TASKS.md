@@ -743,8 +743,18 @@ handled.
 
 ## Milestone 75: Magic Constant Function Slice
 
-- [ ] Implement `__FUNCTION__` as the next executable magic constant for the
+- [x] Implement `__FUNCTION__` as the next executable magic constant for the
   current user-function context, including parser/interpreter support, fixture
   CLI coverage, documentation, and explicit gaps for method/class/trait
   context constants, namespaces, closures, eval/include source mapping,
   canonical PHP behavior, and native lowering.
+
+## Milestone 76: Magic Constant Method Boundary
+
+- [ ] Define the next honest `__METHOD__` path, either by adding a stable
+  unsupported diagnostic tied to the current no-method-dispatch boundary or by
+  first implementing a minimal method execution slice that can evaluate
+  `__METHOD__` honestly, including parser/interpreter support, fixture CLI
+  coverage, documentation, and explicit gaps for class/trait/namespace
+  contexts, closures, eval/include source mapping, canonical PHP behavior, and
+  native lowering.

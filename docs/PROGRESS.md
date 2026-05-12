@@ -2366,9 +2366,14 @@ Still fails:
   parent directory evaluate to `.`, canonical PHP absolute path behavior and
   eval/include source mapping remain unsupported, and native lowering still
   rejects it explicitly.
+- Added `__FUNCTION__` as the fourth executable magic constant, evaluated as
+  the current user-function name in ordinary expressions and default parameter
+  values, and as an empty string outside a function. Method/class/trait/
+  namespace context constants, closure context, eval/include source mapping,
+  exact canonical PHP behavior, and native lowering remain unsupported.
 
 Next:
 
-- Implement `__FUNCTION__` as the next executable magic constant for the
-  current user-function context while keeping method/class/trait/namespace
-  context constants and native lowering explicitly unsupported.
+- Implement `__METHOD__` as the next executable magic constant only after the
+  method execution boundary exists; otherwise add a narrower object-method
+  execution task first.

@@ -11,7 +11,9 @@
 - `null`, `true`, and `false`
 - magic constants `__LINE__`, evaluated from the expression token's source
   line, `__FILE__`, evaluated from the current `phpc run` input path when one
-  is available, and `__DIR__`, evaluated as that path's parent directory
+  is available, `__DIR__`, evaluated as that path's parent directory, and
+  `__FUNCTION__`, evaluated as the current user-function name or an empty
+  string outside a function
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
@@ -166,8 +168,7 @@
   static local variable declarations inside functions, anonymous functions,
   arrow functions, named arguments, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
-  `__DIR__`, `__FUNCTION__`, `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
-  `__NAMESPACE__`
+  `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
@@ -641,15 +642,18 @@
   string. The `__DIR__` magic constant evaluates to the current `phpc run`
   input path's parent directory, uses `.` when that path has no parent
   directory, and evaluates to an empty string for path-less library execution.
-  Other magic constants such as `__FUNCTION__`, `__METHOD__`, and `__CLASS__`
-  fail with stable parse diagnostics before their source/context-aware
-  evaluation exists. Nullable, union, and intersection
+  The `__FUNCTION__` magic constant evaluates to the current user-function
+  name in ordinary expressions and default parameter values, and to an empty
+  string outside a function. Other magic constants such as `__METHOD__`,
+  `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__` fail with stable parse
+  diagnostics before their source/context-aware evaluation exists. Nullable,
+  union, and intersection
   types, `mixed`, `void`/`never`, class/interface type names, coercive versus
   strict typing, variance, static local initialization expressions,
   per-function persistence, recursion/reentrancy behavior, canonical absolute
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,
-  function/method/class magic constant context, namespace and trait magic
-  constants, magic constant native lowering, array callables, object/method
+  method/class magic constant context, namespace and trait magic constants,
+  closure function-name context, magic constant native lowering, array callables, object/method
   callables, first-class callable
   syntax, `call_user_func`, namespace-qualified callable resolution, autoload
   interaction, and native lowering for type declarations are unsupported.
@@ -1160,13 +1164,15 @@
 - static local variable declarations inside functions, including
   initialization expressions, per-function persistence, references,
   recursion/reentrancy behavior, and native lowering
-- magic constants other than `__LINE__`, `__FILE__`, and `__DIR__`, such as
-  `__FUNCTION__`, `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
+- magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
+  `__FUNCTION__`, such as `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
   `__NAMESPACE__`; these fail with stable parse diagnostics before
-  function/method/class context, namespace/trait context, or native lowering
-  exists. `__FILE__` currently reports the `phpc run` input path string, and
-  `__DIR__` derives from that same path string; neither is guaranteed to match
-  PHP's canonical absolute filename or directory in all entry paths.
+  method/class context, namespace/trait context, or native lowering exists.
+  `__FUNCTION__` is limited to user-function context and the top-level empty
+  string behavior; closure context is not implemented. `__FILE__` currently
+  reports the `phpc run` input path string, and `__DIR__` derives from that
+  same path string; neither is guaranteed to match PHP's canonical absolute
+  filename or directory in all entry paths.
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex
@@ -1275,7 +1281,8 @@
   constants, namespace-qualified constants, nested `const` declarations,
   dynamic declaration values, `constant()`/`defined()` lookup
   for class constants, names lexed as language keywords or literals for bare
-  reads, magic constants other than `__LINE__`, `__FILE__`, and `__DIR__`,
+  reads, magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
+  `__FUNCTION__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and

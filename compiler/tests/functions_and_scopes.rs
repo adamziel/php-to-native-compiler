@@ -534,18 +534,48 @@ fn emit_ir_rejects_magic_dir_until_native_source_mapping_exists() {
 }
 
 #[test]
-fn magic_constants_except_line_file_and_dir_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-function current_name() {
-    return __FUNCTION__;
+fn magic_function_constant_evaluates_from_current_user_function_context() {
+    let execution = run_source(
+        r#"<?php
+echo "top:", __FUNCTION__, "\n";
+function current_name($default = __FUNCTION__) {
+    echo "default:", $default, "\n";
+    echo "body:", __FUNCTION__, "\n";
 }
+function caller() {
+    current_name();
+    echo "caller:", __FUNCTION__, "\n";
+}
+current_name("manual");
+caller();
 "#,
-            3,
-            12,
-            "__FUNCTION__",
-        ),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "top:\ndefault:manual\nbody:current_name\ndefault:current_name\nbody:current_name\ncaller:caller\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_magic_function_until_native_source_mapping_exists() {
+    let error = emit_ir_source("<?php\necho __FUNCTION__;\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert!(
+        error.message.contains("__FUNCTION__")
+            && error.message.contains("not LLVM IR emission yet"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn magic_constants_except_line_file_dir_and_function_are_rejected_with_stable_parse_error() {
+    let cases = [
         (
             r#"<?php
 class Box {

@@ -7553,3 +7553,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:25:46Z
 
 - Post-round 23 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:25:53Z
+
+- Starting round 24 at 20260512T172553Z from HEAD `1fe1a74`.
+
+## Loop Event 2026-05-12T17:26:02Z
+
+- Pre-round 24 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:39:12Z
+
+- Task attempted: completed Milestone 75 by implementing `__FUNCTION__` as an
+  executable magic constant for the current user-function context. The parser
+  now emits a dedicated magic-function expression, the interpreter tracks a
+  user-function context stack so ordinary expressions and default parameter
+  values evaluate to the active function name, top-level evaluation returns an
+  empty string, and LLVM/assembly emission reject it explicitly until native
+  source/context mapping exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone75/magic_function.*`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo check -p phpc`
+  passed; `cargo test -p phpc --test functions_and_scopes magic_function`
+  passed; `cargo test -p phpc --test magic_constants_cli` passed; `cargo run
+  -p phpc -- test tests/fixtures/milestone75` passed with 1 fixture; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/milestone75` passed with 1
+  system PHP comparison; direct `cargo run -p phpc -- run
+  tests/fixtures/milestone75/magic_function.php` printed the committed
+  user-function context output; direct `cargo run -p phpc -- compile
+  tests/fixtures/milestone75/magic_function.php --emit-ir` exited `1` with the
+  expected `__FUNCTION__` native-lowering rejection; an initial
+  `tools/run-tests.sh` run failed on the stale unsupported magic-constant
+  fixture, then `cargo test -p phpc --test milestone1 milestone1_fixtures_pass`
+  passed, `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 10 fixtures, and
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 10 skips after
+  retargeting that fixture to unsupported `__METHOD__`; final
+  `tools/run-tests.sh` passed with 262 fixtures, 106 system PHP comparisons,
+  and 156 skips.
+- Remaining semantic gaps: `__FUNCTION__` is limited to user functions and the
+  top-level empty string behavior. Method/class/trait/namespace magic
+  constants, closure context, eval/include source mapping, canonical PHP path
+  behavior, references/copy-on-write interactions, exact PHP error objects, and
+  native lowering for magic constants remain unsupported.
+- Next concrete task: define the next honest `__METHOD__` path, likely by
+  adding or retaining an explicit unsupported boundary until method dispatch
+  exists, or by first implementing a minimal method execution slice.
+- Checkpoint: pending `tools/checkpoint.sh "parser: execute __FUNCTION__ magic constant"`
+  after the full suite passes.

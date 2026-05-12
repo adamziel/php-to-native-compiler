@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+top:
+default:manual
+body:current_name
+default:current_name
+body:current_name
+caller:caller
+--- stdout end ---
+stderr:
+--- stderr end ---

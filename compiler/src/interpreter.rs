@@ -46,6 +46,7 @@ struct Interpreter {
     constants: ConstantTable,
     source_file: Option<String>,
     call_depth: usize,
+    function_context: Vec<String>,
     stdout: String,
 }
 
@@ -182,6 +183,7 @@ impl Interpreter {
             constants: ConstantTable::new(),
             source_file,
             call_depth: 0,
+            function_context: Vec::new(),
             stdout: String::new(),
         })
     }
@@ -545,6 +547,9 @@ impl Interpreter {
                 Ok(Value::String(self.source_file.clone().unwrap_or_default()))
             }
             Expr::MagicDir { .. } => Ok(Value::String(self.magic_dir_value())),
+            Expr::MagicFunction { .. } => Ok(Value::String(
+                self.function_context.last().cloned().unwrap_or_default(),
+            )),
             Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
@@ -922,6 +927,7 @@ impl Interpreter {
         function: &FunctionDecl,
         args: Vec<Value>,
     ) -> CompileResult<Value> {
+        self.function_context.push(function.name.clone());
         let mut local_scope = SymbolTable::new();
         for (index, param) in function.params.iter().enumerate() {
             let value = if let Some(arg) = args.get(index) {
@@ -932,7 +938,13 @@ impl Interpreter {
                     .as_ref()
                     .expect("arity check ensures missing params have defaults");
                 let mut default_scope = SymbolTable::new();
-                self.evaluate(default, &mut default_scope)?
+                match self.evaluate(default, &mut default_scope) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.function_context.pop();
+                        return Err(error);
+                    }
+                }
             };
             local_scope.write_static(&param.name, value);
         }
@@ -940,6 +952,7 @@ impl Interpreter {
         self.call_depth += 1;
         let flow = self.execute_statements(&function.body, &mut local_scope);
         self.call_depth -= 1;
+        self.function_context.pop();
 
         match flow? {
             Flow::Normal => Ok(Value::Null),
