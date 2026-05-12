@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/default_parameter_undefined_constant.php:2:35: undefined constant MISSING_DEFAULT
+--- stderr end ---

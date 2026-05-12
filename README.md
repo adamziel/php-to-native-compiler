@@ -45,8 +45,9 @@ subset:
   and key/value forms, including `break;` for innermost loops or switch
   statements and `continue;` for the innermost executing loop
 - function declarations, positional calls with trailing default parameter
-  values, recursive calls up to the documented guard, `return`, and isolated
-  local scopes for user-function calls
+  values over the documented constant-expression and unqualified constant
+  reference subset, recursive calls up to the documented guard, `return`, and
+  isolated local scopes for user-function calls
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions
 - top-level class declarations registered as metadata, with property and method

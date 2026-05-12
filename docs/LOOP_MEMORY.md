@@ -7147,3 +7147,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T16:26:06Z
 
 - Post-round 16 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T16:26:13Z
+
+- Starting round 17 at 20260512T162613Z from HEAD `ad6510a`.
+
+## Loop Event 2026-05-12T16:26:19Z
+
+- Pre-round 17 test exit code: `0`.
+
+## Loop Event 2026-05-12T16:34:23Z
+
+- Task attempted: completed Milestone 68 by allowing user-function default
+  parameter expressions to reference bare unqualified constants through the
+  existing runtime constant table, including the current built-in
+  `ARRAY_FILTER_*` constants. Omitted arguments now evaluate those default
+  references through the normal expression path, and missing default constants
+  produce the stable undefined-constant runtime diagnostic.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone68/default_parameter_constant_references.php`,
+  `tests/fixtures/milestone68/default_parameter_constant_references.stdout`,
+  `tests/fixtures/milestone68/default_parameter_constant_references.cli`,
+  `tests/fixtures/runtime_errors/default_parameter_undefined_constant.php`,
+  `tests/fixtures/runtime_errors/default_parameter_undefined_constant.stderr`,
+  `tests/fixtures/runtime_errors/default_parameter_undefined_constant.exit`,
+  `tests/fixtures/runtime_errors/default_parameter_undefined_constant.phpc-only`,
+  `tests/fixtures/runtime_errors/default_parameter_undefined_constant.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test functions_and_scopes
+  default_parameter` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone68` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone68` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test user_constants_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed after correcting the
+  new CLI snapshot format; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 113 fixtures; `tools/run-tests.sh`
+  passed with 254 fixtures, 104 system PHP comparisons, and 150 skips.
+- Remaining semantic gaps: default constant references are resolved when an
+  omitted argument is bound, using constants already present in the runtime
+  constant table plus the current built-in `ARRAY_FILTER_*` constants. Calls
+  that omit a default before its referenced constant is defined fail with a
+  stable project diagnostic. Namespace-aware constants, class constants,
+  dynamic defaults, references, copy-on-write behavior, exact PHP error object
+  semantics, and native lowering for defaults remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  user-function parameter type declarations and return type declarations before
+  executable type enforcement exists.
+- Checkpoint: pending `tools/checkpoint.sh "functions: allow constant refs in defaults"`
+  after the full suite passes.

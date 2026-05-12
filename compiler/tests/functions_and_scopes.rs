@@ -127,6 +127,45 @@ default_items();
 }
 
 #[test]
+fn default_parameter_values_can_reference_global_constants() {
+    let execution = run_source(
+        r#"<?php
+define("RUNTIME_FACTOR", 3);
+const BASE = "compiler";
+function describe($label = BASE . ":" . ARRAY_FILTER_USE_KEY, $factor = RUNTIME_FACTOR + 1, $items = [BASE => ARRAY_FILTER_USE_BOTH]) {
+    echo $label, "|", $factor, "|", $items["compiler"], "\n";
+}
+describe();
+function late_default($value = LATE_DEFAULT) {
+    return $value;
+}
+const LATE_DEFAULT = "late";
+echo late_default(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "compiler:2|4|1\nlate\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn undefined_default_parameter_constant_reports_runtime_error_when_omitted() {
+    let error = runtime_error(
+        r#"<?php
+function missing_default($value = MISSING_DEFAULT) {
+    return $value;
+}
+echo missing_default();
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 35);
+    assert_eq!(error.message, "undefined constant MISSING_DEFAULT");
+}
+
+#[test]
 fn default_parameter_arity_errors_report_supported_range() {
     let too_few = runtime_error(
         r#"<?php

@@ -42,7 +42,9 @@
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions
 - trailing default parameter values for user functions over the documented
-  constant-expression subset
+  constant-expression subset, including bare references to previously defined
+  unqualified constants and the current built-in global constant slice when an
+  omitted argument is bound
 - recursive user-function calls up to a fixed 128-frame user-function call-depth
   guard
 - `return`
@@ -595,8 +597,13 @@
   parameter values are supported. Defaults may
   use the current constant-expression subset: `null`, booleans, integers,
   floats, strings, short and long arrays with supported keys, unary
-  expressions, and binary expressions over those values. Omitted arguments bind
-  to their defaults; calls outside the supported required-to-total arity range
+  expressions, binary expressions over those values, and bare references to
+  unqualified constants that are defined in the current runtime constant table
+  before the omitted argument is bound. The exact uppercase built-in
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants are also
+  accepted in default expressions. Omitted arguments bind to their defaults;
+  missing constant references fail with a stable undefined-constant runtime
+  diagnostic; calls outside the supported required-to-total arity range
   fail with a stable arity diagnostic. Each user-function call gets a fresh
   local scope. Parameters and local assignments shadow global variables without
   mutating them, and functions do not import top-level variables implicitly.
@@ -605,8 +612,11 @@
   supported until the fixed 128-frame user-function call-depth guard is reached.
   That guard is a project-specific runtime diagnostic, not PHP's native stack or
   memory exhaustion behavior; it is not configurable and does not produce stack
-  traces. Non-constant defaults such as variables, calls, dynamic calls, and
-  indexed reads are rejected by the parser. Required parameters after default
+  traces. Forward constant references at omitted-argument binding time,
+  namespace-aware constants, class constants, dynamic defaults,
+  references/copy-on-write behavior, and native lowering for defaults are not
+  implemented. Non-constant defaults such as variables, calls, dynamic calls,
+  and indexed reads are rejected by the parser. Required parameters after default
   parameters are also rejected instead of modeling PHP's deprecation and
   implicit-required behavior. Variadic parameters and argument unpacking,
   reference parameters/returns, reference expressions, anonymous functions,
@@ -1111,7 +1121,8 @@
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
-- default parameter values outside the documented constant-expression subset
+- default parameter values outside the documented constant-expression and
+  unqualified constant-reference subset
 - required parameters after default parameters
 - variadic parameters and variadic argument unpacking
 - reference parameters, reference returns, reference assignments, and

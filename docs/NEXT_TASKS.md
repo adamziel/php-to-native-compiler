@@ -684,9 +684,18 @@ handled.
 
 ## Milestone 68: Default Parameter Constant References
 
-- [ ] Allow user-function default parameter values to reference previously
+- [x] Allow user-function default parameter values to reference previously
   defined unqualified constants and the current built-in global constant slice,
   including omitted-argument behavior, undefined-name diagnostics, fixture CLI
   coverage, documentation, and explicit gaps for forward references,
   namespace-aware constants, class constants, dynamic defaults,
   references/copy-on-write, and native lowering.
+
+## Milestone 69: Function Type Declaration Boundaries
+
+- [ ] Add explicit parse diagnostics for unsupported user-function parameter
+  type declarations and return type declarations before executable type
+  enforcement exists, including parser coverage, fixture CLI coverage,
+  documentation, and named gaps for nullable/union/intersection types,
+  `mixed`, `void`/`never`, class/interface names, coercive vs strict typing,
+  variance, and native lowering.

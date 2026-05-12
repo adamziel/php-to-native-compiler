@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+compiler:2|4|1
+manual|9|override
+late
+--- stdout end ---
+stderr:
+--- stderr end ---

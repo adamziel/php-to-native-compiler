@@ -1405,8 +1405,8 @@ impl Parser {
                 self.ensure_supported_default_expr(left)?;
                 self.ensure_supported_default_expr(right)
             }
+            Expr::GlobalConstant { .. } => Ok(()),
             Expr::Variable(_, _)
-            | Expr::GlobalConstant { .. }
             | Expr::Index { .. }
             | Expr::Property { .. }
             | Expr::Call { .. }

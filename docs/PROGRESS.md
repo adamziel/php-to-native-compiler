@@ -95,6 +95,11 @@ Implemented:
 - Added parser and interpreter support for trailing default parameter values in
   user functions over the documented constant-expression subset, including
   required-to-total arity diagnostics and scalar/array default fixture coverage.
+- Extended user-function default parameter values so omitted arguments can
+  evaluate bare references to previously defined unqualified constants and the
+  current built-in `ARRAY_FILTER_*` constants over the existing
+  constant-expression subset, with stable undefined-constant diagnostics for
+  missing default references.
 - Added explicit parser diagnostics, unit tests, fixture coverage, and
   `phpc run` CLI snapshots for unsupported function features: variadic
   parameters, variadic argument unpacking, references, anonymous functions,
@@ -2252,11 +2257,17 @@ Still fails:
   variables is not modeled. Recursive calls use a fixed 128-frame
   user-function guard rather than PHP's native stack or memory exhaustion
   behavior, and the guard is not configurable. Default parameter support is
-  limited to trailing defaults over the documented constant-expression subset;
-  non-constant defaults and required parameters after defaults are rejected by
-  the parser. Variadic parameters, argument unpacking, references, closures and
-  arrow functions, named arguments, and `declare(strict_types=1)` now fail with
-  explicit parse diagnostics; their PHP runtime semantics are not implemented.
+  limited to trailing defaults over the documented constant-expression and
+  unqualified constant-reference subset. Constant references are resolved from
+  constants defined before the omitted argument is bound, plus the current
+  built-in `ARRAY_FILTER_*` constants. Forward references at call time,
+  namespace-aware constants, class constants, dynamic defaults,
+  references/copy-on-write behavior, and native lowering for defaults are not
+  implemented. Non-constant defaults and required parameters after defaults are
+  rejected by the parser. Variadic parameters, argument unpacking, references,
+  closures and arrow functions, named arguments, and `declare(strict_types=1)`
+  now fail with explicit parse diagnostics; their PHP runtime semantics are not
+  implemented.
   Dynamic function calls are limited to string-valued function names resolving
   to current user functions or the documented callable builtins; array/object
   callables, method calls, first-class callable syntax, `call_user_func`,
@@ -2316,4 +2327,5 @@ Still fails:
 
 Next:
 
-- Add the next small task from `docs/NEXT_TASKS.md`.
+- Add explicit parse diagnostics for unsupported user-function parameter and
+  return type declarations before executable type enforcement exists.
