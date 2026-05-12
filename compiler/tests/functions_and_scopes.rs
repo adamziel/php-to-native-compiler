@@ -274,6 +274,103 @@ function mutate(&$value) {
 }
 
 #[test]
+fn parameter_type_declarations_are_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+function label(string $value) {
+    return $value;
+}
+"#,
+            16,
+        ),
+        (
+            r#"<?php
+function nullable(?string $value) {
+    return $value;
+}
+"#,
+            19,
+        ),
+        (
+            r#"<?php
+function union(int|string $value) {
+    return $value;
+}
+"#,
+            16,
+        ),
+        (
+            r#"<?php
+function intersection(Iterator&Countable $value) {
+    return $value;
+}
+"#,
+            23,
+        ),
+    ];
+
+    for (source, column) in cases {
+        let error = parse_error(source);
+
+        assert_eq!(error.line, 2);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported parameter type declaration: parameter type enforcement is not implemented"
+        );
+    }
+}
+
+#[test]
+fn return_type_declarations_are_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+function label($value): string {
+    return $value;
+}
+"#,
+            23,
+        ),
+        (
+            r#"<?php
+function nullable($value): ?string {
+    return $value;
+}
+"#,
+            26,
+        ),
+        (
+            r#"<?php
+function union($value): int|string {
+    return $value;
+}
+"#,
+            23,
+        ),
+        (
+            r#"<?php
+function void_result(): void {
+}
+"#,
+            23,
+        ),
+    ];
+
+    for (source, column) in cases {
+        let error = parse_error(source);
+
+        assert_eq!(error.line, 2);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported return type declaration: return type enforcement is not implemented"
+        );
+    }
+}
+
+#[test]
 fn reference_returns_are_rejected_with_stable_parse_error() {
     let error = parse_error(
         r#"<?php

@@ -104,6 +104,10 @@ Implemented:
   `phpc run` CLI snapshots for unsupported function features: variadic
   parameters, variadic argument unpacking, references, anonymous functions,
   arrow functions, named arguments, and `declare(strict_types=1)`.
+- Added explicit parser diagnostics, unit tests, fixture coverage, and
+  `phpc run` CLI snapshots for unsupported user-function parameter type
+  declarations and return type declarations before executable type enforcement
+  exists.
 - Added a materialized interpreter symbol table for top-level and function-local
   scopes. Current static variable reads, writes, `unset($name)`,
   `isset($name)`, parameter binding, default-parameter evaluation, and direct
@@ -787,10 +791,10 @@ Tested:
   and LLVM IR rejection.
 - `cargo test -p phpc --test comparison_refinements_cli` passes with 1 CLI
   snapshot test covering the Milestone 12 strict identity fixture.
-- `cargo test -p phpc --test functions_and_scopes` passes with 17
+- `cargo test -p phpc --test functions_and_scopes` passes with 21
   user-function scope/default-parameter tests.
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
-  CLI snapshot test covering 6 representative unsupported function-feature
+  CLI snapshot test covering 8 representative unsupported function-feature
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 4 focused
   symbol-table unit tests.
@@ -1157,9 +1161,9 @@ Tested:
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone11` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
-  passes with 6 unsupported function-feature fixtures.
+  passes with 8 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
+  tests/fixtures/unsupported_function_features` passes with 8 `.phpc-only`
   PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
   passes with 12 unsupported dynamic-feature fixtures.
@@ -2042,8 +2046,8 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 112
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 252 fixtures, 103 system PHP comparisons,
-  and 149 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 256 fixtures, 104 system PHP comparisons,
+  and 152 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -2265,9 +2269,11 @@ Still fails:
   references/copy-on-write behavior, and native lowering for defaults are not
   implemented. Non-constant defaults and required parameters after defaults are
   rejected by the parser. Variadic parameters, argument unpacking, references,
-  closures and arrow functions, named arguments, and `declare(strict_types=1)`
-  now fail with explicit parse diagnostics; their PHP runtime semantics are not
-  implemented.
+  parameter and return type declarations, closures and arrow functions, named
+  arguments, and `declare(strict_types=1)` now fail with explicit parse
+  diagnostics. Nullable, union, and intersection types, `mixed`, `void`/`never`,
+  class/interface type names, coercive versus strict typing, variance, runtime
+  type enforcement, and native type lowering are not implemented.
   Dynamic function calls are limited to string-valued function names resolving
   to current user functions or the documented callable builtins; array/object
   callables, method calls, first-class callable syntax, `call_user_func`,
@@ -2327,5 +2333,5 @@ Still fails:
 
 Next:
 
-- Add explicit parse diagnostics for unsupported user-function parameter and
-  return type declarations before executable type enforcement exists.
+- Add explicit parse diagnostics for unsupported static local variable
+  declarations before static local storage exists.

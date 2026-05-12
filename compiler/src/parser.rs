@@ -117,6 +117,10 @@ impl Parser {
                         "unsupported reference parameter: references are not implemented",
                     ));
                 }
+                if self.check(is_parameter_type_start) {
+                    let span = self.peek().span;
+                    return Err(self.error_at(span, unsupported_parameter_type_message()));
+                }
                 let (name, span) = self.consume_variable_with_span("expected parameter name")?;
                 let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                     saw_default = true;
@@ -145,6 +149,9 @@ impl Parser {
         }
 
         self.consume_keyword(TokenKind::RParen, "expected ')' after parameter list")?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            return Err(self.error_at(self.previous().span, unsupported_return_type_message()));
+        }
         let body = self.parse_required_block("expected function body")?;
 
         Ok(FunctionDecl {
@@ -1669,6 +1676,8 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Backslash => "\\",
         TokenKind::Ellipsis => "...",
         TokenKind::Ampersand => "&",
+        TokenKind::Question => "?",
+        TokenKind::Pipe => "|",
         TokenKind::Colon => ":",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",
@@ -1696,6 +1705,27 @@ fn include_require_name(kind: &TokenKind) -> Option<&'static str> {
 
 fn unsupported_include_require_message(construct: &str) -> String {
     format!("unsupported {construct}: include/require resolution and execution are not implemented")
+}
+
+fn is_parameter_type_start(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Identifier(_)
+            | TokenKind::Question
+            | TokenKind::Backslash
+            | TokenKind::Static
+            | TokenKind::Null
+            | TokenKind::True
+            | TokenKind::False
+    )
+}
+
+fn unsupported_parameter_type_message() -> &'static str {
+    "unsupported parameter type declaration: parameter type enforcement is not implemented"
+}
+
+fn unsupported_return_type_message() -> &'static str {
+    "unsupported return type declaration: return type enforcement is not implemented"
 }
 
 fn unsupported_eval_message() -> &'static str {

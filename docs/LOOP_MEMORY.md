@@ -7210,3 +7210,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T16:35:55Z
 
 - Post-round 17 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T16:36:02Z
+
+- Starting round 18 at 20260512T163602Z from HEAD `b01a508`.
+
+## Loop Event 2026-05-12T16:36:10Z
+
+- Pre-round 18 test exit code: `0`.
+
+## Loop Event 2026-05-12T16:43:43Z
+
+- Task attempted: completed Milestone 69 by adding explicit parse diagnostics
+  for unsupported user-function parameter type declarations and return type
+  declarations before executable type enforcement exists. The parser now
+  reaches stable diagnostics for basic, nullable, union, intersection,
+  `void`, and class/interface-name-looking type syntax instead of falling into
+  generic parameter/body errors or lexing `?`/`|` as unexpected characters.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/unsupported_function_features_cli.rs`,
+  `tests/fixtures/unsupported_function_features/unsupported_parameter_type.*`,
+  `tests/fixtures/unsupported_function_features/unsupported_return_type.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo check -p phpc`
+  passed; `cargo test -p phpc --test functions_and_scopes` passed with 21
+  tests; `cargo test -p phpc --test unsupported_function_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 8 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 8 `.phpc-only`
+  skips; direct `phpc run` exercises for the new parameter-type and
+  return-type fixtures exited `1` with the expected stable parse diagnostics;
+  `tools/run-tests.sh` passed with 256 fixtures, 104 system PHP comparisons,
+  and 152 skips.
+- Remaining semantic gaps: parameter type declarations and return type
+  declarations are rejected before execution. Runtime type enforcement,
+  nullable/union/intersection semantics, `mixed`, `void`/`never`,
+  class/interface type resolution, coercive versus strict typing, variance,
+  exact PHP `TypeError` objects, and native type lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported static
+  local variable declarations before static local storage exists.
+- Checkpoint: pending `tools/checkpoint.sh "functions: add type declaration diagnostics"`
+  after the full suite passes.

@@ -121,7 +121,8 @@ subset:
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
-  variadics, references, closures, named arguments, `declare(strict_types=1)`,
+  variadics, references, parameter and return type declarations, closures,
+  named arguments, `declare(strict_types=1)`,
   unsupported nested, namespace-aware, or dynamic-value `const` declarations,
   unsupported array spread/reference elements, unsupported broader
   `unset(...)` forms such as property, append-offset, and nested unset,

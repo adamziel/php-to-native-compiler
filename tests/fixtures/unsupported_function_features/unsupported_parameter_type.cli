@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_function_features/unsupported_parameter_type.php:2:16: unsupported parameter type declaration: parameter type enforcement is not implemented
+--- stderr end ---

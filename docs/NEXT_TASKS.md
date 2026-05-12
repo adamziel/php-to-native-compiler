@@ -693,9 +693,17 @@ handled.
 
 ## Milestone 69: Function Type Declaration Boundaries
 
-- [ ] Add explicit parse diagnostics for unsupported user-function parameter
+- [x] Add explicit parse diagnostics for unsupported user-function parameter
   type declarations and return type declarations before executable type
   enforcement exists, including parser coverage, fixture CLI coverage,
   documentation, and named gaps for nullable/union/intersection types,
   `mixed`, `void`/`never`, class/interface names, coercive vs strict typing,
   variance, and native lowering.
+
+## Milestone 70: Static Local Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported static local variable
+  declarations inside functions before static local storage exists, including
+  parser coverage, fixture CLI coverage, documentation, and named gaps for
+  initialization expressions, per-function persistence, references,
+  recursion/reentrancy behavior, and native lowering.

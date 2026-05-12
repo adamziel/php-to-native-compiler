@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_function_features/unsupported_return_type.php:2:23: unsupported return type declaration: return type enforcement is not implemented
+--- stderr end ---

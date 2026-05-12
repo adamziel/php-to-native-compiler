@@ -13,7 +13,7 @@ fn unsupported_function_feature_cli_snapshots_match_committed_outputs() {
 
     fixtures.sort();
     assert!(
-        fixtures.len() >= 6,
+        fixtures.len() >= 8,
         "expected representative unsupported function feature CLI fixtures"
     );
 

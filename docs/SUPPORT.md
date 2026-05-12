@@ -159,8 +159,9 @@
   inside `switch`, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
-  reference expressions, anonymous functions, arrow functions, named arguments,
-  and `declare(strict_types=1)`
+  reference expressions, parameter type declarations, return type declarations,
+  anonymous functions, arrow functions, named arguments, and
+  `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
@@ -621,12 +622,15 @@
   implicit-required behavior. Variadic parameters and argument unpacking,
   reference parameters/returns, reference expressions, anonymous functions,
   arrow functions, named arguments, and `declare(strict_types=1)` are rejected
-  with stable parse diagnostics. The project does not implement any runtime
-  semantics for those features yet. Parameter type declarations, return type
-  declarations, nullable/union/intersection types, static locals, magic function
-  constants, array callables, object/method callables, first-class callable
-  syntax, `call_user_func`, namespace-qualified callable resolution, and
-  autoload interaction are also unsupported.
+  with stable parse diagnostics. Parameter type declarations and return type
+  declarations also fail with stable parse diagnostics before any type
+  enforcement can run. The project does not implement runtime semantics for
+  those features yet. Nullable, union, and intersection types, `mixed`,
+  `void`/`never`, class/interface type names, coercive versus strict typing,
+  variance, static locals, magic function constants, array callables,
+  object/method callables, first-class callable syntax, `call_user_func`,
+  namespace-qualified callable resolution, autoload interaction, and native
+  lowering for type declarations are unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -1127,6 +1131,9 @@
 - variadic parameters and variadic argument unpacking
 - reference parameters, reference returns, reference assignments, and
   by-reference calls
+- parameter type declarations and return type declarations, including
+  nullable, union, intersection, `mixed`, `void`/`never`, class/interface
+  names, coercive versus strict typing, variance, and native lowering
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex
