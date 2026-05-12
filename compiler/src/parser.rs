@@ -921,6 +921,11 @@ impl Parser {
         let saved = self.current;
         let target = self.parse_assignment_target()?;
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            if self.check_compound_assignment_operator() {
+                return Err(
+                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
+                );
+            }
             if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
                 && matches!(self.peek_next().kind, TokenKind::Equal)
             {
@@ -1100,6 +1105,9 @@ impl Parser {
                 unsupported_assignment_expression_message(),
             ));
         }
+        if self.check_compound_assignment_operator() {
+            return Err(self.error_at(self.peek().span, unsupported_compound_assignment_message()));
+        }
         if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
             && matches!(self.peek_next().kind, TokenKind::Equal)
         {
@@ -1167,7 +1175,15 @@ impl Parser {
 
     fn parse_concat(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_additive()?;
-        while self.match_token(|kind| matches!(kind, TokenKind::Dot)) {
+        loop {
+            if self.check_compound_assignment_operator() {
+                return Err(
+                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
+                );
+            }
+            if !self.match_token(|kind| matches!(kind, TokenKind::Dot)) {
+                break;
+            }
             let right = self.parse_additive()?;
             let span = expr.span();
             expr = Expr::Binary {
@@ -1183,6 +1199,11 @@ impl Parser {
     fn parse_additive(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_multiplicative()?;
         loop {
+            if self.check_compound_assignment_operator() {
+                return Err(
+                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
+                );
+            }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Plus)) {
                 BinaryOp::Add
             } else if self.match_token(|kind| matches!(kind, TokenKind::Minus)) {
@@ -1205,6 +1226,11 @@ impl Parser {
     fn parse_multiplicative(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_unary()?;
         loop {
+            if self.check_compound_assignment_operator() {
+                return Err(
+                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
+                );
+            }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Star)) {
                 BinaryOp::Mul
             } else if self.match_token(|kind| matches!(kind, TokenKind::Slash)) {
@@ -1885,6 +1911,17 @@ impl Parser {
         &self.tokens[self.current - 1]
     }
 
+    fn check_compound_assignment_operator(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Star
+                | TokenKind::Slash
+                | TokenKind::Dot
+        ) && matches!(self.peek_next().kind, TokenKind::Equal)
+    }
+
     fn error_at(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Parse, span.line, span.column, message)
     }
@@ -2123,6 +2160,10 @@ fn unsupported_null_coalescing_assignment_message() -> &'static str {
 
 fn unsupported_assignment_expression_message() -> &'static str {
     "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset"
+}
+
+fn unsupported_compound_assignment_message() -> &'static str {
+    "unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset"
 }
 
 fn unsupported_namespace_message() -> &'static str {

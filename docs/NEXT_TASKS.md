@@ -1243,10 +1243,20 @@ handled.
 
 ## Milestone 131: Compound Assignment Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported compound assignment forms
+- [x] Add explicit parse diagnostics for unsupported compound assignment forms
   such as `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`,
   and `$name .= expr` before compound assignment execution exists, including
   parser coverage, fixture CLI coverage, documentation, native-codegen
   parse-boundary behavior, and named gaps for read-modify-write ordering,
   array/object targets, references/copy-on-write, numeric/string coercions,
   and exact native error objects.
+
+## Milestone 132: Direct Variable Compound Assignment Slice
+
+- [ ] Implement direct static-variable compound assignment for `$name += expr`,
+  `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
+  the current scalar value model, including read-modify-write behavior,
+  undefined-variable diagnostics, fixture CLI coverage, documentation,
+  native-codegen rejection while lowering remains unsupported, and explicit
+  gaps for array/object targets, references/copy-on-write, increment/decrement
+  operators, exact native error objects, and broader PHP coercion recovery.

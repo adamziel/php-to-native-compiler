@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_compound_assignment.php:3:8: unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset
+--- stderr end ---

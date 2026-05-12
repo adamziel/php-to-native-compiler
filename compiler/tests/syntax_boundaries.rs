@@ -360,6 +360,45 @@ fn emit_ir_rejects_assignment_expression_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_compound_assignments_have_stable_parse_errors() {
+    let cases = [
+        ("<?php\n$value += 2;\n", 2, 8),
+        ("<?php\n$value -= 2;\n", 2, 8),
+        ("<?php\n$value *= 2;\n", 2, 8),
+        ("<?php\n$value /= 2;\n", 2, 8),
+        ("<?php\n$value .= 'x';\n", 2, 8),
+        ("<?php\n$items = [];\n$items['key'] += 2;\n", 3, 15),
+        (
+            "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value += 2;\n",
+            4,
+            13,
+        ),
+        ("<?php\n$value = 1;\necho ($value += 2);\n", 3, 14),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_compound_assignment_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$value += 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset"
+    );
+}
+
+#[test]
 fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

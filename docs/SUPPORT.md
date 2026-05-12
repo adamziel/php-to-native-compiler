@@ -266,6 +266,9 @@
 - explicit parse diagnostics for unsupported ternary conditional expressions
 - explicit parse diagnostics for unsupported expression-position assignment
   forms such as `($name = expr)` and `($name ??= expr)`
+- explicit parse diagnostics for unsupported compound assignment forms such as
+  `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
+  `$name .= expr` before read-modify-write execution exists
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class

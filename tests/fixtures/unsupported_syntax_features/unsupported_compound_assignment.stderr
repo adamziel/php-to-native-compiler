@@ -1,0 +1,2 @@
+parse error at 3:8: unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset
+

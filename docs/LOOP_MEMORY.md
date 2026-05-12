@@ -10741,3 +10741,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:50:27Z
 
 - Post-round 21 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:50:43Z
+
+- Starting round 22 at 20260512T235042Z from HEAD `2c05968`.
+
+## Loop Event 2026-05-12T23:51:00Z
+
+- Pre-round 22 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:54:32Z
+
+- Task attempted: added an explicit parse boundary for unsupported compound
+  assignment forms. The parser now rejects statement and expression-position
+  `+=`, `-=`, `*=`, `/=`, and `.=` forms with a stable diagnostic before
+  read-modify-write semantics exist, including direct variable, array-offset,
+  and object-property target regression coverage.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_compound_assignment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries compound
+  -- --nocapture` passed; `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --nocapture` passed; `cargo run -p phpc
+  -- test tests/fixtures/unsupported_syntax_features` passed with 22 fixtures;
+  `cargo run -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_compound_assignment.php
+  --emit-ir` exited `1` with the expected parse diagnostic; `tools/run-tests.sh`
+  passed with 360 fixtures, 128 system PHP comparisons, and 232 skips.
+- Remaining semantic gaps: compound assignment has no executable
+  read-modify-write behavior yet; direct variable execution, array/object
+  target execution, assignment result values, references/copy-on-write,
+  increment/decrement operators, broader PHP coercion warning recovery, exact
+  native error objects, and native lowering remain unsupported.
+- Next concrete task: implement direct static-variable compound assignment for
+  the current scalar value model while keeping array/object targets and native
+  lowering explicit boundaries.
+- Known-good tag: not created; this is a narrow syntax-boundary checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add compound assignment boundary"`.

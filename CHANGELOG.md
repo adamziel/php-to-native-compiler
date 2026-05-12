@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added explicit unsupported compound assignment diagnostics for `+=`, `-=`,
+  `*=`, `/=`, and `.=` forms before read-modify-write semantics exist, with
+  parser regression coverage, fixture/CLI snapshots, documentation, and
+  native emission rejection at the parse boundary.
 - Added explicit unsupported expression-position assignment diagnostics for
   `($name = expr)` and `($name ??= expr)` style forms before assignment
   expressions have value semantics, with parser regression coverage,

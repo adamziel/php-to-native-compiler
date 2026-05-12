@@ -170,6 +170,8 @@ subset:
   arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
   `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
   conditional expressions, unsupported expression-position assignment forms,
+  unsupported compound assignment forms such as `+=`, `-=`, `*=`, `/=`, and
+  `.=` before read-modify-write semantics exist,
   unsupported chained coalescing and unsupported append-offset null
   coalescing assignment forms, object
   method calls, dynamic property names, anonymous classes,

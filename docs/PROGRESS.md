@@ -2779,9 +2779,19 @@ Still fails:
   Assignment result values, chained assignments, lvalue evaluation order,
   references/copy-on-write, exact native error objects, and native lowering
   remain unsupported.
+- Added explicit parse diagnostics for unsupported compound assignment forms
+  before read-modify-write execution exists. The parser now rejects statement
+  and expression-position forms using `+=`, `-=`, `*=`, `/=`, and `.=` with a
+  stable compound-assignment diagnostic, including direct variable,
+  array-offset, and object-property target coverage. Fixture and CLI snapshot
+  coverage record a representative `phpc run` failure, and native emission
+  rejects the same syntax at parse time. Compound assignment result values,
+  read-modify-write ordering, array/object target execution,
+  references/copy-on-write, numeric/string coercion recovery, exact native
+  error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next explicit compound-assignment boundary so forms such as
-  `$name += expr` and `$name .= expr` fail with stable diagnostics until
-  read-modify-write semantics are implemented.
+- Implement direct static-variable compound assignment for the current scalar
+  value model, keeping array/object targets and native lowering explicitly
+  unsupported.
