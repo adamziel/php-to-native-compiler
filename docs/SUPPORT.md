@@ -160,8 +160,8 @@
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, parameter type declarations, return type declarations,
-  anonymous functions, arrow functions, named arguments, and
-  `declare(strict_types=1)`
+  static local variable declarations inside functions, anonymous functions,
+  arrow functions, named arguments, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
@@ -624,10 +624,13 @@
   arrow functions, named arguments, and `declare(strict_types=1)` are rejected
   with stable parse diagnostics. Parameter type declarations and return type
   declarations also fail with stable parse diagnostics before any type
-  enforcement can run. The project does not implement runtime semantics for
-  those features yet. Nullable, union, and intersection types, `mixed`,
-  `void`/`never`, class/interface type names, coercive versus strict typing,
-  variance, static locals, magic function constants, array callables,
+  enforcement can run. Static local variable declarations inside functions
+  also fail with a stable parse diagnostic before function-local static storage
+  exists. The project does not implement runtime semantics for those features
+  yet. Nullable, union, and intersection types, `mixed`, `void`/`never`,
+  class/interface type names, coercive versus strict typing, variance, static
+  local initialization expressions, per-function persistence,
+  recursion/reentrancy behavior, magic function constants, array callables,
   object/method callables, first-class callable syntax, `call_user_func`,
   namespace-qualified callable resolution, autoload interaction, and native
   lowering for type declarations are unsupported.
@@ -1134,6 +1137,9 @@
 - parameter type declarations and return type declarations, including
   nullable, union, intersection, `mixed`, `void`/`never`, class/interface
   names, coercive versus strict typing, variance, and native lowering
+- static local variable declarations inside functions, including
+  initialization expressions, per-function persistence, references,
+  recursion/reentrancy behavior, and native lowering
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex

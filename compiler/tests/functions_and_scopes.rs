@@ -371,6 +371,51 @@ function void_result(): void {
 }
 
 #[test]
+fn static_local_declarations_are_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+function counter() {
+    static $count;
+}
+"#,
+            3,
+            5,
+        ),
+        (
+            r#"<?php
+function counter() {
+    static $count = 0;
+}
+"#,
+            3,
+            5,
+        ),
+        (
+            r#"<?php
+function counter($enabled) {
+    if ($enabled)
+        static $count = 0;
+}
+"#,
+            4,
+            9,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported static local variable declaration: function-local static storage is not implemented"
+        );
+    }
+}
+
+#[test]
 fn reference_returns_are_rejected_with_stable_parse_error() {
     let error = parse_error(
         r#"<?php

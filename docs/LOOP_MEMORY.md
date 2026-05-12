@@ -7266,3 +7266,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T16:45:11Z
 
 - Post-round 18 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T16:45:20Z
+
+- Starting round 19 at 20260512T164520Z from HEAD `c2d377d`.
+
+## Loop Event 2026-05-12T16:45:34Z
+
+- Pre-round 19 test exit code: `0`.
+
+## Loop Event 2026-05-12T16:51:34Z
+
+- Task attempted: completed Milestone 70 by adding an explicit parse
+  diagnostic for unsupported function-local `static $name` declarations before
+  static local storage exists. The parser tracks function-body parsing so
+  `static $variable` declarations inside functions reject with a stable message
+  while existing `static::...` member diagnostics remain on their current path.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/unsupported_function_features/unsupported_static_local.php`,
+  `tests/fixtures/unsupported_function_features/unsupported_static_local.stderr`,
+  `tests/fixtures/unsupported_function_features/unsupported_static_local.exit`,
+  `tests/fixtures/unsupported_function_features/unsupported_static_local.phpc-only`,
+  `tests/fixtures/unsupported_function_features/unsupported_static_local.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo test -p phpc
+  --test functions_and_scopes` passed with 22 tests; `cargo test -p phpc
+  --test unsupported_function_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_function_features` passed with 9 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_function_features` passed with 9 `.phpc-only`
+  skips; direct `phpc run
+  tests/fixtures/unsupported_function_features/unsupported_static_local.php`
+  exited `1` with the expected parse diagnostic; `tools/run-tests.sh` passed
+  with 257 fixtures, 104 system PHP comparisons, and 153 `.phpc-only` skips.
+- Remaining semantic gaps: static local storage is not implemented. Static
+  local initialization expressions, one-time initialization behavior,
+  per-function persistence, recursion/reentrancy behavior, references,
+  copy-on-write behavior, exact PHP error object semantics, and native
+  static-local lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported magic
+  constants such as `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__FILE__`,
+  `__DIR__`, and `__LINE__` before source-aware magic constant evaluation
+  exists.
+- Checkpoint: pending `tools/checkpoint.sh "functions: add static local diagnostics"`
+  after the full suite passes.

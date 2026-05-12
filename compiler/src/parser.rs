@@ -15,6 +15,7 @@ struct Parser {
     tokens: Vec<Token>,
     current: usize,
     nested_statement_depth: usize,
+    function_body_depth: usize,
 }
 
 impl Parser {
@@ -23,6 +24,7 @@ impl Parser {
             tokens,
             current: 0,
             nested_statement_depth: 0,
+            function_body_depth: 0,
         }
     }
 
@@ -54,6 +56,12 @@ impl Parser {
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
+            TokenKind::Static
+                if self.function_body_depth > 0
+                    && matches!(self.peek_next().kind, TokenKind::Variable(_)) =>
+            {
+                self.parse_unsupported_static_local_declaration()
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => self.parse_do_while(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
                 self.parse_foreach()
@@ -152,7 +160,10 @@ impl Parser {
         if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
             return Err(self.error_at(self.previous().span, unsupported_return_type_message()));
         }
-        let body = self.parse_required_block("expected function body")?;
+        self.function_body_depth += 1;
+        let body = self.parse_required_block("expected function body");
+        self.function_body_depth -= 1;
+        let body = body?;
 
         Ok(FunctionDecl {
             name,
@@ -713,6 +724,13 @@ impl Parser {
             "expected ';' after global declaration",
         )?;
         Ok(Stmt::Global { names, span })
+    }
+
+    fn parse_unsupported_static_local_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Static, "expected 'static'")?
+            .span;
+        Err(self.error_at(span, unsupported_static_local_message()))
     }
 
     fn parse_unset(&mut self) -> CompileResult<Stmt> {
@@ -1726,6 +1744,10 @@ fn unsupported_parameter_type_message() -> &'static str {
 
 fn unsupported_return_type_message() -> &'static str {
     "unsupported return type declaration: return type enforcement is not implemented"
+}
+
+fn unsupported_static_local_message() -> &'static str {
+    "unsupported static local variable declaration: function-local static storage is not implemented"
 }
 
 fn unsupported_eval_message() -> &'static str {

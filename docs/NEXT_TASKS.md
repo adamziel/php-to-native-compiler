@@ -702,8 +702,17 @@ handled.
 
 ## Milestone 70: Static Local Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported static local variable
+- [x] Add explicit parse diagnostics for unsupported static local variable
   declarations inside functions before static local storage exists, including
   parser coverage, fixture CLI coverage, documentation, and named gaps for
   initialization expressions, per-function persistence, references,
   recursion/reentrancy behavior, and native lowering.
+
+## Milestone 71: Magic Constant Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported magic constants such as
+  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__FILE__`, `__DIR__`, and
+  `__LINE__` before source-aware magic constant evaluation exists, including
+  parser coverage, fixture CLI coverage, documentation, and named gaps for
+  function/method/class context, line/file/dir source mapping, namespaces,
+  traits, and native lowering.
