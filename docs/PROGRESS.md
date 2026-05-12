@@ -206,6 +206,11 @@ Implemented:
   duplicate string-key values with right-hand values without moving the first
   string-key slot, is available through string-valued dynamic function calls,
   and has stable diagnostics for non-array first or second arguments.
+- Extended `array_merge` to the current variadic array-operand subset:
+  zero-argument calls return an empty ordered array, one or more array operands
+  are merged left to right with the same integer reindexing and string-key
+  overwrite rules, string-valued dynamic calls use the same path, and stable
+  diagnostics name the first non-array positional operand.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -357,10 +362,10 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 31 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 16 focused array value tests.
-- `cargo test -p php_runtime array_merge` passes with 1 focused
-  array-combination runtime test.
+- `cargo test -p php_runtime` passes with 32 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 17 focused array value tests.
+- `cargo test -p php_runtime array_merge` passes with 2 focused
+  array-combination runtime tests.
 - `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
   array-search tests.
 - `cargo test -p php_runtime array_search` passes with 3 focused loose/strict
@@ -371,7 +376,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 40 representative runtime error fixtures.
+  covering 41 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -462,11 +467,11 @@ Tested:
   preserve-key behavior for integer and string keys, dynamic string-call
   coverage, original-array preservation, non-array diagnostics, non-bool
   `preserve_keys` diagnostics, and LLVM IR rejection coverage.
-- `cargo test -p phpc --test array_merge` passes with two-array
-  `array_merge` behavior, integer-key reindexing, string-key overwrite
-  behavior, dynamic string-call coverage, original-array preservation,
-  first/second non-array diagnostics, arity diagnostics for unsupported
-  one-argument calls, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_merge` passes with zero-argument,
+  one-array, two-array, and variadic `array_merge` behavior, integer-key
+  reindexing, string-key overwrite behavior, dynamic string-call coverage,
+  original-array preservation, first/second/third non-array diagnostics, and
+  LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -530,9 +535,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 126 fixture tests.
+- `cargo run -p phpc -- test` passes with 127 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 52 fixtures and skipping 74 `.phpc-only` fixtures.
+  installed, comparing 52 fixtures and skipping 75 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -624,7 +629,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 40
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 41
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -660,6 +665,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_first_non_array.php:3:6: unsupported call array_merge(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_second_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_second_non_array.php:3:6: unsupported call array_merge(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_third_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_third_non_array.php:4:6: unsupported call array_merge(): third argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -759,9 +766,10 @@ Tested:
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone14` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone15/array_merge.php`
-  prints the committed `array_merge` output with integer-key reindexing,
-  string-key overwrite behavior, original-array preservation, and dynamic
-  string-call coverage.
+  prints the committed `array_merge` output with zero-argument empty-array
+  behavior, one-array reindexing, variadic integer-key reindexing, string-key
+  overwrite behavior, original-array preservation, and dynamic string-call
+  coverage.
 - `cargo run -p phpc -- test tests/fixtures/milestone15` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone15` passes
@@ -861,8 +869,8 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 126 fixtures, 52 system PHP comparisons,
-  and 74 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 127 fixtures, 52 system PHP comparisons,
+  and 75 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -920,11 +928,11 @@ Still fails:
   copy-on-write containers, object handle identity preservation, resource
   values, non-bool preserve-key coercion, or native lowering.
   `array_keys` search-value filtering and strict mode are not implemented.
-  `array_merge` is limited to exactly two array arguments. Zero-argument
-  calls, variadic merges beyond two arrays, non-array argument recovery beyond
-  the current stable diagnostics, references, copy-on-write containers, object
-  handle identity preservation, resource values, exact native `TypeError`
-  objects, and native lowering are not implemented.
+  `array_merge` now accepts zero or more array arguments, but non-array
+  argument recovery beyond the current stable diagnostics, references,
+  copy-on-write containers, object handle identity preservation, resource
+  values, exact native `TypeError` objects, and native lowering are not
+  implemented.
   `in_array` and `array_search` are limited to loose scalar searches and strict
   scalar searches when the third argument is a boolean. Strict searches
   involving array/object needles or haystack values, resource/reference
@@ -1014,5 +1022,5 @@ Still fails:
 
 Next:
 
-- Extend `array_merge` beyond the current two-array slice with zero-argument
-  empty-array behavior and variadic array operands.
+- Implement `array_keys($array, $search_value)` for the current scalar value
+  subset using loose comparison semantics.

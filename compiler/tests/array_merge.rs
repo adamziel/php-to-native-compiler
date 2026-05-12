@@ -34,13 +34,37 @@ echo $right["name"], "|", $right[7], "|", $right["02"], "|", $right[8], "|", $ri
 
 $call = "array_merge";
 $again = $call($left, $right);
-echo $again["name"], "|", $again[0], "|", $again["02"], "|", $again["extra"];
+echo $again["name"], "|", $again[0], "|", $again["02"], "|", $again["extra"], "\n";
+
+$zero = array_merge();
+print_r($zero);
+echo count($zero), "\n";
+
+$single = array_merge($left);
+print_r($single);
+echo count($single), "\n";
+$single[] = "single after";
+echo $single[3], "\n";
+
+$third = [];
+$third["name"] = "Cy";
+$third[10] = "ten";
+$third["extra"] = "third extra";
+$third[] = "third next";
+
+$variadic = array_merge($left, $right, $third);
+print_r($variadic);
+echo count($variadic), "\n";
+echo $variadic["name"], "|", $variadic[0], "|", $variadic[1], "|", $variadic["02"], "|", $variadic[2], "|", $variadic[3], "|", $variadic[4], "|", $variadic["extra"], "|", $variadic[5], "|", $variadic[6], "\n";
+
+$again_three = $call($left, $right, $third);
+echo $again_three["name"], "|", $again_three[5], "|", $again_three[6], "|", $again_three["extra"];
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "8\nBea|five|two|zero two right|left next|seven|right next|extra\nafter\nAda|five|two|zero two|left next\nBea|seven|zero two right|right next|extra\nBea|five|zero two right|extra"
+        "8\nBea|five|two|zero two right|left next|seven|right next|extra\nafter\nAda|five|two|zero two|left next\nBea|seven|zero two right|right next|extra\nBea|five|zero two right|extra\nArray\n(\n)\n0\nArray\n(\n    [name] => Ada\n    [0] => five\n    [1] => two\n    [02] => zero two\n    [2] => left next\n)\n5\nsingle after\nArray\n(\n    [name] => Cy\n    [0] => five\n    [1] => two\n    [02] => zero two right\n    [2] => left next\n    [3] => seven\n    [4] => right next\n    [extra] => third extra\n    [5] => ten\n    [6] => third next\n)\n10\nCy|five|two|zero two right|left next|seven|right next|third extra|ten|third next\nCy|ten|third next|third extra"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -70,14 +94,15 @@ fn array_merge_requires_array_second_argument() {
 }
 
 #[test]
-fn array_merge_requires_exactly_two_arguments() {
-    let error = runtime_error("<?php\n$items = [];\necho array_merge($items);\n");
+fn array_merge_requires_array_variadic_arguments() {
+    let error =
+        runtime_error("<?php\n$left = [];\n$right = [];\necho array_merge($left, $right, 42);\n");
 
-    assert_eq!(error.line, 3);
+    assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "arity mismatch for array_merge(): expected 2 argument(s), got 1"
+        "unsupported call array_merge(): third argument must be array, got int"
     );
 }
 

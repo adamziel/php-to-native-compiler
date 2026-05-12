@@ -24,4 +24,28 @@ print_r($right);
 
 $call = "array_merge";
 $again = $call($left, $right);
-echo $again["name"], "|", $again[0], "|", $again["02"], "|", $again["extra"];
+echo $again["name"], "|", $again[0], "|", $again["02"], "|", $again["extra"], "\n";
+
+$zero = array_merge();
+print_r($zero);
+echo count($zero), "\n";
+
+$single = array_merge($left);
+print_r($single);
+echo count($single), "\n";
+$single[] = "single after";
+echo $single[3], "\n";
+
+$third = [];
+$third["name"] = "Cy";
+$third[10] = "ten";
+$third["extra"] = "third extra";
+$third[] = "third next";
+
+$variadic = array_merge($left, $right, $third);
+print_r($variadic);
+echo count($variadic), "\n";
+echo $variadic["name"], "|", $variadic[0], "|", $variadic[1], "|", $variadic["02"], "|", $variadic[2], "|", $variadic[3], "|", $variadic[4], "|", $variadic["extra"], "|", $variadic[5], "|", $variadic[6], "\n";
+
+$again_three = $call($left, $right, $third);
+echo $again_three["name"], "|", $again_three[5], "|", $again_three[6], "|", $again_three["extra"];

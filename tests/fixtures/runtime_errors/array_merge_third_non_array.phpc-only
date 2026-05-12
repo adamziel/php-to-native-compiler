@@ -1,0 +1,1 @@
+phpc reports a stable project diagnostic instead of PHP's native TypeError object.

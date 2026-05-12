@@ -229,10 +229,21 @@ handled.
 - [x] Implement `array_merge($left, $right)` for two arrays over the current
   ordered integer/string key model, including string-key overwrite behavior,
   integer-key reindexing, non-array diagnostics, fixture CLI coverage,
-  documentation, and explicit gaps for variadic merges, references,
-  copy-on-write containers, objects/resources, and native lowering.
-- [ ] Extend `array_merge` beyond the current two-array slice with
+  documentation, and explicit gaps for references, copy-on-write containers,
+  objects/resources, and native lowering.
+- [x] Extend `array_merge` beyond the current two-array slice with
   zero-argument empty-array behavior and variadic array operands, including
   arity/type diagnostics, fixture CLI coverage, documentation, and explicit
   gaps for references, copy-on-write containers, objects/resources, and native
   lowering.
+
+## Milestone 16: Array Key Filtering Builtins
+
+- [ ] Implement `array_keys($array, $search_value)` for the current scalar
+  value subset using loose comparison semantics, including fixture CLI
+  coverage, documentation, non-array/search-value diagnostics, and explicit
+  gaps for arrays, objects, resources, references, and native lowering.
+- [ ] Implement `array_keys($array, $search_value, true)` for the current
+  scalar value subset using strict identity semantics, including fixture CLI
+  coverage, documentation, non-bool strict flag diagnostics, and explicit gaps
+  for arrays, objects, resources, references, and native lowering.

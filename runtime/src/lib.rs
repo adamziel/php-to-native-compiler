@@ -509,9 +509,14 @@ impl PhpArray {
     }
 
     pub fn merged_with(&self, right: &Self) -> Self {
+        Self::merged_from([self, right])
+    }
+
+    pub fn merged_from<'a>(arrays: impl IntoIterator<Item = &'a Self>) -> Self {
         let mut array = Self::new();
-        array.merge_entries_from(self);
-        array.merge_entries_from(right);
+        for source in arrays {
+            array.merge_entries_from(source);
+        }
         array
     }
 
@@ -2115,6 +2120,62 @@ mod tests {
             Some(&Value::String("zero two right".to_string())),
             "array_merge must not mutate the right array"
         );
+    }
+
+    #[test]
+    fn array_merge_accepts_zero_one_and_variadic_arrays() {
+        let empty = PhpArray::merged_from(std::iter::empty::<&PhpArray>());
+        assert!(empty.entries().is_empty());
+
+        let mut one = PhpArray::new();
+        one.insert("name", Value::String("Ada".to_string()));
+        one.insert(5, Value::String("five".to_string()));
+        one.insert("2", Value::String("two".to_string()));
+        one.insert("02", Value::String("zero two".to_string()));
+
+        let single = PhpArray::merged_from([&one]);
+        let single_entries = single.entries();
+        assert_eq!(single_entries.len(), 4);
+        assert_eq!(single_entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(single_entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(single_entries[1].key, ArrayKey::Int(0));
+        assert_eq!(single_entries[1].value, Value::String("five".to_string()));
+        assert_eq!(single_entries[2].key, ArrayKey::Int(1));
+        assert_eq!(single_entries[2].value, Value::String("two".to_string()));
+        assert_eq!(single_entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(
+            single_entries[3].value,
+            Value::String("zero two".to_string())
+        );
+
+        let mut two = PhpArray::new();
+        two.insert("name", Value::String("Bea".to_string()));
+        two.insert(7, Value::String("seven".to_string()));
+        two.insert("extra", Value::String("two extra".to_string()));
+
+        let mut three = PhpArray::new();
+        three.insert("name", Value::String("Cy".to_string()));
+        three.insert(11, Value::String("eleven".to_string()));
+        three.insert("extra", Value::String("three extra".to_string()));
+
+        let merged = PhpArray::merged_from([&one, &two, &three]);
+        let entries = merged.entries();
+
+        assert_eq!(entries.len(), 7);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("Cy".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(2));
+        assert_eq!(entries[4].value, Value::String("seven".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::String("extra".to_string()));
+        assert_eq!(entries[5].value, Value::String("three extra".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::Int(3));
+        assert_eq!(entries[6].value, Value::String("eleven".to_string()));
     }
 
     #[test]

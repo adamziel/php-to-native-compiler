@@ -30,6 +30,36 @@ Array
     [8] => right next
     [extra] => extra
 )
-Bea|five|zero two right|extra--- stdout end ---
+Bea|five|zero two right|extra
+Array
+(
+)
+0
+Array
+(
+    [name] => Ada
+    [0] => five
+    [1] => two
+    [02] => zero two
+    [2] => left next
+)
+5
+single after
+Array
+(
+    [name] => Cy
+    [0] => five
+    [1] => two
+    [02] => zero two right
+    [2] => left next
+    [3] => seven
+    [4] => right next
+    [extra] => third extra
+    [5] => ten
+    [6] => third next
+)
+10
+Cy|five|two|zero two right|left next|seven|right next|third extra|ten|third next
+Cy|ten|third next|third extra--- stdout end ---
 stderr:
 --- stderr end ---

@@ -224,11 +224,12 @@
   zero, preserve string keys, and are available through string-valued dynamic
   function calls. `array_reverse($array, true)` returns a new ordered array in
   reverse insertion order while preserving both integer and string keys.
-  `array_merge($left, $right)` returns a new ordered array over two input
-  arrays, appends and reindexes integer-keyed entries from zero, preserves
-  string keys, and overwrites duplicate string-key values with the right-hand
-  value without moving the original string-key slot. It is also available
-  through string-valued dynamic function calls.
+  `array_merge()` returns an empty array. `array_merge($array, ...)` accepts
+  zero or more array operands, processes them left to right in insertion order,
+  appends and reindexes integer-keyed entries from zero, preserves string keys,
+  and overwrites duplicate string-key values with later values without moving
+  the original string-key slot. It is also available through string-valued
+  dynamic function calls.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
@@ -379,15 +380,16 @@
   evaluate to a boolean in the current subset; non-bool flag coercion,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, and native lowering are not implemented.
-  `array_merge($left, $right)` accepts exactly two arrays, processes the left
-  array then the right array in insertion order, appends integer-keyed entries
-  with new integer keys starting at zero, preserves string keys, and overwrites
+  `array_merge()` accepts zero arguments and returns an empty array.
+  `array_merge($array, ...)` accepts any number of array operands, processes
+  them left to right in insertion order, appends integer-keyed entries with new
+  integer keys starting at zero, preserves string keys, and overwrites
   duplicate string keys with later values without moving the first string-key
   position. It is also available through string-valued dynamic function calls.
-  Zero-argument calls, variadic merges beyond two arrays, non-array arguments,
-  references, copy-on-write containers, object handle identity preservation,
-  resource values, exact native `TypeError` objects, and native lowering are
-  not implemented.
+  Non-array operands fail with stable diagnostics naming the offending
+  positional argument. References, copy-on-write containers, object handle
+  identity preservation, resource values, exact native `TypeError` objects, and
+  native lowering are not implemented.
   `in_array($needle, $array)` accepts an array haystack, scans values in
   insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
@@ -425,8 +427,8 @@
   `array_search`, and both current `foreach` array forms follow the current
   by-value model; PHP references, copy-on-write containers, object handle
   identity preservation, resource values, non-bool `array_reverse`
-  preserve-key flag coercion, and variadic `array_merge` behavior are not
-  implemented.
+  preserve-key flag coercion, and `array_merge` reference/copy-on-write
+  behavior are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -551,9 +553,9 @@
 - `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
   lowering
-- `array_merge` zero-argument calls, variadic merges beyond two arrays,
-  reference/copy-on-write behavior, object handle identity preservation,
-  resource values, and native lowering
+- `array_merge` reference/copy-on-write behavior, object handle identity
+  preservation, resource values, exact native `TypeError` objects, and native
+  lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

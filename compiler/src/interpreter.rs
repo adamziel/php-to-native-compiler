@@ -933,34 +933,27 @@ impl Interpreter {
                 )),
             },
             "array_merge" => {
-                expect_arity(name, &args, 2, span)?;
-                match args.as_slice() {
-                    [Value::Array(left), Value::Array(right)] => {
-                        Ok(Value::Array(left.merged_with(right)))
+                let mut arrays = Vec::with_capacity(args.len());
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        Value::Array(array) => arrays.push(array),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_merge()",
+                                    format!(
+                                        "{} must be array, got {}",
+                                        positional_argument_label(index),
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
                     }
-                    [other, Value::Array(_)] => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_merge()",
-                            format!("first argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                    [Value::Array(_), other] => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_merge()",
-                            format!("second argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                    [other, _] => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_merge()",
-                            format!("first argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                    _ => unreachable!("expect_arity ensures exactly two arguments"),
                 }
+
+                Ok(Value::Array(PhpArray::merged_from(arrays)))
             }
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
@@ -1394,6 +1387,17 @@ fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> Comp
                 args.len(),
             ),
         ))
+    }
+}
+
+fn positional_argument_label(index: usize) -> String {
+    match index {
+        0 => "first argument".to_string(),
+        1 => "second argument".to_string(),
+        2 => "third argument".to_string(),
+        3 => "fourth argument".to_string(),
+        4 => "fifth argument".to_string(),
+        _ => format!("argument #{}", index + 1),
     }
 }
 

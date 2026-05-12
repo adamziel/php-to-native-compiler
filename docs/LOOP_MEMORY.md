@@ -3483,3 +3483,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:42:42Z
 
 - Post-round 55 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T04:42:45Z
+
+- Starting round 56 at 20260512T044245Z from HEAD `dbd0ac6`.
+
+## Loop Event 2026-05-12T04:42:48Z
+
+- Pre-round 56 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:50:45Z
+
+- Task attempted: extended `array_merge` beyond the two-array slice. The
+  supported slice now accepts zero arguments and returns an empty ordered array,
+  accepts one or more positional array operands, merges all operands left to
+  right with integer-key reindexing and string-key overwrite behavior, supports
+  string-valued dynamic calls through the same path, and reports stable
+  diagnostics for non-array positional operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_merge.rs`,
+  `tests/fixtures/milestone15/array_merge.*`,
+  `tests/fixtures/runtime_errors/array_merge_third_non_array.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p php_runtime
+  array_merge` passed with 2 focused runtime tests; `cargo test -p phpc --test
+  array_merge` passed with 5 tests; `cargo test -p phpc --test
+  array_combination_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone15` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone15` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 41 fixtures; `cargo fmt --check` passed; `cargo run -p phpc --
+  run tests/fixtures/milestone15/array_merge.php` printed the committed
+  zero/one/variadic `array_merge` output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_merge_third_non_array.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 127
+  fixtures, 52 system PHP comparisons, and 75 `.phpc-only` skips; `cargo test
+  -p php_runtime array_` passed with 17 focused array tests.
+- Remaining semantic gaps: `array_merge` still uses the current by-value model
+  and does not model PHP references, copy-on-write containers, object handle
+  identity preservation, resource values, exact native `TypeError` objects, or
+  native function-call lowering. Argument unpacking such as
+  `array_merge(...$arrays)` remains part of the existing unsupported variadic
+  argument-unpacking syntax.
+- Next concrete task: implement `array_keys($array, $search_value)` for the
+  current scalar value subset using loose comparison semantics.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: extend array_merge operands"`
+  after the full suite passes.
