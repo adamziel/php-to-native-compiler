@@ -217,6 +217,7 @@ impl Interpreter {
             }
             Stmt::Foreach {
                 iterable,
+                key,
                 value,
                 body,
                 span,
@@ -236,6 +237,9 @@ impl Interpreter {
                 };
 
                 for entry in array.entries() {
+                    if let Some(key) = key {
+                        scope.write_static(key, value_from_array_key(&entry.key));
+                    }
                     scope.write_static(value, entry.value.clone());
                     match self.execute_statements(body, scope)? {
                         Flow::Normal | Flow::Continue(_) => {}
@@ -1130,6 +1134,13 @@ fn arity_expectation(required: usize, total: usize) -> ArityExpectation {
 
 fn callable_name(name: &str) -> String {
     format!("{name}()")
+}
+
+fn value_from_array_key(key: &ArrayKey) -> Value {
+    match key {
+        ArrayKey::Int(value) => Value::Int(*value),
+        ArrayKey::String(value) => Value::String(value.clone()),
+    }
 }
 
 fn format_var_dump(value: &Value) -> String {

@@ -19,7 +19,8 @@
   values (`null`, booleans, integers, floats, and strings)
 - `if` / `else`
 - `while`
-- value-only `foreach ($array as $value)` over ordered arrays
+- `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
+  ordered arrays
 - `break;` and `continue;` for the innermost currently executing `while` or
   `foreach` loop
 - function declarations
@@ -48,8 +49,8 @@
 - array indexed reads: `$array[$key]` for existing integer/string keyed array
   entries
 - direct variable array writes: `$array[$key] = ...` and `$array[] = ...`
-- value-only `foreach ($array as $value)` iteration in insertion order over a
-  snapshot of the current array entries
+- `foreach ($array as $value)` and `foreach ($array as $key => $value)`
+  iteration in insertion order over a snapshot of the current array entries
 - `isset($array[$key])` for direct array-variable offset operands over the
   current integer/string key subset
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
@@ -83,8 +84,8 @@
   class names such as `App\fn()` and `new App\Box()`
 - explicit parse diagnostics for unsupported long `array(...)` literal syntax
 - explicit parse diagnostics for unsupported `unset(...)` syntax
-- explicit parse diagnostics for unsupported `foreach` key/value iteration,
-  by-reference iteration, and expression-position `foreach`
+- explicit parse diagnostics for unsupported `foreach` by-reference iteration,
+  destructuring loop targets, and expression-position `foreach`
 - explicit parse diagnostics for unsupported `for (...)` syntax
 - explicit parse diagnostics for unsupported `do ... while` syntax
 - explicit parse diagnostics for unsupported `switch (...)` syntax
@@ -187,14 +188,16 @@
   string-valued dynamic function calls. `array_search($needle, $array)` uses
   the same loose scalar scan, returning the first matching integer/string key or
   `false` when no value matches; it is also available through string-valued
-  dynamic function calls. Value-only `foreach ($array as $value)` iterates array
-  values in insertion order over a snapshot of the current entries and writes
-  the current value to the direct loop variable in the active scope. Missing key
-  reads still fail with a stable runtime error instead of PHP's
+  dynamic function calls. `foreach ($array as $value)` iterates array values in
+  insertion order over a snapshot of the current entries and writes the current
+  value to the direct loop variable in the active scope. `foreach ($array as
+  $key => $value)` additionally writes the current integer or string key as an
+  `int` or `string` value to the direct key loop variable. Missing key reads
+  still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_values`, `array_keys`, `in_array`, `array_search`, value-only
-  `foreach`, `print_r`, and `var_dump` are implemented for this ordered value
-  model.
+  `array_values`, `array_keys`, `in_array`, `array_search`, both current
+  `foreach` array forms, `print_r`, and `var_dump` are implemented for this
+  ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -208,7 +211,7 @@
   comparisons in `phpc run` fail with an explicit unsupported-comparison
   runtime error.
 - Loop control: `break;` and `continue;` execute for the innermost currently
-  executing `while` or value-only `foreach` loop in `phpc run`. A `break;` or
+  executing `while` or supported array `foreach` loop in `phpc run`. A `break;` or
   `continue;` that reaches top-level code or a user-function body without an
   enclosing active loop fails with a stable invalid-loop-control runtime error.
   Loop-depth arguments such as `break 2;` and `continue 2;` are rejected with
@@ -315,8 +318,8 @@
   values use the current PHP truthiness rules. Nested array offsets, object
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
-  `array_values`, `array_keys`, `in_array`, `array_search`, and value-only
-  `foreach` follow the current by-value model; PHP references and
+  `array_values`, `array_keys`, `in_array`, `array_search`, and both current
+  `foreach` array forms follow the current by-value model; PHP references and
   copy-on-write containers are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
@@ -345,12 +348,12 @@
   switch/case control flow is not implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
-  expression, string offset access, `foreach` key/value iteration,
-  by-reference iteration, object iteration, destructuring loop targets, spread,
-  references, copy-on-write containers, and object/resource keys are not
-  implemented. The current `foreach` value form snapshots array entries at loop
-  start and does not claim PHP's full mutation/aliasing behavior while the
-  iterated array is modified. Array keys are currently limited to values that
+  expression, string offset access, by-reference `foreach`, object iteration,
+  destructuring loop targets, spread, references, copy-on-write containers, and
+  object/resource keys are not implemented. The current `foreach` array forms
+  snapshot array entries at loop start and do not claim PHP's full
+  mutation/aliasing behavior while the iterated array is modified. Array keys
+  are currently limited to values that
   evaluate to integers or strings; PHP's boolean, null, float, object, and
   resource key coercions are rejected with a stable runtime error.
   Writes to existing non-array scalar variables other than `null` are rejected
@@ -408,9 +411,8 @@
   diagnostic before execution
 - `unset(...)`; direct syntax is rejected with a stable parse diagnostic before
   variable, array offset, or object property removal exists
-- `foreach ($array as $key => $value)` key/value iteration, by-reference
-  `foreach`, object iteration, destructuring loop targets, and expression-form
-  `foreach`
+- by-reference `foreach`, object iteration, destructuring loop targets, and
+  expression-form `foreach`
 - `for (...)`; direct syntax is rejected with a stable parse diagnostic before
   C-style loops exist
 - `do ... while`; direct syntax is rejected with a stable parse diagnostic
@@ -419,7 +421,7 @@
   before switch/case control flow exists
 - `break`/`continue` loop-depth arguments such as `break 2;` and `continue 2;`;
   only statement-form `break;` and `continue;` for the innermost active
-  `while` or value-only `foreach` loop are implemented
+  `while` or supported array `foreach` loop are implemented
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

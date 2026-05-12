@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:25: unsupported foreach: key/value iteration is not implemented; only foreach ($array as $value) is supported
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:20: unsupported foreach: destructuring loop targets are not implemented
 --- stderr end ---

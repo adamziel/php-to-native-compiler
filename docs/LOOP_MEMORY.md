@@ -2357,3 +2357,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:27:45Z
 
 - Post-round 38 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:27:48Z
+
+- Starting round 39 at 20260512T022748Z from HEAD `4147884`.
+
+## Loop Event 2026-05-12T02:27:50Z
+
+- Pre-round 39 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:35:44Z
+
+- Task attempted: implemented `foreach ($array as $key => $value)` over the
+  current ordered array value model. The parser now accepts key/value
+  statement-form `foreach`, the interpreter writes integer/string keys and
+  values into direct loop variables while preserving insertion-order snapshot
+  behavior, non-array iterables reuse the stable `invalid foreach` runtime
+  diagnostic, and native lowering still rejects `foreach` explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/foreach.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone8/foreach_key_values.php`,
+  `tests/fixtures/milestone8/foreach_key_values.stdout`,
+  `tests/fixtures/milestone8/foreach_key_values.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_foreach.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_foreach.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test foreach` passed with 6
+  tests; `cargo test -p phpc --test syntax_boundaries
+  unsupported_foreach_forms_are_rejected_with_stable_parse_error` passed;
+  `cargo test -p phpc --test milestone1
+  emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone8` passed with 2
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone8` passed with 2 system PHP comparisons; `cargo test
+  -p phpc --test foreach_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 8 fixtures; `cargo
+  run -p phpc -- run tests/fixtures/milestone8/foreach_key_values.php` printed
+  the committed key/value foreach output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone8/foreach_key_values.php --emit-ir` exited `1` via
+  the expected unsupported native lowering path; `tools/run-tests.sh` passed
+  with 104 fixtures, 39 system PHP comparisons, and 65 `.phpc-only` skips.
+- Remaining semantic gaps: `foreach` still supports arrays only. Object
+  iteration, by-reference iteration, destructuring loop targets, complex loop
+  targets, mutation/aliasing semantics beyond the current entry snapshot,
+  references, copy-on-write containers, and native lowering are unsupported.
+- Next concrete task: implement direct `unset($array[$key])` for direct array
+  variables over the current integer/string key subset while keeping broader
+  `unset` forms explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add foreach key value iteration"`
+  after the full suite passes.

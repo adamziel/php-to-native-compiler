@@ -109,6 +109,15 @@ fn emit_ir_rejects_foreach_until_native_iteration_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists() {
+    let error =
+        emit_ir_source("<?php\nforeach ([\"name\" => \"Ada\"] as $key => $value) { echo $key; }\n")
+            .unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(error.message.contains("foreach"), "{}", error.message);
+}
+
+#[test]
 fn emit_ir_rejects_arrays_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\necho [1];\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);

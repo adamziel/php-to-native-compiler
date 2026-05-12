@@ -369,13 +369,32 @@ impl Parser {
                 unsupported_foreach_reference_message(),
             ));
         }
-        let (value, _) = self.consume_variable_with_span("expected foreach value variable")?;
-        if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+        if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
             return Err(self.error_at(
-                self.previous().span,
-                unsupported_foreach_key_value_message(),
+                self.peek().span,
+                unsupported_foreach_destructuring_message(),
             ));
         }
+        let (first_variable, _) =
+            self.consume_variable_with_span("expected foreach value variable")?;
+        let (key, value) = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+            if self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    unsupported_foreach_reference_message(),
+                ));
+            }
+            if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_foreach_destructuring_message(),
+                ));
+            }
+            let (value, _) = self.consume_variable_with_span("expected foreach value variable")?;
+            (Some(first_variable), value)
+        } else {
+            (None, first_variable)
+        };
         self.consume_keyword(
             TokenKind::RParen,
             "expected ')' after foreach value variable",
@@ -384,6 +403,7 @@ impl Parser {
 
         Ok(Stmt::Foreach {
             iterable,
+            key,
             value,
             body,
             span,
@@ -1268,12 +1288,12 @@ fn unsupported_foreach_expression_message() -> &'static str {
     "unsupported foreach: foreach is only supported as a statement in the current subset"
 }
 
-fn unsupported_foreach_key_value_message() -> &'static str {
-    "unsupported foreach: key/value iteration is not implemented; only foreach ($array as $value) is supported"
-}
-
 fn unsupported_foreach_reference_message() -> &'static str {
     "unsupported foreach: by-reference iteration is not implemented; only by-value iteration is supported"
+}
+
+fn unsupported_foreach_destructuring_message() -> &'static str {
+    "unsupported foreach: destructuring loop targets are not implemented"
 }
 
 fn unsupported_do_while_message() -> &'static str {

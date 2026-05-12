@@ -117,7 +117,7 @@ impl LlvmGenerator {
             )),
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,
-                "foreach value iteration is supported by phpc run but not LLVM IR emission yet",
+                "foreach array iteration is supported by phpc run but not LLVM IR emission yet",
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
@@ -621,7 +621,7 @@ impl CGenerator {
             )),
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,
-                "foreach value iteration is supported by phpc run but not assembly emission yet",
+                "foreach array iteration is supported by phpc run but not assembly emission yet",
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,

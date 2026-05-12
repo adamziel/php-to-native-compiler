@@ -37,8 +37,8 @@ subset:
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons used by control flow
 - `if` / `else`
-- `while` and value-only `foreach ($array as $value)`, including `break;` and
-  `continue;` for the innermost executing loop
+- `while` and array `foreach` in value-only and key/value forms, including
+  `break;` and `continue;` for the innermost executing loop
 - function declarations, positional calls with trailing default parameter
   values, recursive calls up to the documented guard, `return`, and isolated
   local scopes for user-function calls
@@ -52,8 +52,8 @@ subset:
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
-- value-only `foreach ($array as $value)` over the documented ordered array
-  value model
+- `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
+  the documented ordered array value model
 - direct `isset($array[$key])` checks for the documented array-offset subset
 - direct `empty($name)` and `empty($array[$key])` checks for the documented
   variable/array-offset subset
@@ -68,8 +68,8 @@ subset:
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  long `array(...)` literals, `unset(...)`, unsupported `foreach` key/value and
-  by-reference forms, `for (...)`, `do ... while`, `switch (...)`,
+  long `array(...)` literals, `unset(...)`, unsupported `foreach`
+  by-reference/destructuring forms, `for (...)`, `do ... while`, `switch (...)`,
   `break`/`continue` depth arguments, object method calls, dynamic property
   names, anonymous classes, and unsupported class forms, static member access,
   and class constants

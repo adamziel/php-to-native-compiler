@@ -47,6 +47,7 @@ pub enum Stmt {
     },
     Foreach {
         iterable: Expr,
+        key: Option<String>,
         value: String,
         body: Vec<Stmt>,
         span: Span,

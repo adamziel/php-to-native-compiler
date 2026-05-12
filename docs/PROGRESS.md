@@ -245,8 +245,14 @@ Implemented:
   interpreter iterates values in insertion order over a snapshot of array
   entries, loop variables are written into the active scope, `break;` and
   `continue;` target the innermost active `foreach`, non-array iterables fail
-  with a stable runtime diagnostic, key/value and by-reference forms remain
-  explicit parse diagnostics, and native lowering rejects `foreach` explicitly.
+  with a stable runtime diagnostic, by-reference forms remain explicit parse
+  diagnostics, and native lowering rejects `foreach` explicitly.
+- Implemented `foreach ($array as $key => $value)` over the current ordered
+  array value model. Integer and string keys are emitted into the direct key
+  loop variable as PHP values, values are emitted into the direct value loop
+  variable, insertion order and snapshot behavior match the current value-only
+  `foreach` model, and non-array iterables reuse the stable `invalid foreach`
+  runtime diagnostic.
 
 Tested:
 
@@ -285,19 +291,19 @@ Tested:
   snapshot test covering 7 unsupported object/class fixtures.
 - `cargo test -p phpc --test syntax_boundaries` passes with stable parse
   diagnostic coverage for unsupported long `array(...)` literal syntax,
-  unsupported `unset(...)` syntax, unsupported `foreach` key/value and
-  by-reference forms, expression-form `foreach`, unsupported `for (...)`
+  unsupported `unset(...)` syntax, unsupported `foreach` by-reference and
+  destructuring forms, expression-form `foreach`, unsupported `for (...)`
   syntax, unsupported `do ... while` syntax, unsupported `switch (...)` syntax,
   and unsupported `break`/`continue` loop-depth arguments.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
   snapshot test covering 8 unsupported syntax fixtures.
 - `cargo test -p phpc --test loop_control_cli` passes with 1 CLI snapshot test
   covering `break;` and `continue;` execution for innermost `while` loops.
-- `cargo test -p phpc --test foreach` passes with value-only ordered array
-  iteration, innermost `break;`/`continue;`, and non-array iterable diagnostic
-  coverage.
+- `cargo test -p phpc --test foreach` passes with value-only and key/value
+  ordered array iteration, innermost `break;`/`continue;`, and non-array
+  iterable diagnostic coverage.
 - `cargo test -p phpc --test foreach_cli` passes with 1 CLI snapshot test
-  covering the Milestone 8 value-only `foreach` fixture.
+  covering the Milestone 8 `foreach` fixtures.
 - `cargo test -p phpc --test array_isset` passes with direct array-offset
   `isset` behavior and unsupported complex-lvalue coverage.
 - `cargo test -p phpc --test array_key_exists` passes with direct
@@ -342,9 +348,12 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_foreach_until_native_iteration_lowering_exists`
   passes with rejection coverage for `foreach` statements before native
   iteration lowering exists.
-- `cargo run -p phpc -- test` passes with 103 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists`
+  passes with rejection coverage for key/value `foreach` before native
+  iteration lowering exists.
+- `cargo run -p phpc -- test` passes with 104 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 38 fixtures and skipping 65 `.phpc-only` fixtures.
+  installed, comparing 39 fixtures and skipping 65 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -366,10 +375,10 @@ Tested:
   array-refinement fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone7` passes
   with 7 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone8` passes with 1
-  value-only `foreach` fixture.
+- `cargo run -p phpc -- test tests/fixtures/milestone8` passes with 2
+  `foreach` fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone8` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -497,7 +506,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_unset.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:1: unsupported unset: variable, array offset, and property removal are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:25: unsupported foreach: key/value iteration is not implemented; only foreach ($array as $value) is supported`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:20: unsupported foreach: destructuring loop targets are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_for.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_for.php:3:1: unsupported for: C-style loops are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_do_while.php`
@@ -524,6 +533,8 @@ Tested:
   prints the committed direct-variable and direct array-offset `empty` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone8/foreach_values.php`
   prints the committed value-only ordered array `foreach` output.
+- `cargo run -p phpc -- run tests/fixtures/milestone8/foreach_key_values.php`
+  prints the committed key/value ordered array `foreach` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/foreach_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/foreach_non_array.php:2:1: invalid foreach: can only iterate arrays in the current subset, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php`
@@ -600,14 +611,14 @@ Still fails:
   diagnostic before post-condition loops exist, and `switch (...)` fails with a
   stable parse diagnostic before switch/case control flow exists.
   Nested indexed writes, complex assignment lvalues, `$array[]` as a read
-  expression, string offset access, `foreach` key/value iteration,
-  by-reference iteration, object iteration, destructuring loop targets, spread,
-  references, copy-on-write containers, `for`/`do ... while` iteration
-  behavior, `switch` case matching/fallthrough/default handling, and
-  object/resource keys are also unsupported, as are PHP's full boolean/null/
-  float key coercion rules. The current value-only `foreach` snapshots array
-  entries at loop start and does not claim PHP's full mutation/aliasing
-  behavior while the iterated array is modified.
+  expression, string offset access, by-reference `foreach`, object iteration,
+  destructuring loop targets, spread, references, copy-on-write containers,
+  `for`/`do ... while` iteration behavior, `switch` case
+  matching/fallthrough/default handling, and object/resource keys are also
+  unsupported, as are PHP's full boolean/null/float key coercion rules. The
+  current `foreach` array forms snapshot array entries at loop start and do not
+  claim PHP's full mutation/aliasing behavior while the iterated array is
+  modified.
   Missing array-key reads
   fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Direct array-offset `isset` is limited to direct
@@ -634,11 +645,11 @@ Still fails:
   auto-index behavior is not claimed beyond the current non-negative allocator,
   and arrays still reject native lowering.
 - Loop-control execution is limited to statement-form `break;` and `continue;`
-  inside active `while` and value-only `foreach` loops. Loop-depth arguments, invalid
-  top-level/function-level loop control recovery beyond the stable runtime
-  diagnostic, interactions with future `for`/`do ... while`/`switch`
-  execution, `finally`/exception behavior, and native loop-control lowering are
-  not implemented.
+  inside active `while` and supported array `foreach` loops. Loop-depth
+  arguments, invalid top-level/function-level loop control recovery beyond the
+  stable runtime diagnostic, interactions with future `for`/`do ... while`/
+  `switch` execution, `finally`/exception behavior, and native loop-control
+  lowering are not implemented.
 - Runtime errors abort the current `phpc run` command with a stable diagnostic;
   PHP `Throwable` objects, stack traces, warning/notice recovery, user error
   handlers, and preservation of partial stdout before a fatal runtime error are
@@ -696,8 +707,7 @@ Still fails:
 
 Next:
 
-- Implement `foreach ($array as $key => $value)` key/value iteration over the
-  current ordered array value model, including integer/string key emission,
-  non-array diagnostic reuse, fixture CLI coverage, documentation, unsupported
-  gaps for by-reference/object/destructuring forms, and explicit native-codegen
-  rejection coverage while lowering remains unsupported.
+- Implement direct `unset($array[$key])` for direct array variables over the
+  current integer/string key subset, including missing-key behavior, fixture CLI
+  coverage, documentation, and explicit native-codegen rejection while broader
+  `unset` forms remain unsupported.

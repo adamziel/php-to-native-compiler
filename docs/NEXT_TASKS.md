@@ -137,11 +137,18 @@ handled.
 
 - [x] Implement `foreach ($array as $value)` over the current ordered array
   value model, including parser/interpreter support, non-array diagnostics,
-  fixture CLI coverage, documentation, unsupported gaps for key/value and
-  by-reference forms, and explicit native-codegen rejection coverage while
-  lowering remains unsupported.
-- [ ] Implement `foreach ($array as $key => $value)` key/value iteration over
+  fixture CLI coverage, documentation, unsupported gaps for by-reference forms,
+  and explicit native-codegen rejection coverage while lowering remains
+  unsupported.
+- [x] Implement `foreach ($array as $key => $value)` key/value iteration over
   the current ordered array value model, including integer/string key emission,
   non-array diagnostics reuse, fixture CLI coverage, documentation,
   unsupported gaps for by-reference/object/destructuring forms, and explicit
   native-codegen rejection coverage while lowering remains unsupported.
+
+## Milestone 9: Array Mutation
+
+- [ ] Implement direct `unset($array[$key])` for direct array variables over the
+  current integer/string key subset, including missing-key behavior, fixture CLI
+  coverage, documentation, and explicit native-codegen rejection while broader
+  `unset` forms remain unsupported.

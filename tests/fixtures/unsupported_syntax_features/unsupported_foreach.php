@@ -1,5 +1,5 @@
 <?php
-$items = ["name" => "Ada"];
-foreach ($items as $key => $value) {
-    echo $key, $value;
+$items = [[1]];
+foreach ($items as [$item]) {
+    echo $item;
 }
