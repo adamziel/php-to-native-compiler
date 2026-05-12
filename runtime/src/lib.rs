@@ -423,6 +423,16 @@ impl PhpArray {
         self.entries.iter().any(|entry| entry.key == key)
     }
 
+    pub fn remove(&mut self, key: impl Into<ArrayKey>) -> bool {
+        let key = key.into().normalized();
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            self.entries.remove(index);
+            return true;
+        }
+
+        false
+    }
+
     pub fn insert(&mut self, key: impl Into<ArrayKey>, value: Value) -> ArrayKey {
         let key = key.into().normalized();
         self.bump_next_auto_index(&key);
@@ -1713,6 +1723,37 @@ mod tests {
                 ArrayKey::Int(6),
             ]
         );
+    }
+
+    #[test]
+    fn array_remove_preserves_order_and_does_not_reuse_auto_index() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.append(Value::String("three".to_string())).unwrap();
+
+        assert!(array.remove("2"));
+        assert!(!array.remove("missing"));
+        assert_eq!(
+            array.append(Value::String("four".to_string())).unwrap(),
+            ArrayKey::Int(4)
+        );
+
+        let keys: Vec<ArrayKey> = array
+            .entries()
+            .iter()
+            .map(|entry| entry.key.clone())
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ArrayKey::String("name".to_string()),
+                ArrayKey::Int(3),
+                ArrayKey::Int(4),
+            ]
+        );
+        assert!(!array.contains_key(2));
     }
 
     #[test]

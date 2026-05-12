@@ -2422,3 +2422,80 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:36:41Z
 
 - Post-round 39 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:36:44Z
+
+- Starting round 40 at 20260512T023644Z from HEAD `286427e`.
+
+## Loop Event 2026-05-12T02:36:46Z
+
+- Pre-round 40 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:44:42Z
+
+- Task attempted: implemented direct `unset($array[$key])` for direct array
+  variables over the current integer/string key subset. Existing keys are
+  removed from ordered arrays without reordering remaining entries, missing
+  keys are no-ops, undefined and `null` target variables are no-ops, appends do
+  not reuse removed integer keys, existing non-array targets fail with a stable
+  invalid-array-access runtime diagnostic, broader unset forms remain explicit
+  parse diagnostics, and LLVM IR/assembly lowering reject array-offset unset
+  explicitly.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/array_unset.rs`,
+  `compiler/tests/array_mutation_cli.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone9/array_unset.php`,
+  `tests/fixtures/milestone9/array_unset.stdout`,
+  `tests/fixtures/milestone9/array_unset.cli`,
+  `tests/fixtures/runtime_errors/unset_non_array.php`,
+  `tests/fixtures/runtime_errors/unset_non_array.stderr`,
+  `tests/fixtures/runtime_errors/unset_non_array.exit`,
+  `tests/fixtures/runtime_errors/unset_non_array.phpc-only`,
+  `tests/fixtures/runtime_errors/unset_non_array.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p
+  php_runtime array_remove -- --nocapture` passed; `cargo test -p php_runtime
+  array_ -- --nocapture` passed with 11 focused array tests; `cargo test -p
+  phpc --test array_unset -- --nocapture` passed with 3 tests; `cargo test -p
+  phpc --test syntax_boundaries
+  unsupported_unset_forms_are_rejected_with_stable_parse_error -- --nocapture`
+  passed; `cargo test -p phpc --test milestone1
+  emit_ir_rejects_array_offset_unset_until_native_lowering_exists --
+  --nocapture` passed; `cargo test -p phpc --test array_mutation_cli --
+  --nocapture` passed; `cargo test -p phpc --test runtime_error_cli --
+  --nocapture` passed; `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --nocapture` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone9` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone9` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 34 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 8 fixtures; `cargo
+  run -p phpc -- run tests/fixtures/milestone9/array_unset.php` printed the
+  committed direct array-offset unset output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/unset_non_array.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_unset.php` exited `1`
+  with the expected stable parse diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/runtime_errors/unset_non_array.php --emit-ir` exited `1` with
+  the expected explicit `array offset unset` codegen rejection;
+  `tools/run-tests.sh` passed with 106 fixtures, 40 system PHP comparisons, and
+  66 `.phpc-only` skips.
+- Remaining semantic gaps: `unset` execution is limited to a single direct
+  array offset on a direct variable. Direct variable removal, object property
+  removal, multiple operands, append-offset unset, nested/complex unset
+  operands, string offset removal, references, copy-on-write behavior, exact
+  PHP warning/Error objects for undefined or non-array targets, and native
+  lowering remain unsupported.
+- Next concrete task: implement direct `unset($name)` for static variables
+  backed by the current symbol table, including undefined-variable no-op
+  behavior, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection while property, multiple, and nested unset forms remain
+  unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add direct offset unset"`
+  after the full suite passes.

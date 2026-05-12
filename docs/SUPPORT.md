@@ -49,6 +49,8 @@
 - array indexed reads: `$array[$key]` for existing integer/string keyed array
   entries
 - direct variable array writes: `$array[$key] = ...` and `$array[] = ...`
+- direct array offset removal: `unset($array[$key])` for direct array
+  variables over the current integer/string key subset
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)`
   iteration in insertion order over a snapshot of the current array entries
 - `isset($array[$key])` for direct array-variable offset operands over the
@@ -62,7 +64,8 @@
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
-  keys, undefined array keys, invalid array access, unsupported complex
+  keys, undefined array keys, invalid array access including non-array
+  `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `in_array`/`array_search` haystacks, unsupported
   `in_array`/`array_search` strict-mode and non-scalar comparisons, unsupported
   `global` declarations,
@@ -83,7 +86,8 @@
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
 - explicit parse diagnostics for unsupported long `array(...)` literal syntax
-- explicit parse diagnostics for unsupported `unset(...)` syntax
+- explicit parse diagnostics for unsupported `unset(...)` forms outside the
+  current direct array-offset statement subset
 - explicit parse diagnostics for unsupported `foreach` by-reference iteration,
   destructuring loop targets, and expression-position `foreach`
 - explicit parse diagnostics for unsupported `for (...)` syntax
@@ -171,6 +175,11 @@
   writes append at the next non-negative integer key. Direct variable offset
   writes update existing array variables, and writes to undefined or `null`
   variables materialize an array. Existing-key reads return the stored value.
+  Direct `unset($array[$key])` removes matching entries from existing arrays,
+  preserves the insertion order of remaining entries, does not rewind the next
+  append key, treats missing keys as no-ops, and treats undefined or `null`
+  target variables as no-ops. Existing non-array targets fail with a stable
+  invalid-array-access diagnostic.
   Direct `isset($array[$key])` checks return true for existing non-null slots
   and false for null slots, missing keys, undefined array variables, and
   non-array target variables. Direct `empty($array[$key])` checks return true
@@ -196,8 +205,8 @@
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_values`, `array_keys`, `in_array`, `array_search`, both current
-  `foreach` array forms, `print_r`, and `var_dump` are implemented for this
-  ordered value model.
+  `foreach` array forms, direct array-offset `unset`, `print_r`, and
+  `var_dump` are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -228,16 +237,17 @@
   operands, non-array `array_keys` operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, unsupported
   `in_array` and `array_search` strict-mode and array-value comparisons,
-  unsupported complex `empty` operands, unresolved dynamic function callees, division by
-  zero, non-numeric string arithmetic, duplicate class metadata, undefined
-  classes, undefined object properties, invalid property targets, non-public
-  property access, object-to-string conversion, invalid `break`/`continue`
-  outside a loop, and runaway user-function recursion.
+  unsupported complex `empty` operands, non-array `unset($array[$key])`
+  targets, unresolved dynamic function callees, division by zero, non-numeric
+  string arithmetic, duplicate class metadata, undefined classes, undefined
+  object properties, invalid property targets, non-public property access,
+  object-to-string conversion, invalid `break`/`continue` outside a loop, and
+  runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
-  assignment, `foreach`, `break`, `continue`, class declarations, object
-  instantiation, object property reads, and object property writes are rejected
-  with explicit codegen errors.
+  assignment, array offset unset, `foreach`, `break`, `continue`, class
+  declarations, object instantiation, object property reads, and object
+  property writes are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -341,11 +351,13 @@
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
-- Array gaps: long `array(...)` literal syntax, `unset(...)` syntax, direct
-  `for (...)` syntax, direct `do ... while` syntax, and direct `switch (...)`
-  syntax are rejected with stable parse diagnostics; executing long array
-  literals, variable/offset/property removal, C-style/post-condition loops, and
-  switch/case control flow is not implemented.
+- Array gaps: long `array(...)` literal syntax, `unset(...)` forms outside
+  single direct array-offset statements, direct `for (...)` syntax, direct
+  `do ... while` syntax, and direct `switch (...)` syntax are rejected with
+  stable parse diagnostics; executing long array literals, variable/property
+  removal, multiple unset operands, append-offset unset, nested/complex unset
+  operands, C-style/post-condition loops, and switch/case control flow is not
+  implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
   expression, string offset access, by-reference `foreach`, object iteration,
@@ -409,8 +421,9 @@
   by-reference calls
 - long `array(...)` literals; direct syntax is rejected with a stable parse
   diagnostic before execution
-- `unset(...)`; direct syntax is rejected with a stable parse diagnostic before
-  variable, array offset, or object property removal exists
+- `unset(...)` forms outside single direct array offsets, including variable
+  removal, object property removal, multiple operands, append-offset unset, and
+  nested/complex operands; these fail with stable parse diagnostics
 - by-reference `foreach`, object iteration, destructuring loop targets, and
   expression-form `foreach`
 - `for (...)`; direct syntax is rejected with a stable parse diagnostic before

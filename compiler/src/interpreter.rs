@@ -250,6 +250,10 @@ impl Interpreter {
 
                 Ok(Flow::Normal)
             }
+            Stmt::UnsetArrayIndex { name, index, span } => {
+                self.execute_unset_array_index(name, index, *span, scope)?;
+                Ok(Flow::Normal)
+            }
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
@@ -266,6 +270,32 @@ impl Interpreter {
                 RuntimeError::unsupported_global(
                     "importing globals into function scope is not implemented",
                 ),
+            )),
+        }
+    }
+
+    fn execute_unset_array_index(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let key = self.evaluate_array_key(index, scope)?;
+
+        match scope.read_named(name).cloned() {
+            Some(Value::Array(mut array)) => {
+                array.remove(key);
+                scope.write_static(name, Value::Array(array));
+                Ok(())
+            }
+            Some(Value::Null) | None => Ok(()),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot unset offset on {}",
+                    other.type_name()
+                )),
             )),
         }
     }

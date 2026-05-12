@@ -148,7 +148,11 @@ handled.
 
 ## Milestone 9: Array Mutation
 
-- [ ] Implement direct `unset($array[$key])` for direct array variables over the
+- [x] Implement direct `unset($array[$key])` for direct array variables over the
   current integer/string key subset, including missing-key behavior, fixture CLI
   coverage, documentation, and explicit native-codegen rejection while broader
   `unset` forms remain unsupported.
+- [ ] Implement direct `unset($name)` for static variables backed by the current
+  symbol table, including undefined-variable no-op behavior, fixture CLI
+  coverage, documentation, and explicit native-codegen rejection while property,
+  multiple, and nested unset forms remain unsupported.

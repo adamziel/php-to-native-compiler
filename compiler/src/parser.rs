@@ -64,6 +64,7 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
                 self.parse_continue()
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset") => self.parse_unset(),
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
             }
@@ -474,6 +475,40 @@ impl Parser {
             "expected ';' after global declaration",
         )?;
         Ok(Stmt::Global { names, span })
+    }
+
+    fn parse_unset(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after unset")?;
+
+        let token = self.advance().clone();
+        let (name, target_span) = match token.kind {
+            TokenKind::Variable(name) => (name, token.span),
+            _ => return Err(self.error_at(token.span, unsupported_unset_message())),
+        };
+
+        if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            return Err(self.error_at(target_span, unsupported_unset_message()));
+        }
+        let bracket_span = self.previous().span;
+        if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+            return Err(self.error_at(bracket_span, unsupported_unset_message()));
+        }
+
+        let index = self.parse_expression()?;
+        self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+
+        if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
+            return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(self.previous().span, unsupported_unset_message()));
+        }
+
+        self.consume_keyword(TokenKind::RParen, "expected ')' after unset operand")?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after unset")?;
+
+        Ok(Stmt::UnsetArrayIndex { name, index, span })
     }
 
     fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {
@@ -1281,7 +1316,7 @@ fn unsupported_long_array_literal_message() -> &'static str {
 }
 
 fn unsupported_unset_message() -> &'static str {
-    "unsupported unset: variable, array offset, and property removal are not implemented"
+    "unsupported unset: only direct array offset removal like unset($array[$key]) is implemented; variable, property, multiple, append, and nested unset forms are not implemented"
 }
 
 fn unsupported_foreach_expression_message() -> &'static str {

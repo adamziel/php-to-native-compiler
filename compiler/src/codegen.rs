@@ -119,6 +119,10 @@ impl LlvmGenerator {
                 *span,
                 "foreach array iteration is supported by phpc run but not LLVM IR emission yet",
             )),
+            Stmt::UnsetArrayIndex { span, .. } => Err(self.unsupported(
+                *span,
+                "array offset unset is supported by phpc run but not LLVM IR emission yet",
+            )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 "return is only valid inside functions, which are not lowered yet",
@@ -622,6 +626,10 @@ impl CGenerator {
             Stmt::Foreach { span, .. } => Err(self.unsupported(
                 *span,
                 "foreach array iteration is supported by phpc run but not assembly emission yet",
+            )),
+            Stmt::UnsetArrayIndex { span, .. } => Err(self.unsupported(
+                *span,
+                "array offset unset is supported by phpc run but not assembly emission yet",
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,

@@ -208,8 +208,9 @@ Implemented:
   snapshots for unsupported long `array(...)` literal syntax before long array
   literals are implemented.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
-  snapshots for unsupported `unset(...)` syntax before variable, array offset,
-  or object property removal is implemented.
+  snapshots for unsupported broader `unset(...)` forms before variable,
+  property, multiple-operand, append-offset, or nested/complex removal is
+  implemented.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported `foreach (...)` syntax before array/object
   iteration is implemented.
@@ -253,12 +254,19 @@ Implemented:
   variable, insertion order and snapshot behavior match the current value-only
   `foreach` model, and non-array iterables reuse the stable `invalid foreach`
   runtime diagnostic.
+- Implemented direct `unset($array[$key])` for direct array variables over the
+  current integer/string key subset. Existing keys are removed while preserving
+  remaining insertion order, missing keys are no-ops, undefined and `null`
+  target variables are no-ops, append allocation does not reuse removed integer
+  keys, existing non-array targets fail with a stable invalid-array-access
+  runtime diagnostic, broader unset forms remain explicit parse diagnostics,
+  and native lowering rejects array-offset unset explicitly.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 23 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 10 focused array value tests.
+- `cargo test -p php_runtime` passes with 24 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 11 focused array value tests.
 - `cargo test -p php_runtime in_array` passes with 2 focused loose array-search
   tests.
 - `cargo test -p php_runtime array_search` passes with 2 focused loose
@@ -267,7 +275,7 @@ Tested:
   passes.
 - `cargo test -p phpc --test runtime_errors` passes with 22 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 33 representative runtime error fixtures.
+  covering 34 representative runtime error fixtures.
 - `cargo test -p phpc --test functions_and_scopes` passes with 17
   user-function scope/default-parameter tests.
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
@@ -291,10 +299,10 @@ Tested:
   snapshot test covering 7 unsupported object/class fixtures.
 - `cargo test -p phpc --test syntax_boundaries` passes with stable parse
   diagnostic coverage for unsupported long `array(...)` literal syntax,
-  unsupported `unset(...)` syntax, unsupported `foreach` by-reference and
-  destructuring forms, expression-form `foreach`, unsupported `for (...)`
-  syntax, unsupported `do ... while` syntax, unsupported `switch (...)` syntax,
-  and unsupported `break`/`continue` loop-depth arguments.
+  unsupported broader `unset(...)` forms, unsupported `foreach` by-reference
+  and destructuring forms, expression-form `foreach`, unsupported `for (...)`
+  syntax, unsupported `do ... while` syntax, unsupported `switch (...)`
+  syntax, and unsupported `break`/`continue` loop-depth arguments.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
   snapshot test covering 8 unsupported syntax fixtures.
 - `cargo test -p phpc --test loop_control_cli` passes with 1 CLI snapshot test
@@ -304,6 +312,11 @@ Tested:
   iterable diagnostic coverage.
 - `cargo test -p phpc --test foreach_cli` passes with 1 CLI snapshot test
   covering the Milestone 8 `foreach` fixtures.
+- `cargo test -p phpc --test array_unset` passes with direct array-offset
+  unset behavior, missing-key no-op behavior, undefined/`null` target no-op
+  behavior, append-index preservation, and non-array target diagnostics.
+- `cargo test -p phpc --test array_mutation_cli` passes with 1 CLI snapshot
+  test covering the Milestone 9 array mutation fixtures.
 - `cargo test -p phpc --test array_isset` passes with direct array-offset
   `isset` behavior and unsupported complex-lvalue coverage.
 - `cargo test -p phpc --test array_key_exists` passes with direct
@@ -351,9 +364,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists`
   passes with rejection coverage for key/value `foreach` before native
   iteration lowering exists.
-- `cargo run -p phpc -- test` passes with 104 fixture tests.
+- `cargo run -p phpc -- test` passes with 106 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 39 fixtures and skipping 65 `.phpc-only` fixtures.
+  installed, comparing 40 fixtures and skipping 66 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -379,6 +392,10 @@ Tested:
   `foreach` fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone8` passes
   with 2 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/milestone9` passes with 1 array
+  mutation fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -413,7 +430,7 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 29
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 34
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -504,7 +521,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php:2:10: unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_unset.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:1: unsupported unset: variable, array offset, and property removal are not implemented`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:7: unsupported unset: only direct array offset removal like unset($array[$key]) is implemented; variable, property, multiple, append, and nested unset forms are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:20: unsupported foreach: destructuring loop targets are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_for.php`
@@ -535,8 +552,12 @@ Tested:
   prints the committed value-only ordered array `foreach` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone8/foreach_key_values.php`
   prints the committed key/value ordered array `foreach` output.
+- `cargo run -p phpc -- run tests/fixtures/milestone9/array_unset.php`
+  prints the committed direct array-offset `unset` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/foreach_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/foreach_non_array.php:2:1: invalid foreach: can only iterate arrays in the current subset, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/unset_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unset_non_array.php:3:1: invalid array access: cannot unset offset on int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php:3:12: unsupported call empty(): only direct variables and direct array offset operands are supported`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/break_outside_loop.php`
@@ -582,6 +603,9 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/runtime_errors/foreach_non_array.php --emit-ir`
   exits 1 with an explicit `foreach` codegen rejection before emitting
   misleading native code.
+- `cargo run -p phpc -- compile tests/fixtures/runtime_errors/unset_non_array.php --emit-ir`
+  exits 1 with an explicit `array offset unset` codegen rejection before
+  emitting misleading native code.
 - `tools/run-tests.sh` passes and now includes optional system PHP comparison.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -604,16 +628,17 @@ Still fails:
   objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
   float string precision.
 - Arrays do not implement long `array(...)` literal execution; direct syntax
-  now fails with a stable parse diagnostic before execution. `unset(...)` also
-  fails with a stable parse diagnostic before variable, array offset, or object
-  property removal exists, `for (...)` fails with a stable parse diagnostic
-  before C-style loops exist, `do ... while` fails with a stable parse
-  diagnostic before post-condition loops exist, and `switch (...)` fails with a
-  stable parse diagnostic before switch/case control flow exists.
-  Nested indexed writes, complex assignment lvalues, `$array[]` as a read
-  expression, string offset access, by-reference `foreach`, object iteration,
-  destructuring loop targets, spread, references, copy-on-write containers,
-  `for`/`do ... while` iteration behavior, `switch` case
+  now fails with a stable parse diagnostic before execution. `unset(...)` is
+  limited to single direct array-offset statements on direct variables;
+  variable removal, object property removal, multiple operands, append-offset
+  unset, and nested/complex unset operands fail with stable parse diagnostics.
+  `for (...)` fails with a stable parse diagnostic before C-style loops exist,
+  `do ... while` fails with a stable parse diagnostic before post-condition
+  loops exist, and `switch (...)` fails with a stable parse diagnostic before
+  switch/case control flow exists. Nested indexed writes, complex assignment
+  lvalues, `$array[]` as a read expression, string offset access, by-reference
+  `foreach`, object iteration, destructuring loop targets, spread, references,
+  copy-on-write containers, `for`/`do ... while` iteration behavior, `switch` case
   matching/fallthrough/default handling, and object/resource keys are also
   unsupported, as are PHP's full boolean/null/float key coercion rules. The
   current `foreach` array forms snapshot array entries at loop start and do not
@@ -640,10 +665,13 @@ Still fails:
   not implement strict mode, array/object needles or haystack values,
   references, copy-on-write containers, exact native `TypeError` objects, or
   native lowering for function calls.
-  Writes to existing non-array scalar variables other than `null` are rejected
-  instead of following PHP's full automatic conversion behavior. Negative-key
-  auto-index behavior is not claimed beyond the current non-negative allocator,
-  and arrays still reject native lowering.
+  Direct array-offset `unset` treats undefined and `null` targets as no-ops
+  but does not model PHP's warning for undefined variables; existing non-array
+  targets fail with a stable project diagnostic instead of PHP's exact
+  `Error` object. Writes to existing non-array scalar variables other than
+  `null` are rejected instead of following PHP's full automatic conversion
+  behavior. Negative-key auto-index behavior is not claimed beyond the current
+  non-negative allocator, and arrays still reject native lowering.
 - Loop-control execution is limited to statement-form `break;` and `continue;`
   inside active `while` and supported array `foreach` loops. Loop-depth
   arguments, invalid top-level/function-level loop control recovery beyond the
@@ -707,7 +735,7 @@ Still fails:
 
 Next:
 
-- Implement direct `unset($array[$key])` for direct array variables over the
-  current integer/string key subset, including missing-key behavior, fixture CLI
-  coverage, documentation, and explicit native-codegen rejection while broader
-  `unset` forms remain unsupported.
+- Implement direct `unset($name)` for static variables backed by the current
+  symbol table, including undefined-variable no-op behavior, fixture CLI
+  coverage, documentation, and explicit native-codegen rejection while property,
+  multiple, and nested unset forms remain unsupported.

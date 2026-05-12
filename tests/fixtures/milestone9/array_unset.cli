@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+count:3
+city=Paris
+3=next-before
+4=next-after
+name:unset
+two:unset
+append:4
+--- stdout end ---
+stderr:
+--- stderr end ---

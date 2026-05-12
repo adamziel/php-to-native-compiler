@@ -52,6 +52,8 @@ subset:
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
+- direct `unset($array[$key])` for the documented direct array-variable offset
+  subset
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   the documented ordered array value model
 - direct `isset($array[$key])` checks for the documented array-offset subset
@@ -68,11 +70,11 @@ subset:
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  long `array(...)` literals, `unset(...)`, unsupported `foreach`
-  by-reference/destructuring forms, `for (...)`, `do ... while`, `switch (...)`,
-  `break`/`continue` depth arguments, object method calls, dynamic property
-  names, anonymous classes, and unsupported class forms, static member access,
-  and class constants
+  long `array(...)` literals, unsupported broader `unset(...)` forms,
+  unsupported `foreach` by-reference/destructuring forms, `for (...)`,
+  `do ... while`, `switch (...)`, `break`/`continue` depth arguments, object
+  method calls, dynamic property names, anonymous classes, and unsupported
+  class forms, static member access, and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,
