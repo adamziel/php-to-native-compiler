@@ -44,6 +44,8 @@ impl Parser {
             TokenKind::Foreach => self.parse_unsupported_foreach(),
             TokenKind::For => self.parse_unsupported_for(),
             TokenKind::Switch => self.parse_unsupported_switch(),
+            TokenKind::Break => self.parse_unsupported_break_or_continue(),
+            TokenKind::Continue => self.parse_unsupported_break_or_continue(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => {
@@ -57,6 +59,11 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("switch") => {
                 self.parse_unsupported_switch()
+            }
+            TokenKind::Identifier(name)
+                if name.eq_ignore_ascii_case("break") || name.eq_ignore_ascii_case("continue") =>
+            {
+                self.parse_unsupported_break_or_continue()
             }
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
@@ -370,6 +377,11 @@ impl Parser {
     fn parse_unsupported_switch(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
         Err(self.error_at(token.span, unsupported_switch_message()))
+    }
+
+    fn parse_unsupported_break_or_continue(&mut self) -> CompileResult<Stmt> {
+        let token = self.advance().clone();
+        Err(self.error_at(token.span, unsupported_break_continue_message()))
     }
 
     fn parse_return(&mut self) -> CompileResult<Stmt> {
@@ -720,6 +732,12 @@ impl Parser {
             TokenKind::Foreach => Err(self.error_at(token.span, unsupported_foreach_message())),
             TokenKind::For => Err(self.error_at(token.span, unsupported_for_message())),
             TokenKind::Switch => Err(self.error_at(token.span, unsupported_switch_message())),
+            TokenKind::Break => {
+                Err(self.error_at(token.span, unsupported_break_continue_message()))
+            }
+            TokenKind::Continue => {
+                Err(self.error_at(token.span, unsupported_break_continue_message()))
+            }
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_require_message("include")))
             }
@@ -750,6 +768,9 @@ impl Parser {
                 }
                 if name.eq_ignore_ascii_case("switch") {
                     return Err(self.error_at(token.span, unsupported_switch_message()));
+                }
+                if name.eq_ignore_ascii_case("break") || name.eq_ignore_ascii_case("continue") {
+                    return Err(self.error_at(token.span, unsupported_break_continue_message()));
                 }
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -1111,6 +1132,8 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Foreach => "foreach",
         TokenKind::For => "for",
         TokenKind::Switch => "switch",
+        TokenKind::Break => "break",
+        TokenKind::Continue => "continue",
         TokenKind::Null => "null",
         TokenKind::True => "true",
         TokenKind::False => "false",
@@ -1201,6 +1224,10 @@ fn unsupported_for_message() -> &'static str {
 
 fn unsupported_switch_message() -> &'static str {
     "unsupported switch: switch/case control flow is not implemented"
+}
+
+fn unsupported_break_continue_message() -> &'static str {
+    "unsupported break/continue: loop-control execution is not implemented"
 }
 
 fn unsupported_class_expression_message() -> &'static str {

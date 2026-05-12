@@ -278,3 +278,53 @@ echo switch ($value) {
         );
     }
 }
+
+#[test]
+fn break_continue_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+while (true) {
+    break;
+}
+"#,
+            3,
+            5,
+        ),
+        (
+            r#"<?php
+while (true) {
+    continue;
+}
+"#,
+            3,
+            5,
+        ),
+        (
+            r#"<?php
+while (true) {
+    BREAK;
+}
+"#,
+            3,
+            5,
+        ),
+        (
+            r#"<?php
+echo continue;
+"#,
+            2,
+            6,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported break/continue: loop-control execution is not implemented"
+        );
+    }
+}

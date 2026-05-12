@@ -1612,3 +1612,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:18:43Z
 
 - Post-round 27 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:18:45Z
+
+- Starting round 28 at 20260512T011845Z from HEAD `3fcceed`.
+
+## Loop Event 2026-05-12T01:18:47Z
+
+- Pre-round 28 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:21:39Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  `break`/`continue` syntax before loop-control execution exists. The parser
+  now rejects lowercase `break`/`continue`, uppercase identifier-form
+  `BREAK`/`CONTINUE`, and expression-position loop-control tokens with the
+  same stable unsupported loop-control diagnostic.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_break.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_continue.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test syntax_boundaries` passed with 7 parse-boundary tests; `cargo test -p
+  phpc --test unsupported_syntax_features_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/unsupported_syntax_features` passed with 8 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 8 `.phpc-only`
+  comparison skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_break.php` exited `1`
+  with the expected stable parse diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_continue.php` exited
+  `1` with the expected stable parse diagnostic; `tools/run-tests.sh` passed
+  with 78 fixtures, 28 system PHP comparisons, and 50 `.phpc-only` skips.
+- Remaining semantic gaps: `break`/`continue` execution is still unsupported,
+  including loop-depth arguments, innermost loop transfer, nested loops,
+  interaction with `while`, future `for`/`foreach`/`do ... while`/`switch`
+  execution, invalid use outside loops, `finally`/exception interactions,
+  references/copy-on-write effects during loop exit, and native lowering.
+- Next concrete task: implement `break;` execution for innermost `while` loops
+  while keeping native lowering and deeper loop-control forms explicitly
+  unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject break and continue syntax"`
+  after the full suite passes.

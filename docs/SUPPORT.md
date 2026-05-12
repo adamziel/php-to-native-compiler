@@ -72,6 +72,7 @@
 - explicit parse diagnostics for unsupported `for (...)` syntax
 - explicit parse diagnostics for unsupported `do ... while` syntax
 - explicit parse diagnostics for unsupported `switch (...)` syntax
+- explicit parse diagnostics for unsupported `break`/`continue` syntax
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -244,9 +245,11 @@
   are not implemented.
 - Array gaps: long `array(...)` literal syntax, `unset(...)` syntax, direct
   `foreach (...)` syntax, direct `for (...)` syntax, direct `do ... while`
-  syntax, and direct `switch (...)` syntax are rejected with stable parse
+  syntax, direct `switch (...)` syntax, and direct `break`/`continue` syntax
+  are rejected with stable parse
   diagnostics; executing long array literals, variable/offset/property removal,
-  iteration, and switch/case control flow is not implemented.
+  iteration, switch/case control flow, and loop-control transfer is not
+  implemented.
   Nested indexed writes, complex assignment lvalues, `$array[]` as a read
   expression, string offset access, `for`/`foreach`/`do ... while` iteration
   behavior, `switch` case matching/fallthrough/default handling, destructuring,
@@ -318,6 +321,8 @@
   before post-condition loops exist
 - `switch (...)`; direct syntax is rejected with a stable parse diagnostic
   before switch/case control flow exists
+- `break` and `continue`; direct syntax is rejected with a stable parse
+  diagnostic before loop-control execution exists
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

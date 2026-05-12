@@ -183,6 +183,9 @@ Implemented:
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported `switch (...)` syntax before switch/case
   control flow is implemented.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
+  CLI snapshots for unsupported `break`/`continue` syntax before loop-control
+  execution is implemented.
 
 Tested:
 
@@ -219,9 +222,9 @@ Tested:
   diagnostic coverage for unsupported long `array(...)` literal syntax,
   unsupported `unset(...)` syntax, unsupported `foreach (...)` syntax,
   unsupported `for (...)` syntax, unsupported `do ... while` syntax, and
-  unsupported `switch (...)` syntax.
+  unsupported `switch (...)` syntax, and unsupported `break`/`continue` syntax.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 6 unsupported syntax fixtures.
+  snapshot test covering 8 unsupported syntax fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
@@ -235,9 +238,9 @@ Tested:
   passes with rejection coverage for object instantiation.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_object_property`
   passes with rejection coverage for object property reads and writes.
-- `cargo run -p phpc -- test` passes with 76 fixture tests.
+- `cargo run -p phpc -- test` passes with 78 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 28 fixtures and skipping 48 `.phpc-only` fixtures.
+  installed, comparing 28 fixtures and skipping 50 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -267,9 +270,9 @@ Tested:
   tests/fixtures/unsupported_object_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 6 unsupported syntax fixtures.
+  passes with 8 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 6 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 8 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -365,6 +368,10 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_do_while.php:3:1: unsupported do-while: post-condition loops are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_switch.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_switch.php:3:1: unsupported switch: switch/case control flow is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_break.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_break.php:3:5: unsupported break/continue: loop-control execution is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_continue.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_continue.php:3:5: unsupported break/continue: loop-control execution is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_anonymous_class.php`
@@ -419,7 +426,9 @@ Still fails:
   before array/object iteration exists, `for (...)` fails with a stable parse
   diagnostic before C-style loops exist, `do ... while` fails with a stable
   parse diagnostic before post-condition loops exist, and `switch (...)` fails
-  with a stable parse diagnostic before switch/case control flow exists. Nested
+  with a stable parse diagnostic before switch/case control flow exists.
+  `break`/`continue` also fail with a stable parse diagnostic before
+  loop-control execution exists. Nested
   indexed writes, complex assignment lvalues, `$array[]` as a read expression,
   string offset access, `for`/`foreach`/`do ... while` iteration behavior,
   `switch` case matching/fallthrough/default handling, destructuring, spread,
@@ -488,5 +497,5 @@ Still fails:
 
 Next:
 
-- Continue by adding explicit parse diagnostics for unsupported
-  `break`/`continue` syntax before loop-control execution exists.
+- Implement `break;` execution for innermost `while` loops while keeping native
+  lowering and deeper loop-control forms explicitly unsupported.

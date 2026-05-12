@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_break.php:3:5: unsupported break/continue: loop-control execution is not implemented
+--- stderr end ---
