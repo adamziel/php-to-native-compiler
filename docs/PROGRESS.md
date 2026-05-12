@@ -2443,7 +2443,14 @@ Still fails:
   method execution and object context binding exist. Method dispatch,
   constructor context, closure binding, static method behavior, inheritance,
   exact PHP `Error` objects, and native lowering remain unsupported.
+- Added explicit committed fixture coverage and `phpc run` CLI snapshots for
+  unsupported constructor execution and constructor arguments. Declared
+  `__construct` methods and `new ClassName(...)` argument lists still fail with
+  stable runtime diagnostics until user-constructor execution, `$this` binding,
+  property initialization, visibility, inheritance, promoted properties, exact
+  PHP `Error` objects, and native lowering exist.
 
 Next:
 
-- Continue the next small object/class boundary from `docs/NEXT_TASKS.md`.
+- Add explicit parse diagnostics for unsupported `clone` expressions before
+  object handle copying or `__clone` dispatch exists.

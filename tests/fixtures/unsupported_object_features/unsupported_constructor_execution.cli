@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/unsupported_object_features/unsupported_constructor_execution.php:6:8: unsupported object instantiation for Box: constructors are not implemented
+--- stderr end ---

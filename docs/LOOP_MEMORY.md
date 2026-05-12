@@ -8386,3 +8386,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:58:30Z
 
 - Post-round 38 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:58:47Z
+
+- Starting round 39 at 20260512T185847Z from HEAD `16202e1`.
+
+## Loop Event 2026-05-12T18:59:00Z
+
+- Pre-round 39 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:03:12Z
+
+- Task attempted: completed Milestone 90 by making the existing constructor
+  object-instantiation boundary visible through committed fixture coverage and
+  `phpc run` CLI snapshots. Declared `__construct` methods and
+  `new ClassName(...)` argument lists continue to fail with stable runtime
+  diagnostics before user-constructor execution exists.
+- Files changed: `tests/fixtures/unsupported_object_features/unsupported_constructor_execution.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_constructor_arguments.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  constructors_remain_explicitly_unsupported_for_instantiation` passed;
+  `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 23 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 23 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_constructor_execution.php`
+  and `unsupported_constructor_arguments.php` exited `1` with the expected
+  stable runtime diagnostics; `cargo fmt -- --check` passed; `git diff
+  --check` passed; `tools/run-tests.sh` passed with 282 fixtures, 106 system
+  PHP comparisons, and 176 skips.
+- Remaining semantic gaps: user-constructor execution remains unsupported,
+  including `$this` binding, property initialization, visibility checks,
+  inheritance and parent constructor calls, promoted properties, exact PHP
+  `Error` objects, and native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported `clone`
+  expressions before object handle copying or `__clone` dispatch exists.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: document constructor boundary"` after the
+  full suite passes.

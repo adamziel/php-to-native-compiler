@@ -1094,6 +1094,12 @@
   serialization hooks, visibility enforcement, `self`/`parent`/`static`, object
   comparisons, object-to-string conversion, object callables, and native
   lowering are unsupported.
+- Constructor boundary: declaring a class with `__construct` or supplying
+  arguments to `new ClassName(...)` fails with stable runtime diagnostics before
+  any user constructor body executes. `$this` binding, constructor property
+  initialization, visibility checks, inheritance and parent constructor calls,
+  promoted properties, exact PHP `Error` object behavior, and native lowering
+  remain unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -1161,6 +1167,8 @@
 - non-public object property access and property writes to lvalues other than a
   direct variable
 - constructor execution and constructor arguments for `new ClassName()`
+  currently fail with stable runtime diagnostics when a declared constructor is
+  present or arguments are supplied
 - unsupported class forms including nested/conditional declarations,
   inheritance, interface declarations and implementation, interface constants,
   interface method signatures, interface inheritance, trait declarations, enum

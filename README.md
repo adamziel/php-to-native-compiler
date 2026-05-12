@@ -153,10 +153,10 @@ object values. `phpc run` can instantiate declared constructor-free classes,
 read/write public instance properties by static name, and check those public
 properties with `isset`, but constructors, `$this` object context binding,
 method dispatch, dynamic property names, visibility enforcement for non-public
-properties, object handle identity, property default values, multiple
-properties in one declaration, class constant declarations, static property
-storage, static method dispatch, class constants, enum declarations, and native
-object lowering are not supported yet.
+properties, object handle identity, property default values, constructor
+arguments, multiple properties in one declaration, class constant declarations,
+static property storage, static method dispatch, class constants, enum
+declarations, and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.
