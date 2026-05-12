@@ -54,10 +54,10 @@ subset:
 - minimal object instantiation with `new ClassName()` for declared classes that
   do not define constructors; public instance properties can be read and
   written by static property name and checked with `isset($object->name)`
-- narrow built-in global constant resolution for exact uppercase
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, including
-  `constant(...)` lookup for those exact string names; `define(...)` is an
-  explicit unsupported runtime boundary and does not create user constants yet
+- narrow global constant resolution: exact uppercase `ARRAY_FILTER_USE_KEY` and
+  `ARRAY_FILTER_USE_BOTH` work as bare built-in constants, and
+  `define($name, $value)` plus `constant($name)` support unqualified string
+  names over the documented scalar/array value subset
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -99,16 +99,17 @@ subset:
   and with string-valued value-only callbacks, including explicit integer mode
   flag `0` for those value-only paths, plus string-valued key-only callbacks
   through integer mode flag `2` and string-valued value/key callbacks through
-  integer mode flag `1`, `constant` over the documented built-in constant
-  name slice, `array_map` over the current one-array null-callback
-  identity, variadic null-callback zip, and variadic
+  integer mode flag `1`, `define` and `constant` over the documented
+  runtime-defined/built-in constant name slice, `array_map` over the current
+  one-array null-callback identity, variadic null-callback zip, and variadic
   string-callback subset with one-array key preservation and multi-array
   reindexing,
   `in_array` and `array_search` including strict scalar searches, `var_dump`,
   and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
-  `global` declarations, unsupported `define(...)` constant definitions,
+  `global` declarations, duplicate or unsupported `define(...)` constant
+  definitions,
   invalid `break`/`continue` outside a loop, and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
@@ -123,8 +124,8 @@ subset:
   arguments, object method calls, dynamic property names, anonymous classes,
   unsupported class forms, static member access, class constants, and bare
   global constants outside the current narrow built-in slice, such as
-  `PHP_VERSION`; `constant(...)` lookup is similarly limited to the current
-  documented built-in constant names
+  `PHP_VERSION`; bare runtime-defined constants remain unsupported and must be
+  read through `constant(...)`
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

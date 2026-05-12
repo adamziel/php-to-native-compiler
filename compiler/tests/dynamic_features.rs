@@ -336,7 +336,7 @@ echo array_filter([], "strlen", CUSTOM_FILTER_MODE);
         assert_eq!(
             error.message,
             format!(
-                "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset"
+                "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented as bare constants; runtime-defined constants must be read with constant() in the current subset"
             )
         );
     }
@@ -383,7 +383,7 @@ echo constant("PHP_VERSION");
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call constant(): only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset, got PHP_VERSION"
+        "unsupported call constant(): constant PHP_VERSION is not defined in the current runtime-defined or built-in constant subset"
     );
 }
 
@@ -404,10 +404,59 @@ echo constant(42);
 }
 
 #[test]
-fn define_builtin_is_an_explicit_user_constant_boundary() {
+fn define_builtin_populates_runtime_constant_table() {
+    let execution = run_source(
+        r#"<?php
+define("APP_NAME", "compiler");
+echo define("APP_VERSION", 1), "\n";
+echo constant("APP_NAME"), "|", constant("APP_VERSION"), "\n";
+
+$items = ["name" => "Ada", "count" => 2, "nested" => ["x" => 1]];
+define("APP_ITEMS", $items);
+$copy = constant("APP_ITEMS");
+$copy["name"] = "changed";
+$again = constant("APP_ITEMS");
+echo count($copy), "|", $copy["name"], "|", $again["name"], "|", $again["nested"]["x"], "\n";
+
+function constant_scope() {
+    define("INSIDE_FUNCTION", "inside");
+    return constant("APP_NAME") . ":" . constant("INSIDE_FUNCTION");
+}
+
+echo constant_scope(), "\n";
+$call = "define";
+echo $call("DYNAMIC_NAME", "dynamic"), "\n";
+echo constant("DYNAMIC_NAME"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1\ncompiler|1\n3|changed|Ada|1\ncompiler:inside\n1\ndynamic\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn duplicate_runtime_constant_definitions_have_stable_diagnostics() {
     let error = runtime_error(
         r#"<?php
 define("APP_NAME", "compiler");
+define("APP_NAME", "again");
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "constant APP_NAME is already defined");
+}
+
+#[test]
+fn define_rejects_builtin_constant_redefinition() {
+    let error = runtime_error(
+        r#"<?php
+define("ARRAY_FILTER_USE_KEY", 4);
 "#,
     );
 
@@ -415,24 +464,63 @@ define("APP_NAME", "compiler");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call define(): runtime-defined constants are not implemented in the current subset"
+        "constant ARRAY_FILTER_USE_KEY is already defined"
     );
 }
 
 #[test]
-fn dynamic_define_call_uses_the_same_user_constant_boundary() {
+fn define_requires_string_names_and_supported_values() {
+    let non_string = runtime_error(
+        r#"<?php
+define(42, "bad");
+"#,
+    );
+    assert_eq!(non_string.line, 2);
+    assert_eq!(non_string.column, 1);
+    assert_eq!(
+        non_string.message,
+        "unsupported call define(): name argument must be string in the current subset, got int"
+    );
+
+    let bad_name = runtime_error(
+        r#"<?php
+define("123BAD", "bad");
+"#,
+    );
+    assert_eq!(bad_name.line, 2);
+    assert_eq!(bad_name.column, 1);
+    assert_eq!(
+        bad_name.message,
+        "unsupported call define(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD"
+    );
+
+    let unsupported_value = runtime_error(
+        r#"<?php
+class Box {}
+define("BOX", new Box());
+"#,
+    );
+    assert_eq!(unsupported_value.line, 3);
+    assert_eq!(unsupported_value.column, 1);
+    assert_eq!(
+        unsupported_value.message,
+        "unsupported call define(): value must be null, bool, int, float, string, or array values in the current subset, got object"
+    );
+}
+
+#[test]
+fn define_rejects_case_insensitive_legacy_flag() {
     let error = runtime_error(
         r#"<?php
-$call = "define";
-$call("APP_NAME", "compiler");
+define("APP_NAME", "compiler", true);
 "#,
     );
 
-    assert_eq!(error.line, 3);
+    assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call define(): runtime-defined constants are not implemented in the current subset"
+        "unsupported call define(): case-insensitive constant definitions are not implemented; pass exactly two arguments in the current subset"
     );
 }
 

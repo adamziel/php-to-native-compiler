@@ -1618,7 +1618,7 @@ fn unsupported_namespace_qualified_class_name_message() -> &'static str {
 
 fn unsupported_global_constant_message(name: &str) -> String {
     format!(
-        "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset"
+        "unsupported global constant {name}: only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented as bare constants; runtime-defined constants must be read with constant() in the current subset"
     )
 }
 

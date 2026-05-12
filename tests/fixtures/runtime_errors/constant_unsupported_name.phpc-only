@@ -1,1 +1,1 @@
-phpc intentionally supports constant() only for the documented ARRAY_FILTER_* slice.
+phpc intentionally supports constant() only for runtime-defined constants and the documented ARRAY_FILTER_* built-in slice.

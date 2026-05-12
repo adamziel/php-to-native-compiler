@@ -624,9 +624,18 @@ handled.
 
 ## Milestone 61: User Constant Definition Slice
 
-- [ ] Implement a first runtime-defined constant table for
+- [x] Implement a first runtime-defined constant table for
   `define($name, $value)` and `constant($name)` over a narrow string-name and
   scalar/array value subset, including duplicate-definition diagnostics,
   fixture CLI coverage, documentation, and explicit gaps for bare user
   constants, case-insensitive legacy constants, namespaces, extension
   constants, class constants, references/copy-on-write, and native lowering.
+
+## Milestone 62: Bare User Constant Reads
+
+- [ ] Implement bare user constant reads for runtime-defined unqualified
+  constants over the current name/value subset, including parser/runtime
+  lookup, undefined/unsupported constant diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for namespaces, extension constants, class
+  constants, case-insensitive legacy constants, references/copy-on-write, and
+  native lowering.

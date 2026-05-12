@@ -34,6 +34,7 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     classes: PhpClassTable,
+    constants: ConstantTable,
     call_depth: usize,
     stdout: String,
 }
@@ -106,6 +107,33 @@ impl SymbolTable {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct ConstantTable {
+    values: HashMap<String, Value>,
+}
+
+impl ConstantTable {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn define(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if builtin_global_constant_value(name).is_some() || self.values.contains_key(name) {
+            return Err(RuntimeError::duplicate_constant(name));
+        }
+
+        self.values.insert(name.to_string(), value);
+        Ok(())
+    }
+
+    fn get(&self, name: &str) -> Option<Value> {
+        self.values
+            .get(name)
+            .cloned()
+            .or_else(|| builtin_global_constant_value(name).map(Value::Int))
+    }
+}
+
 enum Flow {
     Normal,
     Break(Span),
@@ -137,6 +165,7 @@ impl Interpreter {
         Ok(Self {
             functions,
             classes,
+            constants: ConstantTable::new(),
             call_depth: 0,
             stdout: String::new(),
         })
@@ -883,13 +912,59 @@ impl Interpreter {
                     ));
                 }
 
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "define()",
-                        "runtime-defined constants are not implemented in the current subset",
-                    ),
-                ))
+                if args.len() == 3 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "define()",
+                            "case-insensitive constant definitions are not implemented; pass exactly two arguments in the current subset",
+                        ),
+                    ));
+                }
+
+                let name = match &args[0] {
+                    Value::String(name) if is_supported_runtime_constant_name(name) => name.clone(),
+                    Value::String(name) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "define()",
+                                format!(
+                                    "constant name must be a non-empty unqualified identifier in the current subset, got {name}"
+                                ),
+                            ),
+                        ));
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "define()",
+                                format!(
+                                    "name argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+
+                if let Some(type_name) = unsupported_runtime_constant_value_type(&args[1]) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "define()",
+                            format!(
+                                "value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                            ),
+                        ),
+                    ));
+                }
+
+                self.constants
+                    .define(&name, args[1].clone())
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Bool(true))
             }
             "strlen" => {
                 expect_arity(name, &args, 1, span)?;
@@ -917,19 +992,29 @@ impl Interpreter {
             "constant" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::String(name) => builtin_global_constant_value(name)
-                        .map(Value::Int)
+                    Value::String(name) if is_supported_runtime_constant_name(name) => self
+                        .constants
+                        .get(name)
                         .ok_or_else(|| {
                             runtime_error(
                                 span,
                                 RuntimeError::unsupported_call(
                                     "constant()",
                                     format!(
-                                        "only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset, got {name}"
+                                        "constant {name} is not defined in the current runtime-defined or built-in constant subset"
                                     ),
                                 ),
                             )
                         }),
+                    Value::String(name) => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "constant()",
+                            format!(
+                                "constant name must be a non-empty unqualified identifier in the current subset, got {name}"
+                            ),
+                        ),
+                    )),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -2438,6 +2523,27 @@ fn builtin_global_constant_value(name: &str) -> Option<i64> {
         "ARRAY_FILTER_USE_BOTH" => Some(1),
         "ARRAY_FILTER_USE_KEY" => Some(2),
         _ => None,
+    }
+}
+
+fn is_supported_runtime_constant_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|char| char == '_' || char.is_ascii_alphanumeric())
+}
+
+fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str> {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => None,
+        Value::Array(array) => array
+            .entries()
+            .iter()
+            .find_map(|entry| unsupported_runtime_constant_value_type(&entry.value)),
+        Value::Object(_) => Some("object"),
     }
 }
 

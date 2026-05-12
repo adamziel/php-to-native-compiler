@@ -27,6 +27,10 @@ impl RuntimeError {
         })
     }
 
+    pub fn duplicate_constant(name: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::DuplicateConstant { name: name.into() })
+    }
+
     pub fn duplicate_class(class_name: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::DuplicateClass {
             class_name: class_name.into(),
@@ -187,6 +191,9 @@ pub enum RuntimeErrorKind {
     DuplicateFunction {
         callable: String,
     },
+    DuplicateConstant {
+        name: String,
+    },
     DuplicateClass {
         class_name: String,
     },
@@ -299,6 +306,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::DuplicateFunction { callable } => {
             format!("function {callable} is already defined")
+        }
+        RuntimeErrorKind::DuplicateConstant { name } => {
+            format!("constant {name} is already defined")
         }
         RuntimeErrorKind::DuplicateClass { class_name } => {
             format!("class {class_name} is already defined")

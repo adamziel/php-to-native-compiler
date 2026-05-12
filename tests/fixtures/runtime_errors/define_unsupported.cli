@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/runtime_errors/define_unsupported.php:2:1: unsupported call define(): runtime-defined constants are not implemented in the current subset
---- stderr end ---

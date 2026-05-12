@@ -6691,3 +6691,61 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T14:39:22Z
 
 - Post-round 9 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T14:39:29Z
+
+- Starting round 10 at 20260512T143929Z from HEAD `cfe7901`.
+
+## Loop Event 2026-05-12T14:39:36Z
+
+- Pre-round 10 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:55:26Z
+
+- Task attempted: implemented the first runtime-defined constant table for
+  `define($name, $value)` and `constant($name)` over unqualified string names
+  and the current scalar/array value subset. Successful definitions return
+  `true`, string-valued dynamic calls to `define` and `constant` use the same
+  path, lookup clones array values, exact built-in `ARRAY_FILTER_*` constants
+  remain available, and stable diagnostics cover duplicate definitions,
+  built-in redefinition attempts, unsupported names, object-containing values,
+  unknown `constant(...)` names, and the legacy third `define(...)` flag.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/parser.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/dynamic_features.rs`, `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone61/runtime_defined_constants.php`,
+  `tests/fixtures/milestone61/runtime_defined_constants.stdout`,
+  `tests/fixtures/milestone61/runtime_defined_constants.cli`,
+  `tests/fixtures/runtime_errors/define_duplicate.*`,
+  removed `tests/fixtures/runtime_errors/define_unsupported.*`, updated
+  `tests/fixtures/runtime_errors/constant_unsupported_name.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo test -p phpc --test
+  dynamic_features` passed with 20 tests; `cargo test -p phpc --test
+  user_constants_cli` passed; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo test -p php_runtime` passed with 74 runtime tests; `cargo run
+  -p phpc -- test tests/fixtures/milestone61` passed with 1 fixture; `cargo run
+  -p phpc -- test --compare-php tests/fixtures/milestone61` passed with 1
+  system PHP comparison; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/define_duplicate.php` exited `1` with the
+  expected duplicate-constant diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/milestone61/runtime_defined_constants.php` printed the
+  committed output; `cargo test -p phpc --test unsupported_dynamic_features_cli`
+  passed; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 106 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_dynamic_features` passed with 12 fixtures;
+  `tools/run-tests.sh` passed with 239 fixtures, 98 system PHP comparisons, and
+  141 `.phpc-only` skips.
+- Remaining semantic gaps: bare user constants still reject at parse time and
+  must be read through `constant(...)`; constant names are limited to
+  unqualified identifier-shaped strings; case-insensitive legacy constants,
+  namespace-qualified constants, extension constants, class constants,
+  references/copy-on-write behavior for constant values, object/resource
+  constant values, exact native warning/`ValueError`/`TypeError` objects, and
+  native constant lowering are unsupported.
+- Next concrete task: implement bare user constant reads for runtime-defined
+  unqualified constants over the current name/value subset.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add runtime-defined constants"`
+  after the full suite passes.

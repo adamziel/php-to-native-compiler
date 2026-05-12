@@ -102,11 +102,11 @@ Dynamic PHP features will be implemented as runtime fallback zones:
 - `eval` will parse and execute in the caller scope
 - namespaces and imports will need namespace-aware name resolution before they
   can affect function, class, or dynamic callable lookup
-- global constants currently use a narrow built-in name table for exact
-  uppercase `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; direct bare
-  constants and `constant(...)` share that table in the interpreter
-- `define(...)` calls are reserved as an explicit runtime boundary until
-  runtime-defined user constants have storage and name-resolution rules
+- global constants use a narrow interpreter constant table: exact uppercase
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` are available as bare
+  built-in constants, while runtime-defined constants can be created with
+  `define($name, $value)` and read with `constant($name)` for the documented
+  unqualified string-name and scalar/array value subset
 
 Only the string-valued dynamic function lookup slice is executable today.
 Variable-variable execution, include/require execution, and `eval` remain design
@@ -115,10 +115,10 @@ parse diagnostic. Namespace declarations and top-level `use` import
 declarations are also reserved and rejected with stable parse diagnostics.
 Array/object callables, method calls, first-class callable syntax, and
 namespace/autoload-aware callable resolution are still outside the implemented
-dynamic-call subset. Executable user-defined constants through `define(...)`,
-case-insensitive legacy constants, extension constants, namespace-qualified
-constants, class constants through `constant(...)`, and constant lowering are
-still outside the implemented constant subset.
+dynamic-call subset. Bare user constants, case-insensitive legacy constants,
+extension constants, namespace-qualified constants, class constants through
+`constant(...)`, references/copy-on-write for constant values, and constant
+lowering are still outside the implemented constant subset.
 
 ## Namespace/Import Boundary
 

@@ -171,7 +171,7 @@ impl LlvmGenerator {
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
-                "global constants are supported by phpc run for a narrow built-in subset but not LLVM IR emission yet",
+                "global constants are supported by phpc run for the current built-in/runtime-defined subset but not LLVM IR emission yet",
             )),
             Expr::Array { span, .. } => Err(self.unsupported(
                 *span,
@@ -194,7 +194,7 @@ impl LlvmGenerator {
             Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("define") => {
                 Err(self.unsupported(
                     *span,
-                    "define() user-defined constants are not implemented by phpc run or LLVM IR emission yet",
+                    "define() runtime-defined constants are supported by phpc run but not LLVM IR emission yet",
                 ))
             }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
@@ -711,7 +711,7 @@ impl CGenerator {
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
-                "global constants are supported by phpc run for a narrow built-in subset but not assembly emission yet",
+                "global constants are supported by phpc run for the current built-in/runtime-defined subset but not assembly emission yet",
             )),
             Expr::Array { span, .. } => Err(self.unsupported(
                 *span,

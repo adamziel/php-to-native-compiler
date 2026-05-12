@@ -58,11 +58,11 @@
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `ARRAY_FILTER_USE_KEY` and
-  `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`; `constant`
-  resolves those same exact string names
-- an explicit runtime boundary for `define(...)`: direct calls and
-  string-valued dynamic calls to `define` with the current arity shape fail
-  with a stable unsupported-call diagnostic instead of creating user constants
+  `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`
+- runtime-defined constants through `define($name, $value)` and
+  `constant($name)` over the current unqualified string-name and scalar/array
+  value subset; string-valued dynamic calls to `define` and `constant` use the
+  same path
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -79,7 +79,7 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
-  `constant`,
+  `define`, `constant`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -92,8 +92,9 @@
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
-  `constant` names and non-string `constant` name arguments, unsupported
-  `define()` user-constant definitions, unsupported array keys, undefined
+  `constant` names and non-string `constant` name arguments, duplicate
+  constants, unsupported `define()` names, values, and legacy flags,
+  unsupported array keys, undefined
   array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
@@ -155,7 +156,8 @@
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
 - explicit parse diagnostics for unsupported bare global constants outside the
-  current narrow built-in slice, such as `PHP_VERSION`
+  current narrow built-in slice, such as `PHP_VERSION`; runtime-defined
+  constants must be read with `constant(...)`
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
@@ -499,7 +501,9 @@
   mode yet. Representative runtime errors are covered by committed `phpc run`
   CLI snapshots that record exit code, stdout, and stderr for undefined
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
-  unsupported `define()` user-constant definitions, unsupported array keys,
+  duplicate `define()` constant definitions, unsupported `define()` names,
+  unsupported `define()` values, unsupported `define()` legacy flags,
+  unsupported array keys,
   undefined array keys, invalid `array_key_exists` keys, non-array
   `array_key_exists` operands, non-array `array_key_first` or
   `array_key_last` operands, non-array `array_is_list` operands,
@@ -553,8 +557,8 @@
   arrays, array indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
-  object property writes, and `define(...)` constant definitions are rejected
-  with explicit codegen errors.
+  object property writes, global constants, `constant(...)`, and
+  `define(...)` constant definitions are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -563,15 +567,16 @@
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
-  `array_pad`, `array_merge`, `array_replace`, `array_combine`, `constant`,
+  `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
+  `constant`,
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `var_dump`, or `print_r`.
-  The reserved `define` name resolves to an unsupported runtime boundary rather
-  than creating user constants. Unresolved names fail with a stable
-  undefined-function runtime error, and non-string callees fail with a stable
-  unsupported-call runtime error. Required parameters and trailing default
+  The `define` and `constant` names resolve through the documented runtime
+  constant path. Unresolved names fail with a stable undefined-function runtime
+  error, and non-string callees fail with a stable unsupported-call runtime
+  error. Required parameters and trailing default
   parameter values are supported. Defaults may
   use the current constant-expression subset: `null`, booleans, integers,
   floats, strings, short and long arrays with supported keys, unary
@@ -880,10 +885,18 @@
   the mode argument and evaluate to the same current integer mode values as PHP.
   `constant("ARRAY_FILTER_USE_KEY")` and
   `constant("ARRAY_FILTER_USE_BOTH")` resolve to the same integer values and
-  may also be used as mode expressions.
-  Direct calls to `define(...)`, and string-valued dynamic calls to `define`,
-  are reserved as an explicit unsupported runtime boundary; they do not create
-  constants in the current subset.
+  may also be used as mode expressions. `define($name, $value)` accepts
+  unqualified string names matching the current identifier subset and stores
+  `null`, booleans, integers, floats, strings, and arrays containing only
+  supported constant values. `constant($name)` returns a cloned value from the
+  runtime-defined table or from the exact built-in `ARRAY_FILTER_*` slice.
+  Duplicate definitions, redefinition of the built-in constants, non-string or
+  unsupported names, unsupported object-containing values, unknown
+  `constant(...)` names, and the legacy third `define(...)` flag fail with
+  stable diagnostics. Bare user constants, case-insensitive legacy constants,
+  namespace-qualified constants, extension constants, class constants through
+  `constant(...)`, references/copy-on-write behavior, and native lowering are
+  not implemented.
   Array/object callables, closures, first-class callables, method calls,
   integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
   `false`, references,
@@ -1173,12 +1186,12 @@
   resource values, exact native `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
-- global constant resolution outside exact uppercase `ARRAY_FILTER_USE_KEY`
-  and `ARRAY_FILTER_USE_BOTH`; `constant(...)` lookup outside those exact
-  string names; executable user-defined constants through `define(...)`,
-  case-insensitive legacy constants, extension constants, namespace-qualified
-  constants, `constant()` lookup for class constants, and native lowering
-  remain unsupported
+- bare global constant resolution outside exact uppercase
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; bare user constants,
+  unsupported `define(...)` names or values, case-insensitive legacy constants,
+  extension constants, namespace-qualified constants, `constant()` lookup for
+  class constants, reference/copy-on-write behavior for constant values, and
+  native lowering remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

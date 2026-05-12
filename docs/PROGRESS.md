@@ -423,6 +423,15 @@ Implemented:
   reach a stable unsupported-call runtime diagnostic, fixture and CLI coverage
   record the exit behavior, and direct `define(...)` calls reject native
   lowering explicitly.
+- Added a first runtime-defined constant table. The supported slice accepts
+  `define($name, $value)` for unqualified string names and current
+  scalar/array constant values, returns `true` on successful definitions,
+  resolves runtime-defined and exact built-in `ARRAY_FILTER_*` constants
+  through `constant($name)`, works through string-valued dynamic calls to
+  `define` and `constant`, clones array values on lookup, and has stable
+  diagnostics for duplicate definitions, built-in redefinition attempts,
+  unsupported names, unsupported object-containing values, unknown
+  `constant(...)` names, and the legacy third `define(...)` flag.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -730,7 +739,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 104 representative runtime error fixtures.
+  covering 106 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -743,12 +752,15 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 4 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with 9 tests covering
-  static symbol-table behavior, dynamic function lookup behavior, and
-  unsupported variable-variable/include/require/eval/namespace/use and
-  namespace-qualified name diagnostic coverage.
+- `cargo test -p phpc --test dynamic_features` passes with 20 tests covering
+  static symbol-table behavior, dynamic function lookup behavior,
+  runtime-defined constant behavior, and unsupported
+  variable-variable/include/require/eval/namespace/use and namespace-qualified
+  name diagnostic coverage.
+- `cargo test -p phpc --test user_constants_cli` passes with 1 CLI snapshot
+  test covering the Milestone 61 runtime-defined constant fixture.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
-  CLI snapshot test covering 11 unsupported variable-variable,
+  CLI snapshot test covering 12 unsupported variable-variable,
   include/require, eval, namespace, use, and namespace-qualified name fixtures.
 - `cargo test -p phpc --test object_model` passes with 9 tests covering class
   metadata registration, minimal object instantiation, duplicate metadata
@@ -1105,9 +1117,9 @@ Tested:
   tests/fixtures/unsupported_function_features` passes with 6 `.phpc-only`
   PHP comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
-  passes with 11 unsupported dynamic-feature fixtures.
+  passes with 12 unsupported dynamic-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_dynamic_features` passes with 11 `.phpc-only` PHP
+  tests/fixtures/unsupported_dynamic_features` passes with 12 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
   passes with 7 unsupported object/class fixtures.
@@ -1153,7 +1165,14 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 101
+- `cargo run -p phpc -- test tests/fixtures/milestone61` passes with 1
+  runtime-defined constant fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone61` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone61/runtime_defined_constants.php`
+  prints the committed `define(...)`/`constant(...)` output for scalar values,
+  array constants, function-scope lookup, and string-valued dynamic calls.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 106
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -1161,6 +1180,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/non_numeric_string_arithmetic.php:2:6: invalid arithmetic for +: string is not numeric`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only int and string keys are implemented`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/define_duplicate.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/define_duplicate.php:3:1: constant APP_NAME is already defined`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_invalid_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3:6: invalid array key: bool keys are not supported; only int and string keys are implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_key_exists_non_array.php`
@@ -1916,11 +1937,10 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/milestone52/array_reduce_initial.php`
   prints the committed scalar, array, empty-array, and dynamic-call initial
   accumulator output.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 104
-  runtime-error fixtures after removing the obsolete unsupported
-  `array_reduce` initial-value diagnostic fixture.
-- `tools/run-tests.sh` passes with 233 fixtures, 95 system PHP comparisons,
-  and 138 `.phpc-only` skips.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 106
+  runtime-error fixtures.
+- `tools/run-tests.sh` passes with 239 fixtures, 98 system PHP comparisons,
+  and 141 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -2167,12 +2187,14 @@ Still fails:
   imports, constant imports, trait `use` execution, autoload interaction, and
   namespace-aware native lowering are not implemented.
 - Global constant resolution is limited to exact uppercase
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; `constant(...)` lookup is
-  limited to those exact string names. `define(...)` is reserved as a stable
-  unsupported runtime boundary. Other built-in constants, executable
-  user-defined constants, case-insensitive legacy constants, extension
-  constants, namespace-qualified constants, class constants through
-  `constant()`, and native lowering for constants are not implemented.
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` as bare built-in
+  constants, plus runtime-defined constants created with `define($name,
+  $value)` and read through `constant($name)` for the current unqualified
+  string-name and scalar/array value subset. Bare user constants, other
+  built-in constants, case-insensitive legacy constants, extension constants,
+  namespace-qualified constants, class constants through `constant()`,
+  references/copy-on-write behavior for constant values, and native lowering
+  for constants are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
@@ -2188,5 +2210,4 @@ Still fails:
 
 Next:
 
-- Implement a first runtime-defined constant table for `define($name, $value)`
-  and `constant($name)` over a narrow value/name subset.
+- Add the next small task from `docs/NEXT_TASKS.md`.
