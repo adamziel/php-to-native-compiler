@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+4
+two|zero two|negative|next
+after
+Ada|five|two|zero two|negative|next
+3|zero two|negative|next
+0
+6|Ada|five|two|zero two|negative|next
+5|five|zero two|next--- stdout end ---
+stderr:
+--- stderr end ---

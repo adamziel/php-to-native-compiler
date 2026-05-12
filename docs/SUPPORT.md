@@ -74,7 +74,7 @@
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
-  `array_keys`, `array_reverse`, `array_merge`, `array_flip`,
+  `array_keys`, `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `var_dump`, and `print_r`; `print_r` can render
   current minimal object values
@@ -85,7 +85,9 @@
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
   non-array `array_reverse` operands, non-bool `array_reverse` preserve-key
-  flag values, non-array `array_merge` operands, non-array
+  flag values, non-array `array_slice` operands, non-int `array_slice`
+  offsets, unsupported `array_slice` length and preserve-key arguments,
+  non-array `array_merge` operands, non-array
   `array_flip` operands, unsupported non-int/string `array_flip` values,
   non-array `array_fill_keys` operands, unsupported non-int/string
   `array_fill_keys` key values, non-array `array_count_values` operands,
@@ -245,6 +247,10 @@
   zero, preserve string keys, and are available through string-valued dynamic
   function calls. `array_reverse($array, true)` returns a new ordered array in
   reverse insertion order while preserving both integer and string keys.
+  `array_slice($array, $offset)` accepts integer offsets, returns entries from
+  that insertion-order offset to the end, supports negative offsets counted
+  back from the end, reindexes integer-keyed entries from zero, preserves
+  string keys, and is available through string-valued dynamic function calls.
   `array_merge()` returns an empty array. `array_merge($array, ...)` accepts
   zero or more array operands, processes them left to right in insertion order,
   appends and reindexes integer-keyed entries from zero, preserves string keys,
@@ -304,12 +310,12 @@
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `array_filter` in the current no-callback and
-  string-callback forms, `array_map` in the current one-array null-callback
-  identity form, variadic null-callback zip form, and one- and two-array
-  string-callback forms, `in_array`, `array_search`, both current `foreach`
-  array forms, direct
+  `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
+  `array_fill_keys`, `array_count_values`, `array_filter` in the current
+  no-callback and string-callback forms, `array_map` in the current one-array
+  null-callback identity form, variadic null-callback zip form, and one-array
+  and variadic string-callback forms, `in_array`, `array_search`, both current
+  `foreach` array forms, direct
   array-offset
   `unset`, multiple supported `unset(...)` operands, `print_r`, and `var_dump`
   are implemented for this ordered value model.
@@ -366,7 +372,9 @@
   `array_keys` operands, unsupported `array_keys` search-value comparisons,
   non-bool `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-bool
-  `array_reverse` preserve-key flag values, non-array
+  `array_reverse` preserve-key flag values, non-array `array_slice`
+  operands, non-int `array_slice` offsets, unsupported `array_slice` length
+  and preserve-key arguments, non-array
   `array_merge` operands, non-array `array_flip` operands, unsupported
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
@@ -397,7 +405,7 @@
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
-  `array_keys`, `array_reverse`, `array_merge`, `array_flip`,
+  `array_keys`, `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
@@ -429,9 +437,9 @@
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `var_dump`, and `print_r` cover the documented
+  `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
+  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
+  `in_array`, `array_search`, `var_dump`, and `print_r` cover the documented
   scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
@@ -470,6 +478,14 @@
   evaluate to a boolean in the current subset; non-bool flag coercion,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, and native lowering are not implemented.
+  `array_slice($array, $offset)` accepts arrays and integer offsets only,
+  returns entries from that insertion-order offset to the end, supports
+  negative offsets counted back from the end, reindexes integer-keyed entries
+  from zero, preserves string keys, and is available through string-valued
+  dynamic function calls. Length and preserve-key arguments, non-int offset
+  coercion, references, copy-on-write containers, object handle identity
+  preservation, resource values, exact native `TypeError` objects, and native
+  lowering are not implemented.
   `array_merge()` accepts zero arguments and returns an empty array.
   `array_merge($array, ...)` accepts any number of array operands, processes
   them left to right in insertion order, appends integer-keyed entries with new
@@ -583,14 +599,15 @@
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, and both current `foreach` array forms follow the current
-  by-value model; PHP
+  `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
+  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
+  `in_array`, `array_search`, and both current `foreach` array forms follow
+  the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
-  `array_reverse` preserve-key flag coercion, `array_merge`
+  `array_reverse` preserve-key flag coercion, `array_slice` length and
+  preserve-key forms, non-int offset coercion, `array_merge`
   reference/copy-on-write behavior, `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
   for unsupported key values, `array_count_values` warning-and-skip behavior
@@ -726,6 +743,9 @@
 - `array_reverse` non-bool `preserve_keys` coercion, reference/copy-on-write
   behavior, object handle identity preservation, resource values, and native
   lowering
+- `array_slice` length and preserve-key arguments, non-int offset coercion,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering
 - `array_merge` reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering

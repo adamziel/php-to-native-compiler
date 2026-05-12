@@ -1021,6 +1021,45 @@ impl Interpreter {
                     ),
                 )),
             },
+            "array_slice" => match args.as_slice() {
+                [Value::Array(array), Value::Int(offset)] => {
+                    Ok(Value::Array(array.sliced_from_offset(*offset)))
+                }
+                [Value::Array(_), Value::Int(_), _] | [Value::Array(_), Value::Int(_), _, _] => {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_slice()",
+                            "length and preserve_keys arguments are not supported in the current subset",
+                        ),
+                    ))
+                }
+                [Value::Array(_), other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_slice()",
+                        format!(
+                            "offset argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_slice()",
+                        format!("first argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_slice()",
+                        ArityExpectation::Exactly(2),
+                        args.len(),
+                    ),
+                )),
+            },
             "array_merge" => {
                 let mut arrays = Vec::with_capacity(args.len());
                 for (index, arg) in args.iter().enumerate() {
@@ -1745,6 +1784,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_key_last"
             | "array_keys"
             | "array_reverse"
+            | "array_slice"
             | "array_merge"
             | "array_flip"
             | "array_fill_keys"

@@ -544,6 +544,31 @@ impl PhpArray {
         array
     }
 
+    pub fn sliced_from_offset(&self, offset: i64) -> Self {
+        let len = i64::try_from(self.entries.len()).expect("array length fits in i64");
+        let start = if offset >= 0 {
+            offset.min(len)
+        } else {
+            len.saturating_add(offset).max(0)
+        };
+        let start = usize::try_from(start).expect("non-negative slice start fits in usize");
+
+        let mut array = Self::new();
+        for entry in self.entries.iter().skip(start) {
+            match &entry.key {
+                ArrayKey::Int(_) => {
+                    array
+                        .append(entry.value.clone())
+                        .expect("array length fits in i64");
+                }
+                ArrayKey::String(key) => {
+                    array.insert(key.clone(), entry.value.clone());
+                }
+            }
+        }
+        array
+    }
+
     pub fn merged_with(&self, right: &Self) -> Self {
         Self::merged_from([self, right])
     }
@@ -2397,6 +2422,67 @@ mod tests {
             Some(&Value::String("next".to_string())),
             "array_reverse preserve_keys must not mutate the original array"
         );
+    }
+
+    #[test]
+    fn array_slice_from_positive_offset_reindexes_integer_keys_and_preserves_string_keys() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut sliced = array.sliced_from_offset(2);
+        let entries = sliced.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[1].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[2].value, Value::String("negative".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(2));
+        assert_eq!(entries[3].value, Value::String("next".to_string()));
+        assert_eq!(
+            sliced.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(3)
+        );
+        assert_eq!(
+            array.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_slice must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_slice_supports_negative_and_out_of_range_offsets() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let tail = array.sliced_from_offset(-3);
+        let tail_entries = tail.entries();
+        assert_eq!(tail_entries.len(), 3);
+        assert_eq!(tail_entries[0].key, ArrayKey::String("02".to_string()));
+        assert_eq!(tail_entries[0].value, Value::String("zero two".to_string()));
+        assert_eq!(tail_entries[1].key, ArrayKey::Int(0));
+        assert_eq!(tail_entries[1].value, Value::String("negative".to_string()));
+        assert_eq!(tail_entries[2].key, ArrayKey::Int(1));
+        assert_eq!(tail_entries[2].value, Value::String("next".to_string()));
+
+        assert!(array.sliced_from_offset(99).entries().is_empty());
+
+        let whole = array.sliced_from_offset(-99);
+        assert_eq!(whole.entries().len(), array.entries().len());
+        assert_eq!(whole.entries()[0].key, ArrayKey::String("name".to_string()));
     }
 
     #[test]
