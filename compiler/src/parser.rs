@@ -40,6 +40,7 @@ impl Parser {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
             TokenKind::Class => self.parse_class(),
+            TokenKind::Trait => self.parse_unsupported_trait_declaration(),
             TokenKind::Namespace => self.parse_unsupported_namespace(),
             TokenKind::Use => self.parse_unsupported_use(),
             TokenKind::Declare => self.parse_unsupported_declare(),
@@ -204,6 +205,13 @@ impl Parser {
             members,
             span,
         }))
+    }
+
+    fn parse_unsupported_trait_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Trait, "expected 'trait'")?
+            .span;
+        Err(self.error_at(span, unsupported_trait_declaration_message()))
     }
 
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
@@ -654,6 +662,11 @@ impl Parser {
                         "unsupported nested class declaration: only top-level class declarations are implemented",
                     ));
                 }
+                if self.check(|kind| matches!(kind, TokenKind::Trait)) {
+                    return Err(
+                        self.error_at(self.peek().span, unsupported_trait_declaration_message())
+                    );
+                }
                 statements.push(self.parse_statement()?);
             }
             Ok(statements)
@@ -888,6 +901,11 @@ impl Parser {
                         self.peek().span,
                         "unsupported nested class declaration: only top-level class declarations are implemented",
                     ));
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Trait)) {
+                    return Err(
+                        self.error_at(self.peek().span, unsupported_trait_declaration_message())
+                    );
                 }
                 statements.push(self.parse_statement()?);
             }
@@ -1671,6 +1689,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Function => "function",
         TokenKind::Fn => "fn",
         TokenKind::Class => "class",
+        TokenKind::Trait => "trait",
         TokenKind::New => "new",
         TokenKind::Public => "public",
         TokenKind::Protected => "protected",
@@ -1903,6 +1922,10 @@ fn unsupported_class_expression_message() -> &'static str {
     "unsupported class expression: anonymous classes are not implemented"
 }
 
+fn unsupported_trait_declaration_message() -> &'static str {
+    "unsupported trait declaration: trait parsing and trait use execution are not implemented"
+}
+
 fn unsupported_method_call_message() -> &'static str {
     "unsupported method call: method dispatch is not implemented"
 }
@@ -1918,6 +1941,7 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
             "unsupported interface implementation: implements is not implemented".to_string()
         }
         TokenKind::Use => "unsupported trait use: traits are not implemented".to_string(),
+        TokenKind::Trait => unsupported_trait_declaration_message().to_string(),
         _ => format!("expected class member, found {}", token_name(kind)),
     }
 }

@@ -2387,8 +2387,13 @@ Still fails:
   to the current missing namespace-aware name-resolution path, plus fixture and
   CLI snapshot coverage. `__NAMESPACE__` remains unsupported until namespace
   context magic constant evaluation exists.
+- Added an explicit stable parse diagnostic, parser coverage, fixture coverage,
+  and `phpc run` CLI snapshot for unsupported `trait` declarations before trait
+  parsing or trait use execution exists. Trait methods, properties, constants,
+  conflict resolution, aliases, visibility changes, namespace-aware traits, and
+  native lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics for unsupported `trait` declarations before
-  trait parsing or trait use execution exists.
+- Add explicit parse diagnostics for unsupported `interface` declarations before
+  interface parsing or implementation execution exists.

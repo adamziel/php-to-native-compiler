@@ -7857,3 +7857,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:58:34Z
 
 - Post-round 28 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:58:47Z
+
+- Starting round 29 at 20260512T175847Z from HEAD `3869b01`.
+
+## Loop Event 2026-05-12T17:58:57Z
+
+- Pre-round 29 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:04:38Z
+
+- Task attempted: completed Milestone 80 by adding an explicit unsupported
+  `trait` declaration boundary. The lexer now reserves `trait`, the parser
+  rejects top-level and nested trait declarations with a stable parse
+  diagnostic before trait parsing or trait use execution exists, and
+  unsupported object/class coverage includes a committed `phpc run` CLI
+  snapshot.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_trait_declaration.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 8 fixtures; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_trait_declaration.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt -- --check`
+  passed; `tools/run-tests.sh` passed with 267 fixtures, 106 system PHP
+  comparisons, and 161 skips.
+- Remaining semantic gaps: trait declarations, trait methods, trait
+  properties, trait constants, class-body trait use execution, conflict
+  resolution, aliases, visibility changes, namespace-aware traits, exact PHP
+  parse/error objects, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `interface` declarations before interface parsing or implementation
+  execution exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject trait declarations"`
+  after the full suite passes.

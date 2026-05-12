@@ -311,6 +311,26 @@ if (true) {
         ),
         (
             r#"<?php
+trait Logs {
+    public function write($message) {}
+}
+"#,
+            2,
+            1,
+            "unsupported trait declaration: trait parsing and trait use execution are not implemented",
+        ),
+        (
+            r#"<?php
+if (true) {
+    trait NestedTrait {}
+}
+"#,
+            3,
+            5,
+            "unsupported trait declaration: trait parsing and trait use execution are not implemented",
+        ),
+        (
+            r#"<?php
 class Child extends Base {}
 "#,
             2,

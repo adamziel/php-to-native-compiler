@@ -141,7 +141,8 @@ subset:
   `do ... while`, alternate `if`/`elseif`/`else` colon/`endif` syntax,
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, object method calls, dynamic property names, anonymous classes,
-  unsupported class forms, static member access, and class constants
+  unsupported class forms, trait declarations, static member access, and class
+  constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

@@ -785,8 +785,16 @@ handled.
 
 ## Milestone 80: Trait Declaration Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported `trait` declarations
+- [x] Add explicit parse diagnostics for unsupported `trait` declarations
   before trait parsing or trait use execution exists, including parser
   coverage, fixture CLI coverage, documentation, and named gaps for trait
   methods/properties/constants, conflict resolution, aliases, visibility
   changes, namespace-aware traits, and native lowering.
+
+## Milestone 81: Interface Declaration Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported `interface` declarations
+  before interface parsing or implementation execution exists, including parser
+  coverage, fixture CLI coverage, documentation, and named gaps for interface
+  constants, method signatures, inheritance, namespace-aware interfaces,
+  class/interface type names, and native lowering.
