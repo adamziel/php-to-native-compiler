@@ -228,3 +228,53 @@ echo do {
         );
     }
 }
+
+#[test]
+fn switch_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+$value = 2;
+switch ($value) {
+    case 1:
+        echo "one";
+        break;
+    default:
+        echo "other";
+}
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+SWITCH (1) {
+    CASE 1:
+        echo "one";
+}
+"#,
+            2,
+            1,
+        ),
+        (
+            r#"<?php
+echo switch ($value) {
+    default:
+        echo "fallback";
+};
+"#,
+            2,
+            6,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported switch: switch/case control flow is not implemented"
+        );
+    }
+}

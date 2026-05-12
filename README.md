@@ -61,9 +61,9 @@ subset:
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
   long `array(...)` literals, `unset(...)`, `foreach (...)`, `for (...)`,
-  `do ... while`, object method calls, dynamic property names, anonymous
-  classes, and
-  unsupported class forms, static member access, and class constants
+  `do ... while`, `switch (...)`, object method calls, dynamic property names,
+  anonymous classes, and unsupported class forms, static member access, and
+  class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

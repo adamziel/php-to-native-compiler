@@ -91,5 +91,7 @@ handled.
   implementing C-style loops.
 - [x] Add explicit parse diagnostics for unsupported `do ... while` syntax
   before implementing do-while loops.
-- [ ] Add explicit parse diagnostics for unsupported `switch` syntax before
+- [x] Add explicit parse diagnostics for unsupported `switch` syntax before
   implementing switch/case control flow.
+- [ ] Add explicit parse diagnostics for unsupported `break`/`continue` syntax
+  before implementing loop-control execution.

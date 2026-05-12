@@ -1560,3 +1560,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:15:26Z
 
 - Post-round 26 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:15:28Z
+
+- Starting round 27 at 20260512T011528Z from HEAD `aebaaad`.
+
+## Loop Event 2026-05-12T01:15:30Z
+
+- Pre-round 27 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:17:50Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  `switch (...)` syntax before switch/case control-flow support exists. The
+  parser now rejects lowercase `switch`, uppercase identifier-form `SWITCH`,
+  and expression-position `switch` with the same stable unsupported-switch
+  diagnostic.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_switch.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test syntax_boundaries` passed with 6 parse-boundary tests; `cargo test -p
+  phpc --test unsupported_syntax_features_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/unsupported_syntax_features` passed with 6 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 6 `.phpc-only`
+  comparison skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_switch.php` exited `1`
+  with the expected stable parse diagnostic; `tools/run-tests.sh` passed with
+  76 fixtures, 28 system PHP comparisons, and 48 `.phpc-only` skips.
+- Remaining semantic gaps: `switch` execution is still unsupported, including
+  case expression evaluation, PHP loose case matching, fallthrough, default
+  handling, `break`/`continue` interaction, nested switches/loops, side effects
+  during case evaluation, references/copy-on-write interactions, and native
+  lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `break`/`continue` syntax before loop-control execution exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject switch syntax"`
+  after the full suite passes.
