@@ -1,0 +1,7 @@
+present:exists
+null:exists
+null:not-set
+missing:absent
+int-normalized:exists
+leading-zero-string:exists
+dynamic:exists

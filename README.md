@@ -53,7 +53,7 @@ subset:
   direct-variable array subset
 - direct `isset($array[$key])` checks for the documented array-offset subset
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
-  `count`, `var_dump`, and `print_r`
+  `count`, `array_key_exists`, `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, invalid `break`/`continue` outside a loop, and runaway

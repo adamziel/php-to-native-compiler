@@ -635,6 +635,21 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_key_exists" => {
+                expect_arity(name, &args, 2, span)?;
+                let key =
+                    ArrayKey::from_value(&args[0]).map_err(|error| runtime_error(span, error))?;
+                match &args[1] {
+                    Value::Array(array) => Ok(Value::Bool(array.contains_key(key))),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_key_exists()",
+                            format!("second argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -868,7 +883,10 @@ impl From<RuntimeError> for Diagnostic {
 }
 
 fn is_builtin(name: &str) -> bool {
-    matches!(name, "strlen" | "count" | "var_dump" | "print_r")
+    matches!(
+        name,
+        "strlen" | "count" | "array_key_exists" | "var_dump" | "print_r"
+    )
 }
 
 fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> CompileResult<()> {

@@ -406,6 +406,11 @@ impl PhpArray {
             .map(|entry| &entry.value)
     }
 
+    pub fn contains_key(&self, key: impl Into<ArrayKey>) -> bool {
+        let key = key.into().normalized();
+        self.entries.iter().any(|entry| entry.key == key)
+    }
+
     pub fn insert(&mut self, key: impl Into<ArrayKey>, value: Value) -> ArrayKey {
         let key = key.into().normalized();
         self.bump_next_auto_index(&key);
@@ -1599,6 +1604,10 @@ mod tests {
             array.get("02"),
             Some(&Value::String("zero two".to_string()))
         );
+        assert!(array.contains_key("2"));
+        assert!(array.contains_key(2));
+        assert!(array.contains_key("02"));
+        assert!(!array.contains_key("missing"));
     }
 
     #[test]

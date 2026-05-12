@@ -1877,3 +1877,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:43:20Z
 
 - Post-round 31 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:43:22Z
+
+- Starting round 32 at 20260512T014322Z from HEAD `924a722`.
+
+## Loop Event 2026-05-12T01:43:25Z
+
+- Pre-round 32 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:47:44Z
+
+- Task attempted: implemented `array_key_exists($key, $array)` for the current
+  ordered array value model. The supported slice accepts integer/string keys,
+  checks normalized keys without filtering out `null` values, returns false for
+  missing keys, participates in string-valued dynamic function lookup, and has
+  stable diagnostics for unsupported key values and non-array second
+  arguments.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_key_exists.rs`,
+  `tests/fixtures/milestone7/array_key_exists.*`,
+  `tests/fixtures/runtime_errors/array_key_exists_invalid_key.*`,
+  `tests/fixtures/runtime_errors/array_key_exists_non_array.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p php_runtime
+  array_` passed; `cargo test -p phpc --test array_key_exists` passed with 3
+  tests; `cargo test -p phpc --test runtime_error_cli` passed; `cargo test -p
+  phpc --test array_refinements_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone7` passed with 2 fixtures; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone7` passed with 2 system PHP
+  comparisons; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 23 fixtures; `tools/run-tests.sh` passed with 87 fixtures, 32
+  system PHP comparisons, and 55 `.phpc-only` skips.
+- Remaining semantic gaps: `array_key_exists` is limited to integer/string keys
+  and array second arguments in the current ordered array model. PHP's broader
+  boolean/null/float/object/resource key coercions, exact warning/TypeError
+  behavior, references/copy-on-write effects, and native lowering for function
+  calls remain unsupported.
+- Next concrete task: implement `empty(...)` for direct variables and direct
+  array offsets over the current scalar/array value model, with explicit
+  unsupported diagnostics for complex lvalues.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_key_exists builtin"`
+  after the full suite passes.

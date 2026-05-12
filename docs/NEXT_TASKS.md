@@ -110,7 +110,11 @@ handled.
 - [x] Implement direct `isset($array[$key])` support for array offset operands,
   with tests for existing keys, null values, missing keys, undefined arrays, and
   non-array targets while keeping complex lvalues explicitly unsupported.
-- [ ] Implement `array_key_exists($key, $array)` for the current ordered array
+- [x] Implement `array_key_exists($key, $array)` for the current ordered array
   value model, including null-value contrast against `isset`, invalid key and
   non-array diagnostics, fixture CLI coverage, and docs for unsupported key
   coercions.
+- [ ] Implement `empty(...)` for direct variables and direct array offsets over
+  the current scalar/array value model, including undefined, missing, `null`,
+  false, zero, empty string, and string `"0"` behavior, unsupported complex
+  lvalue diagnostics, fixture CLI coverage, and documented gaps.
