@@ -2262,3 +2262,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   coverage while lowering remains unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_search builtin"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T02:18:01Z
+
+- Codex round 37 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T021226Z-37.log`.
+
+## Loop Event 2026-05-12T02:18:04Z
+
+- Post-round 37 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:18:04Z
+
+- Post-round 37 tests passed; running checkpoint for this round.
