@@ -9560,3 +9560,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   executable behavior, tests, CLI coverage, and named unsupported gaps.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add get_declared_interfaces boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T21:39:39Z
+
+- Codex round 1 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T213702Z-1.log`.
+
+## Loop Event 2026-05-12T21:39:46Z
+
+- Post-round 1 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:39:46Z
+
+- Post-round 1 tests passed; running checkpoint for this round.
