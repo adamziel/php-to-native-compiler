@@ -106,7 +106,7 @@
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
-  `get_object_vars`, `is_subclass_of`, `get_parent_class`,
+  `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
@@ -128,6 +128,8 @@
   declared property names in declaration order with `null` values for declared
   string class names, `get_object_vars` returns public instance property names
   with their current values in declaration order for current object values,
+  `get_mangled_object_vars` currently returns the same public instance
+  property slice for current object values,
   `is_a` checks
   exact class identity over current object values or string class names when
   `allow_string` is true, `is_subclass_of` returns false for the current
@@ -197,7 +199,8 @@
   `get_class` operands, unsupported `property_exists` object/class or
   property arguments, unsupported `method_exists` object/class or method
   arguments, unsupported `is_a` class-name or allow-string arguments,
-  non-object `get_object_vars` operands,
+  non-object `get_object_vars` operands, non-object
+  `get_mangled_object_vars` operands,
   unsupported `get_parent_class` object/class arguments,
   unsupported `get_called_class()` calls before method/static class context
   exists,
@@ -364,6 +367,11 @@
   of public instance property names in declaration order with their current
   slot values. Protected/private slots and static properties are not included.
   It is available through string-valued dynamic function calls.
+  `get_mangled_object_vars($object)` accepts current object values and returns
+  the same public instance property slice in declaration order. Protected and
+  private property-name mangling, dynamic properties, and visibility-context
+  behavior are not represented yet. It is available through string-valued
+  dynamic function calls.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity against the current declared class metadata using
   case-insensitive class-name lookup. `is_a($object_or_class, $class_name,
@@ -728,6 +736,7 @@
   `get_class_methods` arguments and missing `get_class_methods` string
   classes, non-string `get_class_vars` arguments and missing
   `get_class_vars` string classes, non-object `get_object_vars` arguments,
+  non-object `get_mangled_object_vars` arguments,
   extra `get_declared_interfaces` or `get_declared_traits` arguments,
   unsupported `get_called_class()` calls before method/static class context
   exists, unsupported `spl_object_id($object)` calls before PHP object handle
@@ -747,7 +756,8 @@
   `enum_exists(...)`, `property_exists(...)`,
   `method_exists(...)`,
   `get_class_methods(...)`, `get_class_vars(...)`, `is_a(...)`,
-  `get_object_vars(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
+  `get_object_vars(...)`, `get_mangled_object_vars(...)`,
+  `is_subclass_of(...)`, `get_parent_class(...)`,
   `get_declared_classes(...)`, `get_declared_interfaces(...)`,
   `get_declared_traits(...)`, `get_called_class(...)`,
   `spl_object_id(...)`, `spl_object_hash(...)`,
@@ -769,7 +779,7 @@
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
-  `get_object_vars`,
+  `get_object_vars`, `get_mangled_object_vars`,
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `get_called_class`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, or `print_r`.
@@ -845,7 +855,8 @@
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
-  `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`, `get_parent_class`,
+  `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
+  `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`
   cover the documented scalar/array/object subset. `get_called_class` is
@@ -884,6 +895,8 @@
   public declared property names with `null` values for declared string class
   names. `get_object_vars($object)` returns public instance property names
   with their current values for current object values.
+  `get_mangled_object_vars($object)` currently returns that same public
+  instance property slice for current object values.
   `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity over current object values, and over string class names only when
   `allow_string` is true.
@@ -1564,6 +1577,10 @@
   properties, inheritance, traits, interfaces, aliases/imports,
   namespace-aware names, references/copy-on-write, exact native ordering and
   `TypeError` behavior, and native lowering
+- `get_mangled_object_vars` protected/private property-name mangling, dynamic
+  properties, non-public visibility context, inheritance, traits, interfaces,
+  aliases/imports, namespace-aware names, references/copy-on-write, exact
+  native ordering and `TypeError` behavior, and native lowering
 - `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, and native lowering

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `get_mangled_object_vars($object)` for the current minimal object
+  value model as a public-property slice, with direct-call and dynamic-call
+  runtime coverage, fixture coverage, non-object diagnostics, documentation,
+  and native-codegen rejection coverage.
 - Added `spl_object_hash($object)` as an explicit unsupported object-handle
   hash boundary before PHP object handle hash behavior exists, with direct-call
   and dynamic-call runtime coverage, non-object diagnostics, fixture and CLI

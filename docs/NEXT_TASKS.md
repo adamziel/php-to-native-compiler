@@ -1123,7 +1123,7 @@ handled.
 
 ## Milestone 118: Mangled Object Vars Boundary
 
-- [ ] Add the next honest `get_mangled_object_vars($object)` boundary over the
+- [x] Add the next honest `get_mangled_object_vars($object)` boundary over the
   current minimal object value model before non-public property-name mangling
   and visibility-context behavior exist: either a stable unsupported
   diagnostic or a narrow executable public-property slice, with runtime
@@ -1131,3 +1131,12 @@ handled.
   protected/private name mangling, dynamic properties, references/copy-on-write,
   inheritance, traits, aliases/imports, exact native `TypeError` behavior, and
   native lowering.
+
+## Milestone 119: Object Property Empty Boundary
+
+- [ ] Add `empty($object->publicProperty)` support for direct object-variable
+  operands over the current public instance property model, including null,
+  falsey, missing-property, undefined-variable, and non-object behavior,
+  fixture CLI coverage, documentation, native-codegen rejection, and explicit
+  gaps for dynamic property names, non-public visibility context, complex
+  lvalues, magic methods, references/copy-on-write, and native lowering.

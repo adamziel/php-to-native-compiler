@@ -123,6 +123,7 @@ subset:
   `get_class_methods($object_or_class)` and
   `get_class_vars($class_name)` and
   `get_object_vars($object)` and
+  `get_mangled_object_vars($object)` and
   `is_a($object_or_class, $class_name[, $allow_string])` and
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` and
   `get_parent_class($object_or_class)` and `get_declared_classes()` and
@@ -205,6 +206,9 @@ names and returns public declared property names in declaration order with
 `null` values because property defaults are not implemented.
 `get_object_vars($object)` accepts current object values and returns public
 instance property names with their current slot values in declaration order.
+`get_mangled_object_vars($object)` currently uses the same public instance
+property slice as `get_object_vars`; protected/private property-name mangling
+and visibility-context behavior are not represented yet.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
 identity only: object inputs are accepted, string object/class inputs are
 considered only when `allow_string` is true, and target class names use the
@@ -256,6 +260,8 @@ interactions,
 exact native class/interface/method/property ordering, `get_class_vars()` property
 defaults, inheritance/trait/interface properties, context-sensitive visibility,
 `get_object_vars()` dynamic properties and non-public visibility context,
+`get_mangled_object_vars()` protected/private name mangling, dynamic
+properties, non-public visibility context, and references/copy-on-write,
 and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects

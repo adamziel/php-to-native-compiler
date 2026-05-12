@@ -25,6 +25,9 @@ public declared properties with `null` values because property defaults are not
 represented yet.
 `get_object_vars($object)` accepts current object values and returns public
 instance property names with their current slot values in declaration order.
+`get_mangled_object_vars($object)` accepts current object values and currently
+returns the same public instance property slice; protected/private
+property-name mangling and visibility-context behavior are not represented yet.
 `get_called_class()` is recognized as a zero-argument callable boundary, but it
 currently fails with a stable unsupported-call diagnostic until method/static
 class context and late static binding exist.
@@ -75,6 +78,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   declaration order with `null` values for declared string class names;
 - `get_object_vars($object)` returns public instance property names in
   declaration order with their current slot values for current object values;
+- `get_mangled_object_vars($object)` returns the same public instance
+  property slice for current object values until protected/private name
+  mangling and visibility-context behavior exist;
 - `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity using case-insensitive class metadata lookup; string first
   arguments are considered only when `allow_string` is true;
@@ -143,6 +149,8 @@ metadata lookup has native support. `get_class_vars` is rejected through the
 same function-call boundary until property-list metadata lookup has native
 support. `get_object_vars` is rejected through the same function-call boundary
 until object property value extraction has native support.
+`get_mangled_object_vars` is rejected through the same function-call boundary
+until mangled object property extraction has native support.
 `interface_exists` is rejected through that function-call boundary until
 interface metadata lookup has native support.
 `trait_exists` is rejected through that function-call boundary until trait
@@ -188,6 +196,9 @@ context-sensitive method listing, `get_class_vars` property defaults,
 inheritance/trait/interface properties, context-sensitive visibility, object
 inputs, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
+`get_mangled_object_vars` protected/private property-name mangling, dynamic
+properties, non-public visibility context, references/copy-on-write, exact
+native ordering,
 `interface_exists` true results for declared/built-in/internal interfaces,
 `trait_exists` true results for declared/built-in/internal traits,
 `enum_exists` true results for declared/built-in/internal enums,

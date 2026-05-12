@@ -2657,9 +2657,17 @@ Still fails:
   formatting, handle reuse after destruction, clone semantics, destructors,
   references/copy-on-write, exact native `TypeError` behavior, and native
   lowering remain unsupported.
+- Added `get_mangled_object_vars($object)` over the current minimal object
+  value model as a narrow public-property slice. The supported slice accepts
+  current object values, returns public instance property names in declaration
+  order with their current slot values, works through string-valued dynamic
+  calls, has fixture CLI coverage plus a stable non-object diagnostic, and
+  rejects native lowering through the current function-call/class-declaration
+  boundary. Protected/private property-name mangling, dynamic properties,
+  non-public visibility context, inheritance, traits, aliases/imports,
+  namespace-aware names, references/copy-on-write, exact native ordering and
+  `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest object metadata boundary for `get_mangled_object_vars`
-  before non-public property name mangling and visibility-context behavior are
-  implemented.
+- Continue the next unchecked task in `docs/NEXT_TASKS.md`.

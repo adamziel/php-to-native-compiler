@@ -189,6 +189,10 @@ public declared property names in declaration order with `null` values because
 property defaults are not implemented.
 `get_object_vars($object)` accepts current object values and returns public
 instance property names with their current slot values in declaration order.
+`get_mangled_object_vars($object)` accepts current object values and returns
+the same public instance property slice; protected/private property-name
+mangling and visibility-context behavior remain outside the current object
+model.
 `is_a($object_or_class, $class_name[, $allow_string])` performs exact-class
 identity checks against the current metadata table. `is_subclass_of(...)`
 shares the same argument boundary, but because inheritance metadata is not

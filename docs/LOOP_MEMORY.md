@@ -9983,3 +9983,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:19:19Z
 
 - Post-round 8 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:19:28Z
+
+- Starting round 9 at 20260512T221928Z from HEAD `ef84401`.
+
+## Loop Event 2026-05-12T22:19:39Z
+
+- Pre-round 9 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:32:00Z
+
+- Task attempted: implemented `get_mangled_object_vars($object)` over the
+  current minimal object value model as a narrow public-property slice. Direct
+  and string-valued dynamic calls now return public instance property names in
+  declaration order with their current slot values, and non-object operands use
+  a stable unsupported-call diagnostic.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone118/get_mangled_object_vars.php`,
+  `tests/fixtures/milestone118/get_mangled_object_vars.stdout`,
+  `tests/fixtures/runtime_errors/get_mangled_object_vars_invalid_target.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test object_model
+  get_mangled_object_vars -- --nocapture` passed with 3 focused tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone118` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone118` passed with 1 system PHP comparison;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 141
+  fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone118/get_mangled_object_vars.php` printed the
+  committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/get_mangled_object_vars_invalid_target.php`
+  exited `1` with the expected stable diagnostic; `cargo run -p phpc --
+  compile tests/fixtures/milestone118/get_mangled_object_vars.php --emit-ir`
+  exited `1` with the expected native-codegen rejection; `cargo test -p phpc
+  --test runtime_error_cli` passed; `tools/run-tests.sh` passed with 338
+  fixtures, 122 system PHP comparisons, and 216 skips.
+- Remaining semantic gaps: `get_mangled_object_vars()` currently reports only
+  public instance properties. Protected/private property-name mangling, dynamic
+  properties, non-public visibility context, inheritance, traits,
+  aliases/imports, namespace-aware names, references/copy-on-write, exact
+  native ordering and `TypeError` behavior, and native lowering remain
+  unsupported.
+- Next concrete task: implement `empty($object->publicProperty)` for direct
+  object-variable operands over the current public instance property model.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_mangled_object_vars boundary"`
+  after the full suite passes.

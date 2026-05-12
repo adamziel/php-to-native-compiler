@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/get_mangled_object_vars_invalid_target.php:2:10: unsupported call get_mangled_object_vars(): argument must be object, got int
+--- stderr end ---
