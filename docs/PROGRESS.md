@@ -858,7 +858,7 @@ Tested:
   skipped later-condition coverage, `else` fallback behavior,
   single-statement bodies, and uppercase tail keyword coverage.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 14 unsupported syntax fixtures.
+  snapshot test covering 17 unsupported syntax fixtures.
 - `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
   test covering the Milestone 10 syntax expansion fixtures.
 - `cargo test -p phpc --test conditional_refinements_cli` passes with 1 CLI
@@ -1137,9 +1137,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 245 fixture tests.
+- `cargo run -p phpc -- test` passes with 346 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 100 fixtures and skipping 145 `.phpc-only` fixtures.
+  installed, comparing 123 fixtures and skipping 223 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -1198,9 +1198,9 @@ Tested:
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with the
   unsupported syntax CLI snapshots, including alternate conditional syntax.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 14 unsupported syntax fixtures.
+  passes with 17 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 14 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 17 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -2699,8 +2699,16 @@ Still fails:
   syntax at parse time. Strict arm matching, default arms, exhaustiveness
   errors, thrown expressions inside arms, value evaluation order, exact native
   error objects, and native lowering remain unsupported.
+- Added explicit parse diagnostics for unsupported ternary conditional
+  expressions before expression-form branching exists. The parser now rejects
+  full ternary `$condition ? $if_true : $if_false` and short ternary
+  `$value ?: $fallback` forms at the `?` token with a stable diagnostic,
+  fixture and CLI snapshot coverage record both forms, and native emission
+  rejects the same syntax at parse time. Condition truthiness, short-ternary
+  value reuse, nesting/precedence, thrown expressions inside arms, exact native
+  error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add explicit diagnostics for unsupported ternary conditional expressions
-  before expression-form branching exists.
+- Add an explicit diagnostic for unsupported null coalescing expressions before
+  null-aware expression-form branching exists.

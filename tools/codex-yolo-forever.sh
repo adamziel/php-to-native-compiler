@@ -204,7 +204,8 @@ while :; do
     printf '6. Commit only through `tools/checkpoint.sh "specific message"` after tests pass.\n'
     printf '7. Maintain a human-readable changelog of work since the last known-good tag; use `CHANGELOG.md` if it exists, otherwise create it.\n'
     printf '8. Create annotated `known-good/...` Git tags only for major verified stable states, never for every commit. Tag after the full relevant test suite passes, and record the tag name plus covered changes in the changelog and loop memory.\n'
-    printf '9. If tests fail, keep working until they pass or record the blocker in `docs/LOOP_MEMORY.md`; do not mark the task done.\n'
+    printf '9. If the obvious work appears complete, do not switch to passive monitoring. Re-read the original goal and current implementation, look for gaps, uncovered nuances, original-prompt omissions, difficult unaddressed parts, shallow implementation, shallow tests, edge cases, and user-flow or operational rough spots. Address the highest-value gap and continue.\n'
+    printf '10. If tests fail, keep working until they pass or record the blocker in `docs/LOOP_MEMORY.md`; do not mark the task done.\n'
   } >"$prompt_file"
 
   print_roadmap_summary "round $round start" | tee -a "$round_log"

@@ -1,5 +1,13 @@
 # Codex YOLO Loop Memory
 
+## Persistent Continuation Directive
+
+If the loop thinks the requested work is done, it must not switch to passive
+monitoring. Re-read the original goal and current implementation, look for
+gaps, uncovered nuances, original-prompt omissions, difficult unaddressed
+parts, shallow implementation, shallow tests, edge cases, and user-flow or
+operational rough spots. Address the highest-value gap and continue.
+
 This file is durable memory for unattended Codex loop runs. The forever loop
 injects this file into every prompt. Each Codex pass should update it with:
 
@@ -10282,3 +10290,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:53:54Z
 
 - Post-round 13 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:54:03Z
+
+- Starting round 14 at 20260512T225403Z from HEAD `cdd96e4`.
+
+## Loop Event 2026-05-12T22:54:11Z
+
+- Pre-round 14 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:56:41Z
+
+- Task attempted: added an explicit ternary conditional expression parse
+  boundary for full `$condition ? $if_true : $if_false` and short
+  `$value ?: $fallback` forms before expression-form branching exists.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_ternary.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_short_ternary.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test syntax_boundaries
+  unsupported_ternary` passed; `cargo test -p phpc --test syntax_boundaries
+  emit_ir_rejects_ternary_expression_at_parse_boundary` passed; `cargo test
+  -p phpc --test unsupported_syntax_features_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/unsupported_syntax_features` passed with 17
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 17 `.phpc-only` PHP
+  comparisons skipped; `tools/run-tests.sh` passed with 346 fixtures, 123
+  system PHP comparisons, and 223 skips.
+- Remaining semantic gaps: ternary support is only an explicit parse boundary.
+  Condition truthiness, short-ternary value reuse, nesting/precedence, thrown
+  expressions inside arms, exact native error objects, and native lowering
+  remain unsupported.
+- Next concrete task: add an explicit diagnostic for unsupported null
+  coalescing expressions before null-aware expression-form branching exists.
+- Known-good tag: not created; this is a narrow syntax boundary, not a major
+  verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add ternary expression boundary"`
+  after the full suite passes.

@@ -235,6 +235,45 @@ fn emit_ir_rejects_match_expression_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_ternary_expressions_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$condition = true;\n$result = $condition ? 'yes' : 'no';\n",
+            3,
+            22,
+        ),
+        (
+            "<?php\n$value = '';\n$result = $value ?: 'fallback';\n",
+            3,
+            18,
+        ),
+        ("<?php\necho $ok ? 'yes' : 'no';\n", 2, 10),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported ternary expression: expression-form branching is not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_ternary_expression_at_parse_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n$result = $condition ? 'yes' : 'no';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported ternary expression: expression-form branching is not implemented"
+    );
+}
+
+#[test]
 fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added explicit unsupported ternary conditional expression diagnostics for
+  full and short ternary forms before expression-form branching exists, with
+  parser regression coverage, fixture/CLI coverage, documentation, and native
+  emission rejection at the parse boundary.
 - Added explicit unsupported PHP 8 `match` expression diagnostics before
   expression-form branching exists, with parser regression coverage,
   fixture/CLI coverage, documentation, and native emission rejection at the

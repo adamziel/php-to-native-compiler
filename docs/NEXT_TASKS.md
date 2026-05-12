@@ -1170,9 +1170,17 @@ handled.
 
 ## Milestone 123: Ternary Expression Boundary
 
-- [ ] Add explicit diagnostics for unsupported ternary conditional expressions
+- [x] Add explicit diagnostics for unsupported ternary conditional expressions
   (`$condition ? $if_true : $if_false` and `$value ?: $fallback`) before
   expression-form branching exists, including parser coverage, fixture CLI
   coverage, documentation, and named gaps for condition truthiness, short
   ternary evaluation, nesting/precedence, thrown expressions inside arms,
   exact native error objects, and native lowering.
+
+## Milestone 124: Null Coalescing Expression Boundary
+
+- [ ] Add explicit diagnostics for unsupported null coalescing expressions
+  (`$value ?? $fallback`) before null-aware expression-form branching exists,
+  including parser coverage, fixture CLI coverage, documentation, and named
+  gaps for undefined-variable behavior, chained coalescing, precedence,
+  assignment forms, exact native error objects, and native lowering.
