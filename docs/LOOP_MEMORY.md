@@ -6823,3 +6823,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   call coverage, docs, and named unsupported gaps.
 - Checkpoint: pending `tools/checkpoint.sh "dynamic: add bare user constants"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T15:15:34Z
+
+- Codex round 11 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T145658Z-11.log`.
+
+## Loop Event 2026-05-12T15:15:41Z
+
+- Post-round 11 test exit code: `0`.
+
+## Loop Event 2026-05-12T15:15:41Z
+
+- Post-round 11 tests passed; running checkpoint for this round.
