@@ -6622,3 +6622,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   user-defined constants can be created at runtime.
 - Checkpoint: pending `tools/checkpoint.sh "dynamic: add constant lookup boundary"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T14:26:50Z
+
+- Codex round 8 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T141733Z-8.log`.
+
+## Loop Event 2026-05-12T14:26:58Z
+
+- Post-round 8 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:26:58Z
+
+- Post-round 8 tests passed; running checkpoint for this round.
