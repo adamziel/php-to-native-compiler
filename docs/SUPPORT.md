@@ -20,7 +20,7 @@
 - string concatenation: `.`
 - comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current scalar
   values (`null`, booleans, integers, floats, and strings)
-- `if` / `else`
+- `if` / `elseif` / `else`
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
   optional and each initializer/increment slot contains at most one expression
@@ -239,6 +239,11 @@
   PHP-version-specific float string precision are not covered. Object
   comparisons in `phpc run` fail with an explicit unsupported-comparison
   runtime error.
+- Conditionals: statement-form `if` supports zero or more `elseif` clauses and
+  an optional `else` clause over the current expression and truthiness subset.
+  Branch bodies may be brace blocks or single statements. Alternate
+  colon/`endif` conditional syntax and native conditional lowering are not
+  implemented.
 - Loop control: `break;` and `continue;` execute for the innermost currently
   executing `while`, supported `for`, supported `do ... while`, or supported
   array `foreach` loop in `phpc run`; `break;` also exits the innermost
@@ -277,11 +282,11 @@
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions. Arrays, array indexing, array
-  assignment, variable unset, array offset unset, multiple-operand unset,
-  `for`, `do ... while`, `switch`, `foreach`, `break`, `continue`, class
-  declarations, object instantiation, object property reads, and object
-  property writes are rejected with explicit codegen errors.
+  with statically lowerable scalar expressions. `if`/`elseif`/`else`, `while`,
+  arrays, array indexing, array assignment, variable unset, array offset unset,
+  multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
+  `continue`, class declarations, object instantiation, object property reads,
+  and object property writes are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -462,6 +467,8 @@
 - comma-separated `for` initializer, condition, or increment expression lists;
   only zero or one expression or assignment is supported in each header slot
 - expression-form `for`; `for` is only supported as a statement
+- alternate colon/`endif` syntax for `if`/`elseif`/`else`; conditionals are
+  limited to brace blocks or single-statement bodies
 - expression-form `do ... while`; `do ... while` is only supported as a
   statement
 - expression-form `switch`, alternate colon/`endswitch` switch syntax,

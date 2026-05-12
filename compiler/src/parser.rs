@@ -323,11 +323,26 @@ impl Parser {
 
     fn parse_if(&mut self) -> CompileResult<Stmt> {
         let span = self.consume_keyword(TokenKind::If, "expected 'if'")?.span;
-        self.consume_keyword(TokenKind::LParen, "expected '(' after if")?;
+        self.parse_if_after_keyword(span, "if")
+    }
+
+    fn parse_if_after_keyword(&mut self, span: Span, keyword: &str) -> CompileResult<Stmt> {
+        let open_message = match keyword {
+            "elseif" => "expected '(' after elseif",
+            _ => "expected '(' after if",
+        };
+        let close_message = match keyword {
+            "elseif" => "expected ')' after elseif condition",
+            _ => "expected ')' after if condition",
+        };
+
+        self.consume_keyword(TokenKind::LParen, open_message)?;
         let condition = self.parse_expression()?;
-        self.consume_keyword(TokenKind::RParen, "expected ')' after if condition")?;
+        self.consume_keyword(TokenKind::RParen, close_message)?;
         let then_branch = self.parse_block_or_statement()?;
-        let else_branch = if self.match_token(|kind| matches!(kind, TokenKind::Else)) {
+        let else_branch = if let Some(elseif_span) = self.match_elseif() {
+            vec![self.parse_if_after_keyword(elseif_span, "elseif")?]
+        } else if self.match_else() {
             self.parse_block_or_statement()?
         } else {
             Vec::new()
@@ -338,6 +353,23 @@ impl Parser {
             then_branch,
             else_branch,
             span,
+        })
+    }
+
+    fn match_elseif(&mut self) -> Option<Span> {
+        if self.check(|kind| {
+            matches!(kind, TokenKind::ElseIf)
+                || matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("elseif"))
+        }) {
+            return Some(self.advance().span);
+        }
+        None
+    }
+
+    fn match_else(&mut self) -> bool {
+        self.match_token(|kind| {
+            matches!(kind, TokenKind::Else)
+                || matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("else"))
         })
     }
 
@@ -1483,6 +1515,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::RequireOnce => "require_once",
         TokenKind::If => "if",
         TokenKind::Else => "else",
+        TokenKind::ElseIf => "elseif",
         TokenKind::While => "while",
         TokenKind::Do => "do",
         TokenKind::Foreach => "foreach",

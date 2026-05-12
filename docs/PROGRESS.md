@@ -300,6 +300,12 @@ Implemented:
   outer loop, rejects `continue;` reaching a switch body with a stable runtime
   diagnostic, keeps expression-form and alternate-syntax switches as stable
   parse diagnostics, and rejects native lowering explicitly.
+- Implemented `elseif` chains over the current `if` expression subset. The
+  parser accepts contiguous `elseif` clauses after brace-block or
+  single-statement `if`/`elseif` bodies, chains them through the existing
+  nested-`if` AST shape, evaluates conditions left to right until the first
+  truthy branch, preserves optional final `else` behavior, and keeps native
+  conditional lowering rejected explicitly.
 
 Tested:
 
@@ -354,10 +360,15 @@ Tested:
 - `cargo test -p phpc --test switch` passes with switch coverage for loose
   scalar matching, default placement, fallthrough, uppercase `SWITCH`/`CASE`,
   and `break;` behavior inside an enclosing loop.
+- `cargo test -p phpc --test elseif` passes with `elseif` branch selection,
+  skipped later-condition coverage, `else` fallback behavior,
+  single-statement bodies, and uppercase tail keyword coverage.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
   snapshot test covering 9 unsupported syntax fixtures.
 - `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
   test covering the Milestone 10 syntax expansion fixtures.
+- `cargo test -p phpc --test conditional_refinements_cli` passes with 1 CLI
+  snapshot test covering the Milestone 11 conditional-refinement fixtures.
 - `cargo test -p phpc --test loop_control_cli` passes with 1 CLI snapshot test
   covering `break;` and `continue;` execution for innermost `while` loops.
 - `cargo test -p phpc --test foreach` passes with value-only and key/value
@@ -434,15 +445,18 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_do_while_until_native_loop_lowering_exists`
   passes with rejection coverage for `do ... while` loops before native loop
   lowering exists.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_elseif_until_native_conditional_lowering_exists`
+  passes with rejection coverage for `elseif` chains before native conditional
+  lowering exists.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_variable_unset_until_native_lowering_exists`
   passes with rejection coverage for direct variable unset before native
   symbol-table mutation lowering exists.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 113 fixture tests.
+- `cargo run -p phpc -- test` passes with 114 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 46 fixtures and skipping 67 `.phpc-only` fixtures.
+  installed, comparing 47 fixtures and skipping 67 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -476,6 +490,10 @@ Tested:
   expansion fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone10` passes
   with 4 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/milestone11` passes with 1
+  conditional-refinement fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone11` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -521,6 +539,10 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/milestone10/switch_statements.php`
   prints the committed `switch` output with loose scalar matching,
   fallthrough, default placement, and switch-local `break;`.
+- `cargo run -p phpc -- run tests/fixtures/milestone11/elseif_chains.php`
+  prints the committed `elseif` chain output with first-match branch
+  selection, skipped later conditions, single-statement bodies, and final
+  `else` fallback.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 34
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
@@ -794,6 +816,9 @@ Still fails:
   beyond the stable runtime diagnostic, `continue;` behavior inside `switch`,
   `finally`/exception behavior, and native loop-control lowering are not
   implemented.
+- Conditional execution is limited to statement-form `if`/`elseif`/`else`
+  bodies using brace blocks or single statements. Alternate colon/`endif`
+  conditional syntax and native conditional lowering are not implemented.
 - Runtime errors abort the current `phpc run` command with a stable diagnostic;
   PHP `Throwable` objects, stack traces, warning/notice recovery, user error
   handlers, and preservation of partial stdout before a fatal runtime error are
@@ -851,6 +876,5 @@ Still fails:
 
 Next:
 
-- Implement `elseif` chains over the current `if` expression subset, including
-  parser/interpreter coverage, fixture CLI coverage, documentation, and
-  explicit native-codegen rejection while lowering remains unsupported.
+- Add explicit parse diagnostics for alternate `if`/`elseif`/`else`
+  colon/`endif` syntax before implementing alternate conditional syntax.

@@ -94,6 +94,14 @@ fn emit_ir_rejects_unsupported_control_flow() {
 }
 
 #[test]
+fn emit_ir_rejects_elseif_until_native_conditional_lowering_exists() {
+    let error =
+        emit_ir_source("<?php\nif (false) { echo 0; } elseif (true) { echo 1; }\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(error.message.contains("elseif"), "{}", error.message);
+}
+
+#[test]
 fn emit_ir_rejects_break_until_native_loop_control_lowering_exists() {
     let error = emit_ir_source("<?php\nbreak;\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);

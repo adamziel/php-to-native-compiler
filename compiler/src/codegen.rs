@@ -109,7 +109,7 @@ impl LlvmGenerator {
             )),
             Stmt::If { span, .. } => Err(self.unsupported(
                 *span,
-                "if/else is supported by phpc run but not LLVM IR emission yet",
+                "if/else and elseif chains are supported by phpc run but not LLVM IR emission yet",
             )),
             Stmt::While { span, .. } => Err(self.unsupported(
                 *span,
@@ -637,7 +637,7 @@ impl CGenerator {
             )),
             Stmt::If { span, .. } => Err(self.unsupported(
                 *span,
-                "if/else is supported by phpc run but not assembly emission yet",
+                "if/else and elseif chains are supported by phpc run but not assembly emission yet",
             )),
             Stmt::While { span, .. } => Err(self.unsupported(
                 *span,

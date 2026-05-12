@@ -2936,3 +2936,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:39:23Z
 
 - Post-round 46 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:39:27Z
+
+- Starting round 47 at 20260512T033927Z from HEAD `fa41626`.
+
+## Loop Event 2026-05-12T03:39:30Z
+
+- Pre-round 47 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:44:51Z
+
+- Task attempted: implemented `elseif` chains over the current `if`
+  expression subset. The parser now recognizes contiguous `elseif` clauses,
+  chains them through the existing nested-`if` AST shape, supports brace-block
+  and single-statement branch bodies, evaluates conditions left to right until
+  the first truthy branch, preserves optional final `else`, and keeps native
+  conditional lowering rejected explicitly.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/elseif.rs`,
+  `compiler/tests/conditional_refinements_cli.rs`,
+  `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone11/elseif_chains.php`,
+  `tests/fixtures/milestone11/elseif_chains.stdout`,
+  `tests/fixtures/milestone11/elseif_chains.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test elseif` passed with 3 tests; `cargo test -p phpc --test milestone1
+  emit_ir_rejects_elseif_until_native_conditional_lowering_exists` passed;
+  `cargo test -p phpc --test milestone1 emit_ir_rejects_unsupported_control_flow`
+  passed; `cargo test -p phpc --test conditional_refinements_cli` passed;
+  `cargo run -p phpc -- run tests/fixtures/milestone11/elseif_chains.php`
+  printed the committed `elseif` output; `cargo run -p phpc -- test
+  tests/fixtures/milestone11` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone11` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone11/elseif_chains.php --emit-ir` exited `1` with the
+  expected explicit conditional codegen rejection; `tools/run-tests.sh` passed
+  with 114 fixtures, 47 system PHP comparisons, and 67 `.phpc-only` skips.
+- Remaining semantic gaps: alternate colon/`endif` syntax for
+  `if`/`elseif`/`else` is still unsupported and needs an explicit parse
+  diagnostic before alternate conditional syntax is implemented. Native
+  conditional lowering remains unsupported. Broader PHP keyword
+  case-insensitivity is still not claimed beyond the tested forms.
+- Next concrete task: add explicit parse diagnostics for alternate
+  `if`/`elseif`/`else` colon/`endif` syntax before implementing alternate
+  conditional syntax.
+- Checkpoint: pending `tools/checkpoint.sh "conditionals: add elseif chains"`
+  after the full suite passes.

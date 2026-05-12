@@ -37,7 +37,7 @@ subset:
   tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons used by control flow
-- `if` / `else`
+- `if` / `elseif` / `else`
 - `while`, C-style `for` loops over the documented header subset,
   `do ... while` post-condition loops, `switch`/`case`/`default` statements
   over the current scalar comparison subset, and array `foreach` in value-only
