@@ -5436,3 +5436,61 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T09:51:56Z
 
 - Post-round 85 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T09:52:01Z
+
+- Starting round 86 at 20260512T095201Z from HEAD `105a825`.
+
+## Loop Event 2026-05-12T09:52:07Z
+
+- Pre-round 86 test exit code: `0`.
+
+## Loop Event 2026-05-12T10:04:26Z
+
+- Task attempted: implemented `array_diff($left, $right)` over the current
+  scalar value subset. The supported slice accepts exactly two array operands,
+  compares scalar values by current PHP string forms, preserves first-array
+  entries whose comparison value is absent from the second array, keeps keys,
+  values, insertion order, and append-index behavior, supports string-valued
+  dynamic calls, preserves source arrays, and reports stable diagnostics for
+  non-array operands, non-scalar array/object value comparisons, and
+  unsupported variadic operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_diff.rs`,
+  `compiler/tests/array_value_difference_builtins_cli.rs`,
+  `tests/fixtures/milestone42/array_diff.*`,
+  `tests/fixtures/runtime_errors/array_diff_first_non_array.*`,
+  `tests/fixtures/runtime_errors/array_diff_second_non_array.*`,
+  `tests/fixtures/runtime_errors/array_diff_array_value.*`,
+  `tests/fixtures/runtime_errors/array_diff_variadic_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all --check` passed; `git diff --check`
+  passed; `cargo test -p php_runtime array_diff` passed with 4 focused tests;
+  `cargo test -p phpc --test array_diff` passed with 6 tests; `cargo test -p
+  phpc --test array_value_difference_builtins_cli` passed; `cargo test -p phpc
+  --test runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone42` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone42` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 85 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone42/array_diff.php` printed the committed output;
+  `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_diff_array_value.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone42/array_diff.php --emit-ir` exited `1` with the
+  current explicit array native-lowering rejection; `tools/run-tests.sh`
+  passed with 200 fixtures, 81 system PHP comparisons, and 119 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_diff` is limited to exactly two array
+  operands and current scalar values compared by PHP string form. Variadic
+  operands, non-scalar value comparisons, references, copy-on-write
+  containers, object/resource values, exact native `TypeError` objects, PHP
+  warning-and-string-conversion behavior for arrays/objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement `array_intersect($left, $right)` over the
+  current scalar value subset while keeping variadic operands, non-scalar
+  comparisons, references, copy-on-write, exact native `TypeError` objects,
+  object/resource values, and native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_diff builtin"`
+  after the full suite passes.

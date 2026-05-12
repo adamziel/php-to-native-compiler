@@ -266,6 +266,14 @@ Implemented:
   supports string-valued dynamic calls, preserves source arrays, and reports
   stable diagnostics for non-array positional operands including variadic
   operands.
+- Added `array_diff($left, $right)` support for the current scalar value
+  subset. The supported slice accepts exactly two array operands, compares
+  values by their current PHP string forms, preserves first-array entries whose
+  scalar comparison value is absent from the second array, keeps first-array
+  keys, values, insertion order, and append-index behavior, supports
+  string-valued dynamic calls, preserves source arrays, and reports stable
+  diagnostics for non-array operands, non-scalar array/object value
+  comparisons, and unsupported variadic operands.
 - Added `array_flip($array)` support for the current ordered array value model.
   The supported slice uses integer and string source values as result keys with
   the current string-key normalization rules, writes original integer/string
@@ -552,7 +560,7 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 60 runtime unit tests.
+- `cargo test -p php_runtime` passes with 62 runtime unit tests.
 - `cargo test -p php_runtime array_` passes with 45 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
@@ -572,6 +580,9 @@ Tested:
   array-key-set runtime tests.
 - `cargo test -p php_runtime array_diff_key` passes with 2 focused
   array-key-difference runtime tests.
+- `cargo test -p php_runtime array_diff` passes with 4 focused array
+  difference runtime tests covering key-difference and scalar value-difference
+  behavior.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
   runtime tests.
 - `cargo test -p php_runtime array_fill_keys` passes with 2 focused
@@ -594,7 +605,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 81 representative runtime error fixtures.
+  covering 85 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -762,6 +773,12 @@ Tested:
   no-match result behavior, dynamic string-call coverage, original-array
   preservation, non-array positional operand diagnostics, and LLVM IR rejection
   coverage.
+- `cargo test -p phpc --test array_diff` passes with first-array key/value
+  preservation for scalar values absent from the second array, PHP string-form
+  value comparison coverage, empty, all-kept, and no-match result behavior,
+  dynamic string-call coverage, original-array preservation, non-array operand
+  diagnostics, unsupported non-scalar comparison diagnostics, unsupported
+  variadic operand coverage, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -864,9 +881,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 195 fixture tests.
+- `cargo run -p phpc -- test` passes with 200 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 80 fixtures and skipping 115 `.phpc-only` fixtures.
+  installed, comparing 81 fixtures and skipping 119 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -1048,6 +1065,14 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_key_second_non_array.php:3:6: unsupported call array_diff_key(): second argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_key_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_key_third_non_array.php:4:6: unsupported call array_diff_key(): third argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_first_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_first_non_array.php:3:6: unsupported call array_diff(): first argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_second_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_second_non_array.php:3:6: unsupported call array_diff(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_array_value.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_array_value.php:4:6: unsupported call array_diff(): values must be scalar in the current subset, got array`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_diff_variadic_unsupported.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_diff_variadic_unsupported.php:2:6: arity mismatch for array_diff(): expected 2 argument(s), got 3`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
@@ -1387,6 +1412,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone41` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone41` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone42/array_diff.php` prints
+  the committed `array_diff` output with scalar string-form value comparisons,
+  first-array key/value preservation, original-array preservation,
+  append-index behavior, and string-valued dynamic calls to `array_diff`.
+- `cargo run -p phpc -- test tests/fixtures/milestone42` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone42` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1521,8 +1554,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone41/array_diff_key_variadic.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 195 fixtures, 80 system PHP comparisons,
-  and 115 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone42/array_diff.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 200 fixtures, 81 system PHP comparisons,
+  and 119 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1622,6 +1658,12 @@ Still fails:
   integer/string key model, but references, copy-on-write containers, object
   handle identity preservation for object values, resource values, exact native
   `TypeError` objects, and native lowering are not implemented.
+  `array_diff` accepts exactly two array operands over the current scalar value
+  subset and compares values by current PHP string forms, but variadic
+  operands, non-scalar comparisons, references, copy-on-write containers,
+  object/resource values, exact native `TypeError` objects, PHP
+  warning-and-string-conversion behavior for arrays/objects, and native
+  lowering are not implemented.
   `array_flip` is limited to arrays whose source values are integers or
   strings. Unsupported `null`, bool, float, array, object, future resource, and
   reference values fail with a stable project diagnostic instead of PHP's
@@ -1743,7 +1785,7 @@ Still fails:
 
 Next:
 
-- Implement `array_diff($left, $right)` over the current scalar value subset
-  while keeping variadic operands, non-scalar comparisons, references,
+- Implement `array_intersect($left, $right)` over the current scalar value
+  subset while keeping variadic operands, non-scalar comparisons, references,
   copy-on-write, exact native `TypeError` objects, object/resource values, and
   native lowering explicitly unsupported.

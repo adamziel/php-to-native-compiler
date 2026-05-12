@@ -751,6 +751,31 @@ impl PhpArray {
         array
     }
 
+    pub fn diff_values_with(&self, right: &Self) -> RuntimeResult<Self> {
+        let left_values = self
+            .entries
+            .iter()
+            .map(|entry| array_diff_scalar_comparison_value(&entry.value))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+        let right_values = right
+            .entries
+            .iter()
+            .map(|entry| array_diff_scalar_comparison_value(&entry.value))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+
+        let mut array = Self::new();
+        for (entry, left_value) in self.entries.iter().zip(left_values.iter()) {
+            if !right_values
+                .iter()
+                .any(|right_value| right_value == left_value)
+            {
+                array.insert(entry.key.clone(), entry.value.clone());
+            }
+        }
+
+        Ok(array)
+    }
+
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -871,6 +896,21 @@ fn ensure_array_search_values_supported(
             "object needles and object values are not implemented",
         )),
         _ => Ok(()),
+    }
+}
+
+fn array_diff_scalar_comparison_value(value: &Value) -> RuntimeResult<String> {
+    match value {
+        Value::Array(_) | Value::Object(_) => Err(RuntimeError::unsupported_call(
+            "array_diff()",
+            format!(
+                "values must be scalar in the current subset, got {}",
+                value.type_name()
+            ),
+        )),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(value.echo_string())
+        }
     }
 }
 
@@ -3553,6 +3593,104 @@ mod tests {
         assert!(
             fourth.contains_key(9),
             "array_diff_key must not mutate later variadic operands"
+        );
+    }
+
+    #[test]
+    fn array_diff_preserves_left_entries_whose_scalar_strings_are_absent_from_right() {
+        let mut left = PhpArray::new();
+        left.insert("null", Value::Null);
+        left.insert("false", Value::Bool(false));
+        left.insert("empty", Value::String(String::new()));
+        left.insert("true", Value::Bool(true));
+        left.insert("one", Value::Int(1));
+        left.insert("zero", Value::Int(0));
+        left.insert("string-zero", Value::String("0".to_string()));
+        left.insert("int-ten", Value::Int(10));
+        left.insert("float-ten", Value::Float(10.0));
+        left.insert("string-ten-float", Value::String("10.0".to_string()));
+        left.insert("text", Value::String("abc".to_string()));
+        left.insert(8, Value::String("eight".to_string()));
+        left.insert("keep", Value::String("keep".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.append(Value::String(String::new())).unwrap();
+        right.append(Value::String("0".to_string())).unwrap();
+        right.append(Value::String("1".to_string())).unwrap();
+        right.append(Value::String("10".to_string())).unwrap();
+        right.append(Value::String("abc".to_string())).unwrap();
+        right.append(Value::String("missing".to_string())).unwrap();
+
+        let mut diffed = left.diff_values_with(&right).unwrap();
+        let entries = diffed.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(
+            entries[0].key,
+            ArrayKey::String("string-ten-float".to_string())
+        );
+        assert_eq!(entries[0].value, Value::String("10.0".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(8));
+        assert_eq!(entries[1].value, Value::String("eight".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("keep".to_string()));
+        assert_eq!(entries[2].value, Value::String("keep".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(9));
+        assert_eq!(entries[3].value, Value::String("next".to_string()));
+        assert_eq!(
+            diffed.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(10)
+        );
+        assert_eq!(
+            left.get("null"),
+            Some(&Value::Null),
+            "array_diff must not mutate the left array"
+        );
+        assert_eq!(
+            right.get(5),
+            Some(&Value::String("missing".to_string())),
+            "array_diff must not mutate the right array"
+        );
+    }
+
+    #[test]
+    fn array_diff_rejects_non_scalar_value_comparisons() {
+        let mut left = PhpArray::new();
+        left.insert("nested", Value::Array(PhpArray::new()));
+
+        let right = PhpArray::new();
+        let error = left.diff_values_with(&right).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_diff()".to_string(),
+                reason: "values must be scalar in the current subset, got array".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_diff(): values must be scalar in the current subset, got array"
+        );
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+        let mut right = PhpArray::new();
+        right.insert("object", object);
+
+        let mut left = PhpArray::new();
+        left.insert("value", Value::String("value".to_string()));
+        let error = left.diff_values_with(&right).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_diff()".to_string(),
+                reason: "values must be scalar in the current subset, got object".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_diff(): values must be scalar in the current subset, got object"
         );
     }
 

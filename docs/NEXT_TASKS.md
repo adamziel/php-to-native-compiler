@@ -465,8 +465,17 @@ handled.
 
 ## Milestone 42: Array Value Difference Builtins
 
-- [ ] Implement `array_diff($left, $right)` over the current scalar value
+- [x] Implement `array_diff($left, $right)` over the current scalar value
   subset, including first-array key/value preservation for values absent from
+  the second array, non-array diagnostics, unsupported non-scalar comparison
+  diagnostics, fixture CLI coverage, documentation, and explicit gaps for
+  variadic operands, references/copy-on-write, exact native `TypeError`
+  objects, object/resource values, and native lowering.
+
+## Milestone 43: Array Value Intersection Builtins
+
+- [ ] Implement `array_intersect($left, $right)` over the current scalar value
+  subset, including first-array key/value preservation for values present in
   the second array, non-array diagnostics, unsupported non-scalar comparison
   diagnostics, fixture CLI coverage, documentation, and explicit gaps for
   variadic operands, references/copy-on-write, exact native `TypeError`

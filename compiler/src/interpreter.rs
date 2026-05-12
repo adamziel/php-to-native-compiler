@@ -1380,6 +1380,30 @@ impl Interpreter {
                     .expect("array_diff_key requires at least two arrays");
                 Ok(Value::Array(left.diff_keys_with_all(others.iter().copied())))
             }
+            "array_diff" => {
+                expect_arity(name, &args, 2, span)?;
+                match args.as_slice() {
+                    [Value::Array(left), Value::Array(right)] => left
+                        .diff_values_with(right)
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    [Value::Array(_), other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_diff()",
+                            format!("second argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    [other, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_diff()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    _ => unreachable!("array_diff arity is checked above"),
+                }
+            }
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -2059,6 +2083,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_combine"
             | "array_intersect_key"
             | "array_diff_key"
+            | "array_diff"
             | "array_count_values"
             | "array_filter"
             | "array_map"
