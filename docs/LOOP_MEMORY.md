@@ -9334,3 +9334,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:40:23Z
 
 - Post-round 55 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:40:31Z
+
+- Starting round 56 at 20260512T204031Z from HEAD `f21276b`.
+
+## Loop Event 2026-05-12T20:40:40Z
+
+- Pre-round 56 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:45:00Z
+
+- Task attempted: implemented `get_class_methods($object_or_class)` over the
+  current declared method metadata. The supported slice accepts current object
+  values and declared string class names, returns public method names in
+  declaration order including public static methods, works through
+  string-valued dynamic calls, rejects unsupported target values and missing
+  string classes with stable diagnostics, and keeps native lowering on the
+  current function-call rejection path.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone107/get_class_methods.*`,
+  `tests/fixtures/runtime_errors/get_class_methods_invalid_target.*`,
+  `tests/fixtures/runtime_errors/get_class_methods_missing_class.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  get_class_methods -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone107` passed; `cargo test -p phpc --test
+  runtime_error_cli -- --nocapture` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli -- --nocapture` passed; `cargo test -p
+  phpc --test object_model -- --nocapture` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone107` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 129 fixtures; `tools/run-tests.sh` passed with 315 fixtures,
+  116 system PHP comparisons, and 199 skips.
+- Remaining semantic gaps: `get_class_methods()` lists only methods declared on
+  the current class metadata and only public methods from the current global
+  visibility boundary. Inheritance, traits, interfaces, aliases/imports,
+  namespace-aware names, autoloading, non-public/context-sensitive visibility
+  listing, exact native ordering and `TypeError` behavior, and native lowering
+  remain unsupported.
+- Next concrete task: add the next honest `get_class_vars($class_name)`
+  boundary over the current property metadata, either as an explicit
+  unsupported diagnostic or as a narrow declared-string class slice.
+- Checkpoint: pending
+  `tools/checkpoint.sh "objects: add get_class_methods boundary"` after the
+  full suite passes.

@@ -427,6 +427,58 @@ fn method_exists_requires_object_or_string_and_string_method_arguments() {
 }
 
 #[test]
+fn get_class_methods_lists_public_declared_methods_in_declaration_order() {
+    let source = r#"<?php
+class Box {
+    public function open() {}
+    protected function seal() {}
+    private static function cache() {}
+    public static function make() {}
+}
+
+$box = new box();
+$object_methods = get_class_methods($box);
+print_r($object_methods);
+echo count($object_methods), "|", $object_methods[0], "|", $object_methods[1], "\n";
+
+$class_methods = get_class_methods("BOX");
+echo $class_methods[0], "|", $class_methods[1], "\n";
+
+$call = "get_class_methods";
+$dynamic = $call($box);
+echo $dynamic[0], "|", $dynamic[1];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => open\n    [1] => make\n)\n2|open|make\nopen|make\nopen|make"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_class_methods_requires_object_or_declared_class_string_argument() {
+    let target_error = runtime_error("<?php\nvar_dump(get_class_methods(42));\n");
+
+    assert_eq!(target_error.line, 2);
+    assert_eq!(target_error.column, 10);
+    assert_eq!(
+        target_error.message,
+        "unsupported call get_class_methods(): object_or_class argument must be object or declared class string, got int"
+    );
+
+    let missing_class_error = runtime_error("<?php\nvar_dump(get_class_methods(\"Missing\"));\n");
+
+    assert_eq!(missing_class_error.line, 2);
+    assert_eq!(missing_class_error.column, 10);
+    assert_eq!(
+        missing_class_error.message,
+        "unsupported call get_class_methods(): string argument must name a declared class in the current subset"
+    );
+}
+
+#[test]
 fn is_a_checks_exact_current_class_relationships() {
     let source = r#"<?php
 class Box {}
@@ -719,6 +771,19 @@ fn emit_ir_rejects_property_exists_until_native_object_lowering_exists() {
 fn emit_ir_rejects_method_exists_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho method_exists(\"Box\", \"open\");\n")
         .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_get_class_methods_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\necho get_class_methods(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

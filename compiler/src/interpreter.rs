@@ -2112,6 +2112,53 @@ impl Interpreter {
                     ),
                 )),
             },
+            "get_class_methods" => match args.as_slice() {
+                [object_or_class] => {
+                    let class = match object_or_class {
+                        Value::Object(object) => self.classes.get(object.class_id()),
+                        Value::String(class_name) => self.classes.lookup_class(class_name),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "get_class_methods()",
+                                    format!(
+                                        "object_or_class argument must be object or declared class string, got {}",
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    };
+                    let Some(class) = class else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "get_class_methods()",
+                                "string argument must name a declared class in the current subset",
+                            ),
+                        ));
+                    };
+
+                    let mut methods = PhpArray::new();
+                    for method in class.methods() {
+                        if method.visibility() == Visibility::Public {
+                            methods
+                                .append(Value::String(method.name().to_string()))
+                                .expect("method count fits in array keys");
+                        }
+                    }
+                    Ok(Value::Array(methods))
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "get_class_methods()",
+                        ArityExpectation::Exactly(1),
+                        args.len(),
+                    ),
+                )),
+            },
             "is_a" => match args.as_slice() {
                 [object_or_class, Value::String(class_name)] => {
                     Ok(Value::Bool(self.value_is_exact_class(object_or_class, class_name, false)))
@@ -2954,6 +3001,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_declared_classes"
             | "property_exists"
             | "method_exists"
+            | "get_class_methods"
             | "is_a"
             | "is_subclass_of"
             | "get_parent_class"

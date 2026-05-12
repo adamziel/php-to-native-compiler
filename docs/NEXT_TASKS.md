@@ -1018,10 +1018,20 @@ handled.
 
 ## Milestone 107: Class Method List Introspection Boundary
 
-- [ ] Add the next honest `get_class_methods($object_or_class)` boundary over
+- [x] Add the next honest `get_class_methods($object_or_class)` boundary over
   the current method metadata: either a stable unsupported diagnostic or a
   narrow executable list slice for current object/string class inputs, with
   string-valued dynamic-call coverage, invalid argument diagnostics, fixture
   CLI coverage, documentation, and explicit gaps for inheritance, traits,
   interfaces, visibility filtering differences, aliases/imports, autoloading,
   exact native ordering, and native lowering.
+
+## Milestone 108: Class Property Default List Boundary
+
+- [ ] Add the next honest `get_class_vars($class_name)` boundary over the
+  current property metadata: either a stable unsupported diagnostic or a narrow
+  executable list slice for declared string class inputs, with string-valued
+  dynamic-call coverage, invalid argument diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for property defaults, visibility filtering
+  differences, inheritance, traits, aliases/imports, autoloading, exact native
+  ordering, and native lowering.

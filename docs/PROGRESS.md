@@ -2563,8 +2563,19 @@ Still fails:
   the current function-call boundary. Built-in/internal/extension classes,
   anonymous classes, autoloading, namespaces/import aliases, exact native
   ordering, and native lowering remain unsupported.
+- Added `get_class_methods($object_or_class)` over the current declared method
+  metadata. The supported slice accepts current object values and declared
+  string class names, returns a zero-indexed array of public method names in
+  declaration order including public static methods, works through
+  string-valued dynamic calls, has fixture CLI coverage plus stable diagnostics
+  for unsupported target values and missing string classes, and rejects native
+  lowering through the current function-call boundary. Inheritance, traits,
+  interfaces, aliases/imports, namespace-aware names, autoloading,
+  non-public/context-sensitive visibility listing, exact native ordering and
+  `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 
-- Continue with the next small object/class metadata introspection boundary
-  from `docs/NEXT_TASKS.md`.
+- Continue with the next small object/class metadata introspection boundary,
+  starting with `get_class_vars($class_name)` if it can be completed honestly
+  over the current property metadata.

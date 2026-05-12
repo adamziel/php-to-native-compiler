@@ -105,8 +105,8 @@
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `property_exists`, `method_exists`, `is_a`,
-  `is_subclass_of`, `get_parent_class`, `get_declared_classes`, `var_dump`,
-  and `print_r`;
+  `get_class_methods`, `is_subclass_of`, `get_parent_class`,
+  `get_declared_classes`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -114,7 +114,9 @@
   class metadata by string name without autoloading, `property_exists` checks
   case-sensitive declared property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared method
-  metadata for current object values or string class names, `is_a` checks
+  metadata for current object values or string class names, `get_class_methods`
+  returns public declared method names in declaration order for current object
+  values or declared string class names, `is_a` checks
   exact class identity over current object values or string class names when
   `allow_string` is true, `is_subclass_of` returns false for the current
   no-inheritance metadata model after validating the supported object/string
@@ -318,6 +320,10 @@
   public/protected/private and static methods as existing, returns false for
   missing methods or missing string class names, and is available through
   string-valued dynamic function calls.
+  `get_class_methods($object_or_class)` accepts a current object value or a
+  declared string class name and returns a zero-indexed array of public method
+  names in declaration order, including public static methods. It is available
+  through string-valued dynamic function calls.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity against the current declared class metadata using
   case-insensitive class-name lookup. `is_a($object_or_class, $class_name,
@@ -666,7 +672,9 @@
   non-object/non-string `is_subclass_of` first arguments, non-string
   `is_subclass_of` class names, non-bool `is_subclass_of` allow_string flags,
   non-object/non-string `get_parent_class` arguments and missing
-  `get_parent_class` string classes,
+  `get_parent_class` string classes, non-object/non-string
+  `get_class_methods` arguments and missing `get_class_methods` string
+  classes,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -677,8 +685,9 @@
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `property_exists(...)`, `method_exists(...)`,
-  `is_a(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
-  `get_declared_classes(...)`, `constant(...)`, `defined(...)`, and
+  `get_class_methods(...)`, `is_a(...)`, `is_subclass_of(...)`,
+  `get_parent_class(...)`, `get_declared_classes(...)`, `constant(...)`,
+  `defined(...)`, and
   `define(...)` constant definitions are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
@@ -694,9 +703,9 @@
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `is_a`,
-  `is_subclass_of`, `get_parent_class`, `get_declared_classes`, `var_dump`, or
-  `print_r`.
+  `class_exists`, `property_exists`, `method_exists`, `get_class_methods`,
+  `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
+  `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -768,8 +777,8 @@
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
-  `method_exists`, `is_a`, `is_subclass_of`, `get_parent_class`,
-  `get_declared_classes`, `var_dump`, and `print_r` cover the documented
+  `method_exists`, `get_class_methods`, `is_a`, `is_subclass_of`,
+  `get_parent_class`, `get_declared_classes`, `var_dump`, and `print_r` cover the documented
   scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
@@ -783,7 +792,9 @@
   metadata for current object values or string class names with case-sensitive
   property names. `method_exists($object_or_class, $method)` checks declared
   method metadata for current object values or string class names with
-  case-insensitive method names. `is_a($object_or_class, $class_name[,
+  case-insensitive method names. `get_class_methods($object_or_class)` returns
+  a zero-indexed array of public declared method names for current object
+  values or declared string class names. `is_a($object_or_class, $class_name[,
   $allow_string])` checks exact class identity over current object values, and
   over string class names only when `allow_string` is true.
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` validates
@@ -1437,6 +1448,9 @@
   aliases/imports, namespace-aware names, autoloading, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, and native
   lowering
+- `get_class_methods` inheritance, traits, interfaces, aliases/imports,
+  namespace-aware names, autoloading, non-public/context-sensitive visibility
+  listing, exact native ordering and `TypeError` behavior, and native lowering
 - `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, and native lowering

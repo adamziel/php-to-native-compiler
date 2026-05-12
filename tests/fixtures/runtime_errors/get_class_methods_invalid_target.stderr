@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call get_class_methods(): object_or_class argument must be object or declared class string, got int
+

@@ -54,6 +54,8 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `method_exists($object_or_class, $method)` checks declared method metadata
   using case-insensitive method lookup for current object values or string
   class names;
+- `get_class_methods($object_or_class)` returns public declared method names in
+  declaration order for current object values or declared string class names;
 - `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity using case-insensitive class metadata lookup; string first
   arguments are considered only when `allow_string` is true;
@@ -104,11 +106,12 @@ Native lowering rejects class declarations, object instantiation, object
 property reads, and object property writes until metadata, object allocation,
 property slots, and dispatch have explicit lowering support.
 Native lowering also rejects `method_exists` through the current function-call
-boundary until class metadata lookup has native support. `is_a` and
-`is_subclass_of` are rejected through the same function-call boundary until
-class relationship lookup has native support. `get_parent_class` is rejected
-through that function-call boundary until parent metadata lookup has native
-support.
+boundary until class metadata lookup has native support. `get_class_methods`
+is rejected through the same function-call boundary until method-list metadata
+lookup has native support. `is_a` and `is_subclass_of` are rejected through the
+same function-call boundary until class relationship lookup has native support.
+`get_parent_class` is rejected through that function-call boundary until parent
+metadata lookup has native support.
 
 ## Unsupported Edge Cases
 
@@ -128,5 +131,7 @@ operands, complex object-property `isset` operands, static member execution
 through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
+`get_class_methods` inheritance/trait/interface and non-public
+context-sensitive method listing,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.
