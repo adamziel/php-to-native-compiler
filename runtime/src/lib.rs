@@ -879,6 +879,16 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn sum_values(&self) -> RuntimeResult<Value> {
+        let mut sum = Number::Int(0);
+        for entry in &self.entries {
+            let value = array_sum_number_from_value(&entry.value)?;
+            sum = add_array_sum_numbers(sum, value);
+        }
+
+        Ok(value_from_number(sum))
+    }
+
     pub fn filtered_without_callback(&self) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -1083,6 +1093,46 @@ fn array_count_values_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
                 other.type_name()
             ),
         )),
+    }
+}
+
+fn array_sum_number_from_value(value: &Value) -> RuntimeResult<Number> {
+    match value {
+        Value::Null => Ok(Number::Int(0)),
+        Value::Bool(false) => Ok(Number::Int(0)),
+        Value::Bool(true) => Ok(Number::Int(1)),
+        Value::Int(value) => Ok(Number::Int(*value)),
+        Value::Float(value) => Ok(Number::Float(*value)),
+        Value::String(value) => parse_numeric_string(value).ok_or_else(|| {
+            RuntimeError::unsupported_call(
+                "array_sum()",
+                "values must be numeric in the current subset, got non-numeric string",
+            )
+        }),
+        other => Err(RuntimeError::unsupported_call(
+            "array_sum()",
+            format!(
+                "values must be numeric scalar in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
+fn add_array_sum_numbers(left: Number, right: Number) -> Number {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => left
+            .checked_add(right)
+            .map(Number::Int)
+            .unwrap_or_else(|| Number::Float(left as f64 + right as f64)),
+        (left, right) => Number::Float(left.as_float() + right.as_float()),
+    }
+}
+
+fn value_from_number(number: Number) -> Value {
+    match number {
+        Number::Int(value) => Value::Int(value),
+        Number::Float(value) => Value::Float(value),
     }
 }
 
@@ -4312,6 +4362,72 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_count_values(): values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_sum_accumulates_supported_numeric_scalar_values() {
+        let mut integers = PhpArray::new();
+        integers.insert("null", Value::Null);
+        integers.insert("false", Value::Bool(false));
+        integers.insert("true", Value::Bool(true));
+        integers.insert("int", Value::Int(2));
+        integers.insert("string-int", Value::String(" 4 ".to_string()));
+        integers.insert("negative", Value::String("-3".to_string()));
+
+        assert_eq!(integers.sum_values().unwrap(), Value::Int(4));
+
+        let mut mixed = PhpArray::new();
+        mixed.insert("int", Value::Int(2));
+        mixed.insert("float", Value::Float(3.5));
+        mixed.insert("exponent", Value::String("6e1".to_string()));
+        mixed.insert("decimal", Value::String(".25".to_string()));
+
+        assert_eq!(mixed.sum_values().unwrap(), Value::Float(65.75));
+
+        let empty = PhpArray::new();
+        assert_eq!(empty.sum_values().unwrap(), Value::Int(0));
+
+        let mut overflowing = PhpArray::new();
+        overflowing.insert("max", Value::Int(i64::MAX));
+        overflowing.insert("one", Value::Int(1));
+        assert!(matches!(overflowing.sum_values().unwrap(), Value::Float(_)));
+    }
+
+    #[test]
+    fn array_sum_rejects_values_outside_current_numeric_subset() {
+        let mut string = PhpArray::new();
+        string.insert("bad", Value::String("abc".to_string()));
+
+        let error = string.sum_values().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_sum()".to_string(),
+                reason: "values must be numeric in the current subset, got non-numeric string"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_sum(): values must be numeric in the current subset, got non-numeric string"
+        );
+
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array.sum_values().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_sum()".to_string(),
+                reason: "values must be numeric scalar in the current subset, got array"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_sum(): values must be numeric scalar in the current subset, got array"
         );
     }
 

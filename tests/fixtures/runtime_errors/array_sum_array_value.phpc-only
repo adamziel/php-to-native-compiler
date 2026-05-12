@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP currently treats array values as zero during array_sum recovery.

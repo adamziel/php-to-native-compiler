@@ -5894,3 +5894,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T11:30:50Z
 
 - Post-round 92 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T11:30:57Z
+
+- Starting round 93 at 20260512T113057Z from HEAD `202d334`.
+
+## Loop Event 2026-05-12T11:31:03Z
+
+- Pre-round 93 test exit code: `0`.
+
+## Loop Event 2026-05-12T11:44:15Z
+
+- Task attempted: implemented `array_sum($array)` over the current scalar
+  numeric-coercion subset. The supported slice accepts arrays containing
+  `null`, booleans, integers, floats, and well-formed numeric strings,
+  accumulates in insertion order, returns an integer result until a float input
+  or checked integer overflow promotes to float, returns integer zero for empty
+  arrays, supports string-valued dynamic calls, and reports stable diagnostics
+  for non-array operands, non-numeric strings, and non-scalar array values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_sum.rs`,
+  `compiler/tests/array_numeric_aggregation_builtins_cli.rs`,
+  `tests/fixtures/milestone49/array_sum.*`,
+  `tests/fixtures/runtime_errors/array_sum_non_array.*`,
+  `tests/fixtures/runtime_errors/array_sum_non_numeric_string.*`,
+  `tests/fixtures/runtime_errors/array_sum_array_value.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p php_runtime
+  array_sum` passed with 2 focused runtime tests; `cargo test -p phpc --test
+  array_sum` passed with 5 tests; `cargo test -p phpc --test
+  array_numeric_aggregation_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone49` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone49` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 98 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone49/array_sum.php` printed the committed output;
+  `cargo run -p phpc -- compile tests/fixtures/milestone49/array_sum.php
+  --emit-ir` exited `1` with the current explicit array native-lowering
+  rejection; `tools/run-tests.sh` passed with 220 fixtures, 88 system PHP
+  comparisons, and 132 `.phpc-only` skips.
+- Remaining semantic gaps: `array_sum` rejects non-numeric strings and
+  non-scalar values with stable project diagnostics instead of PHP's warning
+  and recovery behavior. References, copy-on-write containers, object/resource
+  value recovery, exact native `TypeError` objects, PHP warning recovery, and
+  native lowering remain unsupported.
+- Next concrete task: implement `array_product($array)` over the current
+  scalar numeric-coercion subset, including integer/float accumulation
+  behavior, non-array diagnostics, fixture CLI coverage, docs, and explicit
+  unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_sum"` after the
+  full suite passes.

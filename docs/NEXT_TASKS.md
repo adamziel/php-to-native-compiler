@@ -527,8 +527,17 @@ handled.
 
 ## Milestone 49: Array Numeric Aggregation Builtins
 
-- [ ] Implement `array_sum($array)` over the current scalar numeric-coercion
+- [x] Implement `array_sum($array)` over the current scalar numeric-coercion
   subset, including integer/float accumulation behavior, non-array diagnostics,
   fixture CLI coverage, documentation, and explicit gaps for PHP warning
   recovery, object/resource values, references/copy-on-write, exact native
   `TypeError` objects, and native lowering.
+
+## Milestone 50: Array Numeric Product Builtins
+
+- [ ] Implement `array_product($array)` over the current scalar
+  numeric-coercion subset, including integer/float accumulation behavior,
+  non-array diagnostics, fixture CLI coverage, documentation, and explicit
+  gaps for PHP warning recovery, object/resource values,
+  references/copy-on-write, exact native `TypeError` objects, and native
+  lowering.

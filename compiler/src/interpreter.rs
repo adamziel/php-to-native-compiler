@@ -1539,6 +1539,21 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_sum" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => array
+                        .sum_values()
+                        .map_err(|error| runtime_error(span, error)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_sum()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "array_filter" => self.call_array_filter(args, span),
             "array_map" => self.call_array_map(args, span),
             "in_array" => match args.as_slice() {
@@ -2207,6 +2222,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_intersect"
             | "array_unique"
             | "array_count_values"
+            | "array_sum"
             | "array_filter"
             | "array_map"
             | "in_array"
