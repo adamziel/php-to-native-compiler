@@ -2519,6 +2519,15 @@ Still fails:
   argument types. Dynamic properties created outside declarations, autoload
   side effects, namespace/import aliases, reflection behavior, exact native
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `method_exists($object_or_class, $method)` support over the current
+  declared method metadata. The supported slice accepts current object values
+  or string class names, uses case-insensitive method names, reports declared
+  public/protected/private and static methods, returns false for missing
+  methods or missing string class names, works through string-valued dynamic
+  calls, and has fixture CLI coverage plus stable diagnostics for unsupported
+  argument types. Method dispatch, inheritance, traits, interfaces,
+  aliases/imports, autoloading, visibility behavior beyond metadata reporting,
+  exact native `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/method_exists_invalid_method.php:2:10: unsupported call method_exists(): method argument must be string in the current subset, got int
+--- stderr end ---

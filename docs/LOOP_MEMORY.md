@@ -9054,3 +9054,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:08:37Z
 
 - Post-round 50 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:08:47Z
+
+- Starting round 51 at 20260512T200847Z from HEAD `996898e`.
+
+## Loop Event 2026-05-12T20:08:56Z
+
+- Pre-round 51 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:13:29Z
+
+- Task attempted: implemented `method_exists($object_or_class, $method)` over
+  the current declared method metadata. The supported slice accepts current
+  object values or string class names, uses case-insensitive method lookup,
+  reports declared public/protected/private and static methods, returns false
+  for missing methods or missing string class names, and works through
+  string-valued dynamic calls.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone102/method_exists.*`,
+  `tests/fixtures/runtime_errors/method_exists_invalid_method.*`,
+  `tests/fixtures/runtime_errors/method_exists_invalid_target.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model method_exists`
+  passed; `cargo test -p phpc --test object_introspection_builtins_cli`
+  passed; `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone102` passed; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 120 fixtures; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone102` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 301 fixtures, 112 system PHP
+  comparisons, and 189 skips.
+- Remaining semantic gaps: `method_exists` is metadata introspection only;
+  method dispatch, inheritance, traits, interfaces, aliases/imports,
+  namespace-aware names, autoloading, visibility behavior beyond metadata
+  reporting, exact native `TypeError` objects, and native lowering remain
+  unsupported.
+- Next concrete task: add the next honest
+  `is_a($object_or_class, $class_name[, $allow_string])` boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add method_exists metadata lookup"`
+  after the full suite passes.

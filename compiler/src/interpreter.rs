@@ -2037,6 +2037,51 @@ impl Interpreter {
                     ),
                 )),
             },
+            "method_exists" => match args.as_slice() {
+                [object_or_class, Value::String(method_name)] => {
+                    let exists = match object_or_class {
+                        Value::Object(object) => self
+                            .classes
+                            .get(object.class_id())
+                            .is_some_and(|class| class.method(method_name).is_some()),
+                        Value::String(class_name) => self
+                            .classes
+                            .lookup_class(class_name)
+                            .is_some_and(|class| class.method(method_name).is_some()),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "method_exists()",
+                                    format!(
+                                        "object_or_class argument must be object or string, got {}",
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    };
+                    Ok(Value::Bool(exists))
+                }
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "method_exists()",
+                        format!(
+                            "method argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "method_exists()",
+                        ArityExpectation::Exactly(2),
+                        args.len(),
+                    ),
+                )),
+            },
             "var_dump" => {
                 for value in &args {
                     self.stdout.push_str(&format_var_dump(value));
@@ -2739,6 +2784,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_debug_type"
             | "class_exists"
             | "property_exists"
+            | "method_exists"
             | "var_dump"
             | "print_r"
     )

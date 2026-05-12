@@ -11,6 +11,9 @@ direct public property operands with `isset($object->name)`. Method calls and
 dynamic property names still fail with explicit parse diagnostics. Static
 member access through `::` also fails with explicit parse diagnostics until
 static property storage, static method dispatch, and class constants exist.
+The current introspection slice can check declared methods with
+`method_exists($object_or_class, $method)` without executing or dispatching
+those methods.
 
 ## Runtime Metadata
 
@@ -42,6 +45,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   variable;
 - direct `isset($object->name)` checks return true for non-null public slots
   and false for null or missing slots;
+- `method_exists($object_or_class, $method)` checks declared method metadata
+  using case-insensitive method lookup for current object values or string
+  class names;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -81,6 +87,8 @@ by the parser instead of falling through to generic expression errors.
 Native lowering rejects class declarations, object instantiation, object
 property reads, and object property writes until metadata, object allocation,
 property slots, and dispatch have explicit lowering support.
+Native lowering also rejects `method_exists` through the current function-call
+boundary until class metadata lookup has native support.
 
 ## Unsupported Edge Cases
 
@@ -97,4 +105,6 @@ assignment targets other than a direct variable, method dispatch, object
 identity/handle aliasing, object comparisons, object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
 operands, complex object-property `isset` operands, static member execution
-through `::`, `::class`, and native lowering.
+through `::`, `::class`, `method_exists` inheritance, traits, interfaces,
+aliases/imports, namespace-aware class names, autoloading, exact native
+`TypeError` behavior, and native lowering.

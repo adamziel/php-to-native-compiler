@@ -968,10 +968,20 @@ handled.
 
 ## Milestone 102: Method Metadata Introspection Boundary
 
-- [ ] Add the next honest `method_exists($object_or_class, $method)` boundary
+- [x] Add the next honest `method_exists($object_or_class, $method)` boundary
   over the current method metadata: either a stable unsupported diagnostic or a
   narrow executable metadata lookup slice with string-valued dynamic-call
   coverage, invalid argument diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for method dispatch, inheritance, traits, interfaces,
   aliases/imports, autoloading, visibility behavior, exact native `TypeError`
   behavior, and native lowering.
+
+## Milestone 103: Class Relationship Introspection Boundary
+
+- [ ] Add the next honest `is_a($object_or_class, $class_name[, $allow_string])`
+  boundary over the current minimal object/class metadata: either a stable
+  unsupported diagnostic or a narrow executable exact-class lookup slice with
+  string-valued dynamic-call coverage, invalid argument diagnostics, fixture
+  CLI coverage, documentation, and explicit gaps for inheritance, interfaces,
+  traits, aliases/imports, autoloading, case handling, exact native
+  `TypeError` behavior, and native lowering.

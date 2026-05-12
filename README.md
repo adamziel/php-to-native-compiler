@@ -117,8 +117,9 @@ subset:
   `in_array` and `array_search` including strict scalar searches,
   `get_class($object)`, `is_object($value)`, `get_debug_type($value)`,
   `class_exists($name[, $autoload])`, and
-  `property_exists($object_or_class, $property)` over the current minimal
-  object value model and declared-class metadata,
+  `property_exists($object_or_class, $property)` and
+  `method_exists($object_or_class, $method)` over the current minimal object
+  value model and declared-class metadata,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
@@ -169,6 +170,10 @@ as a boolean and does not trigger autoloading.
 `property_exists($object_or_class, $property)` accepts current object values or
 string class names, uses case-sensitive declared property names, reports
 declared public/protected/private and static properties, and returns false for
+missing classes.
+`method_exists($object_or_class, $method)` accepts current object values or
+string class names, uses case-insensitive declared method names, reports
+declared public/protected/private and static methods, and returns false for
 missing classes. Constructors, `$this` object context binding,
 method dispatch, dynamic property names, visibility enforcement for non-public
 properties, object handle identity, clone expressions, `instanceof`

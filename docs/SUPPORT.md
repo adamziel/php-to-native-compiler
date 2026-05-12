@@ -104,14 +104,17 @@
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `var_dump`, and `print_r`;
+  `class_exists`, `property_exists`, `method_exists`, `var_dump`, and
+  `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name without autoloading, `property_exists` checks
   case-sensitive declared property metadata for current object values or
-  string class names, and `print_r` can render current minimal object values
+  string class names, `method_exists` checks case-insensitive declared method
+  metadata for current object values or string class names, and `print_r` can
+  render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
@@ -166,7 +169,8 @@
   unsupported object instantiation, undefined object properties, invalid
   property targets, unsupported non-public property access, non-object
   `get_class` operands, unsupported `property_exists` object/class or
-  property arguments,
+  property arguments, unsupported `method_exists` object/class or method
+  arguments,
   object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
@@ -298,6 +302,12 @@
   declared property metadata with case-sensitive property names, reports
   public/protected/private and static properties as existing, returns false for
   missing properties or missing string class names, and is available through
+  string-valued dynamic function calls.
+  `method_exists($object_or_class, $method)` accepts a current object value or
+  string class name and a string method name. It checks the current declared
+  method metadata with case-insensitive method names, reports
+  public/protected/private and static methods as existing, returns false for
+  missing methods or missing string class names, and is available through
   string-valued dynamic function calls. Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
@@ -647,7 +657,8 @@
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `var_dump`, or `print_r`.
+  `class_exists`, `property_exists`, `method_exists`, `var_dump`, or
+  `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -718,8 +729,9 @@
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
-  `is_object`, `get_debug_type`, `class_exists`, `var_dump`, and `print_r`
-  cover the documented scalar/array/object subset.
+  `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
+  `method_exists`, `var_dump`, and `print_r` cover the documented
+  scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -728,6 +740,11 @@
   and `class_exists($name, $autoload)` accept string class names, return whether
   the current parsed program declared that class, and accept only boolean
   autoload flags without triggering autoloading.
+  `property_exists($object_or_class, $property)` checks declared property
+  metadata for current object values or string class names with case-sensitive
+  property names. `method_exists($object_or_class, $method)` checks declared
+  method metadata for current object values or string class names with
+  case-insensitive method names.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -1367,6 +1384,10 @@
 - `array_map` array/object callables, closures, first-class callables, method
   calls, reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
+- `method_exists` method dispatch, inheritance, traits, interfaces,
+  aliases/imports, namespace-aware names, autoloading, visibility behavior
+  beyond metadata reporting, exact native `TypeError` objects, and native
+  lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase

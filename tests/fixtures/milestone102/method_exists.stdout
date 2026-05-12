@@ -1,0 +1,8 @@
+object:open
+object:seal
+object:static
+class:static
+class:missing
+missing-class:false
+dynamic:exists
+
