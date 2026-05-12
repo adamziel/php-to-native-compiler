@@ -1065,3 +1065,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   non-public visibility enforcement, and method dispatch unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add public property access"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T00:33:30Z
+
+- Codex round 17 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T002358Z-17.log`.
+
+## Loop Event 2026-05-12T00:33:32Z
+
+- Post-round 17 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:33:32Z
+
+- Post-round 17 tests passed; running checkpoint for this round.
