@@ -73,7 +73,7 @@ subset:
   values, `array_count_values` over integer/string array values,
   `array_filter` without a callback and with string-valued value-only
   callbacks, `array_map` over the current one-array null-callback identity,
-  variadic null-callback zip, and one- and two-array string-callback subsets
+  variadic null-callback zip, and variadic string-callback subset
   with one-array key preservation and multi-array reindexing,
   `in_array` and `array_search` including strict scalar searches, `var_dump`,
   and `print_r`

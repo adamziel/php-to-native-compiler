@@ -310,8 +310,14 @@ Implemented:
   ordered array value model. The supported slice returns reindexed tuple arrays
   in insertion-order lockstep up to the longest input, pads missing values from
   shorter inputs with `null`, supports string-valued dynamic calls to
-  `array_map`, preserves the original input arrays, and keeps variadic
-  string-callback mapping explicitly unsupported.
+  `array_map`, preserves the original input arrays, and was later followed by
+  variadic string-callback mapping.
+- Extended `array_map($callback, ...)` beyond two input arrays over the current
+  ordered array value model. The supported slice accepts string-valued
+  user-function or callable-builtin callbacks, invokes the callback with one
+  insertion-order value from each input array, pads shorter inputs with `null`,
+  reindexes mapped results from integer key zero, supports string-valued
+  dynamic calls to `array_map`, and preserves the original arrays.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -655,7 +661,7 @@ Tested:
   fixtures.
 - `cargo test -p phpc --test array_mapping_builtins_cli` passes with CLI
   snapshot tests covering the Milestone 22, Milestone 23, Milestone 25,
-  Milestone 26, and Milestone 27 `array_map` fixtures.
+  Milestone 26, Milestone 27, and Milestone 28 `array_map` fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -868,8 +874,6 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_callback_undefined.php:3:6: undefined function missing_map()`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_third_non_array.php:3:6: unsupported call array_map(): third argument must be array, got int`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php:8:6: unsupported call array_map(): more than two input arrays with callbacks are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -1075,6 +1079,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone27` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone27` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone28/array_map_variadic_callback.php`
+  prints the committed variadic string-callback `array_map` output with
+  longest-array `null` padding, integer reindexing, original-array
+  preservation, string-valued dynamic calls to `array_map`, and callable
+  builtin callback coverage.
+- `cargo run -p phpc -- test tests/fixtures/milestone28` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone28` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1265,11 +1277,11 @@ Still fails:
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
   `array_map` callback support is limited to one-array null-callback identity
-  mapping, variadic null-callback zip mapping, and one or two input arrays
-  with string-valued user-function or callable-builtin names. The one-array
-  forms preserve original integer/string keys, while multi-array forms reindex
-  mapped results from integer key zero. More than two string-callback input
-  arrays, array/object callables, closures, first-class callables, method calls,
+  mapping, variadic null-callback zip mapping, and variadic input arrays with
+  string-valued user-function or callable-builtin names. The one-array forms
+  preserve original integer/string keys, while multi-array forms reindex mapped
+  results from integer key zero. Array/object callables, closures,
+  first-class callables, method calls,
   references, copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
@@ -1362,7 +1374,7 @@ Still fails:
 
 Next:
 
-- Extend `array_map($callback, ...)` beyond two input arrays for the current
-  string-valued callback subset, keeping references, copy-on-write behavior,
-  object handle identity preservation, and native lowering explicitly
-  documented as gaps.
+- Implement `array_slice($array, $offset)` for the current ordered array value
+  model with default integer-key reindexing, string-key preservation,
+  non-array/non-int diagnostics, fixture CLI coverage, and documented gaps for
+  length, preserve-keys mode, references/copy-on-write, and native lowering.

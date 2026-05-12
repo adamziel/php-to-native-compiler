@@ -1,0 +1,32 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => 0
+    [1] => 1
+    [2] => 2
+)
+3|L1:M1:R1|L2:M2:NULL|NULL:M3:NULL
+4|after
+Array
+(
+    [first] => L1
+    [5] => L2
+)
+Array
+(
+    [0] => M1
+    [1] => M2
+    [2] => M3
+)
+Array
+(
+    [r] => R1
+)
+3|A:1:P|B:NULL:Q|NULL:NULL:R
+int(1)
+int(2)
+int(3)
+1|builtin-return-null--- stdout end ---
+stderr:
+--- stderr end ---

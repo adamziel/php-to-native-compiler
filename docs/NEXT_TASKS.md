@@ -344,9 +344,18 @@ handled.
 
 ## Milestone 28: Array Map Callback Variadic Follow-ups
 
-- [ ] Extend `array_map($callback, ...)` beyond two input arrays for the
+- [x] Extend `array_map($callback, ...)` beyond two input arrays for the
   current string-valued user-function/callable-builtin callback subset,
   including longest-array `null` padding, integer reindexing, fixture CLI
   coverage, documentation, and explicit gaps for references/copy-on-write,
   object handle identity preservation, array/object callables, closures,
   method calls, and native lowering.
+
+## Milestone 29: Array Slicing Builtins
+
+- [ ] Implement `array_slice($array, $offset)` for the current ordered array
+  value model, including default integer-key reindexing, string-key
+  preservation, non-array/non-int diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for length, preserve-keys mode,
+  references/copy-on-write, object handle identity preservation, resources,
+  exact native `TypeError` objects, and native lowering.

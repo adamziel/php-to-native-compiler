@@ -1348,24 +1348,13 @@ impl Interpreter {
             };
         }
 
-        if arrays.len() > 2 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_map()",
-                    "more than two input arrays with callbacks are not supported in the current subset",
-                ),
-            ));
-        }
-
         match arrays.as_slice() {
             [array] => Ok(Value::Array(
                 self.map_array_with_callback(callback, array, span)?,
             )),
-            [left, right] => Ok(Value::Array(
-                self.map_two_arrays_with_callback(callback, left, right, span)?,
+            arrays => Ok(Value::Array(
+                self.map_arrays_with_callback(callback, arrays, span)?,
             )),
-            _ => unreachable!("array_map arguments are validated before mapping"),
         }
     }
 
@@ -1387,33 +1376,32 @@ impl Interpreter {
         Ok(mapped)
     }
 
-    fn map_two_arrays_with_callback(
+    fn map_arrays_with_callback(
         &mut self,
         callback: &Value,
-        left: &PhpArray,
-        right: &PhpArray,
+        arrays: &[&PhpArray],
         span: Span,
     ) -> CompileResult<PhpArray> {
         let callable = self.resolve_array_map_callback(callback, span)?;
-        let max_len = left.entries().len().max(right.entries().len());
+        let max_len = arrays
+            .iter()
+            .map(|array| array.entries().len())
+            .max()
+            .unwrap_or(0);
 
         let mut mapped = PhpArray::new();
         for index in 0..max_len {
-            let left_value = left
-                .entries()
-                .get(index)
-                .map(|entry| entry.value.clone())
-                .unwrap_or(Value::Null);
-            let right_value = right
-                .entries()
-                .get(index)
-                .map(|entry| entry.value.clone())
-                .unwrap_or(Value::Null);
-            let value = self.call_callable_with_values(
-                callable.clone(),
-                vec![left_value, right_value],
-                span,
-            )?;
+            let values = arrays
+                .iter()
+                .map(|array| {
+                    array
+                        .entries()
+                        .get(index)
+                        .map(|entry| entry.value.clone())
+                        .unwrap_or(Value::Null)
+                })
+                .collect();
+            let value = self.call_callable_with_values(callable.clone(), values, span)?;
             mapped
                 .append(value)
                 .map_err(|error| runtime_error(span, error))?;

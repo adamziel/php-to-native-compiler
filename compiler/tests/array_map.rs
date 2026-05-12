@@ -253,6 +253,62 @@ if ($dynamic[2][3] === null) {
 }
 
 #[test]
+fn array_map_invokes_string_named_callback_with_variadic_arrays_and_null_padding() {
+    let source = r#"<?php
+function combine_three($left, $middle, $right) {
+    if ($left === null) {
+        $left = "NULL";
+    }
+    if ($middle === null) {
+        $middle = "NULL";
+    }
+    if ($right === null) {
+        $right = "NULL";
+    }
+    return $left . ":" . $middle . ":" . $right;
+}
+
+$left = [];
+$left["first"] = "L1";
+$left[5] = "L2";
+
+$middle = [];
+$middle[] = "M1";
+$middle[] = "M2";
+$middle[] = "M3";
+
+$right = [];
+$right["r"] = "R1";
+
+$mapped = array_map("combine_three", $left, $middle, $right);
+print_r(array_keys($mapped));
+echo count($mapped), "|", $mapped[0], "|", $mapped[1], "|", $mapped[2], "\n";
+$mapped[] = "after";
+echo count($mapped), "|", $mapped[3], "\n";
+print_r($left);
+print_r($middle);
+print_r($right);
+
+$call = "array_map";
+$dynamic = $call("combine_three", ["x" => "A", "y" => "B"], ["one" => "1"], ["p" => "P", "q" => "Q", "r" => "R"]);
+echo count($dynamic), "|", $dynamic[0], "|", $dynamic[1], "|", $dynamic[2], "\n";
+
+$builtin = array_map("var_dump", [1], [2], [3]);
+echo count($builtin), "|";
+if ($builtin[0] === null) {
+    echo "builtin-return-null";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => 0\n    [1] => 1\n    [2] => 2\n)\n3|L1:M1:R1|L2:M2:NULL|NULL:M3:NULL\n4|after\nArray\n(\n    [first] => L1\n    [5] => L2\n)\nArray\n(\n    [0] => M1\n    [1] => M2\n    [2] => M3\n)\nArray\n(\n    [r] => R1\n)\n3|A:1:P|B:NULL:Q|NULL:NULL:R\nint(1)\nint(2)\nint(3)\n1|builtin-return-null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_map_requires_third_array_argument() {
     let error =
         runtime_error("<?php\n$items = [\"Ada\"];\necho array_map(\"strlen\", $items, 42);\n");
@@ -280,16 +336,16 @@ fn array_map_requires_variadic_array_arguments() {
 }
 
 #[test]
-fn array_map_rejects_more_than_two_input_arrays_with_callbacks_for_now() {
+fn array_map_variadic_callback_arity_errors_come_from_callback() {
     let error = runtime_error(
-        "<?php\nfunction combine_three($a, $b, $c) { return $a; }\n$left = [\"Ada\"];\n$middle = [\"Grace\"];\n$right = [\"Linus\"];\necho array_map(\"combine_three\", $left, $middle, $right);\n",
+        "<?php\nfunction combine_two($a, $b) { return $a; }\n$left = [\"Ada\"];\n$middle = [\"Grace\"];\n$right = [\"Linus\"];\necho array_map(\"combine_two\", $left, $middle, $right);\n",
     );
 
     assert_eq!(error.line, 6);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_map(): more than two input arrays with callbacks are not supported in the current subset"
+        "arity mismatch for combine_two(): expected 2 argument(s), got 3"
     );
 }
 
@@ -343,5 +399,15 @@ fn emit_ir_rejects_array_map_until_native_call_lowering_exists() {
         null_variadic_zip_error.message.contains("function calls"),
         "{}",
         null_variadic_zip_error.message
+    );
+
+    let callback_variadic_error =
+        emit_ir_source("<?php\necho array_map(\"var_dump\", [1], [2], [3]);\n").unwrap_err();
+
+    assert_eq!(callback_variadic_error.phase, Phase::Codegen);
+    assert!(
+        callback_variadic_error.message.contains("function calls"),
+        "{}",
+        callback_variadic_error.message
     );
 }
