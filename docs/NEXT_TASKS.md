@@ -474,9 +474,18 @@ handled.
 
 ## Milestone 43: Array Value Intersection Builtins
 
-- [ ] Implement `array_intersect($left, $right)` over the current scalar value
+- [x] Implement `array_intersect($left, $right)` over the current scalar value
   subset, including first-array key/value preservation for values present in
   the second array, non-array diagnostics, unsupported non-scalar comparison
   diagnostics, fixture CLI coverage, documentation, and explicit gaps for
   variadic operands, references/copy-on-write, exact native `TypeError`
   objects, object/resource values, and native lowering.
+
+## Milestone 44: Array Value Intersection Variadic Follow-ups
+
+- [ ] Extend `array_intersect` beyond the current two-array slice with
+  variadic array operands, including intersection across all subsequent arrays,
+  non-array variadic operand diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for non-scalar comparisons, references/copy-on-write,
+  exact native `TypeError` objects, object/resource values, and native
+  lowering.

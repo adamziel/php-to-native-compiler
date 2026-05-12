@@ -80,7 +80,8 @@ subset:
   integer/string key values, variadic `array_intersect_key` and
   `array_diff_key` over two or more arrays with first-array key/value
   preservation, `array_diff($left, $right)` over scalar values with
-  first-array key/value preservation,
+  first-array key/value preservation, `array_intersect($left, $right)` over
+  scalar values with first-array key/value preservation,
   `array_flip` over integer/string array values,
   `array_fill_keys` over integer/string key values, `array_count_values` over
   integer/string array values,

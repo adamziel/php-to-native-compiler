@@ -755,12 +755,12 @@ impl PhpArray {
         let left_values = self
             .entries
             .iter()
-            .map(|entry| array_diff_scalar_comparison_value(&entry.value))
+            .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
             .collect::<RuntimeResult<Vec<_>>>()?;
         let right_values = right
             .entries
             .iter()
-            .map(|entry| array_diff_scalar_comparison_value(&entry.value))
+            .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
             .collect::<RuntimeResult<Vec<_>>>()?;
 
         let mut array = Self::new();
@@ -772,6 +772,33 @@ impl PhpArray {
                 array.insert(entry.key.clone(), entry.value.clone());
             }
         }
+        array.inherit_append_cursor_from(self);
+
+        Ok(array)
+    }
+
+    pub fn intersect_values_with(&self, right: &Self) -> RuntimeResult<Self> {
+        let left_values = self
+            .entries
+            .iter()
+            .map(|entry| array_scalar_string_comparison_value("array_intersect()", &entry.value))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+        let right_values = right
+            .entries
+            .iter()
+            .map(|entry| array_scalar_string_comparison_value("array_intersect()", &entry.value))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+
+        let mut array = Self::new();
+        for (entry, left_value) in self.entries.iter().zip(left_values.iter()) {
+            if right_values
+                .iter()
+                .any(|right_value| right_value == left_value)
+            {
+                array.insert(entry.key.clone(), entry.value.clone());
+            }
+        }
+        array.inherit_append_cursor_from(self);
 
         Ok(array)
     }
@@ -873,6 +900,11 @@ impl PhpArray {
             None => self.auto_index_exhausted = true,
         }
     }
+
+    fn inherit_append_cursor_from(&mut self, source: &Self) {
+        self.next_auto_index = source.next_auto_index;
+        self.auto_index_exhausted = source.auto_index_exhausted;
+    }
 }
 
 impl Default for PhpArray {
@@ -899,10 +931,10 @@ fn ensure_array_search_values_supported(
     }
 }
 
-fn array_diff_scalar_comparison_value(value: &Value) -> RuntimeResult<String> {
+fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> RuntimeResult<String> {
     match value {
         Value::Array(_) | Value::Object(_) => Err(RuntimeError::unsupported_call(
-            "array_diff()",
+            callable,
             format!(
                 "values must be scalar in the current subset, got {}",
                 value.type_name()
@@ -3691,6 +3723,118 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_diff(): values must be scalar in the current subset, got object"
+        );
+    }
+
+    #[test]
+    fn array_intersect_preserves_left_entries_whose_scalar_strings_are_present_in_right() {
+        let mut left = PhpArray::new();
+        left.insert("null", Value::Null);
+        left.insert("false", Value::Bool(false));
+        left.insert("empty", Value::String(String::new()));
+        left.insert("true", Value::Bool(true));
+        left.insert("one", Value::Int(1));
+        left.insert("zero", Value::Int(0));
+        left.insert("string-zero", Value::String("0".to_string()));
+        left.insert("int-ten", Value::Int(10));
+        left.insert("float-ten", Value::Float(10.0));
+        left.insert("string-ten-float", Value::String("10.0".to_string()));
+        left.insert("text", Value::String("abc".to_string()));
+        left.insert(8, Value::String("eight".to_string()));
+        left.insert("drop", Value::String("drop".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.append(Value::String(String::new())).unwrap();
+        right.append(Value::String("0".to_string())).unwrap();
+        right.append(Value::String("1".to_string())).unwrap();
+        right.append(Value::String("10".to_string())).unwrap();
+        right.append(Value::String("abc".to_string())).unwrap();
+        right.append(Value::String("eight".to_string())).unwrap();
+        right.append(Value::String("missing".to_string())).unwrap();
+
+        let mut intersected = left.intersect_values_with(&right).unwrap();
+        let entries = intersected.entries();
+
+        assert_eq!(entries.len(), 11);
+        assert_eq!(entries[0].key, ArrayKey::String("null".to_string()));
+        assert_eq!(entries[0].value, Value::Null);
+        assert_eq!(entries[1].key, ArrayKey::String("false".to_string()));
+        assert_eq!(entries[1].value, Value::Bool(false));
+        assert_eq!(entries[2].key, ArrayKey::String("empty".to_string()));
+        assert_eq!(entries[2].value, Value::String(String::new()));
+        assert_eq!(entries[3].key, ArrayKey::String("true".to_string()));
+        assert_eq!(entries[3].value, Value::Bool(true));
+        assert_eq!(entries[4].key, ArrayKey::String("one".to_string()));
+        assert_eq!(entries[4].value, Value::Int(1));
+        assert_eq!(entries[5].key, ArrayKey::String("zero".to_string()));
+        assert_eq!(entries[5].value, Value::Int(0));
+        assert_eq!(entries[6].key, ArrayKey::String("string-zero".to_string()));
+        assert_eq!(entries[6].value, Value::String("0".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::String("int-ten".to_string()));
+        assert_eq!(entries[7].value, Value::Int(10));
+        assert_eq!(entries[8].key, ArrayKey::String("float-ten".to_string()));
+        assert_eq!(entries[8].value, Value::Float(10.0));
+        assert_eq!(entries[9].key, ArrayKey::String("text".to_string()));
+        assert_eq!(entries[9].value, Value::String("abc".to_string()));
+        assert_eq!(entries[10].key, ArrayKey::Int(8));
+        assert_eq!(entries[10].value, Value::String("eight".to_string()));
+        assert_eq!(
+            intersected
+                .append(Value::String("after".to_string()))
+                .unwrap(),
+            ArrayKey::Int(10)
+        );
+        assert_eq!(
+            left.get("drop"),
+            Some(&Value::String("drop".to_string())),
+            "array_intersect must not mutate the left array"
+        );
+        assert_eq!(
+            right.get(6),
+            Some(&Value::String("missing".to_string())),
+            "array_intersect must not mutate the right array"
+        );
+    }
+
+    #[test]
+    fn array_intersect_rejects_non_scalar_value_comparisons() {
+        let mut left = PhpArray::new();
+        left.insert("nested", Value::Array(PhpArray::new()));
+
+        let right = PhpArray::new();
+        let error = left.intersect_values_with(&right).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_intersect()".to_string(),
+                reason: "values must be scalar in the current subset, got array".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_intersect(): values must be scalar in the current subset, got array"
+        );
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+        let mut right = PhpArray::new();
+        right.insert("object", object);
+
+        let mut left = PhpArray::new();
+        left.insert("value", Value::String("value".to_string()));
+        let error = left.intersect_values_with(&right).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_intersect()".to_string(),
+                reason: "values must be scalar in the current subset, got object".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_intersect(): values must be scalar in the current subset, got object"
         );
     }
 

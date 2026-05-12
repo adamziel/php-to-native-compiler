@@ -1,0 +1,2 @@
+runtime error at 4:6: unsupported call array_intersect(): values must be scalar in the current subset, got array
+

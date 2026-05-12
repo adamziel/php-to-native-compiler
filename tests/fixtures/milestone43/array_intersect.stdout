@@ -1,0 +1,59 @@
+Array
+(
+    [null] => 
+    [false] => 
+    [empty] => 
+    [true] => 1
+    [one] => 1
+    [zero] => 0
+    [string-zero] => 0
+    [int-ten] => 10
+    [float-ten] => 10
+    [text] => abc
+    [8] => eight
+)
+11
+1|1|0|0|10|10|abc|eight
+after
+Array
+(
+    [null] => 
+    [false] => 
+    [empty] => 
+    [true] => 1
+    [one] => 1
+    [zero] => 0
+    [string-zero] => 0
+    [int-ten] => 10
+    [float-ten] => 10
+    [string-ten-float] => 10.0
+    [text] => abc
+    [8] => eight
+    [drop] => drop
+    [9] => next
+)
+Array
+(
+    [0] => 
+    [1] => 0
+    [2] => 1
+    [3] => 10
+    [4] => abc
+    [5] => eight
+    [6] => missing
+)
+1|1|0|0|10|10|abc|eight
+Array
+(
+)
+0
+Array
+(
+    [x] => x
+)
+1
+Array
+(
+)
+0
+done

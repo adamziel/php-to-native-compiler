@@ -1404,6 +1404,30 @@ impl Interpreter {
                     _ => unreachable!("array_diff arity is checked above"),
                 }
             }
+            "array_intersect" => {
+                expect_arity(name, &args, 2, span)?;
+                match args.as_slice() {
+                    [Value::Array(left), Value::Array(right)] => left
+                        .intersect_values_with(right)
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    [Value::Array(_), other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_intersect()",
+                            format!("second argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    [other, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_intersect()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    _ => unreachable!("array_intersect arity is checked above"),
+                }
+            }
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -2084,6 +2108,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_intersect_key"
             | "array_diff_key"
             | "array_diff"
+            | "array_intersect"
             | "array_count_values"
             | "array_filter"
             | "array_map"
