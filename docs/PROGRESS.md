@@ -288,7 +288,8 @@ Implemented:
   longest-array behavior by supplying `null` for missing values from the shorter
   array, reindexes mapped results from integer key zero, is available when
   `array_map` itself is called dynamically by string name, and has stable
-  diagnostics for non-array third operands and more than two input arrays.
+  diagnostics for non-array third operands and more than two string-callback
+  input arrays.
 - Aligned one-array `array_map($callback, $array)` with PHP key preservation
   for the current string-callback subset. The one-array form now preserves
   original integer/string keys and insertion order, including string-valued
@@ -303,8 +304,14 @@ Implemented:
   null-callback zip slice over the current ordered array value model. The
   supported slice returns reindexed two-element arrays in insertion-order
   lockstep, follows PHP's longest-array behavior by padding the shorter input
-  with `null`, supports string-valued dynamic calls to `array_map`, and keeps
-  broader zip arities explicitly unsupported.
+  with `null`, supports string-valued dynamic calls to `array_map`, and was
+  later extended to variadic null-callback zip arities.
+- Extended `array_map(null, ...)` beyond two input arrays over the current
+  ordered array value model. The supported slice returns reindexed tuple arrays
+  in insertion-order lockstep up to the longest input, pads missing values from
+  shorter inputs with `null`, supports string-valued dynamic calls to
+  `array_map`, preserves the original input arrays, and keeps variadic
+  string-callback mapping explicitly unsupported.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -484,7 +491,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 55 representative runtime error fixtures.
+  covering 60 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -608,7 +615,7 @@ Tested:
   preservation, non-array/callback/mode diagnostics, and LLVM IR rejection
   coverage.
 - `cargo test -p phpc --test array_map` passes with one-array null-callback
-  identity mapping, two-array null-callback zip mapping with longest-array
+  identity mapping, variadic null-callback zip mapping with longest-array
   `null` padding and integer reindexing, one-array value-only string callback
   execution and key preservation, two-array string-callback execution with
   longest-array `null` padding and integer reindexing, dynamic string-call
@@ -647,8 +654,8 @@ Tested:
   snapshot test covering the Milestone 20 and Milestone 21 `array_filter`
   fixtures.
 - `cargo test -p phpc --test array_mapping_builtins_cli` passes with CLI
-  snapshot tests covering the Milestone 22, Milestone 23, and Milestone 25
-  `array_map` fixtures.
+  snapshot tests covering the Milestone 22, Milestone 23, Milestone 25,
+  Milestone 26, and Milestone 27 `array_map` fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -693,9 +700,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 150 fixture tests.
+- `cargo run -p phpc -- test` passes with 160 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 61 fixtures and skipping 89 `.phpc-only` fixtures.
+  installed, comparing 66 fixtures and skipping 94 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -787,7 +794,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 55
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 60
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -862,7 +869,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_third_non_array.php:3:6: unsupported call array_map(): third argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php:8:6: unsupported call array_map(): more than two input arrays are not supported in the current subset`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php:8:6: unsupported call array_map(): more than two input arrays with callbacks are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -1060,6 +1067,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone26` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone26` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone27/array_map_null_variadic.php`
+  prints the committed variadic `array_map(null, ...)` zip output with
+  longest-array `null` padding, integer reindexing, append behavior after
+  copied integer keys, original-array preservation, and string-valued dynamic
+  calls to `array_map`.
+- `cargo run -p phpc -- test tests/fixtures/milestone27` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone27` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1155,8 +1170,8 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 150 fixtures, 61 system PHP comparisons,
-  and 89 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 160 fixtures, 66 system PHP comparisons,
+  and 94 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1250,11 +1265,11 @@ Still fails:
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
   `array_map` callback support is limited to one-array null-callback identity
-  mapping, two-array null-callback zip mapping, and one or two input arrays
+  mapping, variadic null-callback zip mapping, and one or two input arrays
   with string-valued user-function or callable-builtin names. The one-array
-  forms preserve original integer/string keys, while two-array forms reindex
-  mapped results from integer key zero. More than two input arrays,
-  array/object callables, closures, first-class callables, method calls,
+  forms preserve original integer/string keys, while multi-array forms reindex
+  mapped results from integer key zero. More than two string-callback input
+  arrays, array/object callables, closures, first-class callables, method calls,
   references, copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
@@ -1347,6 +1362,7 @@ Still fails:
 
 Next:
 
-- Extend `array_map(null, ...)` beyond two input arrays, keeping variadic
-  string-callback mapping, references, copy-on-write behavior, object handle
-  identity preservation, and native lowering explicitly documented as gaps.
+- Extend `array_map($callback, ...)` beyond two input arrays for the current
+  string-valued callback subset, keeping references, copy-on-write behavior,
+  object handle identity preservation, and native lowering explicitly
+  documented as gaps.

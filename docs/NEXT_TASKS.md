@@ -334,10 +334,19 @@ handled.
   references/copy-on-write, object handle identity preservation, and native
   lowering.
 
-## Milestone 27: Array Map Variadic Follow-ups
+## Milestone 27: Array Map Null Callback Variadic Follow-ups
 
-- [ ] Extend `array_map(null, ...)` beyond two input arrays over the current
+- [x] Extend `array_map(null, ...)` beyond two input arrays over the current
   ordered array value model, including longest-array `null` padding,
   integer reindexing, fixture CLI coverage, documentation, and explicit gaps
   for variadic string-callback mapping, references/copy-on-write, object handle
   identity preservation, and native lowering.
+
+## Milestone 28: Array Map Callback Variadic Follow-ups
+
+- [ ] Extend `array_map($callback, ...)` beyond two input arrays for the
+  current string-valued user-function/callable-builtin callback subset,
+  including longest-array `null` padding, integer reindexing, fixture CLI
+  coverage, documentation, and explicit gaps for references/copy-on-write,
+  object handle identity preservation, array/object callables, closures,
+  method calls, and native lowering.

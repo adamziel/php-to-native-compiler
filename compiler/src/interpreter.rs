@@ -1320,37 +1320,49 @@ impl Interpreter {
             ));
         }
 
-        for (array_index, arg) in args[1..].iter().take(2).enumerate() {
-            if !matches!(arg, Value::Array(_)) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_map()",
-                        format!(
-                            "{} must be array, got {}",
-                            positional_argument_label(array_index + 1),
-                            arg.type_name()
+        let mut arrays = Vec::new();
+        for (index, arg) in args.iter().enumerate().skip(1) {
+            match arg {
+                Value::Array(array) => arrays.push(array),
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_map()",
+                            format!(
+                                "{} must be array, got {}",
+                                positional_argument_label(index),
+                                other.type_name()
+                            ),
                         ),
-                    ),
-                ));
+                    ));
+                }
             }
         }
 
-        if args.len() > 3 {
+        let callback = &args[0];
+        if matches!(callback, Value::Null) {
+            return match arrays.as_slice() {
+                [array] => Ok(Value::Array((*array).clone())),
+                arrays => Ok(Value::Array(self.zip_arrays_for_array_map(arrays, span)?)),
+            };
+        }
+
+        if arrays.len() > 2 {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_map()",
-                    "more than two input arrays are not supported in the current subset",
+                    "more than two input arrays with callbacks are not supported in the current subset",
                 ),
             ));
         }
 
-        match args {
-            [callback, Value::Array(array)] => Ok(Value::Array(
+        match arrays.as_slice() {
+            [array] => Ok(Value::Array(
                 self.map_array_with_callback(callback, array, span)?,
             )),
-            [callback, Value::Array(left), Value::Array(right)] => Ok(Value::Array(
+            [left, right] => Ok(Value::Array(
                 self.map_two_arrays_with_callback(callback, left, right, span)?,
             )),
             _ => unreachable!("array_map arguments are validated before mapping"),
@@ -1363,10 +1375,6 @@ impl Interpreter {
         array: &PhpArray,
         span: Span,
     ) -> CompileResult<PhpArray> {
-        if matches!(callback, Value::Null) {
-            return Ok(array.clone());
-        }
-
         let callable = self.resolve_array_map_callback(callback, span)?;
 
         let mut mapped = PhpArray::new();
@@ -1386,10 +1394,6 @@ impl Interpreter {
         right: &PhpArray,
         span: Span,
     ) -> CompileResult<PhpArray> {
-        if matches!(callback, Value::Null) {
-            return self.zip_two_arrays_for_array_map(left, right, span);
-        }
-
         let callable = self.resolve_array_map_callback(callback, span)?;
         let max_len = left.entries().len().max(right.entries().len());
 
@@ -1418,34 +1422,30 @@ impl Interpreter {
         Ok(mapped)
     }
 
-    fn zip_two_arrays_for_array_map(
+    fn zip_arrays_for_array_map(
         &self,
-        left: &PhpArray,
-        right: &PhpArray,
+        arrays: &[&PhpArray],
         span: Span,
     ) -> CompileResult<PhpArray> {
-        let max_len = left.entries().len().max(right.entries().len());
+        let max_len = arrays
+            .iter()
+            .map(|array| array.entries().len())
+            .max()
+            .unwrap_or(0);
         let mut mapped = PhpArray::new();
 
         for index in 0..max_len {
-            let left_value = left
-                .entries()
-                .get(index)
-                .map(|entry| entry.value.clone())
-                .unwrap_or(Value::Null);
-            let right_value = right
-                .entries()
-                .get(index)
-                .map(|entry| entry.value.clone())
-                .unwrap_or(Value::Null);
-
             let mut tuple = PhpArray::new();
-            tuple
-                .append(left_value)
-                .map_err(|error| runtime_error(span, error))?;
-            tuple
-                .append(right_value)
-                .map_err(|error| runtime_error(span, error))?;
+            for array in arrays {
+                let value = array
+                    .entries()
+                    .get(index)
+                    .map(|entry| entry.value.clone())
+                    .unwrap_or(Value::Null);
+                tuple
+                    .append(value)
+                    .map_err(|error| runtime_error(span, error))?;
+            }
             mapped
                 .append(Value::Array(tuple))
                 .map_err(|error| runtime_error(span, error))?;
@@ -1457,15 +1457,6 @@ impl Interpreter {
     fn resolve_array_map_callback(&self, callback: &Value, span: Span) -> CompileResult<Callable> {
         let callback_name = match callback {
             Value::String(name) => name,
-            Value::Null => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_map()",
-                        "null callbacks with multiple arrays are not supported in the current subset",
-                    ),
-                ));
-            }
             other => {
                 return Err(runtime_error(
                     span,

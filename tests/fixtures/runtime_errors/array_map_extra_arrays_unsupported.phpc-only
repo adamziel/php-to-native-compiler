@@ -1,1 +1,1 @@
-Project-specific current array_map slice supports at most two input arrays.
+Project-specific current array_map string-callback slice supports at most two input arrays.

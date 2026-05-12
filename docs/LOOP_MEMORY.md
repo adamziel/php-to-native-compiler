@@ -4423,3 +4423,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T06:42:19Z
 
 - Post-round 70 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T06:42:23Z
+
+- Starting round 71 at 20260512T064223Z from HEAD `265a973`.
+
+## Loop Event 2026-05-12T06:42:28Z
+
+- Pre-round 71 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:51:03Z
+
+- Task attempted: extended `array_map(null, ...)` beyond two input arrays over
+  the current ordered array value model. The supported slice now validates all
+  input arrays, returns reindexed tuple arrays in insertion-order lockstep up
+  to the longest input, pads missing values from shorter inputs with `null`,
+  supports string-valued dynamic calls to `array_map`, and preserves the
+  original arrays. The string-callback path remains limited to one or two input
+  arrays with a more precise stable diagnostic for extra arrays.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/array_map.rs`,
+  `compiler/tests/array_mapping_builtins_cli.rs`,
+  `tests/fixtures/milestone27/array_map_null_variadic.php`,
+  `tests/fixtures/milestone27/array_map_null_variadic.stdout`,
+  `tests/fixtures/milestone27/array_map_null_variadic.cli`,
+  `tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.stderr`,
+  `tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.cli`,
+  `tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.phpc-only`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test array_map` passed with 12 tests; `cargo test -p phpc --test
+  array_mapping_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone27` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone27` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 60 fixtures; `cargo run -p phpc -- compile
+  tests/fixtures/milestone27/array_map_null_variadic.php --emit-ir` exited
+  `1` with the expected explicit array native-lowering rejection;
+  `tools/run-tests.sh` passed with 160 fixtures, 66 system PHP comparisons,
+  and 94 `.phpc-only` skips.
+- Remaining semantic gaps: `array_map` string-callback mapping still supports
+  only one or two input arrays. Array/object callables, closures, first-class
+  callables, method calls, references, copy-on-write behavior, object handle
+  identity preservation, resource values, exact native `TypeError` objects,
+  and native lowering remain unsupported.
+- Next concrete task: extend `array_map($callback, ...)` beyond two input
+  arrays for the current string-valued user-function/callable-builtin callback
+  subset.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: extend null array_map zip"`
+  after the full suite passes.

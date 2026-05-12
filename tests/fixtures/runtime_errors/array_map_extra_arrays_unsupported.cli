@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php:8:6: unsupported call array_map(): more than two input arrays are not supported in the current subset
+runtime error at tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.php:8:6: unsupported call array_map(): more than two input arrays with callbacks are not supported in the current subset
 --- stderr end ---
