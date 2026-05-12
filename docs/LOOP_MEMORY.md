@@ -8863,3 +8863,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   and named unsupported gaps.
 - Checkpoint: pending `tools/checkpoint.sh "objects: add is_object builtin"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T19:52:35Z
+
+- Codex round 47 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T194703Z-47.log`.
+
+## Loop Event 2026-05-12T19:52:44Z
+
+- Post-round 47 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:52:44Z
+
+- Post-round 47 tests passed; running checkpoint for this round.
