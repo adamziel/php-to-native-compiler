@@ -6450,3 +6450,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   resolution.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_filter value-key mode"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T13:57:54Z
+
+- Codex round 5 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T134119Z-5.log`.
+
+## Loop Event 2026-05-12T13:58:00Z
+
+- Post-round 5 test exit code: `0`.
+
+## Loop Event 2026-05-12T13:58:00Z
+
+- Post-round 5 tests passed; running checkpoint for this round.
