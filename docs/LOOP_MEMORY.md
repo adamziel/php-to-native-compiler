@@ -3659,3 +3659,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   rejection.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add strict array_keys filter"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T05:08:58Z
+
+- Codex round 58 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T050003Z-58.log`.
+
+## Loop Event 2026-05-12T05:09:02Z
+
+- Post-round 58 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:09:02Z
+
+- Post-round 58 tests passed; running checkpoint for this round.
