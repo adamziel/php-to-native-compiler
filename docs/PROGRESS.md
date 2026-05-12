@@ -402,6 +402,10 @@ Implemented:
   return value is truthy, works through string-valued dynamic calls to
   `array_filter`, and keeps named `ARRAY_FILTER_USE_BOTH` constants
   unsupported.
+- Added explicit parse diagnostics, parser coverage, fixture coverage, and
+  `phpc run` CLI snapshots for unsupported bare global constants such as
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` before constant
+  resolution exists.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -2145,6 +2149,11 @@ Still fails:
   fully qualified function/class references, aliases, grouped imports, function
   imports, constant imports, trait `use` execution, autoload interaction, and
   namespace-aware native lowering are not implemented.
+- Bare global constant resolution remains unsupported. Bare identifiers such as
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` fail with stable parse
+  diagnostics; built-in constants, user-defined constants, extension constants,
+  namespace-qualified constants, `constant()` lookup, and native lowering are
+  not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
@@ -2160,5 +2169,6 @@ Still fails:
 
 Next:
 
-- Add explicit parse diagnostics for unsupported bare global constants such as
-  `ARRAY_FILTER_USE_BOTH` before implementing constant resolution.
+- Implement a narrow built-in global constant slice for
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` without adding user-defined
+  or extension constant resolution.

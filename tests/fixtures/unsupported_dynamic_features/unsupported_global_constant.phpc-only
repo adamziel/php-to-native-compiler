@@ -1,0 +1,1 @@
+phpc intentionally rejects bare global constants before constant resolution exists.

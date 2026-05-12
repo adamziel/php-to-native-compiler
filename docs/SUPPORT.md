@@ -145,6 +145,8 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
+- explicit parse diagnostics for unsupported bare global constants such as
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
@@ -1152,8 +1154,9 @@
   resource values, exact native `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
-- bare global constant resolution, including built-in constants such as
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`
+- bare global constant resolution; bare identifiers such as
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` fail with stable parse
+  diagnostics until built-in/user/extension constant lookup exists
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

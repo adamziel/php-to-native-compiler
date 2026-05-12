@@ -306,3 +306,35 @@ $box = new namespace\Box();
         );
     }
 }
+
+#[test]
+fn bare_global_constants_are_rejected_with_stable_parse_errors() {
+    let cases = [
+        (
+            r#"<?php
+echo ARRAY_FILTER_USE_BOTH;
+"#,
+            2,
+            6,
+            "ARRAY_FILTER_USE_BOTH",
+        ),
+        (
+            r#"<?php
+echo array_filter([], "strlen", ARRAY_FILTER_USE_KEY);
+"#,
+            2,
+            33,
+            "ARRAY_FILTER_USE_KEY",
+        ),
+    ];
+
+    for (source, line, column, name) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            format!("unsupported global constant {name}: constant resolution is not implemented")
+        );
+    }
+}

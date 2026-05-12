@@ -593,8 +593,16 @@ handled.
 
 ## Milestone 57: Global Constant Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported bare global constants such
+- [x] Add explicit parse diagnostics for unsupported bare global constants such
   as `ARRAY_FILTER_USE_BOTH` before implementing constant resolution, including
   parser coverage, fixture CLI coverage, documentation, and named unsupported
   gaps for user-defined constants, extension constants, namespaces, and native
   lowering.
+
+## Milestone 58: Built-in Constant Slice
+
+- [ ] Implement a narrow built-in global constant resolution slice for
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, including parser/runtime
+  support, `array_filter` named-mode fixture CLI coverage, documentation, and
+  explicit gaps for user-defined constants, extension constants, namespaces,
+  `constant()` lookup, and native lowering.

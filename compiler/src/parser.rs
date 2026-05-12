@@ -1110,6 +1110,11 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
                     return self.reject_unsupported_static_member_access();
                 }
+                if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    return Err(
+                        self.error_at(token.span, unsupported_global_constant_message(&name))
+                    );
+                }
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let args = self.parse_call_arguments_after_open()?;
                 Ok(Expr::Call {
@@ -1601,6 +1606,10 @@ fn unsupported_namespace_qualified_function_name_message() -> &'static str {
 
 fn unsupported_namespace_qualified_class_name_message() -> &'static str {
     "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
+}
+
+fn unsupported_global_constant_message(name: &str) -> String {
+    format!("unsupported global constant {name}: constant resolution is not implemented")
 }
 
 fn unsupported_array_spread_message() -> &'static str {

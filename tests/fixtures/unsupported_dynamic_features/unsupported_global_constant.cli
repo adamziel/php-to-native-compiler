@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.php:3:42: unsupported global constant ARRAY_FILTER_USE_BOTH: constant resolution is not implemented
+--- stderr end ---

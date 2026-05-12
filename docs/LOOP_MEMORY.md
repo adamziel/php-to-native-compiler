@@ -6462,3 +6462,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T13:58:00Z
 
 - Post-round 5 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T13:58:08Z
+
+- Starting round 6 at 20260512T135808Z from HEAD `4787d44`.
+
+## Loop Event 2026-05-12T13:58:14Z
+
+- Pre-round 6 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:05:03Z
+
+- Task attempted: added the Milestone 57 global constant boundary by rejecting
+  bare identifier expressions such as `ARRAY_FILTER_USE_KEY` and
+  `ARRAY_FILTER_USE_BOTH` with stable parse diagnostics before constant
+  resolution exists.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test dynamic_features
+  bare_global_constants_are_rejected_with_stable_parse_errors` passed;
+  `cargo test -p phpc --test dynamic_features` passed with 10 tests;
+  `cargo test -p phpc --test unsupported_dynamic_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with 12 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_global_constant.php`
+  exited `1` with the expected stable diagnostic; `tools/run-tests.sh` passed
+  with 234 fixtures, 95 system PHP comparisons, and 139 `.phpc-only` skips.
+- Remaining semantic gaps: constant resolution is still not implemented.
+  Built-in constants, user-defined constants, extension constants,
+  namespace-qualified constants, `constant()` lookup, and native lowering for
+  constants remain unsupported.
+- Next concrete task: implement a narrow built-in global constant slice for
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` without adding user-defined
+  or extension constant resolution.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: reject bare global constants"`
+  after the full suite passes.
