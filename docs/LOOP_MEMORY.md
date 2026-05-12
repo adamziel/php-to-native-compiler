@@ -10094,5 +10094,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   boundary before PHP property uninitialization semantics exist.
 - Known-good tag: not created; this is a narrow incremental object-property
   refinement, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "objects: add object property empty"`
-  after the full suite passes.
+- Checkpoint: `f8b1018 objects: add object property empty`.
