@@ -829,6 +829,26 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn unique_values_by_string(&self) -> RuntimeResult<Self> {
+        let mut seen = Vec::new();
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let comparison_value =
+                array_scalar_string_comparison_value("array_unique()", &entry.value)?;
+            if seen
+                .iter()
+                .any(|seen_value| seen_value == &comparison_value)
+            {
+                continue;
+            }
+
+            seen.push(comparison_value);
+            array.insert(entry.key.clone(), entry.value.clone());
+        }
+
+        Ok(array)
+    }
+
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -3996,6 +4016,98 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_intersect(): values must be scalar in the current subset, got object"
+        );
+    }
+
+    #[test]
+    fn array_unique_preserves_first_entries_by_scalar_string_form() {
+        let mut array = PhpArray::new();
+
+        array.insert(5, Value::String("five".to_string()));
+        array.insert(9, Value::String("five".to_string()));
+        array.insert(2, Value::String("two".to_string()));
+        array.insert("null", Value::Null);
+        array.insert("false", Value::Bool(false));
+        array.insert("empty", Value::String(String::new()));
+        array.insert("true", Value::Bool(true));
+        array.insert("one", Value::Int(1));
+        array.insert("string-one", Value::String("1".to_string()));
+        array.insert("int-ten", Value::Int(10));
+        array.insert("float-ten", Value::Float(10.0));
+        array.insert("string-ten-float", Value::String("10.0".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+        array.insert("dup-text", Value::String("abc".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut unique = array.unique_values_by_string().unwrap();
+        let entries = unique.entries();
+
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].key, ArrayKey::Int(5));
+        assert_eq!(entries[0].value, Value::String("five".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("null".to_string()));
+        assert_eq!(entries[2].value, Value::Null);
+        assert_eq!(entries[3].key, ArrayKey::String("true".to_string()));
+        assert_eq!(entries[3].value, Value::Bool(true));
+        assert_eq!(entries[4].key, ArrayKey::String("int-ten".to_string()));
+        assert_eq!(entries[4].value, Value::Int(10));
+        assert_eq!(
+            entries[5].key,
+            ArrayKey::String("string-ten-float".to_string())
+        );
+        assert_eq!(entries[5].value, Value::String("10.0".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::String("text".to_string()));
+        assert_eq!(entries[6].value, Value::String("abc".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::Int(10));
+        assert_eq!(entries[7].value, Value::String("next".to_string()));
+        assert_eq!(
+            unique.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(11)
+        );
+        assert_eq!(
+            array.get(9),
+            Some(&Value::String("five".to_string())),
+            "array_unique must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_unique_rejects_non_scalar_value_comparisons() {
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array.unique_values_by_string().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_unique()".to_string(),
+                reason: "values must be scalar in the current subset, got array".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_unique(): values must be scalar in the current subset, got array"
+        );
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+        let mut array = PhpArray::new();
+        array.insert("object", object);
+
+        let error = array.unique_values_by_string().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_unique()".to_string(),
+                reason: "values must be scalar in the current subset, got object".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_unique(): values must be scalar in the current subset, got object"
         );
     }
 

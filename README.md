@@ -81,6 +81,8 @@ subset:
   `array_diff_key` over two or more arrays with first-array key/value
   preservation, variadic `array_diff` and `array_intersect` over two or more
   arrays with scalar value comparisons and first-array key/value preservation,
+  `array_unique` with scalar string-form value deduplication and
+  first-occurrence preservation,
   `array_flip` over integer/string array values,
   `array_fill_keys` over integer/string key values, `array_count_values` over
   integer/string array values,

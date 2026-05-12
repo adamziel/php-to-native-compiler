@@ -1458,6 +1458,34 @@ impl Interpreter {
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error))
             }
+            "array_unique" => match args.as_slice() {
+                [Value::Array(array)] => array
+                    .unique_values_by_string()
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(_), _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_unique()",
+                        "sort flags are not supported in the current subset",
+                    ),
+                )),
+                [other] | [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_unique()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_unique()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -2139,6 +2167,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_diff_key"
             | "array_diff"
             | "array_intersect"
+            | "array_unique"
             | "array_count_values"
             | "array_filter"
             | "array_map"

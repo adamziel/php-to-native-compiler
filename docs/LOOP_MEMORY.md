@@ -5705,3 +5705,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T10:48:00Z
 
 - Post-round 89 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T10:48:06Z
+
+- Starting round 90 at 20260512T104806Z from HEAD `63fd321`.
+
+## Loop Event 2026-05-12T10:48:11Z
+
+- Pre-round 90 test exit code: `0`.
+
+## Loop Event 2026-05-12T11:02:52Z
+
+- Task attempted: implemented `array_unique($array)` over the current scalar
+  string-form comparison subset. The supported slice keeps the first entry for
+  each distinct scalar string form, preserves kept keys and insertion order,
+  derives later append behavior from kept integer keys, supports string-valued
+  dynamic calls, preserves the source array, and reports stable diagnostics for
+  non-array operands, unsupported non-scalar values, and unsupported sort
+  flags.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_unique.rs`,
+  `compiler/tests/array_value_deduplication_builtins_cli.rs`,
+  `tests/fixtures/milestone46/array_unique.*`,
+  `tests/fixtures/runtime_errors/array_unique_non_array.*`,
+  `tests/fixtures/runtime_errors/array_unique_array_value.*`,
+  `tests/fixtures/runtime_errors/array_unique_sort_flag.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p php_runtime
+  array_unique` passed with 2 focused runtime tests; `cargo test -p
+  php_runtime` passed with 68 runtime unit tests; `cargo test -p php_runtime
+  array_` passed with 53 focused array tests; `cargo test -p phpc --test
+  array_unique` passed with 5 tests; `cargo test -p phpc --test
+  array_value_deduplication_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone46` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone46` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- run
+  tests/fixtures/milestone46/array_unique.php` printed the committed output;
+  `cargo run -p phpc -- compile tests/fixtures/milestone46/array_unique.php
+  --emit-ir` exited `1` with the current explicit native-lowering rejection;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 92
+  fixtures; `tools/run-tests.sh` passed with 211 fixtures, 85 system PHP
+  comparisons, and 126 `.phpc-only` skips.
+- Remaining semantic gaps: `array_unique` supports only the default scalar
+  string-form comparison behavior. Sort flags, non-scalar value comparison
+  behavior, references, copy-on-write containers, object/resource values, exact
+  native `TypeError` objects, PHP warning-and-string-conversion behavior for
+  arrays/objects, and native lowering remain unsupported.
+- Next concrete task: implement `array_replace($array, $replacement)` for two
+  arrays over the current ordered integer/string key model.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_unique"`
+  after the full suite passes.

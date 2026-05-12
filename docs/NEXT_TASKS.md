@@ -501,9 +501,18 @@ handled.
 
 ## Milestone 46: Array Value Deduplication Builtins
 
-- [ ] Implement `array_unique($array)` over the current scalar string-form
+- [x] Implement `array_unique($array)` over the current scalar string-form
   comparison subset, including first-occurrence key/value preservation,
   non-array diagnostics, unsupported non-scalar value diagnostics, fixture CLI
   coverage, documentation, and explicit gaps for sort flags,
+  references/copy-on-write, exact native `TypeError` objects,
+  object/resource values, and native lowering.
+
+## Milestone 47: Array Replacement Builtins
+
+- [ ] Implement `array_replace($array, $replacement)` for two arrays over the
+  current ordered integer/string key model, including replacement overwrite
+  behavior, new-key insertion order, non-array diagnostics, fixture CLI
+  coverage, documentation, and explicit gaps for variadic replacements,
   references/copy-on-write, exact native `TypeError` objects,
   object/resource values, and native lowering.

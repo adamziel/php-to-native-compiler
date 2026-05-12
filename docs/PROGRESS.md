@@ -296,6 +296,13 @@ Implemented:
   supports string-valued dynamic calls, preserves source arrays, and reports
   stable diagnostics for non-array positional operands including variadic
   operands.
+- Added `array_unique($array)` support for the current scalar string-form
+  comparison subset. The supported slice preserves the first entry for each
+  distinct scalar string form, keeps first-occurrence keys and insertion order,
+  derives later append behavior from kept integer keys, supports string-valued
+  dynamic calls, preserves the original array, and reports stable diagnostics
+  for non-array operands, unsupported non-scalar values, and unsupported sort
+  flags.
 - Added `array_flip($array)` support for the current ordered array value model.
   The supported slice uses integer and string source values as result keys with
   the current string-key normalization rules, writes original integer/string
@@ -582,8 +589,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 65 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 47 focused array value tests.
+- `cargo test -p php_runtime` passes with 68 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 53 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
 - `cargo test -p php_runtime array_pad` passes with 3 focused array-padding
@@ -608,6 +615,8 @@ Tested:
 - `cargo test -p php_runtime array_intersect` passes with 5 focused array
   intersection runtime tests covering key-intersection, scalar
   value-intersection, and variadic value-intersection behavior.
+- `cargo test -p php_runtime array_unique` passes with 2 focused array
+  deduplication runtime tests.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
   runtime tests.
 - `cargo test -p php_runtime array_fill_keys` passes with 2 focused
@@ -630,7 +639,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 89 representative runtime error fixtures.
+  covering 92 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -811,6 +820,11 @@ Tested:
   variadic result behavior, dynamic string-call coverage, original-array
   preservation, non-array positional operand diagnostics, unsupported
   non-scalar comparison diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_unique` passes with first-occurrence
+  key/value preservation, PHP string-form value deduplication coverage,
+  dynamic string-call coverage, original-array preservation, non-array operand
+  diagnostics, unsupported non-scalar comparison diagnostics, unsupported sort
+  flag diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -875,6 +889,8 @@ Tested:
 - `cargo test -p phpc --test array_value_intersection_builtins_cli` passes with
   1 CLI snapshot test covering the Milestone 43 `array_intersect` fixture and
   the Milestone 44 variadic `array_intersect` fixture.
+- `cargo test -p phpc --test array_value_deduplication_builtins_cli` passes
+  with 1 CLI snapshot test covering the Milestone 46 `array_unique` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -1119,6 +1135,12 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_array_value.php:4:6: unsupported call array_intersect(): values must be scalar in the current subset, got array`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_third_non_array.php:4:6: unsupported call array_intersect(): third argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_non_array.php:2:6: unsupported call array_unique(): argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_array_value.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_array_value.php:3:6: unsupported call array_unique(): values must be scalar in the current subset, got array`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_sort_flag.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_sort_flag.php:3:6: unsupported call array_unique(): sort flags are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
@@ -1493,6 +1515,15 @@ Tested:
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone45` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone46/array_unique.php`
+  prints the committed `array_unique` output with scalar string-form
+  deduplication, first-occurrence key/value preservation, original-array
+  preservation, append behavior derived from kept integer keys, and
+  string-valued dynamic calls to `array_unique`.
+- `cargo run -p phpc -- test tests/fixtures/milestone46` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone46` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1639,8 +1670,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone45/array_diff_variadic.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 207 fixtures, 84 system PHP comparisons,
-  and 123 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone46/array_unique.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 211 fixtures, 85 system PHP comparisons,
+  and 126 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1747,6 +1781,11 @@ Still fails:
   for arrays/objects, and native lowering are not implemented.
   `array_intersect` accepts two or more array operands over the current scalar
   value subset and compares values by current PHP string forms, but non-scalar
+  comparisons, references, copy-on-write containers, object/resource values,
+  exact native `TypeError` objects, PHP warning-and-string-conversion behavior
+  for arrays/objects, and native lowering are not implemented.
+  `array_unique` accepts one array operand over the current scalar value subset
+  and compares values by current PHP string forms, but sort flags, non-scalar
   comparisons, references, copy-on-write containers, object/resource values,
   exact native `TypeError` objects, PHP warning-and-string-conversion behavior
   for arrays/objects, and native lowering are not implemented.
@@ -1871,6 +1910,7 @@ Still fails:
 
 Next:
 
-- Implement `array_unique($array)` over the current scalar string-form
-  comparison subset, including first-occurrence key/value preservation,
-  diagnostics, fixture CLI coverage, docs, and explicit unsupported gaps.
+- Implement `array_replace($array, $replacement)` for two arrays over the
+  current ordered integer/string key model, including replacement overwrite
+  behavior, new-key insertion order, diagnostics, fixture CLI coverage, docs,
+  and explicit unsupported gaps.

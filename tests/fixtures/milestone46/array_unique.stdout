@@ -1,0 +1,38 @@
+Array
+(
+    [5] => five
+    [2] => two
+    [null] => 
+    [true] => 1
+    [int-ten] => 10
+    [string-ten-float] => 10.0
+    [text] => abc
+    [10] => next
+)
+8
+five|two|1|10|10.0|next
+after
+Array
+(
+    [5] => five
+    [9] => five
+    [2] => two
+    [null] => 
+    [false] => 
+    [empty] => 
+    [true] => 1
+    [one] => 1
+    [string-one] => 1
+    [int-ten] => 10
+    [float-ten] => 10
+    [string-ten-float] => 10.0
+    [text] => abc
+    [dup-text] => abc
+    [10] => next
+)
+five|two|1|10|10.0|next
+Array
+(
+)
+0
+done
