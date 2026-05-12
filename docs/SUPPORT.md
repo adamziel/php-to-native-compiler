@@ -85,8 +85,8 @@
   `array_reverse` preserve-key flag values, non-array `array_merge`
   operands, non-array `in_array`/`array_search` haystacks, non-bool
   `in_array`/`array_search` strict-mode flag values, unsupported non-scalar
-  `in_array`/`array_search` comparisons, unsupported
-  `global` declarations,
+  `array_keys` search-value comparisons, unsupported non-scalar
+  `in_array`/`array_search` comparisons, unsupported `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
   unsupported non-public property access, object-to-string conversion,
@@ -219,7 +219,11 @@
   original values in insertion order with integer keys starting at zero.
   `array_keys($array)` returns a new ordered array containing the original
   integer/string keys as values in insertion order with integer keys starting at
-  zero. `array_reverse($array)` and `array_reverse($array, false)` return a new
+  zero. `array_keys($array, $search_value)` returns only keys whose values match
+  the supplied current scalar `search_value` under the same loose comparison
+  rules used by `in_array` and `array_search`, reindexed from zero. Both forms
+  are available through string-valued dynamic function calls.
+  `array_reverse($array)` and `array_reverse($array, false)` return a new
   ordered array in reverse insertion order, reindex integer-keyed entries from
   zero, preserve string keys, and are available through string-valued dynamic
   function calls. `array_reverse($array, true)` returns a new ordered array in
@@ -299,8 +303,9 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
-  operands, non-array `array_keys` operands, non-array `array_reverse`
-  operands, non-bool `array_reverse` preserve-key flag values, non-array
+  operands, non-array `array_keys` operands, unsupported `array_keys`
+  search-value comparisons, non-array `array_reverse` operands, non-bool
+  `array_reverse` preserve-key flag values, non-array
   `array_merge` operands, non-array `in_array` operands, non-array
   `array_search` operands, non-array `foreach` iterables, non-bool
   `in_array`/`array_search` strict-mode flag values, and array-value
@@ -369,10 +374,16 @@
   with integer keys `0..n-1`; it is also available through string-valued dynamic
   function calls. `array_keys($array)` accepts arrays only, preserves insertion
   order, and returns a new ordered array reindexed with integer keys `0..n-1`
-  whose values are the original integer/string keys; it is also available
-  through string-valued dynamic function calls. Search-value filtering and the
-  strict flag for `array_keys` are not implemented. `array_reverse($array)` and
-  `array_reverse($array, false)` accept arrays only, return a new array in
+  whose values are the original integer/string keys. `array_keys($array,
+  $search_value)` accepts current scalar search values, scans array values in
+  insertion order with the current PHP 8-style loose scalar comparison rules,
+  emits every matching integer/string key as a value, and reindexes the returned
+  key array from zero. Both forms are also available through string-valued
+  dynamic function calls. The strict flag for `array_keys` is not implemented;
+  array/object search values or array/object values encountered during
+  filtering fail with stable unsupported-call diagnostics.
+  `array_reverse($array)` and `array_reverse($array, false)` accept arrays only,
+  return a new array in
   reverse insertion order, reindex integer-keyed entries from zero, preserve
   string keys, and are also available through string-valued dynamic function
   calls. `array_reverse($array, true)` preserves both integer and string keys
@@ -426,9 +437,10 @@
   `array_values`, `array_keys`, `array_reverse`, `array_merge`, `in_array`,
   `array_search`, and both current `foreach` array forms follow the current
   by-value model; PHP references, copy-on-write containers, object handle
-  identity preservation, resource values, non-bool `array_reverse`
-  preserve-key flag coercion, and `array_merge` reference/copy-on-write
-  behavior are not implemented.
+  identity preservation, resource values, `array_keys` strict-mode filtering,
+  array, object, resource, or reference search values for `array_keys`,
+  non-bool `array_reverse` preserve-key flag coercion, and `array_merge`
+  reference/copy-on-write behavior are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -546,6 +558,8 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
+- `array_keys` strict-mode filtering and array, object, resource, or reference
+  search values or array values during filtering
 - `in_array` and `array_search` strict-mode searches involving
   array/object/resource/reference values, non-bool strict-flag coercion, and
   array/object needle or haystack-value comparisons for the current

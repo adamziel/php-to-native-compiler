@@ -239,7 +239,7 @@ handled.
 
 ## Milestone 16: Array Key Filtering Builtins
 
-- [ ] Implement `array_keys($array, $search_value)` for the current scalar
+- [x] Implement `array_keys($array, $search_value)` for the current scalar
   value subset using loose comparison semantics, including fixture CLI
   coverage, documentation, non-array/search-value diagnostics, and explicit
   gaps for arrays, objects, resources, references, and native lowering.

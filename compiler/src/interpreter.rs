@@ -878,19 +878,28 @@ impl Interpreter {
                     )),
                 }
             }
-            "array_keys" => {
-                expect_arity(name, &args, 1, span)?;
-                match &args[0] {
-                    Value::Array(array) => Ok(Value::Array(array.keys_reindexed())),
-                    other => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_keys()",
-                            format!("argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                }
-            }
+            "array_keys" => match args.as_slice() {
+                [Value::Array(array)] => Ok(Value::Array(array.keys_reindexed())),
+                [Value::Array(array), search_value] => array
+                    .keys_matching_loose_scalar(search_value)
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
+                [other] | [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_keys()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_keys()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "array_reverse" => match args.as_slice() {
                 [Value::Array(array)] => Ok(Value::Array(array.reversed_reindexed())),
                 [Value::Array(array), Value::Bool(false)] => {

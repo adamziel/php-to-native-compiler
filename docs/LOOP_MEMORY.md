@@ -3543,3 +3543,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:52:27Z
 
 - Post-round 56 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T04:52:30Z
+
+- Starting round 57 at 20260512T045230Z from HEAD `5f49252`.
+
+## Loop Event 2026-05-12T04:52:34Z
+
+- Pre-round 57 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:59:05Z
+
+- Task attempted: implemented `array_keys($array, $search_value)` loose
+  filtering for the current scalar subset. The supported slice scans ordered
+  array values in insertion order with the current PHP 8-style loose scalar
+  comparison rules, returns all matching integer/string keys as values in a new
+  array reindexed from zero, supports string-valued dynamic calls to
+  `array_keys`, keeps the one-argument key-emission form intact, and rejects
+  unsupported array/object search values or array/object values with stable
+  diagnostics.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_keys.rs`,
+  `compiler/tests/array_key_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone16/array_keys_filter.php`,
+  `tests/fixtures/milestone16/array_keys_filter.stdout`,
+  `tests/fixtures/milestone16/array_keys_filter.cli`,
+  `tests/fixtures/runtime_errors/array_keys_array_search_value.php`,
+  `tests/fixtures/runtime_errors/array_keys_array_search_value.stderr`,
+  `tests/fixtures/runtime_errors/array_keys_array_search_value.exit`,
+  `tests/fixtures/runtime_errors/array_keys_array_search_value.phpc-only`,
+  `tests/fixtures/runtime_errors/array_keys_array_search_value.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime array_keys` passed with 4
+  focused tests; `cargo test -p phpc --test array_keys` passed with 5 tests;
+  `cargo test -p phpc --test array_key_filtering_builtins_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone16` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone16` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 42 fixtures;
+  `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_keys_array_search_value.php` exited `1`
+  with the expected stable diagnostic; `cargo test -p php_runtime` passed with
+  34 runtime unit tests; `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- run tests/fixtures/milestone16/array_keys_filter.php`
+  printed the committed loose filter output; `tools/run-tests.sh` passed with
+  129 fixtures, 53 system PHP comparisons, and 76 `.phpc-only` skips.
+- Remaining semantic gaps: `array_keys` strict-mode filtering through the third
+  argument is still unsupported; non-bool strict flag coercion, array, object,
+  resource, or reference search values and array values, references,
+  copy-on-write containers, exact native `TypeError` objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement `array_keys($array, $search_value, true)` for
+  the current scalar value subset using strict identity semantics.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add loose array_keys filter"`
+  after the full suite passes.

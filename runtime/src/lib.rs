@@ -474,13 +474,22 @@ impl PhpArray {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
             let key = i64::try_from(index).expect("array length fits in i64");
-            let value = match &entry.key {
-                ArrayKey::Int(value) => Value::Int(*value),
-                ArrayKey::String(value) => Value::String(value.clone()),
-            };
-            array.insert(key, value);
+            array.insert(key, array_key_to_value(&entry.key));
         }
         array
+    }
+
+    pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            ensure_array_keys_filter_values_supported(search_value, &entry.value)?;
+            if search_value.php_cmp_checked(&entry.value, Comparison::Eq)? {
+                let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
+                array.insert(key, array_key_to_value(&entry.key));
+            }
+        }
+
+        Ok(array)
     }
 
     pub fn reversed_reindexed(&self) -> Self {
@@ -614,6 +623,30 @@ fn ensure_array_search_values_supported(
             "object needles and object values are not implemented",
         )),
         _ => Ok(()),
+    }
+}
+
+fn ensure_array_keys_filter_values_supported(
+    search_value: &Value,
+    value: &Value,
+) -> RuntimeResult<()> {
+    match (search_value, value) {
+        (Value::Array(_), _) | (_, Value::Array(_)) => Err(RuntimeError::unsupported_call(
+            "array_keys()",
+            "array search values and array values are not implemented",
+        )),
+        (Value::Object(_), _) | (_, Value::Object(_)) => Err(RuntimeError::unsupported_call(
+            "array_keys()",
+            "object search values and object values are not implemented",
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn array_key_to_value(key: &ArrayKey) -> Value {
+    match key {
+        ArrayKey::Int(value) => Value::Int(*value),
+        ArrayKey::String(value) => Value::String(value.clone()),
     }
 }
 
@@ -1796,6 +1829,14 @@ mod tests {
         .collect()
     }
 
+    fn array_key_values(array: &PhpArray) -> Vec<Value> {
+        array
+            .entries()
+            .iter()
+            .map(|entry| entry.value.clone())
+            .collect()
+    }
+
     #[test]
     fn array_string_keys_normalize_like_php_integer_keys() {
         let cases = [
@@ -1985,6 +2026,71 @@ mod tests {
             Some(&Value::String("Ada".to_string())),
             "array_keys must not mutate the original array"
         );
+    }
+
+    #[test]
+    fn array_keys_filters_with_loose_scalar_comparison_in_insertion_order() {
+        let mut array = PhpArray::new();
+
+        array.insert("null", Value::Null);
+        array.insert("false", Value::Bool(false));
+        array.insert("int-zero", Value::Int(0));
+        array.insert("string-zero", Value::String("0".to_string()));
+        array.insert("empty", Value::String(String::new()));
+        array.insert("int-ten", Value::Int(10));
+        array.insert("string-ten", Value::String("10".to_string()));
+        array.insert("numeric-string", Value::String("10.0".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_loose_scalar(&Value::String(String::new()))
+                    .unwrap()
+            ),
+            vec![
+                Value::String("null".to_string()),
+                Value::String("false".to_string()),
+                Value::String("empty".to_string()),
+            ]
+        );
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_loose_scalar(&Value::String("0".to_string()))
+                    .unwrap()
+            ),
+            vec![
+                Value::String("false".to_string()),
+                Value::String("int-zero".to_string()),
+                Value::String("string-zero".to_string()),
+            ]
+        );
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_loose_scalar(&Value::String("10".to_string()))
+                    .unwrap()
+            ),
+            vec![
+                Value::String("int-ten".to_string()),
+                Value::String("string-ten".to_string()),
+                Value::String("numeric-string".to_string()),
+            ]
+        );
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_loose_scalar(&Value::String("abc".to_string()))
+                    .unwrap()
+            ),
+            vec![Value::String("text".to_string())]
+        );
+        assert!(array
+            .keys_matching_loose_scalar(&Value::String("missing".to_string()))
+            .unwrap()
+            .entries()
+            .is_empty());
     }
 
     #[test]
@@ -2409,6 +2515,45 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_search(): array needles and array values are not implemented"
+        );
+    }
+
+    #[test]
+    fn array_keys_filter_rejects_array_comparison_gaps() {
+        let mut array = PhpArray::new();
+        array.insert("value", Value::Int(1));
+
+        let error = array
+            .keys_matching_loose_scalar(&Value::Array(PhpArray::new()))
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_keys()".to_string(),
+                reason: "array search values and array values are not implemented".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_keys(): array search values and array values are not implemented"
+        );
+
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array
+            .keys_matching_loose_scalar(&Value::String("needle".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_keys()".to_string(),
+                reason: "array search values and array values are not implemented".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_keys(): array search values and array values are not implemented"
         );
     }
 

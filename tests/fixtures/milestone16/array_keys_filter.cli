@@ -1,0 +1,36 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => null
+    [1] => false
+    [2] => empty
+)
+Array
+(
+    [0] => false
+    [1] => int-zero
+    [2] => string-zero
+)
+Array
+(
+    [0] => int-ten
+    [1] => string-ten
+    [2] => numeric-string
+)
+Array
+(
+    [0] => text
+)
+Array
+(
+)
+Array
+(
+    [0] => int-ten
+    [1] => string-ten
+    [2] => numeric-string
+)
+--- stdout end ---
+stderr:
+--- stderr end ---
