@@ -46,8 +46,8 @@
   name: `$object->name` and `$object->name = ...`
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
-- short array literals: `[]`, `[value]`, and `[key => value]` for the currently
-  supported expression subset
+- short array literals (`[]`, `[value]`, `[key => value]`) and long
+  `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
 - array indexed reads: `$array[$key]` for existing integer/string keyed array
   entries
@@ -89,7 +89,7 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
-- explicit parse diagnostics for unsupported long `array(...)` literal syntax
+- explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
 - explicit parse diagnostics for unsupported `foreach` by-reference iteration,
@@ -269,8 +269,8 @@
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
-  use the current constant-expression subset: `null`,
-  booleans, integers, floats, strings, short arrays with supported keys, unary
+  use the current constant-expression subset: `null`, booleans, integers,
+  floats, strings, short and long arrays with supported keys, unary
   expressions, and binary expressions over those values. Omitted arguments bind
   to their defaults; calls outside the supported required-to-total arity range
   fail with a stable arity diagnostic. Each user-function call gets a fresh
@@ -361,17 +361,17 @@
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
-- Array gaps: long `array(...)` literal syntax, `unset(...)` forms outside
-  direct variables and direct array-offset operands, direct `for (...)` syntax,
-  direct `do ... while` syntax, and direct `switch (...)` syntax are rejected
-  with stable parse diagnostics; executing long array literals, object property
-  removal, append-offset unset, nested/complex unset operands,
-  C-style/post-condition loops, and switch/case control flow is not
-  implemented.
+- Array gaps: array spread elements and array reference elements are rejected
+  with stable parse diagnostics. `unset(...)` forms outside direct variables
+  and direct array-offset operands, direct `for (...)` syntax, direct
+  `do ... while` syntax, and direct `switch (...)` syntax are rejected with
+  stable parse diagnostics; object property removal, append-offset unset,
+  nested/complex unset operands, C-style/post-condition loops, and switch/case
+  control flow are not implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
   expression, string offset access, by-reference `foreach`, object iteration,
-  destructuring loop targets, spread, references, copy-on-write containers, and
+  destructuring loop targets, references, copy-on-write containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full
   mutation/aliasing behavior while the iterated array is modified. Array keys
@@ -429,8 +429,7 @@
 - variadic parameters and variadic argument unpacking
 - reference parameters, reference returns, reference assignments, and
   by-reference calls
-- long `array(...)` literals; direct syntax is rejected with a stable parse
-  diagnostic before execution
+- array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex
   operands; these fail with stable parse diagnostics

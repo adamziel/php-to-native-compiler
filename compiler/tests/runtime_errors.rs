@@ -56,6 +56,18 @@ fn unsupported_array_key_has_stable_runtime_error() {
 }
 
 #[test]
+fn long_array_unsupported_key_uses_stable_runtime_error() {
+    let error = runtime_error("<?php\n$items = array(true => \"yes\");\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 16);
+    assert_eq!(
+        error.message,
+        "invalid array key: bool keys are not supported; only int and string keys are implemented"
+    );
+}
+
+#[test]
 fn undefined_array_key_has_stable_runtime_error() {
     let error = runtime_error("<?php\n$items = [];\necho $items[0];\n");
 

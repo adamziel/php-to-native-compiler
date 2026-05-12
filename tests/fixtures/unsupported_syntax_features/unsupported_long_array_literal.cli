@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php:2:10: unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset
---- stderr end ---

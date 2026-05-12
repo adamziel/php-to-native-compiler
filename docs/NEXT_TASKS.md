@@ -164,7 +164,11 @@ handled.
 
 ## Milestone 10: Syntax Expansion
 
-- [ ] Implement long `array(...)` literals as an alias for the current
+- [x] Implement long `array(...)` literals as an alias for the current
   short-array literal subset, including keyed entries, fixture CLI coverage,
   documentation, and explicit unsupported gaps for references, spread, and
   unsupported key coercions.
+- [ ] Implement C-style `for (...)` loops over the current scalar expression
+  and assignment subset, including initializer, condition, increment,
+  `break;`/`continue;` behavior, fixture CLI coverage, documentation, and
+  explicit native-codegen rejection while lowering remains unsupported.

@@ -50,7 +50,7 @@ subset:
 - minimal object instantiation with `new ClassName()` for declared classes that
   do not define constructors; public instance properties can be read and
   written by static property name and checked with `isset($object->name)`
-- short array literals with integer/string keys
+- short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
 - `unset(...)` with one or more operands over direct static variables and
@@ -71,8 +71,8 @@ subset:
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  long `array(...)` literals, unsupported broader `unset(...)` forms such as
-  property, append-offset, and nested unset,
+  unsupported array spread/reference elements, unsupported broader
+  `unset(...)` forms such as property, append-offset, and nested unset,
   unsupported `foreach` by-reference/destructuring forms, `for (...)`,
   `do ... while`, `switch (...)`, `break`/`continue` depth arguments, object
   method calls, dynamic property names, anonymous classes, and unsupported

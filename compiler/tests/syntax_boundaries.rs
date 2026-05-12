@@ -8,39 +8,69 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
 }
 
 #[test]
-fn long_array_syntax_is_rejected_with_stable_parse_error() {
+fn long_array_literals_execute_as_short_array_aliases() {
+    let execution = run_source(
+        r#"<?php
+$items = array(
+    "first",
+    2 => "two",
+    "2" => "two updated",
+    "02" => "zero two",
+    "name" => "Ada",
+    1 + 2 => "three",
+);
+$upper = ARRAY("a", "b");
+echo count($items), "\n";
+echo $items[0], "|", $items[2], "|", $items["02"], "|", $items["name"], "|", $items[3], "\n";
+echo $upper[1], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "5\nfirst|two updated|zero two|Ada|three\nb\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unsupported_array_item_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
-$items = array();
+$values = [1, 2];
+$items = array(...$values);
 "#,
-            2,
-            10,
+            3,
+            16,
+            "unsupported array spread: spread elements are not implemented",
         ),
         (
             r#"<?php
-echo array("a" => 1);
+$value = "Ada";
+$items = array(&$value);
 "#,
-            2,
-            6,
+            3,
+            16,
+            "unsupported array reference element: references are not implemented",
         ),
         (
             r#"<?php
-$items = ARRAY("a", "b");
+$values = [1, 2];
+$items = [...$values];
 "#,
-            2,
-            10,
+            3,
+            11,
+            "unsupported array spread: spread elements are not implemented",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset"
-        );
+        assert_eq!(error.message, message);
     }
 }
 

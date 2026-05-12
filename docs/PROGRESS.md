@@ -62,6 +62,11 @@ Implemented:
   keyless append allocation for array literals.
 - Added parser and interpreter support for short array literals `[]`, `[value]`,
   and `[key => value]` over the supported expression subset.
+- Added parser and interpreter support for long `array(...)` literals as an
+  alias for the current short-array literal subset, including keyless entries,
+  keyed entries, trailing commas, and case-insensitive `ARRAY(...)` syntax.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
+  snapshots for unsupported array spread elements and array reference elements.
 - Added parser and interpreter support for array indexed reads, direct variable
   indexed writes, and direct variable append writes over the current ordered
   array value model.
@@ -286,7 +291,7 @@ Tested:
   array-search key-return tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
-- `cargo test -p phpc --test runtime_errors` passes with 22 runtime error tests.
+- `cargo test -p phpc --test runtime_errors` passes with 23 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
   covering 34 representative runtime error fixtures.
 - `cargo test -p phpc --test functions_and_scopes` passes with 17
@@ -310,14 +315,17 @@ Tested:
   for unsupported object/class syntax.
 - `cargo test -p phpc --test unsupported_object_features_cli` passes with 1 CLI
   snapshot test covering 7 unsupported object/class fixtures.
-- `cargo test -p phpc --test syntax_boundaries` passes with stable parse
-  diagnostic coverage for unsupported long `array(...)` literal syntax,
-  unsupported broader `unset(...)` forms, unsupported `foreach` by-reference
-  and destructuring forms, expression-form `foreach`, unsupported `for (...)`
-  syntax, unsupported `do ... while` syntax, unsupported `switch (...)`
-  syntax, and unsupported `break`/`continue` loop-depth arguments.
+- `cargo test -p phpc --test syntax_boundaries` passes with long
+  `array(...)` literal execution coverage and stable parse diagnostic coverage
+  for unsupported array spread/reference elements, unsupported broader
+  `unset(...)` forms, unsupported `foreach` by-reference and destructuring
+  forms, expression-form `foreach`, unsupported `for (...)` syntax,
+  unsupported `do ... while` syntax, unsupported `switch (...)` syntax, and
+  unsupported `break`/`continue` loop-depth arguments.
 - `cargo test -p phpc --test unsupported_syntax_features_cli` passes with 1 CLI
-  snapshot test covering 8 unsupported syntax fixtures.
+  snapshot test covering 9 unsupported syntax fixtures.
+- `cargo test -p phpc --test syntax_expansion_cli` passes with 1 CLI snapshot
+  test covering the Milestone 10 syntax expansion fixtures.
 - `cargo test -p phpc --test loop_control_cli` passes with 1 CLI snapshot test
   covering `break;` and `continue;` execution for innermost `while` loops.
 - `cargo test -p phpc --test foreach` passes with value-only and key/value
@@ -361,7 +369,11 @@ Tested:
   test covering the Milestone 7 array refinement fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
-  rejection coverage for array literals, array indexing, and array assignment.
+  rejection coverage for short array literals, array indexing, and array
+  assignment.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_long_arrays_until_native_lowering_exists`
+  passes with rejection coverage for long `array(...)` literals before native
+  array lowering exists.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_global_declarations_until_scope_imports_exist`
   passes with rejection coverage for `global` declarations.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists`
@@ -390,9 +402,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 108 fixture tests.
+- `cargo run -p phpc -- test` passes with 110 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 42 fixtures and skipping 66 `.phpc-only` fixtures.
+  installed, comparing 43 fixtures and skipping 67 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -422,8 +434,10 @@ Tested:
   mutation fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
   with 3 system PHP comparisons.
-- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
-  with 2 system PHP comparisons.
+- `cargo run -p phpc -- test tests/fixtures/milestone10` passes with 1 syntax
+  expansion fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone10` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -440,9 +454,9 @@ Tested:
   tests/fixtures/unsupported_object_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
-  passes with 8 unsupported syntax fixtures.
+  passes with 9 unsupported syntax fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_syntax_features` passes with 8 `.phpc-only` PHP
+  tests/fixtures/unsupported_syntax_features` passes with 9 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -458,6 +472,8 @@ Tested:
   prints the committed array literal/count/print_r/truthiness output.
 - `cargo run -p phpc -- run tests/fixtures/milestone3/array_indexing.php`
   prints the committed array append/indexed read/indexed write output.
+- `cargo run -p phpc -- run tests/fixtures/milestone10/long_array_literals.php`
+  prints the committed long array literal/count/print_r/indexed-read output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 34
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
@@ -546,8 +562,10 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2:4: unsupported namespace-qualified function name: namespace-aware function resolution is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_class.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_class.php:2:15: unsupported namespace-qualified class name: namespace-aware class resolution is not implemented`.
-- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php:2:10: unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_array_spread.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_array_spread.php:3:16: unsupported array spread: spread elements are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_array_reference.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_array_reference.php:3:16: unsupported array reference element: references are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_unset.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:13: unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`
@@ -616,6 +634,8 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_constant.php:2:4: unsupported class constant access: class constants are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
+- `cargo run -p phpc -- compile tests/fixtures/milestone10/long_array_literals.php --emit-ir`
+  exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
   exits 1 with an explicit array codegen rejection before emitting misleading
   native code.
@@ -663,19 +683,19 @@ Still fails:
 - Scalar comparisons do not implement strict identity (`===`, `!==`), arrays,
   objects, resources, or edge cases around `NAN`/`INF` and PHP-version-specific
   float string precision.
-- Arrays do not implement long `array(...)` literal execution; direct syntax
-  now fails with a stable parse diagnostic before execution. `unset(...)`
-  operands are limited to direct variables and direct array-offset operands on
-  direct variables; object property removal, append-offset unset, and
-  nested/complex unset operands fail with stable parse diagnostics.
+- Array literal spread elements and reference elements fail with stable parse
+  diagnostics. `unset(...)` operands are limited to direct variables and direct
+  array-offset operands on direct variables; object property removal,
+  append-offset unset, and nested/complex unset operands fail with stable parse
+  diagnostics.
   `for (...)` fails with a stable parse diagnostic before C-style loops exist,
   `do ... while` fails with a stable parse diagnostic before post-condition
   loops exist, and `switch (...)` fails with a stable parse diagnostic before
   switch/case control flow exists. Nested indexed writes, complex assignment
   lvalues, `$array[]` as a read expression, string offset access, by-reference
-  `foreach`, object iteration, destructuring loop targets, spread, references,
-  copy-on-write containers, `for`/`do ... while` iteration behavior, `switch` case
-  matching/fallthrough/default handling, and object/resource keys are also
+  `foreach`, object iteration, destructuring loop targets, references,
+  copy-on-write containers, `for`/`do ... while` iteration behavior, `switch`
+  case matching/fallthrough/default handling, and object/resource keys are also
   unsupported, as are PHP's full boolean/null/float key coercion rules. The
   current `foreach` array forms snapshot array entries at loop start and do not
   claim PHP's full mutation/aliasing behavior while the iterated array is
@@ -776,7 +796,7 @@ Still fails:
 
 Next:
 
-- Implement long `array(...)` literals as an alias for the current short-array
-  literal subset, including keyed entries, fixture CLI coverage, documentation,
-  and explicit unsupported gaps for references, spread, and unsupported key
-  coercions.
+- Implement C-style `for (...)` loops over the current scalar expression and
+  assignment subset, including fixture CLI coverage, documentation, loop-control
+  behavior, and explicit native-codegen rejection while lowering remains
+  unsupported.

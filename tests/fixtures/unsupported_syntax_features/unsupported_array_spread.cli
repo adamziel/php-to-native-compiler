@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_array_spread.php:3:16: unsupported array spread: spread elements are not implemented
+--- stderr end ---

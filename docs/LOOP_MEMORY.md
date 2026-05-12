@@ -2652,3 +2652,64 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:01:48Z
 
 - Post-round 42 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:01:51Z
+
+- Starting round 43 at 20260512T030151Z from HEAD `eb09e08`.
+
+## Loop Event 2026-05-12T03:01:54Z
+
+- Pre-round 43 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:08:07Z
+
+- Task attempted: implemented long `array(...)` literals as an alias for the
+  current short-array literal subset. The parser now lowers lowercase and
+  uppercase `array(...)` constructs into the existing ordered array expression
+  path, including keyless entries, keyed entries, trailing commas, nested long
+  arrays, and the existing integer/string key behavior. Array spread elements
+  and array reference elements now have explicit stable parse diagnostics, and
+  long-array keys that evaluate to unsupported key types reuse the existing
+  stable runtime invalid-array-key diagnostic. Native lowering still rejects
+  all array literals explicitly.
+- Files changed: `compiler/src/parser.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/syntax_expansion_cli.rs`,
+  `tests/fixtures/milestone10/long_array_literals.php`,
+  `tests/fixtures/milestone10/long_array_literals.stdout`,
+  `tests/fixtures/milestone10/long_array_literals.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_array_spread.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_array_reference.*`,
+  deleted
+  `tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries` passed;
+  `cargo test -p phpc --test runtime_errors` passed with 23 tests; `cargo test
+  -p phpc --test milestone1
+  emit_ir_rejects_long_arrays_until_native_lowering_exists` passed; `cargo test
+  -p phpc --test syntax_expansion_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone10` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone10` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 9 fixtures; `cargo
+  test -p phpc --test unsupported_syntax_features_cli` passed; `cargo run -p
+  phpc -- run tests/fixtures/milestone10/long_array_literals.php` printed the
+  committed long-array output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone10/long_array_literals.php --emit-ir` exited `1`
+  with the expected explicit array codegen rejection; `cargo fmt` completed;
+  `cargo fmt --check` passed; `tools/run-tests.sh` passed with 110 fixtures,
+  43 system PHP comparisons, and 67 `.phpc-only` skips.
+- Remaining semantic gaps: array literal spread elements, array reference
+  elements, PHP's boolean/null/float/object/resource key coercions, references,
+  copy-on-write containers, nested/complex assignment lvalues, native array
+  lowering, and exact PHP warning/Error behavior remain unsupported. Existing
+  non-array scalar write targets other than `null` are still rejected instead
+  of following PHP's full automatic conversion behavior.
+- Next concrete task: implement C-style `for (...)` loops over the current
+  scalar expression and assignment subset, including initializer, condition,
+  increment, `break;`/`continue;` behavior, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection while lowering remains
+  unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add long array literals"`
+  after the full suite passes.

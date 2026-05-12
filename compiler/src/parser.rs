@@ -839,7 +839,9 @@ impl Parser {
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
-            TokenKind::LBracket => self.parse_array_literal(token.span),
+            TokenKind::LBracket => {
+                self.parse_array_literal(token.span, ArrayLiteralDelimiter::Short)
+            }
             TokenKind::Class => {
                 Err(self.error_at(token.span, unsupported_class_expression_message()))
             }
@@ -907,7 +909,8 @@ impl Parser {
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
                 {
-                    return Err(self.error_at(token.span, unsupported_long_array_literal_message()));
+                    self.consume_keyword(TokenKind::LParen, "expected '(' after array")?;
+                    return self.parse_array_literal(token.span, ArrayLiteralDelimiter::Long);
                 }
                 if name.eq_ignore_ascii_case("unset")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -1034,15 +1037,21 @@ impl Parser {
         })
     }
 
-    fn parse_array_literal(&mut self, span: Span) -> CompileResult<Expr> {
+    fn parse_array_literal(
+        &mut self,
+        span: Span,
+        delimiter: ArrayLiteralDelimiter,
+    ) -> CompileResult<Expr> {
         let mut items = Vec::new();
-        if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+        if self.match_array_close(delimiter) {
             return Ok(Expr::Array { items, span });
         }
 
         loop {
+            self.reject_unsupported_array_item_syntax()?;
             let first = self.parse_expression()?;
             let item = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+                self.reject_unsupported_array_item_syntax()?;
                 ArrayItem {
                     key: Some(first),
                     value: self.parse_expression()?,
@@ -1058,13 +1067,26 @@ impl Parser {
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
-            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+            if self.check_array_close(delimiter) {
                 break;
             }
         }
 
-        self.consume_keyword(TokenKind::RBracket, "expected ']' after array literal")?;
+        self.consume_keyword(delimiter.close_token(), delimiter.close_message())?;
         Ok(Expr::Array { items, span })
+    }
+
+    fn reject_unsupported_array_item_syntax(&self) -> CompileResult<()> {
+        let token = self.peek();
+        match &token.kind {
+            TokenKind::Ellipsis => {
+                Err(self.error_at(token.span, unsupported_array_spread_message()))
+            }
+            TokenKind::Ampersand => {
+                Err(self.error_at(token.span, unsupported_array_reference_element_message()))
+            }
+            _ => Ok(()),
+        }
     }
 
     fn parse_call_arguments_after_open(&mut self) -> CompileResult<Vec<Expr>> {
@@ -1204,6 +1226,14 @@ impl Parser {
         predicate(&self.peek().kind)
     }
 
+    fn match_array_close(&mut self, delimiter: ArrayLiteralDelimiter) -> bool {
+        self.match_token(|kind| same_variant(kind, &delimiter.close_token()))
+    }
+
+    fn check_array_close(&self, delimiter: ArrayLiteralDelimiter) -> bool {
+        self.check(|kind| same_variant(kind, &delimiter.close_token()))
+    }
+
     fn advance(&mut self) -> &Token {
         let index = self.current;
         if !matches!(self.tokens[index].kind, TokenKind::Eof) {
@@ -1228,6 +1258,28 @@ impl Parser {
 
     fn error_at(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Parse, span.line, span.column, message)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ArrayLiteralDelimiter {
+    Short,
+    Long,
+}
+
+impl ArrayLiteralDelimiter {
+    fn close_token(self) -> TokenKind {
+        match self {
+            ArrayLiteralDelimiter::Short => TokenKind::RBracket,
+            ArrayLiteralDelimiter::Long => TokenKind::RParen,
+        }
+    }
+
+    fn close_message(self) -> &'static str {
+        match self {
+            ArrayLiteralDelimiter::Short => "expected ']' after array literal",
+            ArrayLiteralDelimiter::Long => "expected ')' after array literal",
+        }
     }
 }
 
@@ -1342,8 +1394,12 @@ fn unsupported_namespace_qualified_class_name_message() -> &'static str {
     "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
 }
 
-fn unsupported_long_array_literal_message() -> &'static str {
-    "unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset"
+fn unsupported_array_spread_message() -> &'static str {
+    "unsupported array spread: spread elements are not implemented"
+}
+
+fn unsupported_array_reference_element_message() -> &'static str {
+    "unsupported array reference element: references are not implemented"
 }
 
 fn unsupported_unset_message() -> &'static str {

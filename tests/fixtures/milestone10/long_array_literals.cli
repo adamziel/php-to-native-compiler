@@ -1,0 +1,16 @@
+exit: 0
+stdout:
+5
+Array
+(
+    [0] => first
+    [2] => two updated
+    [02] => zero two
+    [name] => Ada
+    [3] => three
+)
+first|two updated|zero two|Ada|three
+right
+--- stdout end ---
+stderr:
+--- stderr end ---
