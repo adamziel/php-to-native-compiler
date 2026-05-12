@@ -88,8 +88,8 @@
   flag values, non-array `array_slice` operands, non-int `array_slice`
   offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
   preserve-key flag values, non-array `array_chunk` operands,
-  non-int/non-positive `array_chunk` lengths, unsupported `array_chunk`
-  preserve-key mode, non-array `array_merge` operands, non-array
+  non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
+  preserve-key flag values, non-array `array_merge` operands, non-array
   `array_flip` operands, unsupported non-int/string `array_flip` values,
   non-array `array_fill_keys` operands, unsupported non-int/string
   `array_fill_keys` key values, non-array `array_count_values` operands,
@@ -264,6 +264,9 @@
   splits values in insertion order into nested arrays of that size, reindexes
   every inner chunk from integer key zero, returns an empty array for empty
   input arrays, and is available through string-valued dynamic function calls.
+  `array_chunk($array, $length, true)` preserves original integer and string
+  keys inside each chunk; boolean `false` uses the default chunk-key
+  reindexing path.
   `array_merge()` returns an empty array. `array_merge($array, ...)` accepts
   zero or more array operands, processes them left to right in insertion order,
   appends and reindexes integer-keyed entries from zero, preserves string keys,
@@ -389,7 +392,7 @@
   operands, non-int `array_slice` offsets, non-int/non-null `array_slice`
   lengths, non-bool `array_slice` preserve-key flag values, non-array
   `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
-  unsupported `array_chunk` preserve-key mode, non-array `array_merge`
+  non-bool `array_chunk` preserve-key flag values, non-array `array_merge`
   operands, non-array `array_flip` operands, unsupported
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
@@ -513,8 +516,10 @@
   splits entries in insertion order, reindexes each inner chunk from integer
   key zero regardless of original integer or string keys, returns an empty
   array for empty input arrays, and is available through string-valued dynamic
-  function calls. Preserve-key mode through the third argument, non-int length
-  coercion, non-positive length native `ValueError` objects,
+  function calls. `array_chunk($array, $length, true)` preserves original
+  integer and string keys inside each chunk, and boolean `false` uses the
+  default chunk-key reindexing path. Non-bool preserve-key coercion, non-int
+  length coercion, non-positive length native `ValueError` objects,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
@@ -640,10 +645,10 @@
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
   `array_reverse` preserve-key flag coercion, non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
-  coercion, `array_chunk` preserve-key mode, non-int/non-positive length
-  coercion, exact native `ValueError`/`TypeError` objects,
-  `array_merge` reference/copy-on-write behavior,
-  `array_flip` warning-and-skip behavior for
+  coercion, non-bool `array_chunk` preserve-key flag coercion,
+  non-int/non-positive length coercion, exact native
+  `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
+  behavior, `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
   for unsupported key values, `array_count_values` warning-and-skip behavior
   for unsupported values, and `array_filter` callback forms outside the current
@@ -782,9 +787,10 @@
   non-int/non-null length coercion, reference/copy-on-write behavior, object
   handle identity preservation, resource values, exact native `TypeError`
   objects, and native lowering
-- `array_chunk` preserve-key mode, non-int/non-positive length coercion, exact
-  native `ValueError`/`TypeError` objects, reference/copy-on-write behavior,
-  object handle identity preservation, resource values, and native lowering
+- `array_chunk` non-bool `preserve_keys` coercion, non-int/non-positive length
+  coercion, exact native `ValueError`/`TypeError` objects,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, and native lowering
 - `array_merge` reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering

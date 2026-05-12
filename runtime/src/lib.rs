@@ -557,15 +557,27 @@ impl PhpArray {
     }
 
     pub fn chunked_reindexed(&self, length: usize) -> Self {
+        self.chunked_with_key_mode(length, false)
+    }
+
+    pub fn chunked_preserving_keys(&self, length: usize) -> Self {
+        self.chunked_with_key_mode(length, true)
+    }
+
+    fn chunked_with_key_mode(&self, length: usize, preserve_keys: bool) -> Self {
         assert!(length > 0, "array_chunk length must be positive");
 
         let mut chunks = Self::new();
         for entries in self.entries.chunks(length) {
             let mut chunk = Self::new();
             for entry in entries {
-                chunk
-                    .append(entry.value.clone())
-                    .expect("array length fits in i64");
+                if preserve_keys {
+                    chunk.insert(entry.key.clone(), entry.value.clone());
+                } else {
+                    chunk
+                        .append(entry.value.clone())
+                        .expect("array length fits in i64");
+                }
             }
             chunks
                 .append(Value::Array(chunk))
@@ -2682,6 +2694,66 @@ mod tests {
             "array_chunk must not mutate the original array"
         );
         assert!(PhpArray::new().chunked_reindexed(2).entries().is_empty());
+    }
+
+    #[test]
+    fn array_chunk_can_preserve_integer_and_string_keys() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let chunks = array.chunked_preserving_keys(2);
+        let entries = chunks.entries();
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        let Value::Array(first) = &entries[0].value else {
+            panic!("first chunk is an array");
+        };
+        assert_eq!(first.entries().len(), 2);
+        assert_eq!(first.entries()[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(first.entries()[0].value, Value::String("Ada".to_string()));
+        assert_eq!(first.entries()[1].key, ArrayKey::Int(5));
+        assert_eq!(first.entries()[1].value, Value::String("five".to_string()));
+
+        let Value::Array(second) = &entries[1].value else {
+            panic!("second chunk is an array");
+        };
+        assert_eq!(second.entries().len(), 2);
+        assert_eq!(second.entries()[0].key, ArrayKey::Int(2));
+        assert_eq!(second.entries()[0].value, Value::String("two".to_string()));
+        assert_eq!(second.entries()[1].key, ArrayKey::String("02".to_string()));
+        assert_eq!(
+            second.entries()[1].value,
+            Value::String("zero two".to_string())
+        );
+
+        let Value::Array(third) = &entries[2].value else {
+            panic!("third chunk is an array");
+        };
+        assert_eq!(third.entries().len(), 2);
+        assert_eq!(third.entries()[0].key, ArrayKey::Int(-1));
+        assert_eq!(
+            third.entries()[0].value,
+            Value::String("negative".to_string())
+        );
+        assert_eq!(third.entries()[1].key, ArrayKey::Int(6));
+        assert_eq!(third.entries()[1].value, Value::String("next".to_string()));
+
+        assert_eq!(
+            array.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_chunk preserve_keys must not mutate the original array"
+        );
+        assert!(PhpArray::new()
+            .chunked_preserving_keys(2)
+            .entries()
+            .is_empty());
     }
 
     #[test]

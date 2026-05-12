@@ -349,8 +349,14 @@ Implemented:
   reindexes every inner chunk from integer key zero regardless of original
   integer/string keys, returns an empty array for empty inputs, supports
   string-valued dynamic calls, preserves the original array, and has stable
-  diagnostics for non-array inputs, non-int lengths, non-positive lengths, and
-  unsupported preserve-key mode.
+  diagnostics for non-array inputs, non-int lengths, and non-positive lengths;
+  it was later followed by boolean preserve-key mode.
+- Extended `array_chunk` with boolean preserve-key mode over the current
+  ordered integer/string key model. The supported slice preserves original
+  integer and string keys inside each chunk when the third argument is `true`,
+  keeps default chunk-key reindexing when it is `false`, supports
+  string-valued dynamic calls, preserves the original array, and has a stable
+  diagnostic for non-bool preserve-key flags.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -522,8 +528,8 @@ Tested:
   array-filtering runtime test.
 - `cargo test -p php_runtime array_slice` passes with 4 focused array-slicing
   runtime tests.
-- `cargo test -p php_runtime array_chunk` passes with 1 focused array-chunking
-  runtime test.
+- `cargo test -p php_runtime array_chunk` passes with 2 focused array-chunking
+  runtime tests.
 - `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
   array-search tests.
 - `cargo test -p php_runtime array_search` passes with 3 focused loose/strict
@@ -673,9 +679,10 @@ Tested:
   and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_chunk` passes with `array_chunk` positive
   length behavior, default chunk-key reindexing for integer and string keys,
-  empty-input behavior, dynamic string-call coverage, original-array
-  preservation, non-array/non-int/non-positive diagnostics, unsupported
-  preserve-key mode diagnostics, and LLVM IR rejection coverage.
+  boolean preserve-key behavior, empty-input behavior, dynamic string-call
+  coverage, original-array preservation, non-array/non-int/non-positive
+  diagnostics, non-bool preserve-key diagnostics, and LLVM IR rejection
+  coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -716,6 +723,8 @@ Tested:
   Milestone 32 `array_slice` fixtures.
 - `cargo test -p phpc --test array_chunking_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 33 `array_chunk` fixture.
+- `cargo test -p phpc --test array_chunking_preserve_keys_builtins_cli` passes
+  with 1 CLI snapshot test covering the Milestone 34 `array_chunk` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -908,8 +917,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_chunk_length_non_int.php:3:6: unsupported call array_chunk(): length argument must be int in the current subset, got string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_chunk_length_non_positive.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_chunk_length_non_positive.php:3:6: unsupported call array_chunk(): length argument must be greater than 0 in the current subset, got 0`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_chunk_preserve_keys_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_chunk_preserve_keys_unsupported.php:3:6: unsupported call array_chunk(): preserve_keys mode is not supported in the current subset`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php:3:6: unsupported call array_chunk(): preserve_keys argument must be bool in the current subset, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_first_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_merge_first_non_array.php:3:6: unsupported call array_merge(): first argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_merge_second_non_array.php`
@@ -1196,6 +1205,13 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone33` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone33` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone34/array_chunk_preserve_keys.php`
+  prints the committed `array_chunk` output with boolean preserve-key chunking,
+  default/false reindexing, original-array preservation, and string-valued
+  dynamic calls to `array_chunk`.
+- `cargo run -p phpc -- test tests/fixtures/milestone34` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone34` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1306,7 +1322,10 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone33/array_chunk.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 173 fixtures, 72 system PHP comparisons,
+- `cargo run -p phpc -- compile tests/fixtures/milestone34/array_chunk_preserve_keys.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 174 fixtures, 73 system PHP comparisons,
   and 101 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -1364,17 +1383,18 @@ Still fails:
   or native lowering.
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, and
   `array_chunk` are limited to array arguments, clone values under the current
-  by-value model, require boolean preserve-key flags for `array_reverse` and
-  `array_slice` when those arguments are supplied, and do not yet model PHP
-  references, copy-on-write containers, object handle identity preservation,
-  resource values, non-bool preserve-key coercion, exact native `TypeError`
-  objects, or native lowering.
+  by-value model, require boolean preserve-key flags for `array_reverse`,
+  `array_slice`, and `array_chunk` when those arguments are supplied, and do
+  not yet model PHP references, copy-on-write containers, object handle
+  identity preservation, resource values, non-bool preserve-key coercion, exact
+  native `TypeError` objects, or native lowering.
   `array_slice` currently requires integer offsets and integer or null length
   arguments when supplied.
-  `array_chunk` currently requires positive integer lengths and rejects
-  preserve-key mode, non-int lengths, non-positive lengths, references,
-  copy-on-write containers, object handle identity preservation, resource
-  values, exact native `ValueError`/`TypeError` objects, and native lowering.
+  `array_chunk` currently requires positive integer lengths and boolean
+  preserve-key flags when supplied. Non-int lengths, non-positive lengths,
+  non-bool preserve-key coercion, references, copy-on-write containers, object
+  handle identity preservation, resource values, exact native
+  `ValueError`/`TypeError` objects, and native lowering are not implemented.
   `array_keys` search-value filtering is implemented for the current scalar
   loose-comparison and strict-identity subsets, but array, object, resource, or
   reference search values, array, object, resource, or reference array values,
@@ -1505,7 +1525,6 @@ Still fails:
 
 Next:
 
-- Extend `array_chunk` with boolean preserve-key mode over the current ordered
-  integer/string key model while keeping references, copy-on-write, exact
-  native `ValueError`/`TypeError` objects, and native lowering explicitly
-  unsupported.
+- Implement `array_is_list($array)` over the current ordered integer/string key
+  model while keeping exact native `TypeError` objects, references,
+  copy-on-write, and native lowering explicitly unsupported.

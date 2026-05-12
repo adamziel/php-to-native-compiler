@@ -1,1 +1,0 @@
-phpc keeps array_chunk preserve-key mode unsupported in this slice and reports a stable project diagnostic.

@@ -1111,6 +1111,26 @@ impl Interpreter {
                     })?;
                     Ok(Value::Array(array.chunked_reindexed(length)))
                 }
+                [Value::Array(array), Value::Int(length), Value::Bool(preserve_keys)]
+                    if *length > 0 =>
+                {
+                    let length = usize::try_from(*length).map_err(|_| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "array_chunk()",
+                                format!(
+                                    "length argument is too large in the current subset, got {length}"
+                                ),
+                            ),
+                        )
+                    })?;
+                    if *preserve_keys {
+                        Ok(Value::Array(array.chunked_preserving_keys(length)))
+                    } else {
+                        Ok(Value::Array(array.chunked_reindexed(length)))
+                    }
+                }
                 [Value::Array(_), Value::Int(length)] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -1129,11 +1149,14 @@ impl Interpreter {
                         ),
                     ),
                 )),
-                [Value::Array(_), Value::Int(_), _] => Err(runtime_error(
+                [Value::Array(_), Value::Int(_), other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_chunk()",
-                        "preserve_keys mode is not supported in the current subset",
+                        format!(
+                            "preserve_keys argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
                     ),
                 )),
                 [Value::Array(_), other] | [Value::Array(_), other, _] => Err(runtime_error(

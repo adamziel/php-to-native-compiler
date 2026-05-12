@@ -397,9 +397,18 @@ handled.
 
 ## Milestone 34: Array Chunking Preserve Keys
 
-- [ ] Extend `array_chunk` with boolean preserve-key mode over the current
+- [x] Extend `array_chunk` with boolean preserve-key mode over the current
   ordered integer/string key model, including true-preserve behavior for
   integer and string keys, default/false reindexing behavior,
   non-bool diagnostics, fixture CLI coverage, documentation, and explicit gaps
   for references/copy-on-write, object handle identity preservation, resources,
   exact native `ValueError`/`TypeError` objects, and native lowering.
+
+## Milestone 35: Array List Introspection
+
+- [ ] Implement `array_is_list($array)` over the current ordered
+  integer/string key model, including empty-array true behavior, exact
+  zero-based consecutive integer-key detection, string-key false behavior,
+  non-array diagnostics, fixture CLI coverage, documentation, and explicit
+  gaps for references/copy-on-write, exact native `TypeError` objects, and
+  native lowering.

@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+3|2|2|2
+Ada|five|two|zero two|negative|next
+first-preserved
+after
+Ada|five
+default-false-reindexed
+2|Ada|five|two|zero two|negative|next
+Ada|five|two|zero two|negative|next--- stdout end ---
+stderr:
+--- stderr end ---
