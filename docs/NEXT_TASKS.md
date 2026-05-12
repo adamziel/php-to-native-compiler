@@ -313,7 +313,14 @@ handled.
 
 ## Milestone 24: Array Mapping Key Preservation
 
-- [ ] Align one-array `array_map($callback, $array)` key preservation with PHP
+- [x] Align one-array `array_map($callback, $array)` key preservation with PHP
   for the current string-callback subset, including fixture updates, CLI
   coverage, documentation, and explicit gaps for null callbacks,
+  references/copy-on-write, and native lowering.
+
+## Milestone 25: Array Map Null Callback
+
+- [ ] Implement `array_map(null, $array)` identity mapping for one input array
+  over the current ordered array value model, including key behavior, fixture
+  CLI coverage, documentation, and explicit gaps for multi-array zip modes,
   references/copy-on-write, and native lowering.

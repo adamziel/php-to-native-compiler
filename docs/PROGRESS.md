@@ -275,11 +275,12 @@ Implemented:
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
-  invokes the callback in value-only mode, returns mapped values reindexed with
-  integer keys starting at zero, is available when `array_map` itself is called
-  dynamically by string name, and has stable diagnostics for non-array operands,
-  non-string callbacks, unresolved callback names, unsupported `null`
-  callbacks, and unsupported extra input arrays beyond the current subset.
+  invokes the callback in value-only mode, preserves original integer/string
+  keys after the later key-preservation alignment, is available when
+  `array_map` itself is called dynamically by string name, and has stable
+  diagnostics for non-array operands, non-string callbacks, unresolved callback
+  names, unsupported `null` callbacks, and unsupported extra input arrays
+  beyond the current subset.
 - Added `array_map($callback, $left, $right)` support for the first two-array
   mapping slice over the current ordered array value model. The supported slice
   accepts string-valued user-function or callable-builtin callbacks, invokes the
@@ -288,6 +289,11 @@ Implemented:
   array, reindexes mapped results from integer key zero, is available when
   `array_map` itself is called dynamically by string name, and has stable
   diagnostics for non-array third operands and more than two input arrays.
+- Aligned one-array `array_map($callback, $array)` with PHP key preservation
+  for the current string-callback subset. The one-array form now preserves
+  original integer/string keys and insertion order, including string-valued
+  dynamic calls to `array_map`, while the existing two-array form remains
+  reindexed from integer key zero.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -591,8 +597,8 @@ Tested:
   preservation, non-array/callback/mode diagnostics, and LLVM IR rejection
   coverage.
 - `cargo test -p phpc --test array_map` passes with one-array value-only string
-  callback execution, two-array string-callback execution with longest-array
-  `null` padding, integer reindexing of mapped results, dynamic string-call
+  callback execution and key preservation, two-array string-callback execution
+  with longest-array `null` padding and integer reindexing, dynamic string-call
   coverage, original-array preservation, non-array/callback/null-callback/extra
   array diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
@@ -1015,13 +1021,12 @@ Tested:
   with 2 system PHP comparisons.
 - `cargo run -p phpc -- run tests/fixtures/milestone22/array_map.php` prints
   the committed `array_map` output with string-named user-function callbacks,
-  mapped-result integer reindexing, original-array preservation, and
-  string-valued dynamic calls to `array_map`.
+  one-array key preservation, append behavior after preserved integer keys,
+  original-array preservation, and string-valued dynamic calls to `array_map`.
 - `cargo run -p phpc -- test tests/fixtures/milestone22` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone22` passes
-  with 1 `.phpc-only` skip for the documented current key-preservation
-  difference.
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone23/array_map_two_arrays.php`
   prints the committed two-array `array_map` output with longest-array `null`
   padding, integer reindexing, original-array preservation, and string-valued
@@ -1219,13 +1224,13 @@ Still fails:
   resource values, exact native `TypeError` objects, and native lowering are
   not implemented.
   `array_map` callback support is limited to one or two input arrays and
-  string-valued user-function or callable-builtin names. It currently reindexes
-  mapped one-array results from integer key zero instead of preserving keys as
-  PHP does. More than two input arrays, `null` callback identity/zip modes,
-  array/object callables, closures, first-class callables, method calls,
-  references, copy-on-write behavior, object handle identity preservation,
-  resource values, exact native `TypeError` objects, and native lowering are
-  not implemented.
+  string-valued user-function or callable-builtin names. The one-array form
+  preserves original integer/string keys, while the two-array form reindexes
+  mapped results from integer key zero. More than two input arrays, `null`
+  callback identity/zip modes, array/object callables, closures, first-class
+  callables, method calls, references, copy-on-write behavior, object handle
+  identity preservation, resource values, exact native `TypeError` objects, and
+  native lowering are not implemented.
   `in_array` and `array_search` are limited to loose scalar searches and strict
   scalar searches when the third argument is a boolean. Strict searches
   involving array/object needles or haystack values, resource/reference
@@ -1315,6 +1320,6 @@ Still fails:
 
 Next:
 
-- Align one-array `array_map($callback, $array)` key preservation with PHP while
-  keeping two-array reindexing, null-callback modes, references/copy-on-write
+- Implement `array_map(null, $array)` identity mapping for one input array while
+  keeping multi-array null-callback zip modes, references/copy-on-write
   behavior, and native lowering explicitly documented.

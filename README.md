@@ -73,7 +73,7 @@ subset:
   values, `array_count_values` over integer/string array values,
   `array_filter` without a callback and with string-valued value-only
   callbacks, `array_map` over the current one- and two-array string-callback
-  subsets,
+  subsets with one-array key preservation and two-array reindexing,
   `in_array` and `array_search` including strict scalar searches, `var_dump`,
   and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,

@@ -8,7 +8,7 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
 }
 
 #[test]
-fn array_map_invokes_string_named_callbacks_and_reindexes_results() {
+fn array_map_invokes_string_named_callbacks_and_preserves_one_array_keys() {
     let source = r#"<?php
 function label_value($value) {
     return "mapped:" . $value;
@@ -22,20 +22,20 @@ $items[] = "Linus";
 
 $mapped = array_map("label_value", $items);
 print_r(array_keys($mapped));
-echo $mapped[0], "|", $mapped[1], "|", $mapped[2], "|", $mapped[3], "\n";
+echo $mapped["first"], "|", $mapped[5], "|", $mapped["empty"], "|", $mapped[6], "\n";
 $mapped[] = "after";
-echo $mapped[4], "\n";
+echo $mapped[7], "\n";
 print_r($items);
 
 $call = "array_map";
 $lengths = $call("strlen", ["empty" => "", "zero" => "0", "space" => " "]);
-echo count($lengths), "|", $lengths[0], "|", $lengths[1], "|", $lengths[2];
+echo count($lengths), "|", $lengths["empty"], "|", $lengths["zero"], "|", $lengths["space"];
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => 0\n    [1] => 1\n    [2] => 2\n    [3] => 3\n)\nmapped:Ada|mapped:Bob|mapped:|mapped:Linus\nafter\nArray\n(\n    [first] => Ada\n    [5] => Bob\n    [empty] => \n    [6] => Linus\n)\n3|0|1|1"
+        "Array\n(\n    [0] => first\n    [1] => 5\n    [2] => empty\n    [3] => 6\n)\nmapped:Ada|mapped:Bob|mapped:|mapped:Linus\nafter\nArray\n(\n    [first] => Ada\n    [5] => Bob\n    [empty] => \n    [6] => Linus\n)\n3|0|1|1"
     );
     assert_eq!(execution.exit_code, 0);
 }

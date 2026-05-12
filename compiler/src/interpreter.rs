@@ -1369,9 +1369,7 @@ impl Interpreter {
         for entry in array.entries() {
             let value =
                 self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
-            mapped
-                .append(value)
-                .map_err(|error| runtime_error(span, error))?;
+            mapped.insert(entry.key.clone(), value);
         }
 
         Ok(mapped)

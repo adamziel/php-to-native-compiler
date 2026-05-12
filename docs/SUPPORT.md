@@ -278,10 +278,10 @@
   accept callbacks that evaluate to string function names resolving to current
   user functions or callable builtins. The one-array form invokes the callback
   once per value in insertion order with the value as the only argument and
-  returns mapped values reindexed with integer keys starting at zero. The
-  two-array form invokes the callback with left/right values in lockstep up to
-  the longer array length, supplies `null` for missing values from the shorter
-  array, and returns mapped values reindexed with integer keys starting at zero.
+  preserves the original integer/string keys. The two-array form invokes the
+  callback with left/right values in lockstep up to the longer array length,
+  supplies `null` for missing values from the shorter array, and returns mapped
+  values reindexed with integer keys starting at zero.
   Both forms are available through string-valued dynamic calls to `array_map`.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
@@ -530,19 +530,18 @@
   `array_map($callback, $array)` and `array_map($callback, $left, $right)`
   accept callback expressions that evaluate to string function names resolving
   to current user functions or callable builtins. The one-array form invokes
-  the callback with the value only and returns mapped values reindexed from
-  integer key zero in insertion order. The two-array form invokes the callback
-  with left/right values in insertion-order lockstep, follows PHP's longest
-  array behavior by supplying `null` for missing values from the shorter array,
-  and reindexes mapped values from integer key zero. Non-string callback values
-  fail with a stable diagnostic, unresolved callback names fail with the
-  current undefined-function diagnostic, `null` callbacks are rejected, non-array
-  input arrays fail with stable diagnostics, and more than two input arrays are
-  rejected. PHP's one-array key preservation behavior, null-callback
-  identity/zip modes, array/object callables, closures, first-class callables,
-  method calls, references, copy-on-write containers, exact native `TypeError`
-  objects, object handle identity preservation, resource values, and native
-  lowering are not implemented.
+  the callback with the value only and preserves original integer/string keys
+  and insertion order. The two-array form invokes the callback with left/right
+  values in insertion-order lockstep, follows PHP's longest array behavior by
+  supplying `null` for missing values from the shorter array, and reindexes
+  mapped values from integer key zero. Non-string callback values fail with a
+  stable diagnostic, unresolved callback names fail with the current
+  undefined-function diagnostic, `null` callbacks are rejected, non-array input
+  arrays fail with stable diagnostics, and more than two input arrays are
+  rejected. Null-callback identity/zip modes, array/object callables, closures,
+  first-class callables, method calls, references, copy-on-write containers,
+  exact native `TypeError` objects, object handle identity preservation,
+  resource values, and native lowering are not implemented.
   `in_array($needle, $array)` accepts an array haystack, scans values in
   insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
@@ -738,10 +737,9 @@
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
 - `array_map` more than two input arrays, `null` callback identity/zip modes,
-  one-array key preservation, array/object callables, closures, first-class
-  callables, method calls, reference/copy-on-write behavior, object handle
-  identity preservation, resource values, exact native `TypeError` objects, and
-  native lowering
+  array/object callables, closures, first-class callables, method calls,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

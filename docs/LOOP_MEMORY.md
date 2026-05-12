@@ -4248,3 +4248,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T06:22:29Z
 
 - Post-round 67 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T06:22:33Z
+
+- Starting round 68 at 20260512T062233Z from HEAD `75d70fb`.
+
+## Loop Event 2026-05-12T06:22:38Z
+
+- Pre-round 68 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:26:55Z
+
+- Task attempted: aligned one-array `array_map($callback, $array)` with PHP key
+  preservation for the current string-callback subset. The one-array form now
+  preserves source integer/string keys and insertion order, append behavior
+  follows the preserved integer keys, string-valued dynamic calls use the same
+  behavior, and the existing two-array `array_map` path remains reindexed from
+  integer key zero.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/array_map.rs`,
+  `tests/fixtures/milestone22/array_map.php`,
+  `tests/fixtures/milestone22/array_map.stdout`,
+  `tests/fixtures/milestone22/array_map.cli`, removed
+  `tests/fixtures/milestone22/array_map.phpc-only`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc --test
+  array_map` passed with 9 tests; `cargo test -p phpc --test
+  array_mapping_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone22` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone22` passed with 1 system PHP
+  comparison and 0 skips; `php tests/fixtures/milestone22/array_map.php`
+  matched the `phpc run` output; `git diff --check` passed;
+  `tools/run-tests.sh` passed with 158 fixtures, 63 system PHP comparisons,
+  and 95 `.phpc-only` skips.
+- Remaining semantic gaps: `array_map` supports only one or two input arrays
+  and string-valued user-function or callable-builtin callbacks. More than two
+  input arrays, `null` callback identity/zip modes, array/object callables,
+  closures, first-class callables, method calls, references, copy-on-write
+  behavior, object handle identity preservation, resource values, exact native
+  `TypeError` objects, and native lowering remain unsupported.
+- Next concrete task: implement `array_map(null, $array)` identity mapping for
+  one input array while keeping multi-array null-callback zip modes,
+  references/copy-on-write behavior, and native lowering explicitly
+  documented.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: preserve one-array array_map keys"`
+  after the full suite passes.
