@@ -1212,6 +1212,7 @@ impl Parser {
                 Err(self.error_at(token.span, unsupported_class_expression_message()))
             }
             TokenKind::New => self.parse_new_expression(token.span),
+            TokenKind::Clone => Err(self.error_at(token.span, unsupported_clone_message())),
             TokenKind::Function => Err(self.error_at(
                 token.span,
                 "unsupported closure: anonymous functions are not implemented",
@@ -1294,6 +1295,9 @@ impl Parser {
                     return Err(
                         self.error_at(token.span, unsupported_continue_expression_message())
                     );
+                }
+                if name.eq_ignore_ascii_case("clone") {
+                    return Err(self.error_at(token.span, unsupported_clone_message()));
                 }
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -1778,6 +1782,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Static => "static",
         TokenKind::Extends => "extends",
         TokenKind::Implements => "implements",
+        TokenKind::Clone => "clone",
         TokenKind::Return => "return",
         TokenKind::Global => "global",
         TokenKind::Namespace => "namespace",
@@ -2033,6 +2038,10 @@ fn unsupported_method_call_message() -> &'static str {
 
 fn unsupported_this_message() -> &'static str {
     "unsupported object context: $this requires method execution and object binding, which are not implemented"
+}
+
+fn unsupported_clone_message() -> &'static str {
+    "unsupported clone expression: object handle copying and __clone dispatch are not implemented"
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {

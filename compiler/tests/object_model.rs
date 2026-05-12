@@ -533,6 +533,26 @@ echo $this;
         ),
         (
             r#"<?php
+class Box {}
+$box = new Box();
+$copy = clone $box;
+"#,
+            4,
+            9,
+            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {}
+$box = new Box();
+$copy = CLONE $box;
+"#,
+            4,
+            9,
+            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,

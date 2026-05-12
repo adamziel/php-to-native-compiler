@@ -1951,6 +1951,8 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_static_method.php:2:4: unsupported static method call: static method dispatch is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_constant.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_constant.php:2:4: unsupported class constant access: class constants are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_clone_expression.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_clone_expression.php:6:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/long_array_literals.php --emit-ir`
@@ -2449,8 +2451,13 @@ Still fails:
   stable runtime diagnostics until user-constructor execution, `$this` binding,
   property initialization, visibility, inheritance, promoted properties, exact
   PHP `Error` objects, and native lowering exist.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported `clone` expressions
+  before object handle copying or `__clone` dispatch exists. Object identity,
+  shallow/deep property copying, `__clone`, references, inheritance, exact PHP
+  `Error` objects, and native lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics for unsupported `clone` expressions before
-  object handle copying or `__clone` dispatch exists.
+- Add explicit parse diagnostics for unsupported `instanceof` expressions
+  before class/interface relationship checks exist.

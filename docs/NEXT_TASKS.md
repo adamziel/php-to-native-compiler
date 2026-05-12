@@ -873,8 +873,16 @@ handled.
 
 ## Milestone 91: Clone Expression Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported `clone` expressions before
+- [x] Add explicit parse diagnostics for unsupported `clone` expressions before
   object handle copying or `__clone` dispatch exists, including parser
   coverage, fixture CLI coverage, documentation, and named gaps for object
   identity, shallow/deep property copying, `__clone`, references, inheritance,
   exact PHP `Error` objects, and native lowering.
+
+## Milestone 92: Instanceof Expression Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported `instanceof` expressions
+  before class/interface relationship checks exist, including parser coverage,
+  fixture CLI coverage, documentation, and named gaps for inheritance,
+  interfaces, namespaces, autoloading, exact PHP `Error` objects, and native
+  lowering.

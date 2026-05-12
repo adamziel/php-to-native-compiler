@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an explicit unsupported `clone` expression boundary with parser
+  regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added explicit unsupported constructor execution and constructor argument
   CLI snapshots for the current minimal object instantiation boundary.
 - Added an explicit unsupported `$this` object-context boundary with parser

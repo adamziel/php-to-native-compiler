@@ -200,8 +200,8 @@
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
-  unsupported `$this` usage, anonymous class expressions, method calls,
-  dynamic property names, static property access,
+  unsupported `$this` usage, unsupported `clone` expressions, anonymous class
+  expressions, method calls, dynamic property names, static property access,
   static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
@@ -269,10 +269,12 @@
   non-object values, and non-public properties still fail with stable runtime
   diagnostics for normal reads/writes. Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
-  fail with stable parse diagnostics. Method dispatch, dynamic property names,
-  `$this` object context binding, visibility enforcement for non-public
-  properties, static storage, class constants, object handle aliasing/identity,
-  and native object lowering are not implemented.
+  fail with stable parse diagnostics. `clone $object` expressions fail with a
+  stable parse diagnostic before object handle copying or `__clone` dispatch is
+  implemented. Method dispatch, dynamic property names, `$this` object context
+  binding, visibility enforcement for non-public properties, static storage,
+  class constants, object handle aliasing/identity, shallow/deep clone property
+  copying, `__clone`, and native object lowering are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
