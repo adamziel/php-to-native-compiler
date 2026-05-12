@@ -10327,5 +10327,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   coalescing expressions before null-aware expression-form branching exists.
 - Known-good tag: not created; this is a narrow syntax boundary, not a major
   verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "syntax: add ternary expression boundary"`
-  after the full suite passes.
+- Checkpoint: `fa90332 syntax: add ternary expression boundary`.
