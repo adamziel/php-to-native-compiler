@@ -9042,3 +9042,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint: pending
   `tools/checkpoint.sh "objects: add property_exists builtin"` after the full
   suite passes.
+
+## Loop Event 2026-05-12T20:08:30Z
+
+- Codex round 50 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T200431Z-50.log`.
+
+## Loop Event 2026-05-12T20:08:37Z
+
+- Post-round 50 test exit code: `0`.
+
+## Loop Event 2026-05-12T20:08:37Z
+
+- Post-round 50 tests passed; running checkpoint for this round.
