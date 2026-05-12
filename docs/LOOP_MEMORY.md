@@ -4537,3 +4537,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   and native lowering.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: extend array_map callbacks"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T06:59:54Z
+
+- Codex round 72 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T065243Z-72.log`.
+
+## Loop Event 2026-05-12T06:59:58Z
+
+- Post-round 72 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:59:58Z
+
+- Post-round 72 tests passed; running checkpoint for this round.
