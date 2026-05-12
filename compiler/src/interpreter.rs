@@ -891,6 +891,38 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_reverse" => match args.as_slice() {
+                [Value::Array(array)] => Ok(Value::Array(array.reversed_reindexed())),
+                [other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_reverse()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                [Value::Array(_), _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_reverse()",
+                        "preserve_keys argument is not implemented",
+                    ),
+                )),
+                [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_reverse()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_reverse()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1302,6 +1334,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_key_exists"
             | "array_values"
             | "array_keys"
+            | "array_reverse"
             | "in_array"
             | "array_search"
             | "var_dump"

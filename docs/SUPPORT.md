@@ -73,17 +73,18 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
-  `array_key_exists`, `array_values`, `array_keys`, `in_array`,
-  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
-  minimal object values
+  `array_key_exists`, `array_values`, `array_keys`, `array_reverse`,
+  `in_array`, `array_search`, `var_dump`, and `print_r`; `print_r` can render
+  current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
-  `empty` operands, non-array `in_array`/`array_search` haystacks, non-bool
-  `in_array`/`array_search` strict-mode flag values, unsupported non-scalar
-  `in_array`/`array_search` comparisons, unsupported
+  `empty` operands, non-array `array_reverse` operands, unsupported
+  `array_reverse` preserve-key requests, non-array `in_array`/`array_search`
+  haystacks, non-bool `in_array`/`array_search` strict-mode flag values,
+  unsupported non-scalar `in_array`/`array_search` comparisons, unsupported
   `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
@@ -217,7 +218,11 @@
   original values in insertion order with integer keys starting at zero.
   `array_keys($array)` returns a new ordered array containing the original
   integer/string keys as values in insertion order with integer keys starting at
-  zero. `in_array($needle, $array)` scans values in insertion order using the
+  zero. `array_reverse($array)` returns a new ordered array in reverse
+  insertion order, reindexes integer-keyed entries from zero, preserves string
+  keys, and is available through string-valued dynamic function calls; the
+  optional `preserve_keys` argument is not implemented.
+  `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
   false)` uses the loose path. `in_array` is also available through
@@ -233,10 +238,10 @@
   `int` or `string` value to the direct key loop variable. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_values`, `array_keys`, `in_array`, `array_search`, both current
-  `foreach` array forms, direct array-offset `unset`, multiple supported
-  `unset(...)` operands, `print_r`, and
-  `var_dump` are implemented for this ordered value model.
+  `array_values`, `array_keys`, `array_reverse`, `in_array`, `array_search`,
+  both current `foreach` array forms, direct array-offset `unset`, multiple
+  supported `unset(...)` operands, `print_r`, and `var_dump` are implemented
+  for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -286,10 +291,11 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
-  operands, non-array `array_keys` operands, non-array `in_array` operands,
-  non-array `array_search` operands, non-array `foreach` iterables, non-bool
-  `in_array`/`array_search` strict-mode flag values, and array-value
-  comparisons for `in_array`/`array_search`,
+  operands, non-array `array_keys` operands, non-array `array_reverse`
+  operands, unsupported `array_reverse` preserve-key requests, non-array
+  `in_array` operands, non-array `array_search` operands, non-array `foreach`
+  iterables, non-bool `in_array`/`array_search` strict-mode flag values, and
+  array-value comparisons for `in_array`/`array_search`,
   unsupported complex `empty` operands, non-array `unset($array[$key])`
   targets, unresolved dynamic function callees, division by zero, non-numeric
   string arithmetic, duplicate class metadata, undefined classes, undefined
@@ -308,8 +314,8 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
-  `array_key_exists`, `array_values`, `array_keys`, `in_array`, `array_search`,
-  `var_dump`, or `print_r`.
+  `array_key_exists`, `array_values`, `array_keys`, `array_reverse`,
+  `in_array`, `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -338,10 +344,11 @@
   syntax, `call_user_func`, namespace-qualified callable resolution, and
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
-  `array_values`, `array_keys`, `in_array`, `array_search`, `var_dump`, and
-  `print_r` cover the documented scalar/array/object subset. `print_r` can also
-  render the current minimal object values. `strlen` remains scalar-only and
-  rejects arrays and objects. `count` accepts arrays only.
+  `array_values`, `array_keys`, `array_reverse`, `in_array`, `array_search`,
+  `var_dump`, and `print_r` cover the documented scalar/array/object subset.
+  `print_r` can also render the current minimal object values. `strlen`
+  remains scalar-only and rejects arrays and objects. `count` accepts arrays
+  only.
   `array_key_exists($key, $array)` accepts integer
   and string keys over the current ordered array value model, returns true for
   existing keys even when the stored value is `null`, returns false for missing
@@ -354,7 +361,13 @@
   order, and returns a new ordered array reindexed with integer keys `0..n-1`
   whose values are the original integer/string keys; it is also available
   through string-valued dynamic function calls. Search-value filtering and the
-  strict flag for `array_keys` are not implemented. `in_array($needle, $array)`
+  strict flag for `array_keys` are not implemented. `array_reverse($array)`
+  accepts arrays only, returns a new array in reverse insertion order,
+  reindexes integer-keyed entries from zero, preserves string keys, and is also
+  available through string-valued dynamic function calls. The optional
+  `preserve_keys` argument, reference/copy-on-write behavior, object handle
+  identity preservation, resource values, and native lowering are not
+  implemented. `in_array($needle, $array)`
   accepts an array haystack, scans values in insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
   integers, floats, and strings. `in_array($needle, $array, true)` uses the
@@ -387,9 +400,10 @@
   values use the current PHP truthiness rules. Nested array offsets, object
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
-  `array_values`, `array_keys`, `in_array`, `array_search`, and both current
-  `foreach` array forms follow the current by-value model; PHP references and
-  copy-on-write containers are not implemented.
+  `array_values`, `array_keys`, `array_reverse`, `in_array`, `array_search`,
+  and both current `foreach` array forms follow the current by-value model; PHP
+  references, copy-on-write containers, object handle identity preservation,
+  and resource values are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -511,6 +525,9 @@
   array/object/resource/reference values, non-bool strict-flag coercion, and
   array/object needle or haystack-value comparisons for the current
   array-search builtins
+- `array_reverse($array, true)` preserve-key behavior, reference/copy-on-write
+  behavior, object handle identity preservation, resource values, and native
+  lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

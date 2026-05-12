@@ -215,7 +215,11 @@ handled.
 
 ## Milestone 14: Array Ordering Builtins
 
-- [ ] Implement `array_reverse($array)` for the current ordered array value
+- [x] Implement `array_reverse($array)` for the current ordered array value
   model with default reindexing behavior, non-array diagnostics, fixture CLI
   coverage, documentation, and explicit gaps for `preserve_keys`, references,
   copy-on-write containers, objects/resources, and native lowering.
+- [ ] Implement `array_reverse($array, true)` preserve-key behavior for the
+  current ordered integer/string key model, including fixture CLI coverage,
+  documentation, and explicit gaps for references, copy-on-write containers,
+  objects/resources, and native lowering.

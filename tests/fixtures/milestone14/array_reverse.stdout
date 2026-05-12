@@ -1,0 +1,22 @@
+Array
+(
+    [0] => next
+    [1] => negative
+    [02] => zero two
+    [2] => two updated
+    [3] => five
+    [name] => Ada
+)
+6
+next|negative|zero two|two updated|five|Ada
+after
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two updated
+    [02] => zero two
+    [-1] => negative
+    [6] => next
+)
+next|Ada

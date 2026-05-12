@@ -189,6 +189,11 @@ Implemented:
   as values in a new array reindexed from zero, is available through
   string-valued dynamic function calls, and has a stable diagnostic for
   non-array arguments.
+- Added `array_reverse($array)` support for the current ordered array value
+  model. The supported slice returns a new array in reverse insertion order,
+  reindexes integer-keyed entries from zero while preserving string keys, is
+  available through string-valued dynamic function calls, and has stable
+  diagnostics for non-array arguments and unsupported `preserve_keys` requests.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -340,8 +345,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 28 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 11 focused array value tests.
+- `cargo test -p php_runtime` passes with 29 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 14 focused array value tests.
 - `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
   array-search tests.
 - `cargo test -p php_runtime array_search` passes with 3 focused loose/strict
@@ -352,7 +357,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 36 representative runtime error fixtures.
+  covering 38 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -438,6 +443,11 @@ Tested:
 - `cargo test -p phpc --test array_keys` passes with `array_keys`
   integer/string key emission, dynamic string-call coverage, original-array
   preservation, and stable diagnostics for non-array arguments.
+- `cargo test -p phpc --test array_reverse` passes with `array_reverse`
+  reverse-order behavior, numeric-key reindexing, string-key preservation,
+  dynamic string-call coverage, original-array preservation, non-array
+  diagnostics, unsupported `preserve_keys` diagnostics, and LLVM IR rejection
+  coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -453,6 +463,8 @@ Tested:
 - `cargo test -p phpc --test strict_array_search_cli` passes with 1 CLI
   snapshot test covering the Milestone 13 strict `in_array` and `array_search`
   fixtures.
+- `cargo test -p phpc --test array_ordering_builtins_cli` passes with 1 CLI
+  snapshot test covering the Milestone 14 `array_reverse` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -497,9 +509,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 119 fixture tests.
+- `cargo run -p phpc -- test` passes with 123 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 49 fixtures and skipping 70 `.phpc-only` fixtures.
+  installed, comparing 51 fixtures and skipping 72 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -591,7 +603,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 34
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 38
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -619,6 +631,10 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_search_strict_flag_non_bool.php:3:6: unsupported call array_search(): strict mode argument must be bool in the current subset, got string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_search_array_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_search_array_value.php:3:6: unsupported call array_search(): array needles and array values are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reverse_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reverse_non_array.php:2:6: unsupported call array_reverse(): argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reverse_preserve_keys.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reverse_preserve_keys.php:3:6: unsupported call array_reverse(): preserve_keys argument is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -709,6 +725,13 @@ Tested:
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone13` passes
   with 2 system PHP comparisons.
+- `cargo run -p phpc -- run tests/fixtures/milestone14/array_reverse.php`
+  prints the committed default `array_reverse` output with integer-key
+  reindexing and string-key preservation.
+- `cargo run -p phpc -- test tests/fixtures/milestone14` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone14` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -804,8 +827,8 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 119 fixtures, 49 system PHP comparisons,
-  and 70 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 123 fixtures, 51 system PHP comparisons,
+  and 72 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -856,10 +879,13 @@ Still fails:
   expression operands, unsupported key coercions, and dynamic access to
   `empty` are not implemented. `array_key_exists` is limited to integer/string
   keys and array second arguments; PHP's broader key coercions and
-  warning/TypeError details are not modeled. `array_values` and `array_keys`
-  are limited to array arguments, clone values under the current by-value model,
-  and do not yet model PHP references or copy-on-write containers.
+  warning/TypeError details are not modeled. `array_values`, `array_keys`, and
+  `array_reverse` are limited to array arguments, clone values under the
+  current by-value model, and do not yet model PHP references, copy-on-write
+  containers, object handle identity preservation, resource values, or native
+  lowering.
   `array_keys` search-value filtering and strict mode are not implemented.
+  `array_reverse($array, true)` preserve-key behavior is not implemented.
   `in_array` and `array_search` are limited to loose scalar searches and strict
   scalar searches when the third argument is a boolean. Strict searches
   involving array/object needles or haystack values, resource/reference
@@ -949,5 +975,5 @@ Still fails:
 
 Next:
 
-- Implement `array_reverse($array)` for the current ordered array value model
-  with default reindexing behavior.
+- Implement `array_reverse($array, true)` preserve-key behavior for the current
+  ordered integer/string key model.
