@@ -896,6 +896,14 @@ impl Interpreter {
                     .contains_value_loose_scalar(needle)
                     .map(Value::Bool)
                     .map_err(|error| runtime_error(span, error)),
+                [needle, Value::Array(array), Value::Bool(true)] => array
+                    .contains_value_strict_scalar(needle)
+                    .map(Value::Bool)
+                    .map_err(|error| runtime_error(span, error)),
+                [needle, Value::Array(array), Value::Bool(false)] => array
+                    .contains_value_loose_scalar(needle)
+                    .map(Value::Bool)
+                    .map_err(|error| runtime_error(span, error)),
                 [_, other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -903,11 +911,14 @@ impl Interpreter {
                         format!("second argument must be array, got {}", other.type_name()),
                     ),
                 )),
-                [_, Value::Array(_), _] => Err(runtime_error(
+                [_, Value::Array(_), other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "in_array()",
-                        "strict mode argument is not implemented",
+                        format!(
+                            "strict mode argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
                     ),
                 )),
                 [_, other, _] => Err(runtime_error(

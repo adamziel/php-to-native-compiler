@@ -66,7 +66,8 @@ subset:
   variable/array-offset subset
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
   `empty`, `count`, `array_key_exists`, `array_values`, `array_keys`,
-  `in_array`, `array_search`, `var_dump`, and `print_r`
+  `in_array` including strict scalar searches, `array_search`, `var_dump`, and
+  `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, invalid `break`/`continue` outside a loop, and runaway

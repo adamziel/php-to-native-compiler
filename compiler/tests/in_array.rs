@@ -1,5 +1,5 @@
 use php_compiler::error::Phase;
-use php_compiler::run_source;
+use php_compiler::{emit_ir_source, run_source};
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -70,14 +70,77 @@ fn in_array_requires_array_second_argument() {
 }
 
 #[test]
-fn in_array_rejects_strict_mode_argument_until_implemented() {
-    let error = runtime_error("<?php\n$items = [1];\necho in_array(1, $items, true);\n");
+fn in_array_strict_mode_uses_scalar_identity() {
+    let source = r#"<?php
+$items = [];
+$items[] = false;
+$items[] = 0;
+$items[] = "0";
+$items[] = 10;
+$items[] = "10";
+$items[] = null;
+$items[] = "abc";
+
+if (in_array("", $items, true)) {
+    echo "unexpected-empty\n";
+} else {
+    echo "empty-missing\n";
+}
+if (in_array(false, $items, true)) {
+    echo "false-match\n";
+}
+if (in_array(0, $items, true)) {
+    echo "int-zero-match\n";
+}
+if (in_array("0", $items, true)) {
+    echo "string-zero-match\n";
+}
+if (in_array(10.0, $items, true)) {
+    echo "unexpected-float\n";
+} else {
+    echo "float-missing\n";
+}
+if (in_array(10, $items, true)) {
+    echo "int-ten-match\n";
+}
+if (in_array("10", $items, true)) {
+    echo "string-ten-match\n";
+}
+if (in_array(null, $items, true)) {
+    echo "null-match\n";
+}
+if (in_array("missing", $items, true)) {
+    echo "unexpected-missing\n";
+} else {
+    echo "string-missing\n";
+}
+if (in_array("10.0", $items, false)) {
+    echo "false-flag-uses-loose\n";
+}
+
+$call = "in_array";
+if ($call("abc", $items, true)) {
+    echo "dynamic-strict-match";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "empty-missing\nfalse-match\nint-zero-match\nstring-zero-match\nfloat-missing\nint-ten-match\nstring-ten-match\nnull-match\nstring-missing\nfalse-flag-uses-loose\ndynamic-strict-match"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn in_array_rejects_non_bool_strict_mode_argument() {
+    let error = runtime_error("<?php\n$items = [1];\necho in_array(1, $items, \"yes\");\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call in_array(): strict mode argument is not implemented"
+        "unsupported call in_array(): strict mode argument must be bool in the current subset, got string"
     );
 }
 
@@ -106,5 +169,17 @@ echo in_array("needle", $items);
     assert_eq!(
         object_error.message,
         "unsupported call in_array(): object needles and object values are not implemented"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_in_array_until_native_call_lowering_exists() {
+    let error = emit_ir_source("<?php\necho in_array(1, [1], true);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
     );
 }

@@ -3179,3 +3179,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:06:24Z
 
 - Post-round 50 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T04:06:28Z
+
+- Starting round 51 at 20260512T040628Z from HEAD `339be95`.
+
+## Loop Event 2026-05-12T04:06:31Z
+
+- Pre-round 51 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:12:10Z
+
+- Task attempted: implemented `in_array($needle, $array, true)` for the
+  current scalar needle/value subset using strict identity semantics. The
+  two-argument form remains loose, `in_array(..., false)` routes to loose
+  search, string-valued dynamic calls can pass the strict flag, non-bool strict
+  flags produce a stable runtime diagnostic, array/object needles or values
+  remain explicit unsupported comparison gaps, and native lowering rejects
+  `in_array` calls explicitly.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/in_array.rs`, `compiler/tests/strict_array_search_cli.rs`,
+  `tests/fixtures/milestone13/in_array_strict.php`,
+  `tests/fixtures/milestone13/in_array_strict.stdout`,
+  `tests/fixtures/milestone13/in_array_strict.cli`,
+  `tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.*`, removed
+  obsolete `tests/fixtures/runtime_errors/in_array_strict_mode.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p
+  php_runtime in_array` passed with 3 focused runtime tests; `cargo test -p
+  phpc --test in_array` passed with 6 tests; `cargo test -p phpc --test
+  strict_array_search_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone13` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone13` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- run
+  tests/fixtures/milestone13/in_array_strict.php` printed the committed strict
+  scalar `in_array` output; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 36 fixtures; `tools/run-tests.sh`
+  passed with 119 fixtures, 49 system PHP comparisons, and 70 `.phpc-only`
+  skips.
+- Remaining semantic gaps: strict `in_array` is limited to current scalar
+  needles and haystack values. Array/object/resource/reference identity,
+  PHP's coercion for non-bool strict flags, copy-on-write/reference behavior,
+  exact native `TypeError` objects, and native call lowering remain
+  unsupported.
+- Next concrete task: implement `array_search($needle, $array, true)` for the
+  current scalar needle/value subset using strict identity semantics and
+  key-return behavior.
+- Checkpoint: pending `tools/checkpoint.sh "runtime: add strict in_array"`
+  after the full suite passes.

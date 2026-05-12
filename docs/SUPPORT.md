@@ -82,7 +82,8 @@
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `in_array`/`array_search` haystacks, unsupported
-  `in_array`/`array_search` strict-mode and non-scalar comparisons, unsupported
+  `in_array` strict-mode flag values, unsupported `array_search` strict-mode,
+  unsupported non-scalar `in_array`/`array_search` comparisons, unsupported
   `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
@@ -217,7 +218,9 @@
   `array_keys($array)` returns a new ordered array containing the original
   integer/string keys as values in insertion order with integer keys starting at
   zero. `in_array($needle, $array)` scans values in insertion order using the
-  current loose scalar comparison rules and is also available through
+  current loose scalar comparison rules; `in_array($needle, $array, true)` uses
+  the current scalar strict identity rules, and `in_array($needle, $array,
+  false)` uses the loose path. `in_array` is also available through
   string-valued dynamic function calls. `array_search($needle, $array)` uses
   the same loose scalar scan, returning the first matching integer/string key or
   `false` when no value matches; it is also available through string-valued
@@ -283,7 +286,8 @@
   keys, non-array `array_key_exists` operands, non-array `array_values`
   operands, non-array `array_keys` operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, unsupported
-  `in_array` and `array_search` strict-mode and array-value comparisons,
+  `in_array` strict-mode flag values, unsupported `array_search` strict-mode,
+  and array-value comparisons for `in_array`/`array_search`,
   unsupported complex `empty` operands, non-array `unset($array[$key])`
   targets, unresolved dynamic function callees, division by zero, non-numeric
   string arithmetic, duplicate class metadata, undefined classes, undefined
@@ -349,13 +353,16 @@
   whose values are the original integer/string keys; it is also available
   through string-valued dynamic function calls. Search-value filtering and the
   strict flag for `array_keys` are not implemented. `in_array($needle, $array)`
-  accepts the two-argument form with an array haystack, scans values in
-  insertion order, and uses the current PHP 8-style loose scalar comparison
-  rules for `null`, booleans, integers, floats, and strings. It rejects
-  non-array haystacks, rejects the third strict-mode argument, and rejects array
-  or object needles/values when encountered instead of modeling PHP's full
-  non-scalar comparison behavior. `in_array` is also available through
-  string-valued dynamic function calls. `array_search($needle, $array)` accepts
+  accepts an array haystack, scans values in insertion order, and uses the
+  current PHP 8-style loose scalar comparison rules for `null`, booleans,
+  integers, floats, and strings. `in_array($needle, $array, true)` uses the
+  current scalar strict identity rules with no numeric/string coercion;
+  `in_array($needle, $array, false)` uses the loose path. The third argument
+  must evaluate to a boolean in the current subset. `in_array` rejects non-array
+  haystacks and rejects array or object needles/values when encountered instead
+  of modeling PHP's full non-scalar comparison behavior. `in_array` is also
+  available through string-valued dynamic function calls.
+  `array_search($needle, $array)` accepts
   the two-argument form with an array haystack, scans values in insertion order
   with the same loose scalar comparison rules, returns the first matching
   integer/string key as an `int` or `string`, and returns `false` when no value
@@ -496,8 +503,9 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
-- `in_array` and `array_search` strict-mode searches and array/object needle or
-  haystack-value comparisons
+- `array_search` strict-mode searches, `in_array` strict-mode searches
+  involving array/object/resource/reference values, and array/object
+  needle or haystack-value comparisons for the current array-search builtins
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

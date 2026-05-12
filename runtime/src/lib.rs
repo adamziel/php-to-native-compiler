@@ -485,8 +485,19 @@ impl PhpArray {
 
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            ensure_loose_array_search_values_supported("in_array()", needle, &entry.value)?;
+            ensure_array_search_values_supported("in_array()", needle, &entry.value)?;
             if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub fn contains_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
+        for entry in &self.entries {
+            ensure_array_search_values_supported("in_array()", needle, &entry.value)?;
+            if needle.php_identical_checked(&entry.value)? {
                 return Ok(true);
             }
         }
@@ -496,7 +507,7 @@ impl PhpArray {
 
     pub fn search_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            ensure_loose_array_search_values_supported("array_search()", needle, &entry.value)?;
+            ensure_array_search_values_supported("array_search()", needle, &entry.value)?;
             if needle.php_cmp_checked(&entry.value, Comparison::Eq)? {
                 return Ok(Some(entry.key.clone()));
             }
@@ -526,7 +537,7 @@ impl Default for PhpArray {
     }
 }
 
-fn ensure_loose_array_search_values_supported(
+fn ensure_array_search_values_supported(
     callable: &str,
     needle: &Value,
     value: &Value,
@@ -1937,6 +1948,40 @@ mod tests {
         assert!(!array.contains_value_loose_scalar(&Value::Int(11)).unwrap());
         assert!(!array
             .contains_value_loose_scalar(&Value::String("missing".to_string()))
+            .unwrap());
+    }
+
+    #[test]
+    fn in_array_strict_mode_uses_scalar_identity_in_insertion_order() {
+        let mut array = PhpArray::new();
+
+        array.insert("false", Value::Bool(false));
+        array.insert("int-zero", Value::Int(0));
+        array.insert("string-zero", Value::String("0".to_string()));
+        array.insert("int-ten", Value::Int(10));
+        array.insert("string-ten", Value::String("10".to_string()));
+        array.insert("null", Value::Null);
+
+        assert!(!array
+            .contains_value_strict_scalar(&Value::String(String::new()))
+            .unwrap());
+        assert!(array
+            .contains_value_strict_scalar(&Value::Bool(false))
+            .unwrap());
+        assert!(array.contains_value_strict_scalar(&Value::Int(0)).unwrap());
+        assert!(array
+            .contains_value_strict_scalar(&Value::String("0".to_string()))
+            .unwrap());
+        assert!(!array
+            .contains_value_strict_scalar(&Value::Float(10.0))
+            .unwrap());
+        assert!(array.contains_value_strict_scalar(&Value::Int(10)).unwrap());
+        assert!(array
+            .contains_value_strict_scalar(&Value::String("10".to_string()))
+            .unwrap());
+        assert!(array.contains_value_strict_scalar(&Value::Null).unwrap());
+        assert!(!array
+            .contains_value_strict_scalar(&Value::String("missing".to_string()))
             .unwrap());
     }
 

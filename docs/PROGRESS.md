@@ -191,9 +191,10 @@ Implemented:
   non-array arguments.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
-  loose scalar comparison rules, is available through string-valued dynamic
-  function calls, and has stable diagnostics for non-array haystacks,
-  unsupported strict mode, and unsupported array/object needles or values.
+  loose scalar comparison rules by default, also supports the boolean strict
+  flag for current scalar needles/values, is available through string-valued
+  dynamic function calls, and has stable diagnostics for non-array haystacks,
+  non-bool strict flags, and unsupported array/object needles or values.
 - Added `array_search($needle, $array)` support for the current ordered array
   value model. The supported slice scans values in insertion order with the
   current loose scalar comparison rules, returns the first matching integer or
@@ -318,14 +319,21 @@ Implemented:
   type-and-value semantics and no coercion, array/object operands fail with
   stable unsupported-comparison runtime diagnostics, and native lowering still
   rejects strict comparisons explicitly.
+- Implemented `in_array($needle, $array, true)` for the current scalar
+  needle/value subset using the same scalar strict identity semantics. The
+  two-argument form remains loose, `in_array($needle, $array, false)` routes to
+  the loose path, string-valued dynamic calls can use the strict flag, non-bool
+  strict flags fail with a stable runtime diagnostic, array/object
+  needles/values remain unsupported comparison gaps, and native lowering still
+  rejects the builtin call explicitly.
 
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 26 runtime unit tests.
+- `cargo test -p php_runtime` passes with 27 runtime unit tests.
 - `cargo test -p php_runtime array_` passes with 11 focused array value tests.
-- `cargo test -p php_runtime in_array` passes with 2 focused loose array-search
-  tests.
+- `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
+  array-search tests.
 - `cargo test -p php_runtime array_search` passes with 2 focused loose
   array-search key-return tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
@@ -421,8 +429,9 @@ Tested:
   integer/string key emission, dynamic string-call coverage, original-array
   preservation, and stable diagnostics for non-array arguments.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
-  search behavior, dynamic string-call coverage, non-array haystack
-  diagnostics, and explicit strict-mode/array/object comparison gap coverage.
+  search behavior, strict scalar search behavior, dynamic string-call coverage,
+  non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
+  array/object comparison gap coverage, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_search` passes with `array_search` loose
   scalar key-return behavior, dynamic string-call coverage, non-array haystack
   diagnostics, and explicit strict-mode/array/object comparison gap coverage.
@@ -430,6 +439,8 @@ Tested:
   array-offset `empty` behavior plus unsupported complex-lvalue coverage.
 - `cargo test -p phpc --test array_refinements_cli` passes with 1 CLI snapshot
   test covering the Milestone 7 array refinement fixtures.
+- `cargo test -p phpc --test strict_array_search_cli` passes with 1 CLI
+  snapshot test covering the Milestone 13 strict `in_array` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -474,9 +485,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 118 fixture tests.
+- `cargo run -p phpc -- test` passes with 119 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 48 fixtures and skipping 70 `.phpc-only` fixtures.
+  installed, comparing 49 fixtures and skipping 70 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -586,8 +597,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_keys_non_array.php:2:6: unsupported call array_keys(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/in_array_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/in_array_non_array.php:2:6: unsupported call in_array(): second argument must be array, got int`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/in_array_strict_mode.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/in_array_strict_mode.php:3:6: unsupported call in_array(): strict mode argument is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.php:3:6: unsupported call in_array(): strict mode argument must be bool in the current subset, got string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/in_array_array_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/in_array_array_value.php:3:6: unsupported call in_array(): array needles and array values are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_search_non_array.php`
@@ -677,6 +688,12 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone12` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone12` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone13/in_array_strict.php`
+  prints the committed strict scalar `in_array` output.
+- `cargo run -p phpc -- test tests/fixtures/milestone13` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone13` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
@@ -773,7 +790,7 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone10/switch_statements.php --emit-ir`
   exits 1 with an explicit `switch statements` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 118 fixtures, 48 system PHP comparisons,
+- `tools/run-tests.sh` passes with 119 fixtures, 49 system PHP comparisons,
   and 70 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
@@ -829,10 +846,11 @@ Still fails:
   are limited to array arguments, clone values under the current by-value model,
   and do not yet model PHP references or copy-on-write containers.
   `array_keys` search-value filtering and strict mode are not implemented.
-  `in_array` is limited to the two-argument loose scalar search form over array
-  haystacks; strict mode, array/object needles or haystack values, references,
-  copy-on-write containers, exact native `TypeError` objects, and native
-  lowering for function calls are not implemented.
+  `in_array` is limited to loose scalar searches and strict scalar searches
+  when the third argument is a boolean. Strict searches involving array/object
+  needles or haystack values, resource/reference behavior, non-bool strict-flag
+  coercion, copy-on-write containers, exact native `TypeError` objects, and
+  native lowering for function calls are not implemented.
   `array_search` has the same two-argument loose scalar search limits and does
   not implement strict mode, array/object needles or haystack values,
   references, copy-on-write containers, exact native `TypeError` objects, or
@@ -920,5 +938,5 @@ Still fails:
 
 Next:
 
-- Implement `in_array($needle, $array, true)` for the current scalar
-  needle/value subset using strict identity semantics.
+- Implement `array_search($needle, $array, true)` for the current scalar
+  needle/value subset using strict identity semantics and key-return behavior.

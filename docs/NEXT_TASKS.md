@@ -204,7 +204,7 @@ handled.
 
 ## Milestone 13: Strict Array Search
 
-- [ ] Implement `in_array($needle, $array, true)` for the current scalar
+- [x] Implement `in_array($needle, $array, true)` for the current scalar
   needle/value subset using strict identity semantics, including fixture CLI
   coverage, documentation, and explicit gaps for arrays, objects, resources,
   references, and native lowering.
