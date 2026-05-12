@@ -10434,4 +10434,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   boundary explicit if the object model is not ready.
 - Known-good tag: not created; this is a narrow expression slice, not a major
   verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "syntax: add null coalescing execution slice"`.
+- Checkpoint: `7a4503a syntax: add null coalescing execution slice`.
