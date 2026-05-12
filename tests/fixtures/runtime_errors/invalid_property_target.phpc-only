@@ -1,0 +1,1 @@
+phpc emits a stable fatal diagnostic for property reads on non-object values.

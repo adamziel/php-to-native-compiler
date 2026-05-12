@@ -141,6 +141,10 @@ impl LlvmGenerator {
                 *span,
                 "array indexing is supported by phpc run but not LLVM IR emission yet",
             )),
+            Expr::Property { span, .. } => Err(self.unsupported(
+                *span,
+                "object property access is supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -182,6 +186,10 @@ impl LlvmGenerator {
             AssignTarget::ArrayIndex { span, .. } => Err(self.unsupported(
                 *span,
                 "array assignment is supported by phpc run but not LLVM IR emission yet",
+            )),
+            AssignTarget::Property { span, .. } => Err(self.unsupported(
+                *span,
+                "object property assignment is supported by phpc run but not LLVM IR emission yet",
             )),
         }
     }
@@ -625,6 +633,10 @@ impl CGenerator {
                 *span,
                 "array indexing is supported by phpc run but not assembly emission yet",
             )),
+            Expr::Property { span, .. } => Err(self.unsupported(
+                *span,
+                "object property access is supported by phpc run but not assembly emission yet",
+            )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -666,6 +678,10 @@ impl CGenerator {
             AssignTarget::ArrayIndex { span, .. } => Err(self.unsupported(
                 *span,
                 "array assignment is supported by phpc run but not assembly emission yet",
+            )),
+            AssignTarget::Property { span, .. } => Err(self.unsupported(
+                *span,
+                "object property assignment is supported by phpc run but not assembly emission yet",
             )),
         }
     }

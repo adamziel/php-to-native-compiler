@@ -120,6 +120,58 @@ echo $left == $right;
 }
 
 #[test]
+fn undefined_object_property_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+class Box {}
+$box = new Box();
+echo $box->missing;
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, "undefined property Box::$missing");
+}
+
+#[test]
+fn invalid_property_target_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+$value = 1;
+echo $value->name;
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "invalid property access: cannot read property $name from int"
+    );
+}
+
+#[test]
+fn non_public_property_access_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $secret;
+}
+$box = new Box();
+echo $box->secret;
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+    );
+}
+
+#[test]
 fn array_offset_write_requires_array_compatible_target() {
     let error = runtime_error("<?php\n$value = 1;\n$value[] = 2;\n");
 

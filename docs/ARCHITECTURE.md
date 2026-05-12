@@ -62,8 +62,8 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
-- object property access, `$this`, constructor calls, visibility enforcement,
-  and method dispatch
+- `$this`, constructor calls, visibility enforcement for non-public properties,
+  method dispatch, and PHP object handle identity
 
 ## Native Codegen
 
@@ -108,7 +108,7 @@ implemented dynamic-call subset.
 
 ## Object/Class Boundary
 
-The current object/class step is a narrow instantiation boundary, not full PHP
+The current object/class step is a narrow public-property boundary, not full PHP
 object execution. `php_runtime` has a `PhpClassTable`, stable `ClassId` handles,
 class metadata, property metadata, method metadata, visibility markers, derived
 object shapes for instance-property layout, and minimal object values. Class and
@@ -124,11 +124,15 @@ ClassName()` can instantiate a declared class when the class has no
 allocated object stores class identity and `null` instance-property slots in
 declaration order while skipping static properties.
 
-Objects do not bind `$this`, execute methods, run constructors, enforce
-visibility, expose reflection, or support property access. `phpc run` still
-rejects `->` syntax and anonymous classes with stable parse diagnostics, and
-native lowering rejects class declarations and object instantiation explicitly.
-See `docs/OBJECT_MODEL.md` for the named unsupported edge cases.
+`phpc run` can read and write public instance properties by static property
+name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
+current object value stored in that variable. Missing properties, non-object
+targets, and non-public properties produce stable runtime diagnostics. Objects
+do not bind `$this`, execute methods, run constructors, enforce visibility for
+non-public properties, expose reflection, implement dynamic property names, or
+model PHP object handles/aliasing. Native lowering rejects class declarations,
+object instantiation, object property reads, and object property writes
+explicitly. See `docs/OBJECT_MODEL.md` for the named unsupported edge cases.
 
 ## Include/Require Resolution Design
 

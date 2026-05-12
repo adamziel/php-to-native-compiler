@@ -63,6 +63,9 @@ handled.
   instantiation and member access unsupported.
 - [x] Add a minimal object value/instantiation boundary for `new ClassName()`
   while keeping property access and method dispatch unsupported.
-- [ ] Add public instance property reads and writes for the current object value
+- [x] Add public instance property reads and writes for the current object value
   model while keeping method dispatch, constructors, and visibility enforcement
   unsupported.
+- [ ] Add `isset($object->publicProperty)` support for public instance
+  properties while keeping array offsets, dynamic property names, non-public
+  visibility enforcement, and method dispatch unsupported.

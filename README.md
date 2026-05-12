@@ -46,8 +46,8 @@ subset:
 - top-level class declarations registered as metadata, with property and method
   metadata for the documented subset
 - minimal object instantiation with `new ClassName()` for declared classes that
-  do not define constructors; instance properties are initialized to `null`
-  and method dispatch/property access remain unsupported
+  do not define constructors; public instance properties can be read and
+  written by static property name
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -59,12 +59,15 @@ subset:
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  object member access, anonymous classes, and unsupported class forms
+  object method calls, dynamic property names, anonymous classes, and
+  unsupported class forms
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
-object values. `phpc run` can instantiate declared constructor-free classes, but
-constructors, `$this`, property access, method dispatch, visibility
-enforcement, and native object lowering are not supported yet.
+object values. `phpc run` can instantiate declared constructor-free classes and
+read/write public instance properties by static name, but constructors, `$this`,
+method dispatch, dynamic property names, visibility enforcement for non-public
+properties, object handle identity, and native object lowering are not supported
+yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

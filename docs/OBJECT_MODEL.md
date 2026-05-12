@@ -5,9 +5,9 @@ instantiation slice, not full PHP object execution.
 
 The current implementation parses top-level class declarations into metadata and
 can evaluate `new ClassName()` for declared classes that do not define
-constructors. It stores class identity plus `null` instance-property slots.
-Object property access and method calls still fail with explicit parse
-diagnostics.
+constructors. It stores class identity plus `null` instance-property slots and
+can read/write public instance properties by static property name. Method calls
+and dynamic property names still fail with explicit parse diagnostics.
 
 ## Runtime Metadata
 
@@ -34,6 +34,9 @@ The model follows the PHP lookup rules needed by the first object slice:
 - instance object shapes preserve instance-property declaration order and skip
   static properties;
 - object values initialize supported instance properties to `null`;
+- public instance property reads return the current slot value;
+- public instance property writes mutate the current object value stored in that
+  variable;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -58,8 +61,16 @@ Undefined classes produce a stable runtime error. Classes with a `__construct`
 method and `new` calls with constructor arguments also produce stable runtime
 errors because constructor execution is not implemented.
 
-Native lowering rejects class declarations and object instantiation until
-metadata, object allocation, and dispatch have explicit lowering support.
+The property syntax slice accepts `$object->name` reads and direct-variable
+`$object->name = <expr>` writes when `name` is a declared public instance
+property. Property names remain case-sensitive. Undefined properties, property
+access on non-object values, and non-public properties produce stable runtime
+errors. Static properties are recorded as metadata but are not stored in object
+values.
+
+Native lowering rejects class declarations, object instantiation, object
+property reads, and object property writes until metadata, object allocation,
+property slots, and dispatch have explicit lowering support.
 
 ## Unsupported Edge Cases
 
@@ -71,5 +82,7 @@ static property storage, late static binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static`, `$this`, constructor execution, constructor
-arguments, property reads/writes, method dispatch, object comparisons,
-object-to-string conversion, object callables, and native lowering.
+arguments, non-public property access, dynamic property names, property
+assignment targets other than a direct variable, method dispatch, object
+identity/handle aliasing, object comparisons, object-to-string conversion,
+object callables, and native lowering.

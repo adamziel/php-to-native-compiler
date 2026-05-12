@@ -1,0 +1,11 @@
+initial:
+Ada
+5
+Profile Object
+(
+    [name] => Ada
+    [visits] => 3
+    [secret:protected] => 
+    [token:Profile:private] => 
+)
+

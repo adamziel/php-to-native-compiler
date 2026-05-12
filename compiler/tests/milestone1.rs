@@ -118,6 +118,28 @@ fn emit_ir_rejects_object_instantiation_until_native_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_object_property_access_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\necho $box->name;\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("object property access"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$box->name = \"Ada\";\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("object property assignment"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_asm_through_available_native_toolchain() {
     let has_backend = ["clang", "llc", "cc"]
         .iter()

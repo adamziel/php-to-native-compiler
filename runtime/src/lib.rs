@@ -61,6 +61,28 @@ impl RuntimeError {
         })
     }
 
+    pub fn undefined_property(
+        class_name: impl Into<String>,
+        property_name: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::UndefinedProperty {
+            class_name: class_name.into(),
+            property_name: property_name.into(),
+        })
+    }
+
+    pub fn invalid_property_access(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidPropertyAccess {
+            reason: reason.into(),
+        })
+    }
+
+    pub fn unsupported_property_access(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedPropertyAccess {
+            reason: reason.into(),
+        })
+    }
+
     pub fn arity_mismatch(
         callable: impl Into<String>,
         expected: ArityExpectation,
@@ -168,6 +190,16 @@ pub enum RuntimeErrorKind {
         member_kind: ClassMemberKind,
         member_name: String,
     },
+    UndefinedProperty {
+        class_name: String,
+        property_name: String,
+    },
+    InvalidPropertyAccess {
+        reason: String,
+    },
+    UnsupportedPropertyAccess {
+        reason: String,
+    },
     ArityMismatch {
         callable: String,
         expected: ArityExpectation,
@@ -265,6 +297,18 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
             member_name,
         } => {
             format!("class {class_name} already defines {member_kind} {member_name}")
+        }
+        RuntimeErrorKind::UndefinedProperty {
+            class_name,
+            property_name,
+        } => {
+            format!("undefined property {class_name}::${property_name}")
+        }
+        RuntimeErrorKind::InvalidPropertyAccess { reason } => {
+            format!("invalid property access: {reason}")
+        }
+        RuntimeErrorKind::UnsupportedPropertyAccess { reason } => {
+            format!("unsupported object property access: {reason}")
         }
         RuntimeErrorKind::ArityMismatch {
             callable,
@@ -765,6 +809,41 @@ impl PhpObject {
 
     pub fn properties(&self) -> &[ObjectProperty] {
         &self.properties
+    }
+
+    pub fn read_public_property(&self, name: &str) -> RuntimeResult<&Value> {
+        let property = self
+            .properties
+            .iter()
+            .find(|property| property.name == name)
+            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
+
+        if property.visibility != Visibility::Public {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires visibility enforcement, which is not implemented",
+                self.class_name, name
+            )));
+        }
+
+        Ok(&property.value)
+    }
+
+    pub fn write_public_property(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        let property = self
+            .properties
+            .iter_mut()
+            .find(|property| property.name == name)
+            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
+
+        if property.visibility != Visibility::Public {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires visibility enforcement, which is not implemented",
+                self.class_name, name
+            )));
+        }
+
+        property.value = value;
+        Ok(())
     }
 }
 
@@ -1676,5 +1755,45 @@ mod tests {
         assert_eq!(object.properties()[1].name(), "payload");
         assert_eq!(object.properties()[1].visibility(), Visibility::Protected);
         assert_eq!(object.properties()[1].value(), &Value::Null);
+    }
+
+    #[test]
+    fn object_public_property_reads_and_writes_use_exact_slot_names() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Packet").unwrap();
+        let class = classes.get_mut(id).unwrap();
+
+        class
+            .add_property(PhpPropertyMetadata::instance("id", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("secret", Visibility::Private))
+            .unwrap();
+
+        let mut object = PhpObject::from_class(class);
+
+        assert_eq!(object.read_public_property("id").unwrap(), &Value::Null);
+        object
+            .write_public_property("id", Value::Int(42))
+            .expect("public property write should update the slot");
+        assert_eq!(object.read_public_property("id").unwrap(), &Value::Int(42));
+
+        let missing = object.read_public_property("ID").unwrap_err();
+        assert_eq!(
+            missing.kind(),
+            &RuntimeErrorKind::UndefinedProperty {
+                class_name: "Packet".to_string(),
+                property_name: "ID".to_string(),
+            }
+        );
+        assert_eq!(missing.message(), "undefined property Packet::$ID");
+
+        let private = object
+            .write_public_property("secret", Value::String("x".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            private.message(),
+            "unsupported object property access: non-public property Packet::$secret requires visibility enforcement, which is not implemented"
+        );
     }
 }

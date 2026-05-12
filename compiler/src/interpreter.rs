@@ -75,6 +75,16 @@ impl SymbolTable {
             .or_insert_with(|| Value::Array(PhpArray::new()))
     }
 
+    fn object_slot_for_static_write(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<&mut Value> {
+        self.symbols
+            .get_mut(name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(name)))
+    }
+
     fn read_named(&self, name: &str) -> Option<&Value> {
         self.symbols.get(name)
     }
@@ -226,6 +236,11 @@ impl Interpreter {
                 index,
                 span,
             } => self.evaluate_array_index(target, index, *span, scope),
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.evaluate_property_read(target, property, *span, scope),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
@@ -334,6 +349,27 @@ impl Interpreter {
 
                 Ok(())
             }
+            AssignTarget::Property {
+                object,
+                property,
+                span,
+            } => {
+                let value = self.evaluate(expr, scope)?;
+                let slot = scope.object_slot_for_static_write(object, *span)?;
+
+                match slot {
+                    Value::Object(object) => object
+                        .write_public_property(property, value)
+                        .map_err(|error| runtime_error(*span, error)),
+                    other => Err(runtime_error(
+                        *span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
         }
     }
 
@@ -388,6 +424,30 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_array_access(format!(
                     "cannot read offset from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn evaluate_property_read(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let target_value = self.evaluate(target, scope)?;
+
+        match target_value {
+            Value::Object(object) => object
+                .read_public_property(property)
+                .cloned()
+                .map_err(|error| runtime_error(span, error)),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "cannot read property ${property} from {}",
                     other.type_name()
                 )),
             )),

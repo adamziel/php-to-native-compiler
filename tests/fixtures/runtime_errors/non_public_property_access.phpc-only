@@ -1,0 +1,1 @@
+phpc only supports public instance property access until visibility enforcement exists.

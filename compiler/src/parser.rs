@@ -399,6 +399,19 @@ impl Parser {
             return Ok(AssignTarget::ArrayIndex { name, index, span });
         }
 
+        if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
+            let operator_span = self.previous().span;
+            let property = self.consume_object_property_name(operator_span)?;
+            if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                return Err(self.error_at(operator_span, unsupported_method_call_message()));
+            }
+            return Ok(AssignTarget::Property {
+                object: name,
+                property,
+                span,
+            });
+        }
+
         Ok(AssignTarget::Variable { name, span })
     }
 
@@ -608,8 +621,19 @@ impl Parser {
             }
 
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
-                let span = self.previous().span;
-                return Err(self.error_at(span, unsupported_object_access_message()));
+                let operator_span = self.previous().span;
+                let property = self.consume_object_property_name(operator_span)?;
+                if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    return Err(self.error_at(operator_span, unsupported_method_call_message()));
+                }
+
+                let span = expr.span();
+                expr = Expr::Property {
+                    target: Box::new(expr),
+                    property,
+                    span,
+                };
+                continue;
             }
 
             break;
@@ -792,11 +816,30 @@ impl Parser {
             }
             Expr::Variable(_, _)
             | Expr::Index { .. }
+            | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
+            )),
+        }
+    }
+
+    fn consume_object_property_name(&mut self, operator_span: Span) -> CompileResult<String> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) => Ok(name),
+            TokenKind::Variable(_) => Err(self.error_at(
+                token.span,
+                "unsupported dynamic property access: dynamic property names are not implemented",
+            )),
+            _ => Err(self.error_at(
+                operator_span,
+                format!(
+                    "expected property name after '->', found {}",
+                    token_name(&token.kind)
+                ),
             )),
         }
     }
@@ -959,8 +1002,8 @@ fn unsupported_class_expression_message() -> &'static str {
     "unsupported class expression: anonymous classes are not implemented"
 }
 
-fn unsupported_object_access_message() -> &'static str {
-    "unsupported object access: object property and method access are not implemented"
+fn unsupported_method_call_message() -> &'static str {
+    "unsupported method call: method dispatch is not implemented"
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {

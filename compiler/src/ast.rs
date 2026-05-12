@@ -68,12 +68,19 @@ pub enum AssignTarget {
         index: Option<Expr>,
         span: Span,
     },
+    Property {
+        object: String,
+        property: String,
+        span: Span,
+    },
 }
 
 impl AssignTarget {
     pub fn span(&self) -> Span {
         match self {
-            AssignTarget::Variable { span, .. } | AssignTarget::ArrayIndex { span, .. } => *span,
+            AssignTarget::Variable { span, .. }
+            | AssignTarget::ArrayIndex { span, .. }
+            | AssignTarget::Property { span, .. } => *span,
         }
     }
 }
@@ -152,6 +159,11 @@ pub enum Expr {
         index: Box<Expr>,
         span: Span,
     },
+    Property {
+        target: Box<Expr>,
+        property: String,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -191,6 +203,7 @@ impl Expr {
             | Expr::Variable(_, span)
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
+            | Expr::Property { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::New { span, .. }

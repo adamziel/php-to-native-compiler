@@ -1,1 +1,1 @@
-skip system PHP comparison
+phpc intentionally rejects object method calls before dispatch execution exists.

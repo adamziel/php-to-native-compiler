@@ -1,0 +1,1 @@
+phpc supports only static property names after -> in the current object slice.

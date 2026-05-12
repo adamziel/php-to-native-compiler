@@ -35,6 +35,8 @@
   flags for the documented subset
 - minimal object instantiation with `new ClassName()` for declared classes that
   do not define `__construct` and are called without constructor arguments
+- public instance property reads and direct-variable writes by static property
+  name: `$object->name` and `$object->name = ...`
 - short array literals: `[]`, `[value]`, and `[key => value]` for the currently
   supported expression subset
 - ordered arrays with integer and string keys
@@ -48,8 +50,9 @@
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access, unsupported `global`
   declarations, duplicate class/member metadata, undefined classes,
-  unsupported object instantiation, object-to-string conversion, and runaway
-  user-function recursion
+  unsupported object instantiation, undefined object properties, invalid
+  property targets, unsupported non-public property access, object-to-string
+  conversion, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, anonymous functions, arrow functions, named arguments,
@@ -59,7 +62,8 @@
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
-  property declarations, anonymous class expressions, and `->` object access
+  property declarations, anonymous class expressions, method calls, and dynamic
+  property names
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -105,9 +109,13 @@
   instance properties to `null`, skips static properties, treats object values
   as truthy, and lets direct `isset($object_variable)` return true. Undefined
   classes, constructor methods, and constructor arguments fail with stable
-  runtime diagnostics. Object property access, method dispatch, `$this`, and
-  visibility enforcement are not implemented; `->` still fails with a stable
-  parse diagnostic.
+  runtime diagnostics. Public instance property reads and direct-variable
+  writes work by static property name; property names are case-sensitive, and
+  writes mutate the current object value stored in that variable. Undefined
+  properties, property access on non-object values, and non-public properties
+  fail with stable runtime diagnostics. Method dispatch, dynamic property names,
+  `$this`, visibility enforcement for non-public properties, object handle
+  aliasing/identity, and native object lowering are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -139,11 +147,12 @@
   unsupported array keys, undefined array keys, unresolved dynamic function
   names, non-string dynamic function callees, division by zero, non-numeric
   string arithmetic, duplicate class metadata, undefined classes,
-  object-to-string conversion, and runaway user-function recursion.
+  undefined object properties, invalid property targets, non-public property
+  access, object-to-string conversion, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
-  assignment, class declarations, and object instantiation are rejected with
-  explicit codegen errors.
+  assignment, class declarations, object instantiation, object property reads,
+  and object property writes are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -182,18 +191,21 @@
   object values. `strlen` remains scalar-only and rejects arrays and objects.
   `count` accepts arrays only. `isset` supports direct variable operands and can
   safely check undefined variables; array offsets, object properties, complex
-  lvalues, and expression operands are unsupported. Because `isset` is modeled
-  as a special static form, it is not available through dynamic function
-  lookup. PHP's complete warning behavior is not implemented.
-- Object/class gaps: nested and conditional class declarations, property
-  access, method calls, `$this`, constructor execution, constructor arguments,
-  inheritance, interfaces, traits, abstract/final/readonly modifiers, typed
-  properties, property defaults, multiple properties in one declaration,
-  constants, static property storage, late static binding, magic methods,
-  namespaces, autoloading, anonymous classes, attributes, reflection, dynamic
-  properties, cloning, destructors, serialization hooks, visibility
-  enforcement, `self`/`parent`/`static`, object comparisons, object-to-string
-  conversion, object callables, and native lowering are unsupported.
+  lvalues, and expression operands are unsupported even though public property
+  reads themselves are implemented. Because `isset` is modeled as a special
+  static form, it is not available through dynamic function lookup. PHP's
+  complete warning behavior is not implemented.
+- Object/class gaps: nested and conditional class declarations, method calls,
+  `$this`, constructor execution, constructor arguments, inheritance,
+  interfaces, traits, abstract/final/readonly modifiers, typed properties,
+  property defaults, multiple properties in one declaration, constants, static
+  property storage, late static binding, magic methods, namespaces,
+  autoloading, anonymous classes, attributes, reflection, dynamic properties,
+  dynamic property names, non-public property access, property assignment
+  targets other than a direct variable, object handle identity/aliasing,
+  cloning, destructors, serialization hooks, visibility enforcement,
+  `self`/`parent`/`static`, object comparisons, object-to-string conversion,
+  object callables, and native lowering are unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -234,8 +246,10 @@
   `require_once` currently fail with stable parse diagnostics
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
-- object property access and method dispatch; `->` currently fails with a
-  stable parse diagnostic
+- method dispatch and dynamic property names; `$object->method()` and
+  `$object->$name` currently fail with stable parse diagnostics
+- non-public object property access and property writes to lvalues other than a
+  direct variable
 - constructor execution and constructor arguments for `new ClassName()`
 - unsupported class forms including nested/conditional declarations,
   inheritance, interface implementation, typed properties, property defaults,

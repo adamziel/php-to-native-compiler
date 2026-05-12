@@ -1002,3 +1002,66 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:23:56Z
 
 - Post-round 16 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:23:58Z
+
+- Starting round 17 at 20260512T002358Z from HEAD `1994c45`.
+
+## Loop Event 2026-05-12T00:24:00Z
+
+- Pre-round 17 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:32:44Z
+
+- Task attempted: added public instance property reads and direct-variable
+  writes for the current object value model. Static property names now parse
+  through `->`, public declared instance slots can be read and updated, object
+  rendering shows updated slots, and stable diagnostics cover undefined
+  properties, property access on non-object values, and non-public properties.
+  Method dispatch and dynamic property names remain explicit parse errors, and
+  native lowering rejects object property reads/writes.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone5/object_properties.*`,
+  `tests/fixtures/runtime_errors/undefined_object_property.*`,
+  `tests/fixtures/runtime_errors/invalid_property_target.*`,
+  `tests/fixtures/runtime_errors/non_public_property_access.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_object_access.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_dynamic_property.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime object_public_property_reads_and_writes_use_exact_slot_names`
+  passed; `cargo test -p phpc --test object_model` passed with 8 tests;
+  `cargo test -p phpc --test runtime_errors` passed with 17 tests; `cargo
+  test -p phpc --test milestone1 emit_ir_rejects_object_property` passed with
+  read/write rejection coverage; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone5` passed with 5
+  fixtures; `cargo run -p phpc -- test --compare-php tests/fixtures/milestone5`
+  passed with 5 system PHP comparisons; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 18 fixtures; `cargo run -p phpc
+  -- test tests/fixtures/unsupported_object_features` passed with 4 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 4 `.phpc-only`
+  skips; `cargo run -p phpc -- run
+  tests/fixtures/milestone5/object_properties.php` printed the committed
+  property read/write output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone5/object_properties.php --emit-ir` exited `1` with a
+  class-declaration rejection, while focused unit tests cover property
+  read/write rejection; `tools/run-tests.sh` passed with 62 fixtures, 27 system
+  PHP comparisons, and 35 `.phpc-only` skips.
+- Remaining semantic gaps: property access is limited to declared public
+  instance properties addressed by static names. Non-public visibility
+  enforcement, dynamic property names, property writes to complex lvalues,
+  `isset($object->property)`, object handle identity/aliasing, `$this`, method
+  dispatch, constructors, static property storage, inheritance/interfaces/
+  traits, reflection, object callables, and native object lowering remain
+  unsupported.
+- Next concrete task: add `isset($object->publicProperty)` support for public
+  instance properties while keeping array offsets, dynamic property names,
+  non-public visibility enforcement, and method dispatch unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add public property access"`
+  after the full suite passes.

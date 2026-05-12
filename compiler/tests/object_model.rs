@@ -85,6 +85,34 @@ print_r($box);
 }
 
 #[test]
+fn public_instance_property_reads_and_writes_mutate_object_slots() {
+    let source = r#"<?php
+class Profile {
+    public $name;
+    public $visits;
+    protected $secret;
+    private $token;
+    private static $cache;
+}
+
+$profile = new profile();
+echo "initial:", $profile->name, "\n";
+$profile->name = "Ada";
+$profile->visits = 3;
+echo $profile->name, "\n";
+echo $profile->visits + 2, "\n";
+print_r($profile);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "initial:\nAda\n5\nProfile Object\n(\n    [name] => Ada\n    [visits] => 3\n    [secret:protected] => \n    [token:Profile:private] => \n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -192,11 +220,28 @@ fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
     let cases = [
         (
             r#"<?php
-$box->name;
+class Box {
+    public function name() {}
+}
+$box = new Box();
+$box->name();
 "#,
-            2,
+            6,
             5,
-            "unsupported object access: object property and method access are not implemented",
+            "unsupported method call: method dispatch is not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public $name;
+}
+$box = new Box();
+$property = "name";
+$box->$property;
+"#,
+            7,
+            7,
+            "unsupported dynamic property access: dynamic property names are not implemented",
         ),
         (
             r#"<?php
