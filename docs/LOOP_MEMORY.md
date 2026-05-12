@@ -1405,3 +1405,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:03:49Z
 
 - Post-round 23 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:03:51Z
+
+- Starting round 24 at 20260512T010351Z from HEAD `ef50ac9`.
+
+## Loop Event 2026-05-12T01:03:53Z
+
+- Pre-round 24 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:07:28Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  `foreach (...)` syntax before iteration support exists. The parser now
+  rejects lowercase `foreach` and uppercase identifier-form `FOREACH` with the
+  same message, and expression-position `foreach` also routes to the stable
+  unsupported-foreach diagnostic.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_foreach.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries` passed
+  with 3 parse-boundary tests; `cargo test -p phpc --test
+  unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 3 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 3 `.phpc-only`
+  comparison skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_foreach.php` exited
+  `1` with the expected stable parse diagnostic; `tools/run-tests.sh` passed
+  with 73 fixtures, 28 system PHP comparisons, and 45 `.phpc-only` skips.
+- Remaining semantic gaps: `foreach` execution is still unsupported, including
+  value iteration, key/value iteration, by-reference iteration, mutation during
+  iteration, object iteration, destructuring, iterator objects, copy-on-write
+  array behavior, and native lowering. `for` syntax is not yet reserved with a
+  stable diagnostic.
+- Next concrete task: add explicit parse diagnostics for unsupported `for`
+  syntax before implementing C-style loops.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject foreach syntax"`
+  after the full suite passes.

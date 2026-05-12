@@ -40,8 +40,12 @@ impl Parser {
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
+            TokenKind::Foreach => self.parse_unsupported_foreach(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
+                self.parse_unsupported_foreach()
+            }
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
             }
@@ -334,6 +338,11 @@ impl Parser {
             body,
             span,
         })
+    }
+
+    fn parse_unsupported_foreach(&mut self) -> CompileResult<Stmt> {
+        let token = self.advance().clone();
+        Err(self.error_at(token.span, unsupported_foreach_message()))
     }
 
     fn parse_return(&mut self) -> CompileResult<Stmt> {
@@ -680,6 +689,7 @@ impl Parser {
                 "unsupported closure: arrow functions are not implemented",
             )),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
+            TokenKind::Foreach => Err(self.error_at(token.span, unsupported_foreach_message())),
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_require_message("include")))
             }
@@ -699,6 +709,9 @@ impl Parser {
                 "unsupported reference expression: references are not implemented",
             )),
             TokenKind::Identifier(name) => {
+                if name.eq_ignore_ascii_case("foreach") {
+                    return Err(self.error_at(token.span, unsupported_foreach_message()));
+                }
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
                 {
@@ -1055,6 +1068,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::If => "if",
         TokenKind::Else => "else",
         TokenKind::While => "while",
+        TokenKind::Foreach => "foreach",
         TokenKind::Null => "null",
         TokenKind::True => "true",
         TokenKind::False => "false",
@@ -1129,6 +1143,10 @@ fn unsupported_long_array_literal_message() -> &'static str {
 
 fn unsupported_unset_message() -> &'static str {
     "unsupported unset: variable, array offset, and property removal are not implemented"
+}
+
+fn unsupported_foreach_message() -> &'static str {
+    "unsupported foreach: array and object iteration are not implemented"
 }
 
 fn unsupported_class_expression_message() -> &'static str {

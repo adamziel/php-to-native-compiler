@@ -85,5 +85,7 @@ handled.
   before implementing long array literals.
 - [x] Add explicit parse diagnostics for unsupported `unset(...)` syntax before
   implementing unset.
-- [ ] Add explicit parse diagnostics for unsupported `foreach` syntax before
+- [x] Add explicit parse diagnostics for unsupported `foreach` syntax before
   implementing iteration.
+- [ ] Add explicit parse diagnostics for unsupported `for` syntax before
+  implementing C-style loops.

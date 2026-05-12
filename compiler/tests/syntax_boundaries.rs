@@ -94,3 +94,55 @@ UNSET($value);
         );
     }
 }
+
+#[test]
+fn foreach_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+$items = [1, 2];
+foreach ($items as $item) {
+    echo $item;
+}
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+$items = ["name" => "Ada"];
+foreach ($items as $key => $value) echo $value;
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+$items = [1];
+FOREACH ($items as &$item) {
+    echo $item;
+}
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+$items = [1];
+echo foreach ($items as $item);
+"#,
+            3,
+            6,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported foreach: array and object iteration are not implemented"
+        );
+    }
+}

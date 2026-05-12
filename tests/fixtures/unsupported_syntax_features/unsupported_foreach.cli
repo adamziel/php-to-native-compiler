@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:1: unsupported foreach: array and object iteration are not implemented
+--- stderr end ---
