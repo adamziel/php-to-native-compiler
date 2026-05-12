@@ -486,6 +486,36 @@ echo defined("123BAD");
 }
 
 #[test]
+fn top_level_const_declarations_are_rejected_with_stable_parse_errors() {
+    let cases = [
+        (
+            r#"<?php
+const APP_NAME = "compiler";
+"#,
+            2,
+            1,
+        ),
+        (
+            r#"<?php
+CONST APP_VERSION = 1, APP_ENV = "dev";
+"#,
+            2,
+            1,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported const declaration: top-level constant declarations are not implemented"
+        );
+    }
+}
+
+#[test]
 fn define_builtin_populates_runtime_constant_table() {
     let execution = run_source(
         r#"<?php

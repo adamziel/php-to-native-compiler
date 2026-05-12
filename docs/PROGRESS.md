@@ -444,6 +444,9 @@ Implemented:
   runtime-defined names, returns false for supported missing names, works
   through string-valued dynamic calls to `defined`, and has stable diagnostics
   for non-string or unsupported names.
+- Added explicit stable parse diagnostics, parser coverage, fixture coverage,
+  and `phpc run` CLI snapshots for unsupported top-level `const NAME = value;`
+  declarations before constant-declaration execution exists.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -764,17 +767,19 @@ Tested:
   fixtures.
 - `cargo test -p phpc interpreter::tests::symbol_table` passes with 4 focused
   symbol-table unit tests.
-- `cargo test -p phpc --test dynamic_features` passes with 24 tests covering
+- `cargo test -p phpc --test dynamic_features` passes with 25 tests covering
   static symbol-table behavior, dynamic function lookup behavior,
   runtime-defined constant, bare constant, and `defined(...)` behavior, and
-  unsupported variable-variable/include/require/eval/namespace/use and
-  namespace-qualified name diagnostic coverage.
+  unsupported variable-variable/include/require/eval/namespace/use,
+  top-level const declarations, and namespace-qualified name diagnostic
+  coverage.
 - `cargo test -p phpc --test user_constants_cli` passes with 1 CLI snapshot
   test covering the Milestone 61, Milestone 62, and Milestone 63 user constant
   fixtures.
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
-  CLI snapshot test covering 12 unsupported variable-variable,
-  include/require, eval, namespace, use, and namespace-qualified name fixtures.
+  CLI snapshot test covering 13 unsupported variable-variable,
+  include/require, eval, top-level const declaration, namespace, use, and
+  namespace-qualified name fixtures.
 - `cargo test -p phpc --test object_model` passes with 9 tests covering class
   metadata registration, minimal object instantiation, duplicate metadata
   diagnostics, undefined-class diagnostics, constructor rejection, public
@@ -1084,9 +1089,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 241 fixture tests.
+- `cargo run -p phpc -- test` passes with 245 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 99 fixtures and skipping 142 `.phpc-only` fixtures.
+  installed, comparing 100 fixtures and skipping 145 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -1201,6 +1206,12 @@ Tested:
   prints the committed `defined(...)` output for built-in constants,
   before/after runtime definitions, supported missing names, function-scope
   lookup, and string-valued dynamic calls.
+- `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passes with 13 unsupported dynamic feature fixtures.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`
+  passes with 13 `.phpc-only` skips.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php:2:1: unsupported const declaration: top-level constant declarations are not implemented`.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 109
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
@@ -1972,8 +1983,8 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 109
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 244 fixtures, 100 system PHP comparisons,
-  and 144 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 245 fixtures, 100 system PHP comparisons,
+  and 145 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -2226,9 +2237,11 @@ Still fails:
   `constant($name)` or bare unqualified names for the current string-name and
   scalar/array value subset. Other built-in constants, names lexed as language
   keywords or literals for bare reads, case-insensitive legacy constants,
-  extension constants, namespace-qualified constants, class constants through
-  `constant()`/`defined()`, references/copy-on-write behavior for constant
-  values, and native lowering for constants are not implemented.
+  extension constants, namespace-qualified constants, top-level `const NAME =
+  value;` declaration execution, grouped declarations, dynamic declaration
+  values, class constants through `constant()`/`defined()`,
+  references/copy-on-write behavior for constant values, and native lowering
+  for constants are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct

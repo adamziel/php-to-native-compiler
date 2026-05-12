@@ -61,6 +61,9 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
                 self.parse_continue()
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => {
+                self.parse_unsupported_const_declaration()
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset") => self.parse_unset(),
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
@@ -288,6 +291,11 @@ impl Parser {
             .consume_keyword(TokenKind::Eval, "expected 'eval'")?
             .span;
         Err(self.error_at(span, unsupported_eval_message()))
+    }
+
+    fn parse_unsupported_const_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_const_declaration_message()))
     }
 
     fn parse_unsupported_include_or_require(&mut self) -> CompileResult<Stmt> {
@@ -1600,6 +1608,10 @@ fn unsupported_namespace_message() -> &'static str {
 
 fn unsupported_use_message() -> &'static str {
     "unsupported use declaration: namespace imports are not implemented"
+}
+
+fn unsupported_const_declaration_message() -> &'static str {
+    "unsupported const declaration: top-level constant declarations are not implemented"
 }
 
 fn unsupported_namespace_qualified_function_name_message() -> &'static str {

@@ -160,6 +160,8 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
+- explicit parse diagnostics for unsupported top-level `const NAME = value;`
+  declarations before constant-declaration execution exists
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
@@ -907,8 +909,9 @@
   unknown bare constants, and the legacy third `define(...)` flag fail with
   stable diagnostics. Constant names that are lexed as language keywords or
   literals cannot be read bare, and case-insensitive legacy constants,
-  namespace-qualified constants, extension constants, class constants through
-  `constant(...)`/`defined(...)`,
+  namespace-qualified constants, extension constants, top-level
+  `const NAME = value;` declaration execution, grouped declarations, class
+  constants through `constant(...)`/`defined(...)`,
   references/copy-on-write behavior, and native lowering are not implemented.
   Array/object callables, closures, first-class callables, method calls,
   integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
@@ -1203,10 +1206,11 @@
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, and runtime-defined
   unqualified constants in the current name/value subset; unsupported
   `define(...)` names or values, case-insensitive legacy constants, extension
-  constants, namespace-qualified constants, `constant()`/`defined()` lookup
-  for class constants, names lexed as language keywords or literals for bare
-  reads, reference/copy-on-write behavior for constant values, and native
-  lowering remain unsupported
+  constants, namespace-qualified constants, top-level `const NAME = value;`
+  declaration execution, grouped declarations, dynamic declaration values,
+  `constant()`/`defined()` lookup for class constants, names lexed as language
+  keywords or literals for bare reads, reference/copy-on-write behavior for
+  constant values, and native lowering remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

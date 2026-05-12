@@ -6899,3 +6899,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T15:26:45Z
 
 - Post-round 12 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T15:26:52Z
+
+- Starting round 13 at 20260512T152651Z from HEAD `abdee20`.
+
+## Loop Event 2026-05-12T15:26:59Z
+
+- Pre-round 13 test exit code: `0`.
+
+## Loop Event 2026-05-12T15:39:12Z
+
+- Task attempted: added an explicit parse-diagnostic boundary for unsupported
+  top-level `const NAME = value;` declarations before implementing executable
+  constant declarations. The parser now rejects statement-position `const`
+  declarations, including uppercase `CONST`, with a stable diagnostic; fixture
+  and CLI snapshots record the `phpc run` behavior.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo fmt -- --check` passed;
+  `cargo test -p phpc --test dynamic_features top_level_const_declarations_are_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test dynamic_features` passed with 25 tests;
+  `cargo test -p phpc --test unsupported_dynamic_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with 13 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_dynamic_features` passed with 13 `.phpc-only`
+  skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php`
+  exited `1` with the expected stable parse diagnostic; `tools/run-tests.sh`
+  passed with 245 fixtures, 100 system PHP comparisons, and 145 `.phpc-only`
+  skips.
+- Remaining semantic gaps: top-level `const` declaration execution is still
+  unsupported, including grouped declarations, namespace-aware constants,
+  class constants, dynamic declaration values, references/copy-on-write for
+  constant values, exact PHP parse/error object behavior, and native constant
+  lowering.
+- Next concrete task: implement top-level `const NAME = value;` declarations
+  over the current constant-expression and value subset with duplicate and
+  unsupported-value diagnostics.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: reject top-level const declarations"`
+  after the full suite passes.

@@ -651,8 +651,17 @@ handled.
 
 ## Milestone 64: Global Constant Declaration Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported top-level `const NAME =
+- [x] Add explicit parse diagnostics for unsupported top-level `const NAME =
   value;` declarations before implementing constant declarations, including
   parser coverage, fixture CLI coverage, documentation, and named gaps for
   grouped declarations, namespace-aware constants, class constants, dynamic
   values, and native lowering.
+
+## Milestone 65: Global Constant Declaration Slice
+
+- [ ] Implement top-level `const NAME = value;` declarations over the current
+  constant-expression and value subset, including parser/interpreter support,
+  duplicate and unsupported-value diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for grouped declarations, namespace-aware
+  constants, class constants, references/copy-on-write, dynamic values, and
+  native lowering.
