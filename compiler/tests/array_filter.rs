@@ -138,6 +138,53 @@ echo count($again), "\n";
 }
 
 #[test]
+fn array_filter_accepts_integer_two_mode_for_key_callbacks() {
+    let source = r#"<?php
+function keep_selected_key($key) {
+    if ($key === "short") {
+        return true;
+    }
+    if ($key === 5) {
+        return true;
+    }
+    if ($key === "02") {
+        return true;
+    }
+    return false;
+}
+
+$items = [];
+$items[""] = "empty-key";
+$items["short"] = "Ada";
+$items["long"] = "Grace";
+$items[5] = "Linus";
+$items[] = "tail";
+$items["02"] = "zero-two";
+
+$filtered = array_filter($items, "keep_selected_key", 2);
+print_r(array_keys($filtered));
+echo count($filtered), "|", $filtered["short"], "|", $filtered[5], "|", $filtered["02"], "\n";
+$filtered[] = "after";
+echo $filtered[6], "\n";
+
+$call = "array_filter";
+$builtin = $call(["" => "empty", "name" => "Ada", "long-key" => "Grace"], "strlen", 2);
+print_r(array_keys($builtin));
+echo count($builtin), "|", $builtin["name"], "|", $builtin["long-key"], "\n";
+
+$again = $call($items, "keep_selected_key", 2);
+echo count($again), "|", $again[5];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => short\n    [1] => 5\n    [2] => 02\n)\n3|Ada|Linus|zero-two\nafter\nArray\n(\n    [0] => name\n    [1] => long-key\n)\n2|Ada|Grace\n3|Linus"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_filter_requires_array_argument() {
     let error = runtime_error("<?php\necho array_filter(42);\n");
 
@@ -207,7 +254,7 @@ fn array_filter_callback_reports_unknown_function() {
 }
 
 #[test]
-fn array_filter_rejects_key_and_key_value_modes() {
+fn array_filter_rejects_key_value_mode() {
     let error = runtime_error(
         "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, \"strlen\", 1);\n",
     );
@@ -216,7 +263,7 @@ fn array_filter_rejects_key_and_key_value_modes() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_filter(): ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset"
+        "unsupported call array_filter(): ARRAY_FILTER_USE_BOTH mode is not supported in the current subset"
     );
 }
 
@@ -230,7 +277,7 @@ fn array_filter_rejects_non_integer_mode_flags() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_filter(): mode flag must be integer 0 in the current subset, got bool"
+        "unsupported call array_filter(): mode flag must be integer 0 or 2 in the current subset, got bool"
     );
 }
 
@@ -270,5 +317,14 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
         value_mode_error.message.contains("function calls"),
         "{}",
         value_mode_error.message
+    );
+
+    let key_mode_error =
+        emit_ir_source("<?php\necho array_filter([\"name\"], \"strlen\", 2);\n").unwrap_err();
+    assert_eq!(key_mode_error.phase, Phase::Codegen);
+    assert!(
+        key_mode_error.message.contains("function calls"),
+        "{}",
+        key_mode_error.message
     );
 }

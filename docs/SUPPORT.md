@@ -119,8 +119,8 @@
   operands, unsupported non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string or unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
-  `array_filter` callbacks, unsupported nonzero/non-int `array_filter` mode
-  flags, non-array `array_map` operands, non-string or unresolved
+  `array_filter` callbacks, unsupported key/value or invalid `array_filter`
+  mode flags, non-array `array_map` operands, non-string or unresolved
   `array_map` callbacks,
   non-array variadic `array_map` operands,
   non-array `in_array`/`array_search` haystacks,
@@ -388,6 +388,9 @@
   only argument, preserves keys whose callback result is truthy, accepts
   explicit integer mode flag `0` for the same value-only callback path, and is
   also available through string-valued dynamic calls to `array_filter`.
+  `array_filter($array, $callback, 2)` invokes the same string-valued callback
+  subset once per entry with the current integer or string key as the only
+  argument, preserving keys whose callback result is truthy.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array of
@@ -426,8 +429,9 @@
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
   `array_reduce` in the current string-callback form with optional initial
   values,
-  `array_filter` in the current no-callback, null-callback, and
-  string-callback forms, including explicit integer mode flag `0`,
+  `array_filter` in the current no-callback, null-callback, value-only
+  string-callback, and key-only string-callback forms, including explicit
+  integer mode flags `0` and `2`,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic string-callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
@@ -516,8 +520,8 @@
   operands, unsupported non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string and unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
-  `array_filter` callbacks, unsupported nonzero/non-int `array_filter` mode
-  flags,
+  `array_filter` callbacks, unsupported key/value or invalid `array_filter`
+  mode flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
   callbacks, non-array variadic `array_map` operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
@@ -844,12 +848,16 @@
   callback result is truthy, preserves original keys and insertion order,
   accepts explicit integer mode flag `0` for the same value-only callback path,
   and is available when `array_filter` itself is called through a string-valued
-  dynamic function name. Non-string non-null callback values fail with a
+  dynamic function name. `array_filter($array, $callback, 2)` invokes that
+  same string-valued callback subset with each entry's current integer or
+  string key as the only argument and preserves original keys for entries
+  whose callback result is truthy. Non-string non-null callback values fail with a
   stable diagnostic, and unresolved callback names fail with the current
   undefined-function diagnostic. Array/object callables, closures, first-class
-  callables, method calls, key-only and key/value callback modes through
-  integer flags or named `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH`
-  constants, non-int mode coercions such as `false`, references,
+  callables, method calls, key/value callback mode through integer flag `1`,
+  named `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants, integer mode
+  flags outside `0`, `1`, and `2`, non-int mode coercions such as `false`,
+  references,
   copy-on-write containers, exact native `TypeError` objects, object handle
   identity preservation, resource values, and native lowering are not
   implemented.
@@ -936,8 +944,8 @@
   unsupported values, `array_product` PHP warning recovery for unsupported
   values, `array_reduce` callback forms outside the current
   string function-name subset, and `array_filter` callback forms outside the
-  current null-callback and string function-name subset plus key/key-value
-  modes, and `array_map`
+  current null-callback, value-only string function-name, and key-only string
+  function-name subset plus key/value mode, and `array_map`
   callback forms outside current null-callback and string-valued function-name
   forms are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
@@ -1126,11 +1134,12 @@
   identity preservation, resource values, exact native `TypeError` objects, and
   native lowering
 - `array_filter` callbacks outside `null` and string-valued
-  user-function/callable-builtin names, `ARRAY_FILTER_USE_KEY` and
-  `ARRAY_FILTER_USE_BOTH` callback modes through integer flags or named
-  constants, non-int mode coercions such as `false`, reference/copy-on-write
-  behavior, object handle identity preservation, resource values, exact native
-  `TypeError` objects, and native lowering
+  user-function/callable-builtin names, key/value callback mode through integer
+  flag `1`, named `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH` constants,
+  integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
+  `false`, reference/copy-on-write behavior, object handle identity
+  preservation, resource values, exact native `TypeError` objects, and native
+  lowering
 - `array_map` array/object callables, closures, first-class callables, method
   calls, reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering

@@ -6330,3 +6330,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T13:25:54Z
 
 - Post-round 3 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T13:26:00Z
+
+- Starting round 4 at 20260512T132600Z from HEAD `6420443`.
+
+## Loop Event 2026-05-12T13:26:07Z
+
+- Pre-round 4 test exit code: `0`.
+
+## Loop Event 2026-05-12T13:39:13Z
+
+- Task attempted: implemented integer mode flag `2`/`ARRAY_FILTER_USE_KEY`
+  behavior for `array_filter($array, $callback, 2)` over the current
+  string-valued callback subset. Key-only mode now invokes user-function or
+  callable-builtin callbacks with the current integer/string array key,
+  preserves entries whose callback result is truthy, works through
+  string-valued dynamic calls to `array_filter`, and keeps mode flag `1`
+  key/value callbacks and named `ARRAY_FILTER_*` constants unsupported.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone55/array_filter_use_key.php`,
+  `tests/fixtures/milestone55/array_filter_use_key.stdout`,
+  `tests/fixtures/milestone55/array_filter_use_key.cli`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.stderr`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.cli`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.phpc-only`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  array_filter` passed with 11 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone55` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone55` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test array_filtering_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  run tests/fixtures/milestone55/array_filter_use_key.php` printed the
+  committed key-mode output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_filter_mode_unsupported.php` exited `1`
+  with the expected `ARRAY_FILTER_USE_BOTH` diagnostic; `cargo run -p phpc --
+  test tests/fixtures/runtime_errors` passed with 104 fixtures;
+  `tools/run-tests.sh` passed with 232 fixtures, 94 system PHP comparisons,
+  and 138 `.phpc-only` skips.
+- Remaining semantic gaps: `array_filter` still does not support mode flag `1`
+  / `ARRAY_FILTER_USE_BOTH`, named `ARRAY_FILTER_USE_KEY` or
+  `ARRAY_FILTER_USE_BOTH` constants, integer mode flags outside `0`, `1`, and
+  `2`, non-int mode coercions such as `false`, array/object callables,
+  closures, first-class callables, method calls, references, copy-on-write
+  containers, exact native `TypeError` objects, resource values, object handle
+  identity preservation, or native lowering.
+- Next concrete task: implement integer mode flag `1`/`ARRAY_FILTER_USE_BOTH`
+  behavior for `array_filter($array, $callback, 1)` over the current
+  string-valued callback subset.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_filter key mode"`
+  after the full suite passes.

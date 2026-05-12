@@ -381,14 +381,21 @@ Implemented:
   names, invokes the callback in value-only mode, preserves keys whose callback
   return value is truthy, is available when `array_filter` itself is called
   dynamically by string name, and has stable diagnostics for non-string
-  callbacks, unresolved callback names, and unsupported nonzero/non-int mode
-  flags.
+  callbacks, unresolved callback names, and unsupported mode flags outside the
+  current subset.
 - Extended `array_filter` with explicit integer mode flag `0` for the current
   `null` callback and string-valued value-only callback paths. The supported
   slice reuses the existing value filtering behavior, works through
-  string-valued dynamic calls to `array_filter`, and keeps key-only/key-value
-  modes, named `ARRAY_FILTER_*` constants, and non-int mode coercions
+  string-valued dynamic calls to `array_filter`, and keeps key/value mode,
+  named `ARRAY_FILTER_*` constants, and non-int mode coercions
   unsupported.
+- Extended `array_filter` with integer mode flag `2` for the current
+  string-valued key-only callback path. The supported slice invokes
+  user-function or callable-builtin callbacks once per entry with the current
+  integer or string key as the only argument, preserves entries whose callback
+  return value is truthy, works through string-valued dynamic calls to
+  `array_filter`, and keeps named `ARRAY_FILTER_USE_KEY` constants and
+  key/value mode unsupported.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -831,9 +838,10 @@ Tested:
 - `cargo test -p phpc --test array_filter` passes with falsey-value removal,
   explicit `null` callback falsey filtering, value-only string callback
   execution for user functions and callable builtins, explicit integer mode
-  flag `0` for the current null-callback and string-callback paths, key
-  preservation, dynamic string-call coverage, original-array preservation,
-  non-array/callback/mode diagnostics, and LLVM IR rejection coverage.
+  flag `0` for the current null-callback and string-callback paths, integer
+  mode flag `2` for key-only string callbacks, key preservation, dynamic
+  string-call coverage, original-array preservation, non-array/callback/mode
+  diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_map` passes with one-array null-callback
   identity mapping, variadic null-callback zip mapping with longest-array
   `null` padding and integer reindexing, one-array value-only string callback
@@ -939,7 +947,7 @@ Tested:
   fixtures.
 - `cargo test -p phpc --test array_filtering_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 20, Milestone 21, Milestone 53, and
-  Milestone 54 `array_filter` fixtures.
+  Milestone 54 and Milestone 55 `array_filter` fixtures.
 - `cargo test -p phpc --test array_mapping_builtins_cli` passes with CLI
   snapshot tests covering the Milestone 22, Milestone 23, Milestone 25,
   Milestone 26, Milestone 27, and Milestone 28 `array_map` fixtures.
@@ -1023,9 +1031,9 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_multiple_unset_until_native_lowering_exists`
   passes with rejection coverage for multiple-operand unset before native
   symbol-table/array-offset mutation lowering exists.
-- `cargo run -p phpc -- test` passes with 205 fixture tests.
+- `cargo run -p phpc -- test` passes with 232 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 82 fixtures and skipping 123 `.phpc-only` fixtures.
+  installed, comparing 94 fixtures and skipping 138 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -1272,7 +1280,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_callback_undefined.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_callback_undefined.php:3:6: undefined function missing_filter()`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_mode_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_mode_unsupported.php:3:6: unsupported call array_filter(): ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_mode_unsupported.php:3:6: unsupported call array_filter(): ARRAY_FILTER_USE_BOTH mode is not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_non_array.php:2:6: unsupported call array_map(): second argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_callback_non_string.php`
@@ -1486,6 +1494,15 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone54` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone54` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone55/array_filter_use_key.php`
+  prints the committed `array_filter(..., 2)` output for the current
+  string-valued key-only callback path, including integer/string key callback
+  arguments, key preservation, callable-builtin callbacks, and string-valued
+  dynamic calls to `array_filter`.
+- `cargo run -p phpc -- test tests/fixtures/milestone55` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone55` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone22/array_map.php` prints
   the committed `array_map` output with string-named user-function callbacks,
@@ -2019,13 +2036,14 @@ Still fails:
   identity preservation, resource values, exact native `TypeError` objects,
   and native lowering are not implemented.
   `array_filter` callback support is limited to omitted callbacks, explicit
-  `null` callbacks, and string-valued user-function or callable-builtin names
-  in value-only mode, with explicit integer mode flag `0` accepted for the
-  current null-callback and string-callback paths. Array/object callables,
-  closures, first-class callables, method calls, key-only/key-value callback
-  modes through integer flags or named `ARRAY_FILTER_*` constants, non-int
-  mode coercions such as `false`, reference and copy-on-write behavior, object
-  handle identity preservation, resource values, exact native `TypeError`
+  `null` callbacks, string-valued user-function or callable-builtin names in
+  value-only mode with explicit integer mode flag `0`, and string-valued
+  key-only callbacks with explicit integer mode flag `2`. Array/object
+  callables, closures, first-class callables, method calls, key/value callback
+  mode through integer flag `1`, named `ARRAY_FILTER_*` constants, integer
+  mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
+  `false`, reference and copy-on-write behavior, object handle identity
+  preservation, resource values, exact native `TypeError`
   objects, and native lowering are not implemented.
   `array_map` callback support is limited to one-array null-callback identity
   mapping, variadic null-callback zip mapping, and variadic input arrays with
@@ -2125,7 +2143,7 @@ Still fails:
 
 Next:
 
-- Implement integer mode flag `2`/`ARRAY_FILTER_USE_KEY` behavior for
-  `array_filter($array, $callback, 2)` over the current string-valued callback
-  subset, while keeping named constants and key/value callback mode
-  unsupported until explicit syntax/runtime support exists.
+- Implement integer mode flag `1`/`ARRAY_FILTER_USE_BOTH` behavior for
+  `array_filter($array, $callback, 1)` over the current string-valued callback
+  subset, while keeping named constants unsupported until explicit syntax
+  support exists.

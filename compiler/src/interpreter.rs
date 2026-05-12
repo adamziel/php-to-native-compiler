@@ -44,6 +44,12 @@ enum Callable {
     User(Rc<FunctionDecl>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayFilterMode {
+    Value,
+    Key,
+}
+
 #[derive(Debug, Clone, Default)]
 struct SymbolTable {
     // Static variables and future dynamic variable names share the same
@@ -1796,7 +1802,7 @@ impl Interpreter {
                 Ok(Value::Array(array.filtered_without_callback()))
             }
             [Value::Array(array), Value::Null, mode] => {
-                Self::require_array_filter_value_mode(mode, span)?;
+                Self::array_filter_mode(mode, span)?;
                 Ok(Value::Array(array.filtered_without_callback()))
             }
             [other] => Err(runtime_error(
@@ -1806,13 +1812,16 @@ impl Interpreter {
                     format!("argument must be array, got {}", other.type_name()),
                 ),
             )),
-            [Value::Array(array), callback] => Ok(Value::Array(
-                self.filter_array_with_callback(array, callback, span)?,
-            )),
+            [Value::Array(array), callback] => Ok(Value::Array(self.filter_array_with_callback(
+                array,
+                callback,
+                ArrayFilterMode::Value,
+                span,
+            )?)),
             [Value::Array(array), callback, mode] => {
-                Self::require_array_filter_value_mode(mode, span)?;
+                let mode = Self::array_filter_mode(mode, span)?;
                 Ok(Value::Array(
-                    self.filter_array_with_callback(array, callback, span)?,
+                    self.filter_array_with_callback(array, callback, mode, span)?,
                 ))
             }
             [other, _] | [other, _, _] => Err(runtime_error(
@@ -1833,14 +1842,22 @@ impl Interpreter {
         }
     }
 
-    fn require_array_filter_value_mode(mode: &Value, span: Span) -> CompileResult<()> {
+    fn array_filter_mode(mode: &Value, span: Span) -> CompileResult<ArrayFilterMode> {
         match mode {
-            Value::Int(0) => Ok(()),
-            Value::Int(_) => Err(runtime_error(
+            Value::Int(0) => Ok(ArrayFilterMode::Value),
+            Value::Int(2) => Ok(ArrayFilterMode::Key),
+            Value::Int(1) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_filter()",
-                    "ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset",
+                    "ARRAY_FILTER_USE_BOTH mode is not supported in the current subset",
+                ),
+            )),
+            Value::Int(value) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_filter()",
+                    format!("mode flag must be integer 0 or 2 in the current subset, got {value}"),
                 ),
             )),
             other => Err(runtime_error(
@@ -1848,7 +1865,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "array_filter()",
                     format!(
-                        "mode flag must be integer 0 in the current subset, got {}",
+                        "mode flag must be integer 0 or 2 in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
@@ -1860,6 +1877,7 @@ impl Interpreter {
         &mut self,
         array: &PhpArray,
         callback: &Value,
+        mode: ArrayFilterMode,
         span: Span,
     ) -> CompileResult<PhpArray> {
         let callback_name = match callback {
@@ -1886,8 +1904,11 @@ impl Interpreter {
 
         let mut filtered = PhpArray::new();
         for entry in array.entries() {
-            let result =
-                self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
+            let argument = match mode {
+                ArrayFilterMode::Value => entry.value.clone(),
+                ArrayFilterMode::Key => value_from_array_key(&entry.key),
+            };
+            let result = self.call_callable_with_values(callable.clone(), vec![argument], span)?;
             if result.is_truthy() {
                 filtered.insert(entry.key.clone(), entry.value.clone());
             }

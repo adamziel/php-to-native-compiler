@@ -1,2 +1,2 @@
-runtime error at 3:6: unsupported call array_filter(): ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset
+runtime error at 3:6: unsupported call array_filter(): ARRAY_FILTER_USE_BOTH mode is not supported in the current subset
 

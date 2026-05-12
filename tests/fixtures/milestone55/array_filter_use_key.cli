@@ -1,0 +1,19 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => short
+    [1] => 5
+    [2] => 02
+)
+3|Ada|Linus|zero-two
+after
+Array
+(
+    [0] => name
+    [1] => long-key
+)
+2|Ada|Grace
+3|Linus--- stdout end ---
+stderr:
+--- stderr end ---
