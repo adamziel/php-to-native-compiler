@@ -126,6 +126,8 @@ support. `get_object_vars` is rejected through the same function-call boundary
 until object property value extraction has native support.
 `get_declared_interfaces` is rejected through that function-call boundary until
 interface metadata lookup has native support.
+`get_declared_traits` is rejected through that function-call boundary until
+trait metadata lookup has native support.
 
 ## Unsupported Edge Cases
 
@@ -151,6 +153,7 @@ inheritance/trait/interface properties, context-sensitive visibility, object
 inputs, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
 `get_declared_interfaces` declared interface metadata and built-in/internal
-interface entries,
+interface entries, `get_declared_traits` declared trait metadata and
+built-in/internal trait entries,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.

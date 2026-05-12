@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `get_declared_traits()` as an empty trait-list boundary for the current
+  no-trait metadata model, with runtime coverage, fixture coverage,
+  dynamic-call coverage, and a `phpc run` CLI snapshot.
 - Added `get_declared_interfaces()` as an empty interface-list boundary for
   the current no-interface metadata model, with runtime coverage, fixture
   coverage, dynamic-call coverage, and a `phpc run` CLI snapshot.

@@ -9572,3 +9572,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T21:39:46Z
 
 - Post-round 1 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T21:39:54Z
+
+- Starting round 2 at 20260512T213954Z from HEAD `36f04c1`.
+
+## Loop Event 2026-05-12T21:40:01Z
+
+- Pre-round 2 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:44:31Z
+
+- Task attempted: added `get_declared_traits()` as the next honest object
+  introspection boundary over the current no-trait metadata model. The
+  supported slice returns an empty zero-indexed array, is available through
+  string-valued dynamic calls, has arity diagnostics, and keeps native lowering
+  rejected through the existing function-call codegen boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone111/get_declared_traits.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p phpc
+  get_declared_traits -- --nocapture` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli -- --nocapture` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone111` passed with 1 fixture; `cargo run -p
+  phpc -- run tests/fixtures/milestone111/get_declared_traits.php` printed the
+  committed empty-list output; `tools/run-tests.sh` passed with 322 fixtures,
+  118 system PHP comparisons, and 204 skips.
+- Remaining semantic gaps: trait declarations and trait use remain unsupported,
+  no declared or built-in/internal trait metadata is represented, autoloading
+  and namespace/import aliases are unsupported, exact native ordering is not
+  modeled, and native lowering still rejects the builtin call.
+- Next concrete task: continue with the next small object/class value
+  introspection boundary that can be completed with executable behavior,
+  tests, CLI coverage, docs, and named unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_declared_traits boundary"`
+  after the full suite passes.

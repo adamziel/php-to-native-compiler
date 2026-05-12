@@ -125,8 +125,8 @@ subset:
   `is_a($object_or_class, $class_name[, $allow_string])` and
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` and
   `get_parent_class($object_or_class)` and `get_declared_classes()` and
-  `get_declared_interfaces()` over the current minimal object value model and
-  declared-class metadata,
+  `get_declared_interfaces()` and `get_declared_traits()` over the current
+  minimal object value model and declared-class metadata,
   `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
@@ -203,6 +203,9 @@ and is also available through string-valued dynamic function calls.
 `get_declared_interfaces()` returns an empty zero-indexed array because
 interface declarations and internal interface metadata are not represented yet;
 it is also available through string-valued dynamic function calls.
+`get_declared_traits()` returns an empty zero-indexed array because trait
+declarations and internal trait metadata are not represented yet; it is also
+available through string-valued dynamic function calls.
 Constructors, `$this` object context binding, method
 dispatch, dynamic property names, visibility enforcement for non-public
 properties, inheritance and interface relationship checks, object handle
@@ -213,7 +216,8 @@ declarations, static property storage, static method dispatch, magic static
 receivers such as `self::`, `parent::`, and `static::`, class constants, trait
 use inside classes, enum declarations, built-in/internal/extension classes in
 `get_declared_classes()`, declared/built-in/internal interface entries in
-`get_declared_interfaces()`, non-public/context-sensitive method listing for
+`get_declared_interfaces()`, declared/built-in/internal trait entries in
+`get_declared_traits()`, non-public/context-sensitive method listing for
 `get_class_methods()`, inherited/trait/interface methods, anonymous classes,
 exact native class/interface/method/property ordering, `get_class_vars()` property
 defaults, inheritance/trait/interface properties, context-sensitive visibility,

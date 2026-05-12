@@ -107,7 +107,7 @@
   `class_exists`, `property_exists`, `method_exists`, `is_a`,
   `get_class_methods`, `get_class_vars`, `get_object_vars`,
   `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
-  `get_declared_interfaces`, `var_dump`, and `print_r`;
+  `get_declared_interfaces`, `get_declared_traits`, `var_dump`, and `print_r`;
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -131,6 +131,8 @@
   declared in the current program in declaration order,
   `get_declared_interfaces` returns an empty zero-indexed array because
   interface declarations and internal interface metadata are not represented,
+  `get_declared_traits` returns an empty zero-indexed array because trait
+  declarations and internal trait metadata are not represented,
   and `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
@@ -363,6 +365,9 @@
   `get_declared_interfaces()` returns an empty zero-indexed array because
   interface declarations and internal interface metadata are not represented
   yet, and is available through string-valued dynamic calls.
+  `get_declared_traits()` returns an empty zero-indexed array because trait
+  declarations and internal trait metadata are not represented yet, and is
+  available through string-valued dynamic calls.
   Static member expressions through `::`,
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
@@ -380,8 +385,9 @@
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
-  anonymous classes, exact native class/interface ordering, exact PHP `Error`
-  objects, and native object lowering are not implemented.
+  declared/built-in/internal trait entries for `get_declared_traits`,
+  anonymous classes, exact native class/interface/trait ordering, exact PHP
+  `Error` objects, and native object lowering are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -696,7 +702,7 @@
   `get_class_methods` arguments and missing `get_class_methods` string
   classes, non-string `get_class_vars` arguments and missing
   `get_class_vars` string classes, non-object `get_object_vars` arguments,
-  extra `get_declared_interfaces` arguments,
+  extra `get_declared_interfaces` or `get_declared_traits` arguments,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -710,6 +716,7 @@
   `get_class_methods(...)`, `get_class_vars(...)`, `is_a(...)`,
   `get_object_vars(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
   `get_declared_classes(...)`, `get_declared_interfaces(...)`,
+  `get_declared_traits(...)`,
   `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
   rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -729,7 +736,7 @@
   `class_exists`, `property_exists`, `method_exists`, `get_class_methods`,
   `get_class_vars`, `get_object_vars`, `is_a`, `is_subclass_of`,
   `get_parent_class`, `get_declared_classes`, `get_declared_interfaces`,
-  `var_dump`, or `print_r`.
+  `get_declared_traits`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -803,8 +810,8 @@
   `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
   `method_exists`, `get_class_methods`, `is_a`, `is_subclass_of`,
   `get_class_vars`, `get_parent_class`, `get_declared_classes`,
-  `get_declared_interfaces`, `var_dump`, and `print_r` cover the documented
-  scalar/array/object subset.
+  `get_declared_interfaces`, `get_declared_traits`, `var_dump`, and `print_r`
+  cover the documented scalar/array/object subset.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -836,6 +843,8 @@
   current parsed program's declared class names in declaration order.
   `get_declared_interfaces()` returns an empty zero-indexed array because
   interface declarations and internal interface metadata are not represented.
+  `get_declared_traits()` returns an empty zero-indexed array because trait
+  declarations and internal trait metadata are not represented.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -1502,6 +1511,9 @@
 - `get_declared_interfaces` declared interface metadata, built-in/internal
   interface entries, autoloading, namespaces/import aliases, exact native
   ordering, and native lowering
+- `get_declared_traits` declared trait metadata, built-in/internal trait
+  entries, autoloading, namespaces/import aliases, exact native ordering, and
+  native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase

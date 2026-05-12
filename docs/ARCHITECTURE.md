@@ -189,7 +189,8 @@ string class names and returns false for all supported inputs because parent
 metadata is not represented yet.
 `get_declared_classes()` lists classes declared in the current parsed program;
 `get_declared_interfaces()` returns an empty list because interface metadata is
-not represented yet.
+not represented yet; `get_declared_traits()` returns an empty list because
+trait metadata is not represented yet.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

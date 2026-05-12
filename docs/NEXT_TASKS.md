@@ -1054,3 +1054,12 @@ handled.
   arity diagnostics, fixture CLI coverage, documentation, and explicit gaps
   for declared interfaces, built-in/internal interfaces, autoloading,
   namespaces/import aliases, exact native ordering, and native lowering.
+
+## Milestone 111: Declared Trait List Boundary
+
+- [x] Add the next honest `get_declared_traits()` boundary over the current
+  no-trait metadata model: either a stable unsupported diagnostic or a narrow
+  executable empty-list slice with string-valued dynamic-call coverage, arity
+  diagnostics, fixture CLI coverage, documentation, and explicit gaps for
+  declared traits, built-in/internal traits, autoloading, namespaces/import
+  aliases, exact native ordering, and native lowering.

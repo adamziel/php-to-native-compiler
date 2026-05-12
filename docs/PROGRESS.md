@@ -2602,6 +2602,14 @@ Still fails:
   boundary. Declared interfaces, built-in/internal interfaces, autoloading,
   namespaces/import aliases, exact native ordering, and native lowering remain
   unsupported.
+- Added `get_declared_traits()` as an explicit empty-trait-table boundary. The
+  supported slice returns an empty zero-indexed array because trait
+  declarations and internal trait metadata are not represented yet, works
+  through string-valued dynamic calls, has fixture CLI coverage plus arity
+  coverage, and rejects native lowering through the current function-call
+  boundary. Declared traits, built-in/internal traits, autoloading,
+  namespaces/import aliases, exact native ordering, and native lowering remain
+  unsupported.
 
 Next:
 
