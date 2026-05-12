@@ -1,0 +1,30 @@
+exit: 0
+stdout:
+Array
+(
+    [keep] => keep
+    [9] => next
+)
+2
+keep|next
+after
+Array
+(
+    [name] => Ada
+    [1] => 1
+    [two] => two
+    [ten] => 10
+    [float-ten] => 10
+    [drop] => drop
+    [8] => eight
+    [keep] => keep
+    [9] => next
+)
+keep|next
+Array
+(
+)
+0
+done--- stdout end ---
+stderr:
+--- stderr end ---

@@ -99,8 +99,8 @@
   `array_combine` key values, non-array `array_intersect_key` operands,
   non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, non-array variadic `array_diff_key` operands,
-  non-array `array_diff` operands, unsupported non-scalar `array_diff` value
-  comparisons, unsupported variadic `array_diff` operands,
+  non-array `array_diff` operands, non-array variadic `array_diff` operands,
+  unsupported non-scalar `array_diff` value comparisons,
   non-array `array_intersect` operands, non-array variadic
   `array_intersect` operands, unsupported non-scalar `array_intersect` value
   comparisons,
@@ -313,11 +313,12 @@
   entries from the first array whose integer/string keys are absent from every
   subsequent array, preserves the first array's keys, values, and insertion
   order, and is also available through string-valued dynamic function calls.
-  `array_diff($left, $right)` accepts two arrays, compares current scalar
-  values through their PHP string forms, returns entries from the first array
-  whose scalar comparison value is absent from the second array, preserves the
-  first array's keys, values, insertion order, and append-index behavior, and
-  is also available through string-valued dynamic function calls.
+  `array_diff($array, ...$arrays)` accepts two or more arrays, compares
+  current scalar values through their PHP string forms, returns entries from
+  the first array whose scalar comparison value is absent from every subsequent
+  array, preserves the first array's keys, values, insertion order, and
+  append-index behavior, and is also available through string-valued dynamic
+  function calls.
   `array_intersect($array, ...$arrays)` accepts two or more arrays, compares
   current scalar values through their PHP string forms, returns entries from
   the first array whose scalar comparison value is present in every subsequent
@@ -453,8 +454,8 @@
   `array_combine` key values, non-array `array_intersect_key` operands,
   non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, non-array variadic `array_diff_key` operands,
-  non-array `array_diff` operands, unsupported non-scalar `array_diff` value
-  comparisons, unsupported variadic `array_diff` operands,
+  non-array `array_diff` operands, non-array variadic `array_diff` operands,
+  unsupported non-scalar `array_diff` value comparisons,
   non-array `array_intersect` operands, non-array variadic
   `array_intersect` operands, unsupported non-scalar `array_intersect` value
   comparisons,
@@ -656,13 +657,14 @@
   values, resource values, exact native `TypeError` objects, and native
   lowering are not implemented. `array_diff_key` is also available through
   string-valued dynamic function calls.
-  `array_diff($left, $right)` accepts exactly two array operands, compares
+  `array_diff($array, ...$arrays)` accepts two or more array operands, compares
   current scalar values by their PHP string forms, and returns a new ordered
   array containing entries from the first array whose scalar comparison value
-  is absent from the second array. The first array's key shape, values,
+  is absent from every subsequent array. The first array's key shape, values,
   insertion order, and append-index behavior are preserved, and the source
-  arrays are not mutated. Non-array operands, non-scalar values such as arrays
-  or objects, and variadic operands fail with stable project diagnostics.
+  arrays are not mutated. Non-array operands, including variadic operands, and
+  non-scalar values such as arrays or objects fail with stable project
+  diagnostics.
   References, copy-on-write containers, object/resource values, exact native
   `TypeError` objects, PHP warning-and-string-conversion behavior for
   non-scalar values, and native lowering are not implemented. `array_diff` is
@@ -801,8 +803,8 @@
   behavior, `array_combine` key coercions beyond integer/string values,
   `array_combine` object/resource key values, `array_intersect_key` and
   `array_diff_key` exact native `TypeError` objects and
-  reference/copy-on-write behavior, `array_diff` variadic operands,
-  `array_diff` and `array_intersect` non-scalar value comparison behavior,
+  reference/copy-on-write behavior, `array_diff` and `array_intersect`
+  non-scalar value comparison behavior,
   exact native `TypeError` objects, and native lowering, `array_flip`
   warning-and-skip behavior
   for unsupported source values, and `array_fill_keys` warning-and-skip
@@ -964,10 +966,9 @@
 - `array_diff_key` exact native `TypeError` objects, reference/copy-on-write
   behavior, object handle identity preservation for object values, resource
   values, and native lowering
-- `array_diff` variadic operands, non-scalar value comparisons, exact native
-  `TypeError` objects, PHP warning-and-string-conversion behavior for arrays
-  and objects, reference/copy-on-write behavior, object/resource values, and
-  native lowering
+- `array_diff` non-scalar value comparisons, exact native `TypeError` objects,
+  PHP warning-and-string-conversion behavior for arrays and objects,
+  reference/copy-on-write behavior, object/resource values, and native lowering
 - `array_intersect` non-scalar value comparisons, exact native `TypeError`
   objects, PHP warning-and-string-conversion behavior for arrays and objects,
   reference/copy-on-write behavior, object/resource values, and native lowering

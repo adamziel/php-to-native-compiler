@@ -5643,3 +5643,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T10:32:57Z
 
 - Post-round 88 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T10:33:03Z
+
+- Starting round 89 at 20260512T103303Z from HEAD `cf1d3d1`.
+
+## Loop Event 2026-05-12T10:33:08Z
+
+- Pre-round 89 test exit code: `0`.
+
+## Loop Event 2026-05-12T10:46:48Z
+
+- Task attempted: extended `array_diff` beyond the previous two-array slice
+  with variadic array operands over the current scalar string-form comparison
+  subset. The supported slice now removes first-array values found in any
+  subsequent array, preserves first-array keys, values, insertion order, and
+  append-index behavior, supports string-valued dynamic calls, and reports
+  stable non-array positional diagnostics for variadic operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_diff.rs`,
+  `compiler/tests/array_value_difference_builtins_cli.rs`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, `tests/fixtures/milestone45/array_diff_variadic.*`,
+  `tests/fixtures/runtime_errors/array_diff_third_non_array.*`, and removed
+  `tests/fixtures/runtime_errors/array_diff_variadic_unsupported.*`.
+- Tests run this round: `cargo test -p php_runtime array_diff` passed with 5
+  focused runtime tests; `cargo test -p phpc --test array_diff` passed with 7
+  tests; `cargo test -p phpc --test array_value_difference_builtins_cli`
+  passed; `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone45` passed with 1 fixture; `cargo run
+  -p phpc -- test --compare-php tests/fixtures/milestone45` passed with 1
+  system PHP comparison; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_diff_third_non_array.php` exited `1`
+  with the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone45/array_diff_variadic.php --emit-ir` exited `1`
+  with the current explicit array native-lowering rejection; `cargo run -p
+  phpc -- test tests/fixtures/runtime_errors` passed with 89 fixtures;
+  `tools/run-tests.sh` passed with 207 fixtures, 84 system PHP comparisons,
+  and 123 `.phpc-only` skips.
+- Remaining semantic gaps: `array_diff` is still limited to current scalar
+  string-form value comparisons. Non-scalar value comparisons, references,
+  copy-on-write containers, object/resource values, exact native `TypeError`
+  objects, PHP warning-and-string-conversion behavior for arrays/objects, and
+  native lowering remain unsupported. The project still preserves the source
+  append cursor for `array_diff` results as documented.
+- Next concrete task: implement `array_unique($array)` over the current scalar
+  string-form comparison subset, including first-occurrence key/value
+  preservation, diagnostics, fixture CLI coverage, docs, and explicit
+  unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: extend array_diff variadic"`
+  after the full suite passes.

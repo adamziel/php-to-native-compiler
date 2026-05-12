@@ -8,8 +8,14 @@ fn array_value_difference_builtin_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone42");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let fixture_dirs = [
+        workspace_root.join("tests/fixtures/milestone42"),
+        workspace_root.join("tests/fixtures/milestone45"),
+    ];
+    let mut fixtures = fixture_dirs
+        .iter()
+        .flat_map(|fixture_dir| cli_snapshot_fixtures(fixture_dir, workspace_root))
+        .collect::<Vec<_>>();
 
     fixtures.sort();
     assert!(
@@ -17,12 +23,11 @@ fn array_value_difference_builtin_cli_snapshots_match_committed_outputs() {
         "expected array-value-difference builtin CLI snapshot fixtures"
     );
 
-    for fixture in fixtures {
-        let file_name = fixture
-            .file_name()
-            .and_then(|value| value.to_str())
-            .expect("array-value-difference fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone42/{file_name}");
+    for fixture_arg in fixtures {
+        let fixture = workspace_root.join(&fixture_arg);
+        let fixture_arg = fixture_arg
+            .to_str()
+            .expect("array-value-difference fixture path is valid UTF-8");
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])
@@ -38,7 +43,7 @@ fn array_value_difference_builtin_cli_snapshots_match_committed_outputs() {
     }
 }
 
-fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
+fn cli_snapshot_fixtures(fixture_dir: &Path, workspace_root: &Path) -> Vec<PathBuf> {
     fs::read_dir(fixture_dir)
         .expect("array-value-difference fixture directory is readable")
         .map(|entry| {
@@ -48,6 +53,11 @@ fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
         })
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("php"))
         .filter(|path| path.with_extension("cli").exists())
+        .map(|path| {
+            path.strip_prefix(workspace_root)
+                .expect("array-value-difference fixture lives under the workspace root")
+                .to_path_buf()
+        })
         .collect()
 }
 

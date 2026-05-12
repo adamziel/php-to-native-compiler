@@ -752,22 +752,34 @@ impl PhpArray {
     }
 
     pub fn diff_values_with(&self, right: &Self) -> RuntimeResult<Self> {
+        self.diff_values_with_all([right])
+    }
+
+    pub fn diff_values_with_all<'a>(
+        &self,
+        others: impl IntoIterator<Item = &'a Self>,
+    ) -> RuntimeResult<Self> {
         let left_values = self
             .entries
             .iter()
             .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
             .collect::<RuntimeResult<Vec<_>>>()?;
-        let right_values = right
-            .entries
-            .iter()
-            .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
+        let other_values = others
+            .into_iter()
+            .map(|other| {
+                other
+                    .entries
+                    .iter()
+                    .map(|entry| array_scalar_string_comparison_value("array_diff()", &entry.value))
+                    .collect::<RuntimeResult<Vec<_>>>()
+            })
             .collect::<RuntimeResult<Vec<_>>>()?;
 
         let mut array = Self::new();
         for (entry, left_value) in self.entries.iter().zip(left_values.iter()) {
-            if !right_values
+            if other_values
                 .iter()
-                .any(|right_value| right_value == left_value)
+                .all(|values| !values.iter().any(|right_value| right_value == left_value))
             {
                 array.insert(entry.key.clone(), entry.value.clone());
             }
@@ -3696,6 +3708,68 @@ mod tests {
             right.get(5),
             Some(&Value::String("missing".to_string())),
             "array_diff must not mutate the right array"
+        );
+    }
+
+    #[test]
+    fn array_diff_accepts_variadic_arrays() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(1, Value::String("1".to_string()));
+        left.insert("two", Value::String("two".to_string()));
+        left.insert("ten", Value::Int(10));
+        left.insert("float-ten", Value::Float(10.0));
+        left.insert("drop", Value::String("drop".to_string()));
+        left.insert(8, Value::String("eight".to_string()));
+        left.insert("keep", Value::String("keep".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut first = PhpArray::new();
+        first.append(Value::String("Ada".to_string())).unwrap();
+        first.append(Value::String("1".to_string())).unwrap();
+        first.append(Value::String("10".to_string())).unwrap();
+        first.append(Value::String("extra".to_string())).unwrap();
+
+        let mut second = PhpArray::new();
+        second.append(Value::String("drop".to_string())).unwrap();
+        second.append(Value::String("eight".to_string())).unwrap();
+
+        let mut third = PhpArray::new();
+        third.append(Value::String("two".to_string())).unwrap();
+
+        let mut diffed = left
+            .diff_values_with_all([&first, &second, &third])
+            .unwrap();
+        let entries = diffed.entries();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::String("keep".to_string()));
+        assert_eq!(entries[0].value, Value::String("keep".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(9));
+        assert_eq!(entries[1].value, Value::String("next".to_string()));
+        assert_eq!(
+            diffed.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(10)
+        );
+        assert_eq!(
+            left.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_diff must not mutate the left array"
+        );
+        assert_eq!(
+            first.get(3),
+            Some(&Value::String("extra".to_string())),
+            "array_diff must not mutate variadic operands"
+        );
+        assert_eq!(
+            second.get(0),
+            Some(&Value::String("drop".to_string())),
+            "array_diff must not mutate later variadic operands"
+        );
+        assert_eq!(
+            third.get(0),
+            Some(&Value::String("two".to_string())),
+            "array_diff must not mutate final variadic operands"
         );
     }
 

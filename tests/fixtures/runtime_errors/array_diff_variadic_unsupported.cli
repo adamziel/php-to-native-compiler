@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/runtime_errors/array_diff_variadic_unsupported.php:2:6: arity mismatch for array_diff(): expected 2 argument(s), got 3
---- stderr end ---

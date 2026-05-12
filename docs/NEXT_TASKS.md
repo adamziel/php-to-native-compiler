@@ -492,9 +492,18 @@ handled.
 
 ## Milestone 45: Array Value Difference Variadic Follow-ups
 
-- [ ] Extend `array_diff` beyond the current two-array slice with variadic
+- [x] Extend `array_diff` beyond the current two-array slice with variadic
   array operands, including differences against all subsequent arrays,
   non-array variadic operand diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for non-scalar comparisons, references/copy-on-write,
   exact native `TypeError` objects, object/resource values, and native
   lowering.
+
+## Milestone 46: Array Value Deduplication Builtins
+
+- [ ] Implement `array_unique($array)` over the current scalar string-form
+  comparison subset, including first-occurrence key/value preservation,
+  non-array diagnostics, unsupported non-scalar value diagnostics, fixture CLI
+  coverage, documentation, and explicit gaps for sort flags,
+  references/copy-on-write, exact native `TypeError` objects,
+  object/resource values, and native lowering.

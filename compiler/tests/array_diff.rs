@@ -93,14 +93,67 @@ fn array_diff_requires_array_second_argument() {
 }
 
 #[test]
-fn array_diff_rejects_variadic_operands_in_current_slice() {
-    let error = runtime_error("<?php\necho array_diff([], [], []);\n");
+fn array_diff_compares_against_all_variadic_operands() {
+    let source = r#"<?php
+$base = [];
+$base["name"] = "Ada";
+$base[1] = "1";
+$base["two"] = "two";
+$base["ten"] = 10;
+$base["float-ten"] = 10.0;
+$base["drop"] = "drop";
+$base[8] = "eight";
+$base["keep"] = "keep";
+$base[] = "next";
 
-    assert_eq!(error.line, 2);
+$first = [];
+$first[] = "Ada";
+$first[] = "1";
+$first[] = "10";
+$first[] = "extra";
+
+$second = [];
+$second[] = "drop";
+$second[] = "eight";
+
+$third = [];
+$third[] = "two";
+
+$diffed = array_diff($base, $first, $second, $third);
+print_r($diffed);
+echo count($diffed), "\n";
+echo $diffed["keep"], "|", $diffed[9], "\n";
+$diffed[] = "after";
+echo $diffed[10], "\n";
+print_r($base);
+
+$call = "array_diff";
+$again = $call($base, $first, $second, $third);
+echo $again["keep"], "|", $again[9], "\n";
+
+$none = array_diff(["name" => "Ada"], $first, $second, $third);
+print_r($none);
+echo count($none);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [keep] => keep\n    [9] => next\n)\n2\nkeep|next\nafter\nArray\n(\n    [name] => Ada\n    [1] => 1\n    [two] => two\n    [ten] => 10\n    [float-ten] => 10\n    [drop] => drop\n    [8] => eight\n    [keep] => keep\n    [9] => next\n)\nkeep|next\nArray\n(\n)\n0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_diff_requires_array_variadic_arguments() {
+    let error =
+        runtime_error("<?php\n$left = [];\n$right = [];\necho array_diff($left, $right, 42);\n");
+
+    assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "arity mismatch for array_diff(): expected 2 argument(s), got 3"
+        "unsupported call array_diff(): third argument must be array, got int"
     );
 }
 
