@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_chunk_length_non_positive.php:3:6: unsupported call array_chunk(): length argument must be greater than 0 in the current subset, got 0
+--- stderr end ---

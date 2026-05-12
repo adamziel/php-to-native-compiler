@@ -72,7 +72,8 @@ subset:
   `array_slice($array, $offset, $length)`, and null-length
   `array_slice($array, $offset, null)` with default integer-key reindexing
   and string-key preservation, plus boolean preserve-key mode for
-  `array_slice`, `array_merge` over zero or more array operands,
+  `array_slice`, `array_chunk($array, $length)` with default chunk-key
+  reindexing, `array_merge` over zero or more array operands,
   `array_flip` over integer/string array values,
   `array_fill_keys` over integer/string key values, `array_count_values` over
   integer/string array values,

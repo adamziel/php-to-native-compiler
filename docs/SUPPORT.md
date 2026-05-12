@@ -74,10 +74,10 @@
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, `var_dump`, and `print_r`; `print_r` can render
-  current minimal object values
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
+  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
+  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, and
+  `print_r`; `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -87,8 +87,9 @@
   non-array `array_reverse` operands, non-bool `array_reverse` preserve-key
   flag values, non-array `array_slice` operands, non-int `array_slice`
   offsets, non-int/non-null `array_slice` lengths, non-bool `array_slice`
-  preserve-key flag values,
-  non-array `array_merge` operands, non-array
+  preserve-key flag values, non-array `array_chunk` operands,
+  non-int/non-positive `array_chunk` lengths, unsupported `array_chunk`
+  preserve-key mode, non-array `array_merge` operands, non-array
   `array_flip` operands, unsupported non-int/string `array_flip` values,
   non-array `array_fill_keys` operands, unsupported non-int/string
   `array_fill_keys` key values, non-array `array_count_values` operands,
@@ -259,6 +260,10 @@
   null length as a to-end slice. `array_slice($array, $offset, $length, true)`
   and `array_slice($array, $offset, null, true)` preserve integer and string
   keys; boolean `false` uses the default integer-key reindexing path.
+  `array_chunk($array, $length)` accepts arrays and positive integer lengths,
+  splits values in insertion order into nested arrays of that size, reindexes
+  every inner chunk from integer key zero, returns an empty array for empty
+  input arrays, and is available through string-valued dynamic function calls.
   `array_merge()` returns an empty array. `array_merge($array, ...)` accepts
   zero or more array operands, processes them left to right in insertion order,
   appends and reindexes integer-keyed entries from zero, preserves string keys,
@@ -318,7 +323,7 @@
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
+  `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_filter` in the current
   no-callback and string-callback forms, `array_map` in the current one-array
   null-callback identity form, variadic null-callback zip form, and one-array
@@ -383,7 +388,9 @@
   `array_reverse` preserve-key flag values, non-array `array_slice`
   operands, non-int `array_slice` offsets, non-int/non-null `array_slice`
   lengths, non-bool `array_slice` preserve-key flag values, non-array
-  `array_merge` operands, non-array `array_flip` operands, unsupported
+  `array_chunk` operands, non-int/non-positive `array_chunk` lengths,
+  unsupported `array_chunk` preserve-key mode, non-array `array_merge`
+  operands, non-array `array_flip` operands, unsupported
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
   `array_count_values` operands, unsupported non-int/string
@@ -413,9 +420,10 @@
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
-  `array_keys`, `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, `var_dump`, or `print_r`.
+  `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
+  `array_merge`, `array_flip`, `array_fill_keys`, `array_count_values`,
+  `array_filter`, `array_map`, `in_array`, `array_search`, `var_dump`, or
+  `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -445,10 +453,10 @@
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, `var_dump`, and `print_r` cover the documented
-  scalar/array/object subset.
+  `array_reverse`, `array_slice`, `array_chunk`, `array_merge`,
+  `array_flip`, `array_fill_keys`, `array_count_values`, `array_filter`,
+  `array_map`, `in_array`, `array_search`, `var_dump`, and `print_r` cover
+  the documented scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -501,6 +509,15 @@
   coercion, references, copy-on-write containers, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering are not implemented.
+  `array_chunk($array, $length)` accepts arrays and positive integer lengths,
+  splits entries in insertion order, reindexes each inner chunk from integer
+  key zero regardless of original integer or string keys, returns an empty
+  array for empty input arrays, and is available through string-valued dynamic
+  function calls. Preserve-key mode through the third argument, non-int length
+  coercion, non-positive length native `ValueError` objects,
+  reference/copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering are
+  not implemented.
   `array_merge()` accepts zero arguments and returns an empty array.
   `array_merge($array, ...)` accepts any number of array operands, processes
   them left to right in insertion order, appends integer-keyed entries with new
@@ -614,7 +631,7 @@
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
-  `array_reverse`, `array_slice`, `array_merge`, `array_flip`,
+  `array_reverse`, `array_slice`, `array_chunk`, `array_merge`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_filter`, `array_map`,
   `in_array`, `array_search`, and both current `foreach` array forms follow
   the current by-value model; PHP
@@ -623,7 +640,9 @@
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
   `array_reverse` preserve-key flag coercion, non-bool `array_slice`
   preserve-key flag coercion, non-int offset coercion, non-int/non-null length
-  coercion, `array_merge` reference/copy-on-write behavior,
+  coercion, `array_chunk` preserve-key mode, non-int/non-positive length
+  coercion, exact native `ValueError`/`TypeError` objects,
+  `array_merge` reference/copy-on-write behavior,
   `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
   for unsupported key values, `array_count_values` warning-and-skip behavior
@@ -763,6 +782,9 @@
   non-int/non-null length coercion, reference/copy-on-write behavior, object
   handle identity preservation, resource values, exact native `TypeError`
   objects, and native lowering
+- `array_chunk` preserve-key mode, non-int/non-positive length coercion, exact
+  native `ValueError`/`TypeError` objects, reference/copy-on-write behavior,
+  object handle identity preservation, resource values, and native lowering
 - `array_merge` reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering

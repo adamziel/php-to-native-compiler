@@ -4809,3 +4809,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T07:39:06Z
 
 - Post-round 76 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T07:39:11Z
+
+- Starting round 77 at 20260512T073911Z from HEAD `b7abefd`.
+
+## Loop Event 2026-05-12T07:39:15Z
+
+- Pre-round 77 test exit code: `0`.
+
+## Loop Event 2026-05-12T07:55:27Z
+
+- Task attempted: implemented `array_chunk($array, $length)` over the current
+  ordered array value model. The supported slice accepts arrays and positive
+  integer lengths, chunks values in insertion order into nested arrays,
+  reindexes every inner chunk from integer key zero regardless of original
+  integer/string keys, returns an empty array for empty inputs, supports
+  string-valued dynamic calls, preserves the original array, and keeps
+  preserve-key mode explicitly unsupported.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_chunk.rs`,
+  `compiler/tests/array_chunking_builtins_cli.rs`,
+  `tests/fixtures/milestone33/array_chunk.*`,
+  `tests/fixtures/runtime_errors/array_chunk_non_array.*`,
+  `tests/fixtures/runtime_errors/array_chunk_length_non_int.*`,
+  `tests/fixtures/runtime_errors/array_chunk_length_non_positive.*`,
+  `tests/fixtures/runtime_errors/array_chunk_preserve_keys_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all --check` passed; `git diff --check`
+  passed; `cargo test -p php_runtime array_chunk` passed with 1 focused
+  runtime test; `cargo test -p phpc --test array_chunk` passed with 6 tests;
+  `cargo test -p phpc --test array_chunking_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone33` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone33` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 67 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone33/array_chunk.php` printed the committed output;
+  `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_chunk_non_array.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_chunk_length_non_positive.php` exited
+  `1` with the expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_chunk_preserve_keys_unsupported.php`
+  exited `1` with the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone33/array_chunk.php --emit-ir` exited `1` with the
+  current explicit array native-lowering rejection; `tools/run-tests.sh` passed
+  with 173 fixtures, 72 system PHP comparisons, and 101 `.phpc-only` skips.
+- Remaining semantic gaps: `array_chunk` preserve-key mode is rejected with a
+  stable project diagnostic, non-int and non-positive lengths are not coerced,
+  exact native `ValueError`/`TypeError` objects are not modeled, and
+  references, copy-on-write containers, object handle identity preservation,
+  resource values, and native lowering remain unsupported.
+- Next concrete task: extend `array_chunk` with boolean preserve-key mode over
+  the current ordered integer/string key model.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_chunk builtin"`
+  after the full suite passes.

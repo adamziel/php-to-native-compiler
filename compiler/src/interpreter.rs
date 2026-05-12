@@ -1096,6 +1096,72 @@ impl Interpreter {
                     ),
                 )),
             },
+            "array_chunk" => match args.as_slice() {
+                [Value::Array(array), Value::Int(length)] if *length > 0 => {
+                    let length = usize::try_from(*length).map_err(|_| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "array_chunk()",
+                                format!(
+                                    "length argument is too large in the current subset, got {length}"
+                                ),
+                            ),
+                        )
+                    })?;
+                    Ok(Value::Array(array.chunked_reindexed(length)))
+                }
+                [Value::Array(_), Value::Int(length)] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_chunk()",
+                        format!(
+                            "length argument must be greater than 0 in the current subset, got {length}"
+                        ),
+                    ),
+                )),
+                [Value::Array(_), Value::Int(length), _] if *length <= 0 => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_chunk()",
+                        format!(
+                            "length argument must be greater than 0 in the current subset, got {length}"
+                        ),
+                    ),
+                )),
+                [Value::Array(_), Value::Int(_), _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_chunk()",
+                        "preserve_keys mode is not supported in the current subset",
+                    ),
+                )),
+                [Value::Array(_), other] | [Value::Array(_), other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_chunk()",
+                        format!(
+                            "length argument must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [other, _] | [other, _, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_chunk()",
+                        format!("first argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_chunk()",
+                        ArityExpectation::Between { min: 2, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "array_merge" => {
                 let mut arrays = Vec::with_capacity(args.len());
                 for (index, arg) in args.iter().enumerate() {
@@ -1821,6 +1887,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_keys"
             | "array_reverse"
             | "array_slice"
+            | "array_chunk"
             | "array_merge"
             | "array_flip"
             | "array_fill_keys"

@@ -1,0 +1,1 @@
+phpc accepts only integer array_chunk length values in the current subset and reports a stable project diagnostic for other values.
