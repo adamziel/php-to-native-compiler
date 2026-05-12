@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_slice_preserve_keys_unsupported.php:3:6: unsupported call array_slice(): preserve_keys argument is not supported in the current subset
+--- stderr end ---

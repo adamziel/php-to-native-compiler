@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_slice_null_length_unsupported.php:3:6: unsupported call array_slice(): length argument must be int in the current subset, got null
+--- stderr end ---

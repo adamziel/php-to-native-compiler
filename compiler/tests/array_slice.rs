@@ -48,6 +48,46 @@ echo count($again), "|", $again[0], "|", $again["02"], "|", $again[3];
 }
 
 #[test]
+fn array_slice_supports_integer_length_argument() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items[-1] = "negative";
+$items[] = "next";
+
+$middle = array_slice($items, 1, 3);
+echo count($middle), "|", $middle[0], "|", $middle[1], "|", $middle["02"], "\n";
+
+$zero = array_slice($items, 1, 0);
+echo count($zero), "\n";
+
+$without_tail = array_slice($items, 1, -2);
+echo count($without_tail), "|", $without_tail[0], "|", $without_tail[1], "|", $without_tail["02"], "\n";
+
+$empty = array_slice($items, 4, -3);
+echo count($empty), "\n";
+
+$negative_offset = array_slice($items, -4, 2);
+echo count($negative_offset), "|", $negative_offset[0], "|", $negative_offset["02"], "\n";
+
+$call = "array_slice";
+$dynamic = $call($items, 0, 2);
+echo count($dynamic), "|", $dynamic["name"], "|", $dynamic[0], "\n";
+echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $items[-1], "|", $items[6];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "3|five|two|zero two\n0\n3|five|two|zero two\n0\n2|two|zero two\n2|Ada|five\nAda|five|two|zero two|negative|next"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_slice_requires_array_first_argument() {
     let error = runtime_error("<?php\necho array_slice(42, 0);\n");
 
@@ -72,14 +112,26 @@ fn array_slice_requires_int_offset_argument() {
 }
 
 #[test]
-fn array_slice_rejects_length_and_preserve_keys_arguments_for_now() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, 1);\n");
+fn array_slice_requires_int_length_argument() {
+    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, \"1\");\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_slice(): length and preserve_keys arguments are not supported in the current subset"
+        "unsupported call array_slice(): length argument must be int in the current subset, got string"
+    );
+}
+
+#[test]
+fn array_slice_rejects_preserve_keys_argument_for_now() {
+    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, 1, true);\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_slice(): preserve_keys argument is not supported in the current subset"
     );
 }
 

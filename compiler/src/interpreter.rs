@@ -1025,26 +1025,40 @@ impl Interpreter {
                 [Value::Array(array), Value::Int(offset)] => {
                     Ok(Value::Array(array.sliced_from_offset(*offset)))
                 }
-                [Value::Array(_), Value::Int(_), _] | [Value::Array(_), Value::Int(_), _, _] => {
-                    Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_slice()",
-                            "length and preserve_keys arguments are not supported in the current subset",
-                        ),
-                    ))
+                [Value::Array(array), Value::Int(offset), Value::Int(length)] => {
+                    Ok(Value::Array(array.sliced(*offset, Some(*length))))
                 }
-                [Value::Array(_), other] => Err(runtime_error(
+                [Value::Array(_), Value::Int(_), Value::Int(_), _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_slice()",
+                        "preserve_keys argument is not supported in the current subset",
+                    ),
+                )),
+                [Value::Array(_), Value::Int(_), other]
+                | [Value::Array(_), Value::Int(_), other, _] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_slice()",
                         format!(
-                            "offset argument must be int in the current subset, got {}",
+                            "length argument must be int in the current subset, got {}",
                             other.type_name()
                         ),
                     ),
                 )),
-                [other, _] => Err(runtime_error(
+                [Value::Array(_), other, ..] if !matches!(other, Value::Int(_)) => {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_slice()",
+                            format!(
+                                "offset argument must be int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ))
+                }
+                [other, _, ..] if !matches!(other, Value::Array(_)) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_slice()",
@@ -1055,7 +1069,7 @@ impl Interpreter {
                     span,
                     RuntimeError::arity_mismatch(
                         "array_slice()",
-                        ArityExpectation::Exactly(2),
+                        ArityExpectation::Between { min: 2, max: 4 },
                         args.len(),
                     ),
                 )),

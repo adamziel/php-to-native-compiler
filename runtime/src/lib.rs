@@ -545,16 +545,28 @@ impl PhpArray {
     }
 
     pub fn sliced_from_offset(&self, offset: i64) -> Self {
+        self.sliced(offset, None)
+    }
+
+    pub fn sliced(&self, offset: i64, length: Option<i64>) -> Self {
         let len = i64::try_from(self.entries.len()).expect("array length fits in i64");
         let start = if offset >= 0 {
             offset.min(len)
         } else {
             len.saturating_add(offset).max(0)
         };
+        let end = match length {
+            Some(length) if length >= 0 => start.saturating_add(length).min(len),
+            Some(length) => len.saturating_add(length).max(0).min(len),
+            None => len,
+        }
+        .max(start);
+
         let start = usize::try_from(start).expect("non-negative slice start fits in usize");
+        let end = usize::try_from(end).expect("non-negative slice end fits in usize");
 
         let mut array = Self::new();
-        for entry in self.entries.iter().skip(start) {
+        for entry in self.entries[start..end].iter() {
             match &entry.key {
                 ArrayKey::Int(_) => {
                     array
@@ -2483,6 +2495,47 @@ mod tests {
         let whole = array.sliced_from_offset(-99);
         assert_eq!(whole.entries().len(), array.entries().len());
         assert_eq!(whole.entries()[0].key, ArrayKey::String("name".to_string()));
+    }
+
+    #[test]
+    fn array_slice_supports_positive_zero_and_negative_lengths() {
+        let mut array = PhpArray::new();
+
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        array.insert("2", Value::String("two".to_string()));
+        array.insert("02", Value::String("zero two".to_string()));
+        array.insert(-1, Value::String("negative".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let middle = array.sliced(1, Some(3));
+        let middle_entries = middle.entries();
+        assert_eq!(middle_entries.len(), 3);
+        assert_eq!(middle_entries[0].key, ArrayKey::Int(0));
+        assert_eq!(middle_entries[0].value, Value::String("five".to_string()));
+        assert_eq!(middle_entries[1].key, ArrayKey::Int(1));
+        assert_eq!(middle_entries[1].value, Value::String("two".to_string()));
+        assert_eq!(middle_entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(
+            middle_entries[2].value,
+            Value::String("zero two".to_string())
+        );
+
+        assert!(array.sliced(1, Some(0)).entries().is_empty());
+
+        let without_tail = array.sliced(1, Some(-2));
+        assert_eq!(without_tail.entries(), middle_entries);
+
+        let empty = array.sliced(4, Some(-3));
+        assert!(empty.entries().is_empty());
+
+        let negative_offset_with_length = array.sliced(-4, Some(2));
+        let entries = negative_offset_with_length.entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[1].value, Value::String("zero two".to_string()));
     }
 
     #[test]
