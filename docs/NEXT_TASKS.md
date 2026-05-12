@@ -440,9 +440,17 @@ handled.
 
 ## Milestone 39: Array Key Difference Builtins
 
-- [ ] Implement `array_diff_key($left, $right)` over the current ordered
+- [x] Implement `array_diff_key($left, $right)` over the current ordered
   integer/string key model, including first-array key/value preservation for
   keys absent from the second array, non-array diagnostics, fixture CLI
   coverage, documentation, and explicit gaps for variadic operands,
   references/copy-on-write, exact native `TypeError` objects, object/resource
   values, and native lowering.
+
+## Milestone 40: Array Key Set Variadic Follow-ups
+
+- [ ] Extend `array_intersect_key` beyond the current two-array slice with
+  variadic array operands, including intersection across all subsequent
+  arrays, non-array variadic operand diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for references/copy-on-write, exact native
+  `TypeError` objects, object/resource values, and native lowering.

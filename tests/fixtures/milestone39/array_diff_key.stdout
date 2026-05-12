@@ -1,0 +1,42 @@
+Array
+(
+    [02] => zero two
+    [drop] => drop
+    [6] => next
+)
+3
+zero two|drop|next
+after
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [02] => zero two
+    [-1] => negative
+    [drop] => drop
+    [6] => next
+)
+Array
+(
+    [name] => ignored
+    [5] => ignored
+    [2] => ignored
+    [-1] => ignored
+    [extra] => ignored
+)
+zero two|drop|next
+Array
+(
+)
+0
+Array
+(
+    [missing] => x
+)
+1
+Array
+(
+)
+0
+done

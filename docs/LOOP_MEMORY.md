@@ -5231,3 +5231,61 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T09:07:28Z
 
 - Post-round 82 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T09:07:34Z
+
+- Starting round 83 at 20260512T090734Z from HEAD `b0e36cc`.
+
+## Loop Event 2026-05-12T09:07:39Z
+
+- Pre-round 83 test exit code: `0`.
+
+## Loop Event 2026-05-12T09:21:27Z
+
+- Task attempted: implemented `array_diff_key($left, $right)` over the current
+  ordered integer/string key model. The supported slice preserves first-array
+  entries whose normalized keys are absent from the second array, keeps
+  first-array keys, values, insertion order, and append-index behavior,
+  supports empty, all-kept, and no-match results, supports string-valued
+  dynamic calls, preserves the source arrays, and reports stable diagnostics
+  for non-array operands and unsupported variadic operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_diff_key.rs`,
+  `compiler/tests/array_key_difference_builtins_cli.rs`,
+  `tests/fixtures/milestone39/array_diff_key.php`,
+  `tests/fixtures/milestone39/array_diff_key.stdout`,
+  `tests/fixtures/milestone39/array_diff_key.cli`,
+  `tests/fixtures/runtime_errors/array_diff_key_first_non_array.*`,
+  `tests/fixtures/runtime_errors/array_diff_key_second_non_array.*`,
+  `tests/fixtures/runtime_errors/array_diff_key_variadic_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` passed; `cargo fmt --all --check`
+  passed; `git diff --check` passed; `cargo test -p php_runtime
+  array_diff_key` passed with 1 focused runtime test; `cargo test -p
+  php_runtime` passed with 58 runtime unit tests; `cargo test -p php_runtime
+  array_` passed with 43 focused array tests; `cargo test -p phpc --test
+  array_diff_key` passed with 5 tests; `cargo test -p phpc --test
+  array_key_difference_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone39` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone39` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 81 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone39/array_diff_key.php` printed the committed output;
+  `cargo run -p phpc -- compile
+  tests/fixtures/milestone39/array_diff_key.php --emit-ir` exited `1` with the
+  current explicit array native-lowering rejection; `tools/run-tests.sh`
+  passed with 193 fixtures, 78 system PHP comparisons, and 115 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_diff_key` is limited to two array operands
+  over the current integer/string key model. Variadic differences across three
+  or more arrays, references, copy-on-write containers, object handle identity
+  preservation for object values, resource values, exact native `TypeError`
+  objects, and native lowering remain unsupported.
+- Next concrete task: extend `array_intersect_key` beyond the current
+  two-array slice with variadic array operands while keeping references,
+  copy-on-write, exact native `TypeError` objects, object/resource values, and
+  native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_diff_key builtin"`
+  after the full suite passes.

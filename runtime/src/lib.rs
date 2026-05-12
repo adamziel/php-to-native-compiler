@@ -725,6 +725,16 @@ impl PhpArray {
         array
     }
 
+    pub fn diff_keys_with(&self, right: &Self) -> Self {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            if !right.contains_key(entry.key.clone()) {
+                array.insert(entry.key.clone(), entry.value.clone());
+            }
+        }
+        array
+    }
+
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -3366,6 +3376,54 @@ mod tests {
         assert!(
             right.contains_key("extra"),
             "array_intersect_key must not mutate the right array"
+        );
+    }
+
+    #[test]
+    fn array_diff_key_preserves_left_entries_missing_from_right_keys() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(5, Value::String("five".to_string()));
+        left.insert("2", Value::String("two".to_string()));
+        left.insert("02", Value::String("zero two".to_string()));
+        left.insert(-1, Value::String("negative".to_string()));
+        left.insert("drop", Value::String("drop".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.insert("name", Value::String("ignored".to_string()));
+        right.insert("5", Value::String("ignored".to_string()));
+        right.insert(2, Value::String("ignored".to_string()));
+        right.insert(-1, Value::String("ignored".to_string()));
+        right.insert("extra", Value::String("ignored".to_string()));
+
+        let diffed = left.diff_keys_with(&right);
+        let entries = diffed.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[0].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("drop".to_string()));
+        assert_eq!(entries[1].value, Value::String("drop".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(6));
+        assert_eq!(entries[2].value, Value::String("next".to_string()));
+        assert!(!diffed.contains_key("name"));
+        assert!(!diffed.contains_key(5));
+        assert!(!diffed.contains_key(2));
+        assert!(!diffed.contains_key(-1));
+
+        let mut appended = diffed.clone();
+        assert_eq!(
+            appended.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(7)
+        );
+        assert_eq!(
+            left.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_diff_key must not mutate the left array"
+        );
+        assert!(
+            right.contains_key("extra"),
+            "array_diff_key must not mutate the right array"
         );
     }
 

@@ -79,6 +79,8 @@ subset:
   operands, `array_combine` over equal-length key/value arrays with
   integer/string key values, `array_intersect_key($left, $right)` over two
   arrays with first-array key/value preservation,
+  `array_diff_key($left, $right)` over two arrays with first-array key/value
+  preservation for keys absent from the second array,
   `array_flip` over integer/string array values,
   `array_fill_keys` over integer/string key values, `array_count_values` over
   integer/string array values,
