@@ -254,7 +254,14 @@ handled.
   model, including first-key return behavior for integer/string keys,
   empty-array `null` behavior, non-array diagnostics, fixture CLI coverage,
   documentation, and explicit native-codegen rejection.
-- [ ] Implement `array_key_last($array)` for the current ordered array value
+- [x] Implement `array_key_last($array)` for the current ordered array value
   model, including last-key return behavior for integer/string keys,
   empty-array `null` behavior, non-array diagnostics, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.
+
+## Milestone 18: Array Transform Builtins
+
+- [ ] Implement `array_flip($array)` for the current ordered array value model,
+  including integer/string value-to-key conversion, duplicate-key overwrite
+  behavior, non-array and unsupported-value diagnostics, fixture CLI coverage,
   documentation, and explicit native-codegen rejection.

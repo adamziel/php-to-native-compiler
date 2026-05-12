@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+int(6)
+string(2) "02"
+int(2)
+NULL
+int(6)
+--- stdout end ---
+stderr:
+--- stderr end ---

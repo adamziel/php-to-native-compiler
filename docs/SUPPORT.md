@@ -73,21 +73,21 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
-  `array_key_exists`, `array_key_first`, `array_values`, `array_keys`,
-  `array_reverse`, `array_merge`, `in_array`, `array_search`, `var_dump`, and
-  `print_r`;
+  `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
+  `array_keys`, `array_reverse`, `array_merge`, `in_array`, `array_search`,
+  `var_dump`, and `print_r`;
   `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
-  `empty` operands, non-array `array_key_first` operands, non-array
-  `array_reverse` operands, non-bool `array_reverse` preserve-key flag values,
-  non-array `array_merge` operands, non-array `in_array`/`array_search`
-  haystacks, non-bool `in_array`/`array_search` strict-mode flag values,
-  unsupported non-scalar
-  `array_keys` search-value comparisons, non-bool `array_keys` strict-mode
+  `empty` operands, non-array `array_key_first`/`array_key_last` operands,
+  non-array `array_reverse` operands, non-bool `array_reverse` preserve-key
+  flag values, non-array `array_merge` operands, non-array
+  `in_array`/`array_search` haystacks, non-bool `in_array`/`array_search`
+  strict-mode flag values, unsupported non-scalar `array_keys` search-value
+  comparisons, non-bool `array_keys` strict-mode
   flag values, unsupported non-scalar `in_array`/`array_search` comparisons,
   unsupported `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
@@ -219,7 +219,8 @@
   $array)` checks existing integer/string keyed slots without filtering out
   `null` values and is also available through string-valued dynamic function
   calls. `array_key_first($array)` returns the first inserted integer or string
-  key as an `int` or `string`, returns `null` for an empty array, and is also
+  key as an `int` or `string`, and `array_key_last($array)` returns the last
+  inserted integer or string key. Both return `null` for an empty array and are
   available through string-valued dynamic function calls. `array_values($array)`
   returns a new ordered array containing the original values in insertion order
   with integer keys starting at zero.
@@ -258,10 +259,11 @@
   `int` or `string` value to the direct key loop variable. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_key_first`, `array_values`, `array_keys`, `array_reverse`,
-  `array_merge`, `in_array`, `array_search`, both current `foreach` array
-  forms, direct array-offset `unset`, multiple supported `unset(...)` operands,
-  `print_r`, and `var_dump` are implemented for this ordered value model.
+  `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
+  `array_reverse`, `array_merge`, `in_array`, `array_search`, both current
+  `foreach` array forms, direct array-offset `unset`, multiple supported
+  `unset(...)` operands, `print_r`, and `var_dump` are implemented for this
+  ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -311,9 +313,9 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_key_first`
-  operands, non-array `array_values` operands, non-array `array_keys`
-  operands, unsupported `array_keys` search-value comparisons, non-bool
-  `array_keys` strict-mode flag values,
+  or `array_key_last` operands, non-array `array_values` operands, non-array
+  `array_keys` operands, unsupported `array_keys` search-value comparisons,
+  non-bool `array_keys` strict-mode flag values,
   non-array `array_reverse` operands, non-bool
   `array_reverse` preserve-key flag values, non-array
   `array_merge` operands, non-array `in_array` operands, non-array
@@ -338,9 +340,9 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
-  `array_key_exists`, `array_key_first`, `array_values`, `array_keys`,
-  `array_reverse`, `array_merge`, `in_array`, `array_search`, `var_dump`, or
-  `print_r`.
+  `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
+  `array_keys`, `array_reverse`, `array_merge`, `in_array`, `array_search`,
+  `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -369,9 +371,9 @@
   syntax, `call_user_func`, namespace-qualified callable resolution, and
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
-  `array_key_first`, `array_values`, `array_keys`, `array_reverse`,
-  `array_merge`, `in_array`, `array_search`, `var_dump`, and `print_r` cover
-  the documented scalar/array/object subset.
+  `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
+  `array_reverse`, `array_merge`, `in_array`, `array_search`, `var_dump`, and
+  `print_r` cover the documented scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -380,10 +382,11 @@
   existing keys even when the stored value is `null`, returns false for missing
   keys, rejects non-array second arguments, and rejects unsupported key values
   such as booleans, `null`, floats, objects, and future resources instead of
-  applying PHP's full key coercions. `array_key_first($array)` accepts arrays
-  only, returns the first inserted integer or string key as an `int` or
-  `string`, returns `null` for empty arrays, and is also available through
-  string-valued dynamic function calls. `array_values($array)` accepts arrays
+  applying PHP's full key coercions. `array_key_first($array)` and
+  `array_key_last($array)` accept arrays only, return the first or last
+  inserted integer or string key as an `int` or `string`, return `null` for
+  empty arrays, and are also available through string-valued dynamic function
+  calls. `array_values($array)` accepts arrays
   only, preserves value insertion order, and returns a new ordered array
   reindexed with integer keys `0..n-1`; it is also available through
   string-valued dynamic function calls. `array_keys($array)` accepts arrays
@@ -451,14 +454,14 @@
   values use the current PHP truthiness rules. Nested array offsets, object
   property operands, append offset operands, complex lvalues, general
   expression operands, and unsupported array-key coercions remain unsupported.
-  `array_key_first`, `array_values`, `array_keys`, `array_reverse`,
-  `array_merge`, `in_array`, `array_search`, and both current `foreach` array
-  forms follow the current by-value model; PHP references, copy-on-write
-  containers, object handle identity preservation, resource values, array,
-  object, resource, or reference search values for `array_keys`, non-bool
-  `array_keys` strict-flag coercion, non-bool `array_reverse` preserve-key flag
-  coercion, and `array_merge` reference/copy-on-write behavior are not
-  implemented.
+  `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
+  `array_reverse`, `array_merge`, `in_array`, `array_search`, and both current
+  `foreach` array forms follow the current by-value model; PHP references,
+  copy-on-write containers, object handle identity preservation, resource
+  values, array, object, resource, or reference search values for `array_keys`,
+  non-bool `array_keys` strict-flag coercion, non-bool `array_reverse`
+  preserve-key flag coercion, and `array_merge` reference/copy-on-write
+  behavior are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -576,7 +579,7 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
-- `array_key_first` exact native `TypeError` objects,
+- `array_key_first`/`array_key_last` exact native `TypeError` objects,
   reference/copy-on-write container behavior, and native lowering
 - `array_keys` filtering over array, object, resource, or reference search
   values or array values, plus non-bool strict-flag coercion

@@ -3734,3 +3734,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:16:29Z
 
 - Post-round 59 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:16:33Z
+
+- Starting round 60 at 20260512T051633Z from HEAD `f66684b`.
+
+## Loop Event 2026-05-12T05:16:37Z
+
+- Pre-round 60 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:21:30Z
+
+- Task attempted: implemented `array_key_last($array)` for the current ordered
+  array value model. The supported slice returns the last inserted integer or
+  string key as an `int` or `string`, returns `null` for empty arrays, is
+  available through string-valued dynamic function calls, reports a stable
+  diagnostic for non-array arguments, and keeps native lowering rejected
+  through the existing function-call codegen boundary.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_key_last.rs`,
+  `tests/fixtures/milestone17/array_key_last.*`,
+  `tests/fixtures/runtime_errors/array_key_last_non_array.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo fmt --check`; `cargo test -p
+  php_runtime array_key_last`; `cargo test -p phpc --test array_key_last`;
+  `cargo test -p phpc --test array_key_introspection_builtins_cli`;
+  `cargo test -p phpc --test runtime_error_cli`; `cargo run -p phpc -- test
+  tests/fixtures/milestone17`; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone17`; `cargo test -p php_runtime`; `cargo test -p
+  php_runtime array_`; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors`; `cargo run -p phpc -- run
+  tests/fixtures/milestone17/array_key_last.php`; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_key_last_non_array.php` exited `1` with
+  the expected stable diagnostic; `tools/run-tests.sh` passed with 134
+  fixtures, 55 system PHP comparisons, and 79 `.phpc-only` skips.
+- Remaining semantic gaps: `array_key_last` is limited to arrays in the current
+  ordered integer/string key model. It does not model PHP references,
+  copy-on-write container effects, exact native `TypeError` objects for
+  invalid arguments, or native function-call lowering.
+- Next concrete task: implement `array_flip($array)` for the current ordered
+  array value model, including integer/string value-to-key conversion,
+  duplicate-key overwrite behavior, non-array and unsupported-value
+  diagnostics, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_key_last builtin"`
+  after the full suite passes.
