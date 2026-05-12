@@ -7373,3 +7373,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   function/method/class context constants explicitly unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "parser: add magic constant diagnostics"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T17:02:27Z
+
+- Codex round 20 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T165303Z-20.log`.
+
+## Loop Event 2026-05-12T17:02:35Z
+
+- Post-round 20 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:02:35Z
+
+- Post-round 20 tests passed; running checkpoint for this round.
