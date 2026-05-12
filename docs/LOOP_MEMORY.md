@@ -1807,3 +1807,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   offset operands while keeping complex lvalues explicitly unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "loops: implement continue for while"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T01:37:02Z
+
+- Codex round 30 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T013027Z-30.log`.
+
+## Loop Event 2026-05-12T01:37:04Z
+
+- Post-round 30 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:37:04Z
+
+- Post-round 30 tests passed; running checkpoint for this round.
