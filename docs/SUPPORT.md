@@ -119,8 +119,9 @@
   operands, unsupported non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string or unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
-  `array_filter` callbacks, unsupported `array_filter` mode flags, non-array
-  `array_map` operands, non-string or unresolved `array_map` callbacks,
+  `array_filter` callbacks, unsupported nonzero/non-int `array_filter` mode
+  flags, non-array `array_map` operands, non-string or unresolved
+  `array_map` callbacks,
   non-array variadic `array_map` operands,
   non-array `in_array`/`array_search` haystacks,
   non-bool `in_array`/`array_search` strict-mode flag values, unsupported
@@ -376,16 +377,17 @@
   start the accumulator at `null` when no initial value is supplied, return the
   supplied initial value for empty arrays when present, and are available
   through string-valued dynamic calls to `array_reduce`.
-  `array_filter($array)` without a callback and `array_filter($array, null)`
-  accept arrays only, remove values that are falsey under the current
-  PHP-shaped truthiness rules, preserve the original integer/string keys and
-  insertion order of kept entries, and are available through string-valued
-  dynamic function calls.
+  `array_filter($array)` without a callback, `array_filter($array, null)`,
+  and `array_filter($array, null, 0)` accept arrays only, remove values that
+  are falsey under the current PHP-shaped truthiness rules, preserve the
+  original integer/string keys and insertion order of kept entries, and are
+  available through string-valued dynamic function calls.
   `array_filter($array, $callback)` accepts callbacks that evaluate to string
   function names resolving to current user functions or callable builtins,
   invokes the callback once per value in insertion order with the value as the
-  only argument, preserves keys whose callback result is truthy, and is also
-  available through string-valued dynamic calls to `array_filter`.
+  only argument, preserves keys whose callback result is truthy, accepts
+  explicit integer mode flag `0` for the same value-only callback path, and is
+  also available through string-valued dynamic calls to `array_filter`.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array of
@@ -425,7 +427,7 @@
   `array_reduce` in the current string-callback form with optional initial
   values,
   `array_filter` in the current no-callback, null-callback, and
-  string-callback forms,
+  string-callback forms, including explicit integer mode flag `0`,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic string-callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
@@ -514,7 +516,8 @@
   operands, unsupported non-numeric/non-scalar `array_product` values,
   non-array `array_reduce` operands, non-string and unresolved `array_reduce`
   callbacks, non-array `array_filter` operands, non-string non-null
-  `array_filter` callbacks, unsupported `array_filter` mode flags,
+  `array_filter` callbacks, unsupported nonzero/non-int `array_filter` mode
+  flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
   callbacks, non-array variadic `array_map` operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
@@ -829,24 +832,27 @@
   references, copy-on-write containers, exact native `TypeError` objects,
   object handle identity preservation, resource values, and native lowering
   are not implemented.
-  `array_filter($array)` without a callback and `array_filter($array, null)`
-  accept arrays only, remove `null`, `false`, zero integers and floats, empty
-  strings, string `"0"`, and empty arrays using the current
-  `Value::is_truthy` rules, preserve the original integer/string keys and
-  insertion order of kept entries, and are available through string-valued
-  dynamic function calls.
+  `array_filter($array)` without a callback, `array_filter($array, null)`,
+  and `array_filter($array, null, 0)` accept arrays only, remove `null`,
+  `false`, zero integers and floats, empty strings, string `"0"`, and empty
+  arrays using the current `Value::is_truthy` rules, preserve the original
+  integer/string keys and insertion order of kept entries, and are available
+  through string-valued dynamic function calls.
   `array_filter($array, $callback)` accepts callback expressions that evaluate
   to string function names resolving to current user functions or callable
   builtins, invokes the callback with the value only, keeps entries whose
-  callback result is truthy, preserves original keys and insertion order, and
-  is available when `array_filter` itself is called through a string-valued
+  callback result is truthy, preserves original keys and insertion order,
+  accepts explicit integer mode flag `0` for the same value-only callback path,
+  and is available when `array_filter` itself is called through a string-valued
   dynamic function name. Non-string non-null callback values fail with a
   stable diagnostic, and unresolved callback names fail with the current
   undefined-function diagnostic. Array/object callables, closures, first-class
   callables, method calls, key-only and key/value callback modes through
-  `ARRAY_FILTER_USE_KEY` or `ARRAY_FILTER_USE_BOTH`, references, copy-on-write
-  containers, exact native `TypeError` objects, object handle identity
-  preservation, resource values, and native lowering are not implemented.
+  integer flags or named `ARRAY_FILTER_USE_KEY`/`ARRAY_FILTER_USE_BOTH`
+  constants, non-int mode coercions such as `false`, references,
+  copy-on-write containers, exact native `TypeError` objects, object handle
+  identity preservation, resource values, and native lowering are not
+  implemented.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving original integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array whose
@@ -1121,8 +1127,9 @@
   native lowering
 - `array_filter` callbacks outside `null` and string-valued
   user-function/callable-builtin names, `ARRAY_FILTER_USE_KEY` and
-  `ARRAY_FILTER_USE_BOTH` callback modes, reference/copy-on-write behavior,
-  object handle identity preservation, resource values, exact native
+  `ARRAY_FILTER_USE_BOTH` callback modes through integer flags or named
+  constants, non-int mode coercions such as `false`, reference/copy-on-write
+  behavior, object handle identity preservation, resource values, exact native
   `TypeError` objects, and native lowering
 - `array_map` array/object callables, closures, first-class callables, method
   calls, reference/copy-on-write behavior, object handle identity preservation,

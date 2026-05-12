@@ -567,8 +567,17 @@ handled.
 
 ## Milestone 54: Array Filtering Mode Follow-ups
 
-- [ ] Extend `array_filter` with integer mode flag `0` for the current
+- [x] Extend `array_filter` with integer mode flag `0` for the current
   null-callback and value-only string-callback paths, including fixture CLI
   coverage, documentation, and explicit gaps for key/key-value callback modes,
   named `ARRAY_FILTER_*` constants, references/copy-on-write, exact native
   `TypeError` objects, and native lowering.
+
+## Milestone 55: Array Filtering Key Mode
+
+- [ ] Implement integer mode flag `2`/`ARRAY_FILTER_USE_KEY` behavior for
+  `array_filter($array, $callback, 2)` over the current string-valued callback
+  subset, including integer/string key callback arguments, fixture CLI
+  coverage, documentation, and explicit gaps for named constants, key/value
+  callback mode, array/object callables, closures, references/copy-on-write,
+  exact native `TypeError` objects, and native lowering.

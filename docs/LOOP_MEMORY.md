@@ -6267,3 +6267,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T13:11:33Z
 
 - Post-round 2 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T13:11:39Z
+
+- Starting round 3 at 20260512T131139Z from HEAD `9130e77`.
+
+## Loop Event 2026-05-12T13:11:45Z
+
+- Pre-round 3 test exit code: `0`.
+
+## Loop Event 2026-05-12T13:24:38Z
+
+- Task attempted: extended `array_filter` with explicit integer mode flag `0`
+  for the current `null` callback and string-valued value-only callback paths.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone54/array_filter_mode_zero.php`,
+  `tests/fixtures/milestone54/array_filter_mode_zero.stdout`,
+  `tests/fixtures/milestone54/array_filter_mode_zero.cli`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.stderr`,
+  `tests/fixtures/runtime_errors/array_filter_mode_unsupported.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  array_filter` passed with 10 tests; `cargo test -p phpc --test
+  array_filtering_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone54` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone54` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 104 fixtures; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone54/array_filter_mode_zero.php` printed the
+  committed output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone54/array_filter_mode_zero.php --emit-ir` exited `1`
+  at the existing function-declaration lowering boundary, while the focused
+  `array_filter` unit test covers direct function-call native rejection for
+  `array_filter(..., 0)`; `tools/run-tests.sh` passed with 231 fixtures, 93
+  system PHP comparisons, and 138 `.phpc-only` skips.
+- Remaining semantic gaps: `array_filter` accepts only integer mode `0` for
+  the current value-only paths. Key-only/key-value callback modes through
+  integer flags, named `ARRAY_FILTER_*` constants, non-int mode coercions such
+  as `false`, array/object callables, closures, first-class callables, method
+  calls, references, copy-on-write containers, exact native `TypeError`
+  objects, resource values, object handle identity preservation, and native
+  lowering remain unsupported.
+- Next concrete task: implement integer mode flag `2`/`ARRAY_FILTER_USE_KEY`
+  behavior for `array_filter($array, $callback, 2)` over the current
+  string-valued callback subset, while keeping named constants and key/value
+  callback mode unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: accept array_filter value mode flag"`
+  after the full suite passes.

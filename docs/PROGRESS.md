@@ -381,7 +381,14 @@ Implemented:
   names, invokes the callback in value-only mode, preserves keys whose callback
   return value is truthy, is available when `array_filter` itself is called
   dynamically by string name, and has stable diagnostics for non-string
-  callbacks, unresolved callback names, and unsupported mode flags.
+  callbacks, unresolved callback names, and unsupported nonzero/non-int mode
+  flags.
+- Extended `array_filter` with explicit integer mode flag `0` for the current
+  `null` callback and string-valued value-only callback paths. The supported
+  slice reuses the existing value filtering behavior, works through
+  string-valued dynamic calls to `array_filter`, and keeps key-only/key-value
+  modes, named `ARRAY_FILTER_*` constants, and non-int mode coercions
+  unsupported.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -823,8 +830,9 @@ Tested:
   diagnostics, callback arity diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_filter` passes with falsey-value removal,
   explicit `null` callback falsey filtering, value-only string callback
-  execution for user functions and callable builtins, key preservation,
-  dynamic string-call coverage, original-array preservation,
+  execution for user functions and callable builtins, explicit integer mode
+  flag `0` for the current null-callback and string-callback paths, key
+  preservation, dynamic string-call coverage, original-array preservation,
   non-array/callback/mode diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_map` passes with one-array null-callback
   identity mapping, variadic null-callback zip mapping with longest-array
@@ -930,8 +938,8 @@ Tested:
   snapshot test covering the Milestone 51 and Milestone 52 `array_reduce`
   fixtures.
 - `cargo test -p phpc --test array_filtering_builtins_cli` passes with 1 CLI
-  snapshot test covering the Milestone 20, Milestone 21, and Milestone 53
-  `array_filter` fixtures.
+  snapshot test covering the Milestone 20, Milestone 21, Milestone 53, and
+  Milestone 54 `array_filter` fixtures.
 - `cargo test -p phpc --test array_mapping_builtins_cli` passes with CLI
   snapshot tests covering the Milestone 22, Milestone 23, Milestone 25,
   Milestone 26, Milestone 27, and Milestone 28 `array_map` fixtures.
@@ -1264,7 +1272,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_callback_undefined.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_callback_undefined.php:3:6: undefined function missing_filter()`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_mode_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_mode_unsupported.php:3:6: unsupported call array_filter(): mode flags are not supported in the current subset`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_mode_unsupported.php:3:6: unsupported call array_filter(): ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_map_non_array.php:2:6: unsupported call array_map(): second argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_map_callback_non_string.php`
@@ -1470,6 +1478,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone53` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone53` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone54/array_filter_mode_zero.php`
+  prints the committed `array_filter(..., 0)` output for the current
+  null-callback and string-callback value-only paths, including key
+  preservation and string-valued dynamic calls to `array_filter`.
+- `cargo run -p phpc -- test tests/fixtures/milestone54` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone54` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/milestone22/array_map.php` prints
   the committed `array_map` output with string-named user-function callbacks,
@@ -2004,10 +2020,13 @@ Still fails:
   and native lowering are not implemented.
   `array_filter` callback support is limited to omitted callbacks, explicit
   `null` callbacks, and string-valued user-function or callable-builtin names
-  in value-only mode. Array/object callables, closures, first-class callables,
-  method calls, key-only/key-value callback modes, reference and copy-on-write
-  behavior, object handle identity preservation, resource values, exact native
-  `TypeError` objects, and native lowering are not implemented.
+  in value-only mode, with explicit integer mode flag `0` accepted for the
+  current null-callback and string-callback paths. Array/object callables,
+  closures, first-class callables, method calls, key-only/key-value callback
+  modes through integer flags or named `ARRAY_FILTER_*` constants, non-int
+  mode coercions such as `false`, reference and copy-on-write behavior, object
+  handle identity preservation, resource values, exact native `TypeError`
+  objects, and native lowering are not implemented.
   `array_map` callback support is limited to one-array null-callback identity
   mapping, variadic null-callback zip mapping, and variadic input arrays with
   string-valued user-function or callable-builtin names. The one-array forms
@@ -2106,6 +2125,7 @@ Still fails:
 
 Next:
 
-- Extend `array_filter` with integer mode flag `0` for the current
-  null-callback and value-only string-callback paths, while keeping key-only
-  and key/value callback modes unsupported.
+- Implement integer mode flag `2`/`ARRAY_FILTER_USE_KEY` behavior for
+  `array_filter($array, $callback, 2)` over the current string-valued callback
+  subset, while keeping named constants and key/value callback mode
+  unsupported until explicit syntax/runtime support exists.

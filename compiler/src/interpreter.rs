@@ -1795,6 +1795,10 @@ impl Interpreter {
             [Value::Array(array), Value::Null] => {
                 Ok(Value::Array(array.filtered_without_callback()))
             }
+            [Value::Array(array), Value::Null, mode] => {
+                Self::require_array_filter_value_mode(mode, span)?;
+                Ok(Value::Array(array.filtered_without_callback()))
+            }
             [other] => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -1805,13 +1809,12 @@ impl Interpreter {
             [Value::Array(array), callback] => Ok(Value::Array(
                 self.filter_array_with_callback(array, callback, span)?,
             )),
-            [Value::Array(_), _, _] => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_filter()",
-                    "mode flags are not supported in the current subset",
-                ),
-            )),
+            [Value::Array(array), callback, mode] => {
+                Self::require_array_filter_value_mode(mode, span)?;
+                Ok(Value::Array(
+                    self.filter_array_with_callback(array, callback, span)?,
+                ))
+            }
             [other, _] | [other, _, _] => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -1825,6 +1828,29 @@ impl Interpreter {
                     "array_filter()",
                     ArityExpectation::Between { min: 1, max: 3 },
                     args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn require_array_filter_value_mode(mode: &Value, span: Span) -> CompileResult<()> {
+        match mode {
+            Value::Int(0) => Ok(()),
+            Value::Int(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_filter()",
+                    "ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset",
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_filter()",
+                    format!(
+                        "mode flag must be integer 0 in the current subset, got {}",
+                        other.type_name()
+                    ),
                 ),
             )),
         }

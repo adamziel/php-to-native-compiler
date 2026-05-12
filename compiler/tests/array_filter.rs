@@ -98,6 +98,46 @@ if (array_key_exists("zero-string", $again)) {
 }
 
 #[test]
+fn array_filter_accepts_integer_zero_mode_for_current_value_paths() {
+    let source = r#"<?php
+function keep_long($value) {
+    return strlen($value) > 3;
+}
+
+$items = [];
+$items["empty"] = "";
+$items["zero"] = "0";
+$items["short"] = "Ada";
+$items["long"] = "Grace";
+$items[5] = "Linus";
+$items[] = "";
+
+$null_mode = array_filter($items, null, 0);
+print_r(array_keys($null_mode));
+echo count($null_mode), "|", $null_mode["short"], "|", $null_mode["long"], "|", $null_mode[5], "\n";
+
+$callback_mode = array_filter($items, "keep_long", 0);
+print_r(array_keys($callback_mode));
+echo count($callback_mode), "|", $callback_mode["long"], "|", $callback_mode[5], "\n";
+
+$call = "array_filter";
+$builtin = $call(["empty" => "", "zero" => "0", "space" => " "], "strlen", 0);
+print_r(array_keys($builtin));
+echo count($builtin), "|", $builtin["zero"], "|", strlen($builtin["space"]), "\n";
+
+$again = $call($items, null, 0);
+echo count($again), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => short\n    [1] => long\n    [2] => 5\n)\n3|Ada|Grace|Linus\nArray\n(\n    [0] => long\n    [1] => 5\n)\n2|Grace|Linus\nArray\n(\n    [0] => zero\n    [1] => space\n)\n2|0|1\n3\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_filter_requires_array_argument() {
     let error = runtime_error("<?php\necho array_filter(42);\n");
 
@@ -167,7 +207,7 @@ fn array_filter_callback_reports_unknown_function() {
 }
 
 #[test]
-fn array_filter_rejects_mode_flags_for_now() {
+fn array_filter_rejects_key_and_key_value_modes() {
     let error = runtime_error(
         "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, \"strlen\", 1);\n",
     );
@@ -176,7 +216,21 @@ fn array_filter_rejects_mode_flags_for_now() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_filter(): mode flags are not supported in the current subset"
+        "unsupported call array_filter(): ARRAY_FILTER_USE_BOTH and ARRAY_FILTER_USE_KEY modes are not supported in the current subset"
+    );
+}
+
+#[test]
+fn array_filter_rejects_non_integer_mode_flags() {
+    let error = runtime_error(
+        "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, null, false);\n",
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_filter(): mode flag must be integer 0 in the current subset, got bool"
     );
 }
 
@@ -207,5 +261,14 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
         null_callback_error.message.contains("function calls"),
         "{}",
         null_callback_error.message
+    );
+
+    let value_mode_error =
+        emit_ir_source("<?php\necho array_filter([\"name\"], \"strlen\", 0);\n").unwrap_err();
+    assert_eq!(value_mode_error.phase, Phase::Codegen);
+    assert!(
+        value_mode_error.message.contains("function calls"),
+        "{}",
+        value_mode_error.message
     );
 }
