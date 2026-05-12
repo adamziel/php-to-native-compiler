@@ -90,10 +90,12 @@ subset:
   integer/string array values, `array_sum` over the current scalar
   numeric-coercion subset, `array_product` over the current scalar
   numeric-coercion subset,
-  `array_filter` without a callback and with string-valued value-only
-  callbacks, `array_map` over the current one-array null-callback identity,
-  variadic null-callback zip, and variadic string-callback subset
-  with one-array key preservation and multi-array reindexing,
+  `array_reduce($array, $callback)` over the current string-valued callback
+  subset without initial values, `array_filter` without a callback and with
+  string-valued value-only callbacks, `array_map` over the current one-array
+  null-callback identity, variadic null-callback zip, and variadic
+  string-callback subset with one-array key preservation and multi-array
+  reindexing,
   `in_array` and `array_search` including strict scalar searches, `var_dump`,
   and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,

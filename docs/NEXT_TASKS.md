@@ -544,8 +544,16 @@ handled.
 
 ## Milestone 51: Array Reduction Builtin
 
-- [ ] Implement `array_reduce($array, $callback)` for the current string-valued
+- [x] Implement `array_reduce($array, $callback)` for the current string-valued
   callback subset, including accumulator/current value callback invocation,
   non-array and callback diagnostics, fixture CLI coverage, documentation, and
   explicit gaps for initial values, references/copy-on-write, array/object
   callables, closures, exact native `TypeError` objects, and native lowering.
+
+## Milestone 52: Array Reduction Initial Value
+
+- [ ] Extend `array_reduce` with third-argument initial value support over the
+  current value model, including empty-array behavior, callback invocation with
+  the supplied initial accumulator, fixture CLI coverage, documentation, and
+  explicit gaps for references/copy-on-write, array/object callables,
+  closures, exact native `TypeError` objects, and native lowering.

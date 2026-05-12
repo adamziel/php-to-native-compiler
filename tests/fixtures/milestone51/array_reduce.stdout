@@ -1,0 +1,15 @@
+Ada:Grace:Linus
+Array
+(
+    [0] => Ada
+    [1] => Grace
+    [2] => Linus
+)
+empty-null
+Array
+(
+    [first] => Ada
+    [5] => Grace
+    [6] => Linus
+)
+6

@@ -6028,3 +6028,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T11:58:23Z
 
 - Post-round 94 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T11:58:30Z
+
+- Starting round 95 at 20260512T115830Z from HEAD `017778d`.
+
+## Loop Event 2026-05-12T11:58:36Z
+
+- Pre-round 95 test exit code: `0`.
+
+## Loop Event 2026-05-12T12:11:44Z
+
+- Task attempted: implemented `array_reduce($array, $callback)` for the
+  current string-valued callback subset. The supported slice starts with a
+  `null` accumulator, invokes resolved user-function or callable-builtin
+  callbacks with accumulator/current-value arguments in insertion order,
+  returns the final callback result, returns `null` for empty arrays, supports
+  string-valued dynamic calls to `array_reduce`, and reports stable diagnostics
+  for non-array operands, non-string callbacks, unresolved callback names, and
+  unsupported third-argument initial values.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_reduce.rs`,
+  `compiler/tests/array_reduction_builtins_cli.rs`,
+  `tests/fixtures/milestone51/array_reduce.*`,
+  `tests/fixtures/runtime_errors/array_reduce_non_array.*`,
+  `tests/fixtures/runtime_errors/array_reduce_callback_non_string.*`,
+  `tests/fixtures/runtime_errors/array_reduce_callback_undefined.*`,
+  `tests/fixtures/runtime_errors/array_reduce_initial_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  array_reduce` passed with 8 tests; `cargo test -p phpc --test
+  array_reduction_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone51` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone51` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test runtime_error_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/runtime_errors` passed with 105
+  fixtures; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_reduce_initial_unsupported.php` exited
+  `1` with the expected stable diagnostic; `CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed with 229 fixtures, 90 system PHP comparisons, and
+  139 `.phpc-only` skips.
+- Remaining semantic gaps: `array_reduce` initial values are not implemented
+  yet. Array/object callables, closures, first-class callables, method calls,
+  references, copy-on-write containers, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering
+  remain unsupported.
+- Next concrete task: extend `array_reduce` with third-argument initial value
+  support over the current value model, including empty-array behavior,
+  callback invocation with the supplied initial accumulator, fixture CLI
+  coverage, docs, and explicit unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_reduce"` after
+  the full suite passes.

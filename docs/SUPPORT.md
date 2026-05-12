@@ -79,9 +79,9 @@
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
-  `array_product`, `array_filter`, `array_map`, `in_array`, `array_search`,
-  `var_dump`, and `print_r`; `print_r` can render current minimal object
-  values
+  `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
+  minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -117,6 +117,8 @@
   `array_count_values` values, non-array `array_sum` operands, unsupported
   non-numeric/non-scalar `array_sum` values, non-array `array_product`
   operands, unsupported non-numeric/non-scalar `array_product` values,
+  non-array `array_reduce` operands, non-string or unresolved `array_reduce`
+  callbacks, unsupported `array_reduce` initial values,
   non-array `array_filter`
   operands, non-string
   `array_filter` callbacks, unsupported `array_filter` mode flags, non-array
@@ -369,6 +371,12 @@
   input or integer overflow promotes the result to float, returns integer one
   for an empty array, and is available through string-valued dynamic function
   calls.
+  `array_reduce($array, $callback)` accepts arrays and callbacks that evaluate
+  to string function names resolving to current user functions or callable
+  builtins, invokes the callback once per value in insertion order with the
+  accumulator and current value, starts the accumulator at `null`, returns
+  `null` for empty arrays, and is available through string-valued dynamic
+  calls to `array_reduce`.
   `array_filter($array)` without a callback accepts arrays only, removes values
   that are falsey under the current PHP-shaped truthiness rules, preserves the
   original integer/string keys and insertion order of kept entries, and is
@@ -414,6 +422,7 @@
   `array_diff_key`,
   `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
+  `array_reduce` in the current string-callback form without initial values,
   `array_filter` in the current no-callback and string-callback forms,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic string-callback forms,
@@ -501,9 +510,10 @@
   `array_count_values` values, non-array `array_sum` operands, unsupported
   non-numeric/non-scalar `array_sum` values, non-array `array_product`
   operands, unsupported non-numeric/non-scalar `array_product` values,
-  non-array `array_filter`
-  operands, non-string `array_filter` callbacks, unsupported `array_filter`
-  mode flags,
+  non-array `array_reduce` operands, non-string and unresolved `array_reduce`
+  callbacks, unsupported `array_reduce` initial values, non-array
+  `array_filter` operands, non-string `array_filter` callbacks, unsupported
+  `array_filter` mode flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
   callbacks, non-array variadic `array_map` operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
@@ -532,8 +542,8 @@
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
-  `array_sum`, `array_product`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `var_dump`, or `print_r`.
+  `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
+  `in_array`, `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -567,8 +577,9 @@
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
-  `array_product`, `array_filter`, `array_map`, `in_array`, `array_search`,
-  `var_dump`, and `print_r` cover the documented scalar/array/object subset.
+  `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
+  `array_search`, `var_dump`, and `print_r` cover the documented
+  scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -803,6 +814,18 @@
   PHP warning recovery, and native lowering are not implemented.
   `array_product` is also available through string-valued dynamic function
   calls.
+  `array_reduce($array, $callback)` accepts arrays only and callback
+  expressions that evaluate to string function names resolving to current user
+  functions or callable builtins. It starts with a `null` accumulator, invokes
+  the callback with `($carry, $value)` for each source value in insertion
+  order, returns the final callback result, and returns `null` for empty
+  arrays. It is available when `array_reduce` itself is called through a
+  string-valued dynamic function name. Non-array operands, non-string callback
+  values, unresolved callback names, and third-argument initial values fail
+  with stable diagnostics. Initial values, array/object callables, closures,
+  first-class callables, method calls, references, copy-on-write containers,
+  exact native `TypeError` objects, object handle identity preservation,
+  resource values, and native lowering are not implemented.
   `array_filter($array)` without a callback accepts arrays only, removes
   `null`, `false`, zero integers and floats, empty strings, string `"0"`, and
   empty arrays using the current `Value::is_truthy` rules, preserves the
@@ -877,8 +900,8 @@
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
   `array_fill_keys`, `array_count_values`, `array_sum`, `array_product`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, and both current
-  `foreach` array forms follow the current by-value model; PHP
+  `array_reduce`, `array_filter`, `array_map`, `in_array`, `array_search`, and
+  both current `foreach` array forms follow the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
@@ -901,8 +924,9 @@
   behavior for unsupported key values, `array_count_values` warning-and-skip
   behavior for unsupported values, `array_sum` PHP warning recovery for
   unsupported values, `array_product` PHP warning recovery for unsupported
-  values, and `array_filter` callback forms outside the current string
-  function-name subset plus key/key-value modes, and `array_map`
+  values, `array_reduce` initial values and callback forms outside the current
+  string function-name subset, and `array_filter` callback forms outside the
+  current string function-name subset plus key/key-value modes, and `array_map`
   callback forms outside current null-callback and string-valued function-name
   forms are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
@@ -1086,6 +1110,10 @@
 - `array_product` PHP warning recovery for non-numeric strings and unsupported
   value types, object/resource values, reference/copy-on-write behavior, exact
   native `TypeError` objects, and native lowering
+- `array_reduce` initial values, array/object callables, closures, first-class
+  callables, method calls, reference/copy-on-write behavior, object handle
+  identity preservation, resource values, exact native `TypeError` objects, and
+  native lowering
 - `array_filter` callbacks outside string-valued user-function/callable-builtin
   names, `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` callback modes,
   reference/copy-on-write behavior, object handle identity preservation,

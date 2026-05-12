@@ -1569,6 +1569,7 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_reduce" => self.call_array_reduce(args, span),
             "array_filter" => self.call_array_filter(args, span),
             "array_map" => self.call_array_map(args, span),
             "in_array" => match args.as_slice() {
@@ -1704,6 +1705,91 @@ impl Interpreter {
             },
             _ => unreachable!("is_builtin keeps this match exhaustive for callers"),
         }
+    }
+
+    fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        match args.as_slice() {
+            [Value::Array(array), callback] => {
+                self.reduce_array_with_callback(array, callback, span)
+            }
+            [other, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_reduce()",
+                    format!("first argument must be array, got {}", other.type_name()),
+                ),
+            )),
+            [Value::Array(_), _, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_reduce()",
+                    "initial values are not supported in the current subset",
+                ),
+            )),
+            [other, _, _] => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_reduce()",
+                    format!("first argument must be array, got {}", other.type_name()),
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_reduce()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            )),
+        }
+    }
+
+    fn reduce_array_with_callback(
+        &mut self,
+        array: &PhpArray,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let callable = self.resolve_array_reduce_callback(callback, span)?;
+        let mut accumulator = Value::Null;
+
+        for entry in array.entries() {
+            accumulator = self.call_callable_with_values(
+                callable.clone(),
+                vec![accumulator, entry.value.clone()],
+                span,
+            )?;
+        }
+
+        Ok(accumulator)
+    }
+
+    fn resolve_array_reduce_callback(
+        &self,
+        callback: &Value,
+        span: Span,
+    ) -> CompileResult<Callable> {
+        let callback_name = match callback {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_reduce()",
+                        format!(
+                            "callback must evaluate to string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.lookup_function(callback_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(callback_name)),
+            )
+        })
     }
 
     fn call_array_filter(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -2239,6 +2325,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_count_values"
             | "array_sum"
             | "array_product"
+            | "array_reduce"
             | "array_filter"
             | "array_map"
             | "in_array"
