@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call get_called_class(): method and static class context are not implemented in the current subset
+

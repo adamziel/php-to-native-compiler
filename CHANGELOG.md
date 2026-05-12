@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `get_called_class()` as an explicit unsupported boundary before
+  method/static class context exists, with runtime coverage, dynamic-call
+  coverage, fixture coverage, a `phpc run` CLI snapshot, and native-codegen
+  rejection coverage.
 - Added `enum_exists($name[, $autoload])` as an always-false boundary for the
   current no-enum metadata model, with runtime coverage, fixture coverage,
   dynamic-call coverage, invalid-argument diagnostics, and a `phpc run` CLI

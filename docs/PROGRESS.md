@@ -2635,8 +2635,16 @@ Still fails:
   lowering through the current function-call boundary. Declared enums,
   built-in/internal enums, autoloading, namespace/import aliases, exact native
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `get_called_class()` as an explicit method/static class context
+  boundary. Direct calls and string-valued dynamic calls now resolve to a
+  stable unsupported-call runtime diagnostic after zero-argument validation,
+  with fixture CLI coverage and explicit native-codegen rejection through the
+  current function-call boundary. Method dispatch, late static binding,
+  inheritance, namespace/import aliases, exact native `Error` behavior, and
+  native lowering remain unsupported.
 
 Next:
 
-- Continue with the next small object/class context boundary, keeping behavior,
-  tests, CLI coverage, documentation, and unsupported gaps narrow.
+- Add the next honest `spl_object_id($object)` boundary before PHP object
+  handle identity exists, keeping behavior, tests, CLI coverage, documentation,
+  and unsupported gaps narrow.

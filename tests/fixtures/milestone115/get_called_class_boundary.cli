@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone115/get_called_class_boundary.php:2:10: unsupported call get_called_class(): method and static class context are not implemented in the current subset
+--- stderr end ---

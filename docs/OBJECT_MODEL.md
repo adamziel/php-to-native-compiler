@@ -25,6 +25,9 @@ public declared properties with `null` values because property defaults are not
 represented yet.
 `get_object_vars($object)` accepts current object values and returns public
 instance property names with their current slot values in declaration order.
+`get_called_class()` is recognized as a zero-argument callable boundary, but it
+currently fails with a stable unsupported-call diagnostic until method/static
+class context and late static binding exist.
 
 ## Runtime Metadata
 
@@ -75,6 +78,9 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_parent_class($object_or_class)` accepts current object values or
   declared string class names and returns false because the current metadata
   records no parent class relationship;
+- `get_called_class()` validates its zero-argument call shape and then fails
+  with a stable unsupported-call diagnostic because no method/static class
+  context is tracked yet;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -134,6 +140,8 @@ metadata lookup has native support.
 interface metadata lookup has native support.
 `get_declared_traits` is rejected through that function-call boundary until
 trait metadata lookup has native support.
+`get_called_class` is rejected through that function-call boundary until
+method/static class context lookup and late static binding have native support.
 
 ## Unsupported Edge Cases
 
@@ -153,6 +161,7 @@ operands, complex object-property `isset` operands, static member execution
 through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
+`get_called_class` method/static class context, late static binding,
 `get_class_methods` inheritance/trait/interface and non-public
 context-sensitive method listing, `get_class_vars` property defaults,
 inheritance/trait/interface properties, context-sensitive visibility, object

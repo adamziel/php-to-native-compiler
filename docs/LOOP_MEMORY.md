@@ -9803,3 +9803,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:02:09Z
 
 - Post-round 5 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:02:18Z
+
+- Starting round 6 at 20260512T220218Z from HEAD `5b36fe4`.
+
+## Loop Event 2026-05-12T22:02:28Z
+
+- Pre-round 6 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:08:41Z
+
+- Task attempted: added `get_called_class()` as the next honest method/static
+  class context boundary. Direct calls and string-valued dynamic calls now
+  resolve as a known zero-argument callable and fail with a stable
+  unsupported-call runtime diagnostic until method dispatch, static class
+  context, and late static binding exist; native lowering remains rejected
+  through the current function-call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone115/get_called_class_boundary.*`,
+  `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  get_called_class` passed with 3 focused tests; `cargo run -p phpc -- run
+  tests/fixtures/milestone115/get_called_class_boundary.php` exited `1` with
+  the expected stable diagnostic; `cargo run -p phpc -- test
+  tests/fixtures/milestone115` passed with 1 fixture; `cargo test -p phpc
+  --test object_introspection_builtins_cli` passed; `cargo test -p phpc
+  --test object_model` passed with 64 tests; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone115` passed with 1 skipped PHP
+  comparison; `cargo fmt --all` completed; `tools/run-tests.sh` passed with
+  332 fixtures, 121 system PHP comparisons, and 211 skips.
+- Remaining semantic gaps: `get_called_class()` is only an explicit
+  unsupported boundary; method dispatch, `$this` binding, static class context,
+  late static binding, inheritance, namespace/import aliases, exact native
+  `Error` behavior, and native lowering remain unsupported.
+- Next concrete task: add the documented `spl_object_id($object)` boundary
+  before PHP object handle identity exists.
+- Known-good tag: not created; this is a narrow incremental boundary, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_called_class boundary"`
+  after the full suite passes.

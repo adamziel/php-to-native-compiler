@@ -2120,6 +2120,16 @@ impl Interpreter {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::Array(PhpArray::new()))
             }
+            "get_called_class" => {
+                expect_arity(name, &args, 0, span)?;
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "get_called_class()",
+                        "method and static class context are not implemented in the current subset",
+                    ),
+                ))
+            }
             "property_exists" => match args.as_slice() {
                 [object_or_class, Value::String(property_name)] => {
                     let exists = match object_or_class {
@@ -3167,6 +3177,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_declared_classes"
             | "get_declared_interfaces"
             | "get_declared_traits"
+            | "get_called_class"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"

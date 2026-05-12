@@ -26,6 +26,7 @@ fn object_introspection_builtin_cli_snapshots_match_committed_outputs() {
         workspace_root.join("tests/fixtures/milestone112"),
         workspace_root.join("tests/fixtures/milestone113"),
         workspace_root.join("tests/fixtures/milestone114"),
+        workspace_root.join("tests/fixtures/milestone115"),
     ];
     let mut fixtures = fixture_dirs
         .iter()

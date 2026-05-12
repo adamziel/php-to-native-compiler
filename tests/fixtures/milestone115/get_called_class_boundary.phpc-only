@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP reports native Error object details for get_called_class() outside class context.

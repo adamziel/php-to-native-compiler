@@ -998,6 +998,39 @@ fn get_declared_traits_requires_no_arguments() {
 }
 
 #[test]
+fn get_called_class_has_stable_boundary_until_class_context_exists() {
+    let error = runtime_error("<?php\nvar_dump(get_called_class());\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "unsupported call get_called_class(): method and static class context are not implemented in the current subset"
+    );
+
+    let dynamic_error = runtime_error("<?php\n$call = \"get_called_class\";\nvar_dump($call());\n");
+
+    assert_eq!(dynamic_error.line, 3);
+    assert_eq!(dynamic_error.column, 10);
+    assert_eq!(
+        dynamic_error.message,
+        "unsupported call get_called_class(): method and static class context are not implemented in the current subset"
+    );
+}
+
+#[test]
+fn get_called_class_requires_no_arguments() {
+    let error = runtime_error("<?php\nvar_dump(get_called_class(42));\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "arity mismatch for get_called_class(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Box {}\necho get_debug_type(new Box());\n")
@@ -1227,6 +1260,18 @@ fn emit_ir_rejects_get_declared_interfaces_until_native_object_lowering_exists()
 #[test]
 fn emit_ir_rejects_get_declared_traits_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho get_declared_traits();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_get_called_class_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho get_called_class();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

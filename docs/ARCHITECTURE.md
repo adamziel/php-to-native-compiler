@@ -200,6 +200,9 @@ metadata is not represented yet.
 `get_declared_interfaces()` returns an empty list because interface metadata is
 not represented yet; `get_declared_traits()` returns an empty list because
 trait metadata is not represented yet.
+`get_called_class()` is reserved as a zero-argument runtime boundary and fails
+with a stable unsupported-call diagnostic until method/static class context and
+late static binding exist.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

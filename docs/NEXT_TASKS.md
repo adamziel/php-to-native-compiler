@@ -1096,9 +1096,18 @@ handled.
 
 ## Milestone 115: Called Class Context Boundary
 
-- [ ] Add the next honest `get_called_class()` boundary before method/static
+- [x] Add the next honest `get_called_class()` boundary before method/static
   class context exists: either a stable unsupported diagnostic or a narrow
   executable context-aware slice, with parser/runtime coverage, fixture CLI
   coverage, documentation, and explicit gaps for method dispatch, late static
   binding, inheritance, namespaces/import aliases, exact native `Error`
   behavior, and native lowering.
+
+## Milestone 116: Object Identity Boundary
+
+- [ ] Add the next honest `spl_object_id($object)` boundary before PHP object
+  handle identity exists: either a stable unsupported diagnostic or a narrow
+  executable identity slice for current minimal objects, with runtime coverage,
+  fixture CLI coverage, documentation, and explicit gaps for handle reuse,
+  references/copy-on-write, clone semantics, destructors, exact native
+  `TypeError` behavior, and native lowering.
