@@ -75,9 +75,9 @@
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
   `array_keys`, `array_reverse`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `in_array`, `array_search`,
-  `var_dump`, and `print_r`; `print_r` can render current minimal object
-  values
+  `array_fill_keys`, `array_count_values`, `array_filter`, `in_array`,
+  `array_search`, `var_dump`, and `print_r`; `print_r` can render current
+  minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported array
@@ -90,7 +90,8 @@
   non-array `array_fill_keys` operands, unsupported non-int/string
   `array_fill_keys` key values, non-array `array_count_values` operands,
   unsupported non-int/string `array_count_values` values, non-array
-  `in_array`/`array_search` haystacks, non-bool
+  `array_filter` operands, unsupported `array_filter` callback/mode operands,
+  non-array `in_array`/`array_search` haystacks, non-bool
   `in_array`/`array_search` strict-mode flag values, unsupported non-scalar
   `array_keys` search-value comparisons, non-bool `array_keys` strict-mode
   flag values, unsupported non-scalar `in_array`/`array_search` comparisons,
@@ -261,6 +262,10 @@
   or strings, counts values in insertion order using the current array-key
   normalization rules for string values, stores integer counts as result
   values, and is available through string-valued dynamic function calls.
+  `array_filter($array)` without a callback accepts arrays only, removes values
+  that are falsey under the current PHP-shaped truthiness rules, preserves the
+  original integer/string keys and insertion order of kept entries, and is
+  available through string-valued dynamic function calls.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
@@ -279,10 +284,10 @@
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
   `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `in_array`, `array_search`, both current `foreach`
-  array forms, direct array-offset `unset`, multiple supported `unset(...)`
-  operands, `print_r`, and `var_dump` are implemented for this ordered value
-  model.
+  `array_count_values`, `array_filter` without a callback, `in_array`,
+  `array_search`, both current `foreach` array forms, direct array-offset
+  `unset`, multiple supported `unset(...)` operands, `print_r`, and `var_dump`
+  are implemented for this ordered value model.
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
@@ -341,7 +346,8 @@
   non-int/string `array_flip` values, non-array `array_fill_keys` operands,
   unsupported non-int/string `array_fill_keys` key values, non-array
   `array_count_values` operands, unsupported non-int/string
-  `array_count_values` values, non-array `in_array` operands,
+  `array_count_values` values, non-array `array_filter` operands, unsupported
+  `array_filter` callback/mode operands, non-array `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
   `in_array`/`array_search` strict-mode flag values, and array-value
   comparisons for `in_array`/`array_search`,
@@ -365,8 +371,8 @@
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_values`,
   `array_keys`, `array_reverse`, `array_merge`, `array_flip`,
-  `array_fill_keys`, `array_count_values`, `in_array`, `array_search`,
-  `var_dump`, or `print_r`.
+  `array_fill_keys`, `array_count_values`, `array_filter`, `in_array`,
+  `array_search`, `var_dump`, or `print_r`.
   Unresolved names fail with a stable undefined-function runtime error, and
   non-string callees fail with a stable unsupported-call runtime error. Required
   parameters and trailing default parameter values are supported. Defaults may
@@ -397,8 +403,8 @@
 - Builtins: `strlen`, `isset`, `empty`, `count`, `array_key_exists`,
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
   `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `in_array`, `array_search`, `var_dump`, and `print_r`
-  cover the documented scalar/array/object subset.
+  `array_count_values`, `array_filter`, `in_array`, `array_search`,
+  `var_dump`, and `print_r` cover the documented scalar/array/object subset.
   `print_r` can also render the current minimal object values. `strlen`
   remains scalar-only and rejects arrays and objects. `count` accepts arrays
   only.
@@ -479,6 +485,15 @@
   behavior, resource values, and native lowering are not implemented.
   `array_count_values` is also available through string-valued dynamic
   function calls.
+  `array_filter($array)` without a callback accepts arrays only, removes
+  `null`, `false`, zero integers and floats, empty strings, string `"0"`, and
+  empty arrays using the current `Value::is_truthy` rules, preserves the
+  original integer/string keys and insertion order of kept entries, and is
+  available through string-valued dynamic function calls. Callback arguments,
+  mode flags such as key-only or key/value callback mode, references,
+  copy-on-write containers, exact native `TypeError` objects, object handle
+  identity preservation, resource values, and native lowering are not
+  implemented.
   `in_array($needle, $array)` accepts an array haystack, scans values in
   insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
@@ -514,16 +529,17 @@
   expression operands, and unsupported array-key coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
   `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
-  `array_count_values`, `in_array`, `array_search`, and both current
-  `foreach` array forms follow the current by-value model; PHP
+  `array_count_values`, `array_filter`, `in_array`, `array_search`, and both
+  current `foreach` array forms follow the current by-value model; PHP
   references, copy-on-write containers, object handle identity preservation,
   resource values, array, object, resource, or reference search values for
   `array_keys`, non-bool `array_keys` strict-flag coercion, non-bool
   `array_reverse` preserve-key flag coercion, `array_merge`
   reference/copy-on-write behavior, `array_flip` warning-and-skip behavior for
   unsupported source values, and `array_fill_keys` warning-and-skip behavior
-  for unsupported key values, and `array_count_values` warning-and-skip
-  behavior for unsupported values are not implemented.
+  for unsupported key values, `array_count_values` warning-and-skip behavior
+  for unsupported values, and `array_filter` callback/mode forms are not
+  implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -665,6 +681,10 @@
 - `array_count_values` warning-and-skip behavior for unsupported values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering
+- `array_filter` callback arguments, `ARRAY_FILTER_USE_KEY` and
+  `ARRAY_FILTER_USE_BOTH` callback modes, reference/copy-on-write behavior,
+  object handle identity preservation, resource values, exact native
+  `TypeError` objects, and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

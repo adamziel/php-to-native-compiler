@@ -3989,3 +3989,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:47:15Z
 
 - Post-round 63 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:47:18Z
+
+- Starting round 64 at 20260512T054718Z from HEAD `e4de376`.
+
+## Loop Event 2026-05-12T05:47:22Z
+
+- Pre-round 64 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:00:44Z
+
+- Task attempted: implemented `array_filter($array)` without a callback for
+  the current ordered array value model. The supported slice removes values
+  that are falsey under current PHP-shaped truthiness, preserves original
+  integer/string keys and insertion order, supports string-valued dynamic
+  calls, keeps callback and mode forms as stable unsupported diagnostics, and
+  still rejects native lowering through the existing function-call codegen
+  boundary.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_filter.rs`,
+  `compiler/tests/array_filtering_builtins_cli.rs`,
+  `tests/fixtures/milestone20/array_filter.*`,
+  `tests/fixtures/runtime_errors/array_filter_non_array.*`,
+  `tests/fixtures/runtime_errors/array_filter_callback_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo test -p php_runtime array_filter`
+  passed; `cargo test -p phpc --test array_filter` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone20` passed; `cargo test -p phpc --test
+  array_filtering_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 53 fixtures; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone20` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- run
+  tests/fixtures/milestone20/array_filter.php` printed the committed output;
+  `cargo run -p phpc -- compile
+  tests/fixtures/milestone20/array_filter.php --emit-ir` exited `1` with an
+  explicit native-lowering rejection; `cargo fmt --check` passed; `cargo test
+  -p php_runtime array_` passed with 29 focused array tests; `tools/run-tests.sh`
+  passed with 146 fixtures, 59 system PHP comparisons, and 87 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_filter` currently supports only the
+  one-argument no-callback form. Callback arguments, key-only/key-value
+  callback modes such as `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`,
+  references, copy-on-write containers, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering remain
+  unsupported.
+- Next concrete task: implement `array_filter($array, $callback)` for the first
+  supported callback subset, likely string-valued function names in value-only
+  mode, while keeping key/mode callback forms explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_filter builtin"`
+  after the full suite passes.

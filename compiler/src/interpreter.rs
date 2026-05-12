@@ -1056,6 +1056,38 @@ impl Interpreter {
                     )),
                 }
             }
+            "array_filter" => match args.as_slice() {
+                [Value::Array(array)] => Ok(Value::Array(array.filtered_without_callback())),
+                [other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                [Value::Array(_), _] | [Value::Array(_), _, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        "callbacks and mode flags are not supported in the current subset",
+                    ),
+                )),
+                [other, _] | [other, _, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_filter()",
+                        ArityExpectation::Between { min: 1, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1474,6 +1506,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_flip"
             | "array_fill_keys"
             | "array_count_values"
+            | "array_filter"
             | "in_array"
             | "array_search"
             | "var_dump"

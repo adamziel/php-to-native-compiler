@@ -279,7 +279,16 @@ handled.
 
 ## Milestone 20: Array Filtering Builtins
 
-- [ ] Implement `array_filter($array)` without a callback over the current
+- [x] Implement `array_filter($array)` without a callback over the current
   ordered array value model, including falsey-value removal, key preservation,
   non-array diagnostics, fixture CLI coverage, documentation, callback
   unsupported gaps, and explicit native-codegen rejection.
+
+## Milestone 21: Array Callback Builtins
+
+- [ ] Implement `array_filter($array, $callback)` for the first supported
+  callback subset over the current ordered array value model, including
+  string-valued callable names, value-only callback mode, key preservation,
+  callback return truthiness, unresolved/non-callable diagnostics, fixture CLI
+  coverage, documentation, explicit gaps for `ARRAY_FILTER_USE_KEY` and
+  `ARRAY_FILTER_USE_BOTH`, and explicit native-codegen rejection.

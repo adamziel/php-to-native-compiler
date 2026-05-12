@@ -1,0 +1,16 @@
+Array
+(
+    [0] => true
+    [1] => one
+    [2] => space
+    [3] => text
+    [4] => nested-array
+    [5] => 7
+    [6] => 8
+)
+7
+1|1| |Ada|1|seven|next
+null removed
+empty array removed
+after
+7|1

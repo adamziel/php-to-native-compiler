@@ -590,6 +590,16 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn filtered_without_callback(&self) -> Self {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            if entry.value.is_truthy() {
+                array.insert(entry.key.clone(), entry.value.clone());
+            }
+        }
+        array
+    }
+
     fn merge_entries_from(&mut self, source: &Self) {
         for entry in &source.entries {
             match &entry.key {
@@ -2667,6 +2677,54 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_count_values(): values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_filter_without_callback_removes_falsey_values_and_preserves_keys() {
+        let mut array = PhpArray::new();
+        array.insert("null", Value::Null);
+        array.insert("false", Value::Bool(false));
+        array.insert("true", Value::Bool(true));
+        array.insert("zero", Value::Int(0));
+        array.insert("one", Value::Int(1));
+        array.insert("empty-string", Value::String(String::new()));
+        array.insert("zero-string", Value::String("0".to_string()));
+        array.insert("space", Value::String(" ".to_string()));
+        array.insert("empty-array", Value::Array(PhpArray::new()));
+
+        let mut nested = PhpArray::new();
+        nested.insert("item", Value::String("kept".to_string()));
+        array.insert("nested-array", Value::Array(nested));
+        array.insert(7, Value::String("seven".to_string()));
+        array.append(Value::String("next".to_string())).unwrap();
+
+        let mut filtered = array.filtered_without_callback();
+        let entries = filtered.entries();
+
+        assert_eq!(entries.len(), 6);
+        assert_eq!(entries[0].key, ArrayKey::String("true".to_string()));
+        assert_eq!(entries[0].value, Value::Bool(true));
+        assert_eq!(entries[1].key, ArrayKey::String("one".to_string()));
+        assert_eq!(entries[1].value, Value::Int(1));
+        assert_eq!(entries[2].key, ArrayKey::String("space".to_string()));
+        assert_eq!(entries[2].value, Value::String(" ".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("nested-array".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(7));
+        assert_eq!(entries[4].value, Value::String("seven".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::Int(8));
+        assert_eq!(entries[5].value, Value::String("next".to_string()));
+        assert_eq!(
+            filtered.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(9)
+        );
+        assert!(
+            !filtered.contains_key("empty-array"),
+            "array_filter without a callback removes empty arrays"
+        );
+        assert!(
+            array.contains_key("empty-array"),
+            "array_filter must not mutate the original array"
         );
     }
 

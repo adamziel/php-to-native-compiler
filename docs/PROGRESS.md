@@ -259,6 +259,12 @@ Implemented:
   values increment an existing count, is available through string-valued
   dynamic function calls, and has stable diagnostics for non-array arguments
   and unsupported non-int/string source values.
+- Added `array_filter($array)` support without a callback for the current
+  ordered array value model. The supported slice removes values that are falsey
+  under the current PHP-shaped truthiness rules, preserves original
+  integer/string keys and insertion order for kept entries, is available
+  through string-valued dynamic function calls, and has stable diagnostics for
+  non-array arguments and unsupported callback/mode forms.
 - Added `in_array($needle, $array)` support for the current ordered array value
   model. The supported slice scans values in insertion order, uses the current
   loose scalar comparison rules by default, also supports the boolean strict
@@ -426,6 +432,8 @@ Tested:
   array-transform runtime tests.
 - `cargo test -p php_runtime array_count_values` passes with 2 focused
   array-counting runtime tests.
+- `cargo test -p php_runtime array_filter` passes with 1 focused
+  array-filtering runtime test.
 - `cargo test -p php_runtime in_array` passes with 3 focused loose/strict
   array-search tests.
 - `cargo test -p php_runtime array_search` passes with 3 focused loose/strict
@@ -554,6 +562,10 @@ Tested:
   value counting, string-key normalization, duplicate-count increments,
   dynamic string-call coverage, original-array preservation, non-array
   diagnostics, unsupported-value diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_filter` passes with falsey-value removal,
+  key preservation, dynamic string-call coverage, original-array preservation,
+  non-array diagnostics, unsupported callback-form diagnostics, and LLVM IR
+  rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -583,6 +595,8 @@ Tested:
   fixtures.
 - `cargo test -p phpc --test array_counting_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 19 `array_count_values` fixture.
+- `cargo test -p phpc --test array_filtering_builtins_cli` passes with 1 CLI
+  snapshot test covering the Milestone 20 `array_filter` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -779,6 +793,10 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_count_values_non_array.php:2:6: unsupported call array_count_values(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_count_values_unsupported_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_count_values_unsupported_value.php:3:6: unsupported call array_count_values(): values must be int or string in the current subset, got bool`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_non_array.php:2:6: unsupported call array_filter(): argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_callback_unsupported.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_callback_unsupported.php:3:6: unsupported call array_filter(): callbacks and mode flags are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_array_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
@@ -925,6 +943,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone19` passes with 1
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone19` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone20/array_filter.php`
+  prints the committed `array_filter` output with falsey-value removal, key
+  preservation, append behavior after preserved integer keys, original-array
+  preservation, and dynamic string-call coverage.
+- `cargo run -p phpc -- test tests/fixtures/milestone20` passes with 1
+  fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone20` passes
   with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
@@ -1109,6 +1135,10 @@ Still fails:
   warning-and-skip behavior; references, copy-on-write containers, exact native
   warning/`TypeError` objects, resource values, and native lowering are not
   implemented.
+  `array_filter` currently supports only the one-argument no-callback form.
+  Callback arguments, key-only/key-value callback modes, reference and
+  copy-on-write behavior, object handle identity preservation, resource values,
+  exact native `TypeError` objects, and native lowering are not implemented.
   `in_array` and `array_search` are limited to loose scalar searches and strict
   scalar searches when the third argument is a boolean. Strict searches
   involving array/object needles or haystack values, resource/reference
@@ -1198,7 +1228,7 @@ Still fails:
 
 Next:
 
-- Implement `array_filter($array)` without a callback over the current ordered
-  array value model, including falsey-value removal, key preservation,
-  non-array diagnostics, fixture CLI coverage, documentation, callback
-  unsupported gaps, and explicit native-codegen rejection.
+- Implement `array_filter($array, $callback)` for the first supported callback
+  subset, likely string-valued function names in value-only mode, while keeping
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` explicitly unsupported
+  until callback modes are modeled.
