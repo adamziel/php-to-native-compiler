@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/null_coalescing_array_assignment_non_array.php:3:1: invalid array access: cannot write offset on int
+--- stderr end ---

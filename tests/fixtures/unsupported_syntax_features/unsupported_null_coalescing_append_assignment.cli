@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing_append_assignment.php:2:10: unsupported null coalescing assignment: only direct variable and direct array-offset targets are implemented
+--- stderr end ---

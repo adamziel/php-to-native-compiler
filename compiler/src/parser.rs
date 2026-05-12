@@ -926,18 +926,24 @@ impl Parser {
             {
                 let operator_span = self.advance().span;
                 self.advance();
-                let AssignTarget::Variable { name, span } = target else {
-                    return Err(self.error_at(
-                        operator_span,
-                        unsupported_null_coalescing_assignment_message(),
-                    ));
-                };
+                let span = target.span();
+                match &target {
+                    AssignTarget::Variable { .. }
+                    | AssignTarget::ArrayIndex { index: Some(_), .. } => {}
+                    AssignTarget::ArrayIndex { index: None, .. }
+                    | AssignTarget::Property { .. } => {
+                        return Err(self.error_at(
+                            operator_span,
+                            unsupported_null_coalescing_assignment_message(),
+                        ));
+                    }
+                }
                 let expr = self.parse_expression()?;
                 self.consume_keyword(
                     TokenKind::Semicolon,
                     "expected ';' after null coalescing assignment",
                 )?;
-                return Ok(Some(Stmt::NullCoalesceAssign { name, expr, span }));
+                return Ok(Some(Stmt::NullCoalesceAssign { target, expr, span }));
             }
             self.current = saved;
             return Ok(None);
@@ -2084,7 +2090,7 @@ fn unsupported_null_coalescing_message() -> &'static str {
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
-    "unsupported null coalescing assignment: only direct variable targets are implemented"
+    "unsupported null coalescing assignment: only direct variable and direct array-offset targets are implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

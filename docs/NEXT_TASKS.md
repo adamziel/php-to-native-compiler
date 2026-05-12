@@ -1216,9 +1216,18 @@ handled.
 
 ## Milestone 128: Null Coalescing Array Assignment Follow-up
 
-- [ ] Implement direct array-offset `$array[$key] ??= expr` over the current
+- [x] Implement direct array-offset `$array[$key] ??= expr` over the current
   ordered array value model, including undefined/null/missing-key behavior,
   lazy fallback assignment, non-array target behavior, fixture CLI coverage,
   documentation, native-codegen rejection, and named gaps for append offsets,
   nested offsets, object properties, dynamic lvalues, references/copy-on-write,
   exact native error objects, and native lowering.
+
+## Milestone 129: Null Coalescing Object Assignment Follow-up
+
+- [ ] Implement direct public object-property `$object->property ??= expr` over
+  the current minimal object value model, including undefined/null/missing
+  property behavior, lazy fallback assignment, non-object target behavior,
+  fixture CLI coverage, documentation, native-codegen rejection, and named gaps
+  for dynamic property names, non-public visibility context, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering.

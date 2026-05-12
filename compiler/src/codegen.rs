@@ -97,7 +97,7 @@ impl LlvmGenerator {
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
                 *span,
-                "null coalescing assignment is supported by phpc run for direct variables but not LLVM IR emission yet",
+                "null coalescing assignment is supported by phpc run for direct variables and direct array offsets but not LLVM IR emission yet",
             )),
             Stmt::Expr { expr, .. } => {
                 self.emit_expr(expr)?;
@@ -671,7 +671,7 @@ impl CGenerator {
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
                 *span,
-                "null coalescing assignment is supported by phpc run for direct variables but not assembly emission yet",
+                "null coalescing assignment is supported by phpc run for direct variables and direct array offsets but not assembly emission yet",
             )),
             Stmt::Expr { expr, .. } => {
                 self.emit_expr(expr)?;

@@ -31,7 +31,7 @@ pub enum Stmt {
         span: Span,
     },
     NullCoalesceAssign {
-        name: String,
+        target: AssignTarget,
         expr: Expr,
         span: Span,
     },

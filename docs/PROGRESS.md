@@ -2743,6 +2743,20 @@ Still fails:
   `??=` targets, dynamic lvalues, expression-position assignment results,
   references/copy-on-write, exact native error objects, and native lowering
   remain unsupported.
+- Extended null coalescing assignment with direct array-offset targets:
+  `$array[$key] ??= expr` evaluates and stores the right-hand expression only
+  when the direct array variable is undefined or `null`, the key is missing, or
+  the existing slot is `null`. Existing non-null values including `false`, `0`,
+  and `""` are preserved without evaluating the fallback. Undefined and `null`
+  target variables materialize as arrays, existing non-array targets fail with
+  the current stable invalid-array-access diagnostic, fixture and CLI snapshot
+  coverage record both success and non-array behavior, append-offset and
+  object-property `??=` targets remain explicit parse diagnostics, and LLVM IR
+  emission still rejects `??=` explicitly until native null-aware assignment
+  lowering exists. Append offsets, nested offsets/properties, object-property
+  assignment, dynamic lvalues, expression-position assignment results,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain unsupported.
 
 Next:
 

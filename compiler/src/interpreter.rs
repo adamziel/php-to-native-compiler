@@ -245,11 +245,8 @@ impl Interpreter {
                 self.execute_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
-            Stmt::NullCoalesceAssign { name, expr, .. } => {
-                if !matches!(scope.read_named(name), Some(value) if !matches!(value, Value::Null)) {
-                    let value = self.evaluate(expr, scope)?;
-                    scope.write_static(name, value);
-                }
+            Stmt::NullCoalesceAssign { target, expr, .. } => {
+                self.execute_null_coalesce_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::Expr { expr, .. } => {
@@ -701,6 +698,84 @@ impl Interpreter {
                     )),
                 }
             }
+        }
+    }
+
+    fn execute_null_coalesce_assignment(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match target {
+            AssignTarget::Variable { name, .. } => {
+                if !matches!(scope.read_named(name), Some(value) if !matches!(value, Value::Null)) {
+                    let value = self.evaluate(expr, scope)?;
+                    scope.write_static(name, value);
+                }
+                Ok(())
+            }
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                span,
+            } => {
+                let key = self.evaluate_array_key(index, scope)?;
+                let should_assign = match scope.read_named(name) {
+                    Some(Value::Array(array)) => {
+                        !matches!(array.get(key.clone()), Some(value) if !matches!(value, Value::Null))
+                    }
+                    Some(Value::Null) | None => true,
+                    Some(other) => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_array_access(format!(
+                                "cannot write offset on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+
+                if should_assign {
+                    let value = self.evaluate(expr, scope)?;
+                    let slot = scope.array_slot_for_static_write(name);
+
+                    if matches!(slot, Value::Null) {
+                        *slot = Value::Array(PhpArray::new());
+                    }
+
+                    match slot {
+                        Value::Array(array) => {
+                            array.insert(key, value);
+                        }
+                        other => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_array_access(format!(
+                                    "cannot write offset on {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+            AssignTarget::ArrayIndex {
+                index: None, span, ..
+            } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("??=", "append-offset targets are not implemented"),
+            )),
+            AssignTarget::Property { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "??=",
+                    "object-property targets are not implemented",
+                ),
+            )),
         }
     }
 

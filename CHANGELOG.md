@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Implemented direct array-offset `??=` for `$array[$key] ??= expr`, including
+  lazy fallback assignment for missing/null slots, materialization of
+  undefined/null target arrays, non-array target diagnostics, fixture/CLI
+  coverage, documentation, and native-codegen rejection.
 - Implemented the first executable `??=` slice for direct static variables,
   with lazy right-hand evaluation, preservation of non-null falsey values,
   fixture/CLI coverage, documentation, native-codegen rejection, and explicit

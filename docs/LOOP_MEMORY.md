@@ -10560,3 +10560,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:29:03Z
 
 - Post-round 18 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:29:13Z
+
+- Starting round 19 at 20260512T232913Z from HEAD `dfe5c5f`.
+
+## Loop Event 2026-05-12T23:29:20Z
+
+- Pre-round 19 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:10:31Z
+
+- Task attempted: implemented direct array-offset null coalescing assignment
+  for `$array[$key] ??= expr` over the current ordered array value model.
+  The supported slice assigns lazily for missing keys, null slots, undefined
+  target variables, and `null` target variables; preserves existing non-null
+  values including falsey values; materializes undefined/null targets as
+  arrays; and reports a stable invalid-array-access diagnostic for existing
+  non-array targets.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/null_coalescing.rs`, `compiler/tests/null_coalescing_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone128/null_coalescing_array_assignment.php`,
+  `tests/fixtures/milestone128/null_coalescing_array_assignment.stdout`,
+  `tests/fixtures/milestone128/null_coalescing_array_assignment.cli`,
+  `tests/fixtures/runtime_errors/null_coalescing_array_assignment_non_array.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing_append_assignment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test null_coalescing` passed;
+  `cargo test -p phpc --test syntax_boundaries unsupported_null_coalescing_assignment_targets_have_stable_parse_errors`
+  passed; `cargo test -p phpc --test null_coalescing_cli` passed; `cargo test
+  -p phpc --test runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone128` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone128` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 142 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 19 fixtures; `cargo
+  run -p phpc -- compile
+  tests/fixtures/runtime_errors/null_coalescing_array_assignment_non_array.php
+  --emit-ir` rejected `??=` with the expected codegen diagnostic;
+  `tools/run-tests.sh` passed with 353 fixtures, 127 system PHP comparisons,
+  and 226 skips.
+- Remaining semantic gaps: `??=` still does not support append offsets,
+  nested offsets/properties, object-property assignment, dynamic lvalues,
+  expression-position assignment results, references/copy-on-write, exact
+  native error objects, or native lowering.
+- Next concrete task: implement direct public object-property `$object->property
+  ??= expr` over the current minimal object model, or keep a more precise
+  boundary if property initialization semantics need narrowing first.
+- Known-good tag: not created; this is a narrow null-aware assignment
+  follow-up, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add array offset null coalescing assignment"`.

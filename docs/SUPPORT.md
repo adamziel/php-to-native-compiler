@@ -103,10 +103,11 @@
   and null public property values evaluate the fallback, while falsey non-null
   values such as `false`, `0`, `""`, and `"0"` are returned without evaluating
   the fallback
-- null coalescing assignment `$name ??= expr` for direct static variables;
-  undefined and `null` variables evaluate and store the right-hand expression,
-  while existing non-null values are preserved without evaluating the
-  right-hand expression
+- null coalescing assignment `$name ??= expr` and `$array[$key] ??= expr` for
+  direct static variables and direct array-variable offset operands; undefined
+  and `null` variables, undefined/null arrays, missing array keys, and null
+  array values evaluate and store the right-hand expression, while existing
+  non-null values are preserved without evaluating the right-hand expression
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -295,12 +296,15 @@
   public property values, non-array array-offset targets, and non-object
   property targets use the fallback, while falsey non-null values are returned
   as-is and the fallback expression is not evaluated. `phpc run` also supports
-  direct-variable `$name ??= expr` statements with lazy right-hand evaluation
-  only when the variable is undefined or null. Complex or nested `??` left
-  operands, array-offset/object-property `??=` targets, dynamic property names,
-  non-public visibility context, magic methods, unparenthesized chained
-  coalescing, references/copy-on-write, exact native error objects, and native
-  lowering remain unsupported.
+  direct-variable `$name ??= expr` and direct array-offset `$array[$key] ??=
+  expr` statements with lazy right-hand evaluation only when the variable or
+  array slot is undefined, missing, or null. Direct array-offset `??=`
+  materializes undefined/null target variables as arrays; existing non-array
+  targets fail with the current stable invalid-array-access diagnostic.
+  Complex or nested `??` left operands, append-offset/object-property `??=`
+  targets, dynamic property names, non-public visibility context, magic
+  methods, unparenthesized chained coalescing, references/copy-on-write, exact
+  native error objects, and native lowering remain unsupported.
 - Include/require: `include`, `include_once`, `require`, and `require_once`
   are reserved by the lexer/parser and rejected with stable parse diagnostics.
   The planned first executable slice resolves string paths relative to the
@@ -1544,12 +1548,13 @@
   objects, and native lowering are not implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus
-  direct-variable `$name ??= expr` statements. Complex or nested `??` left
-  operands, array-offset/object-property `??=` targets, dynamic property names,
-  non-public visibility context, magic methods, unparenthesized chained
-  coalescing, precedence interactions beyond the current single-operator
-  expression slice, references/copy-on-write, exact native error objects, and
-  native lowering are not implemented.
+  direct-variable `$name ??= expr` and direct array-offset `$array[$key] ??=
+  expr` statements. Complex or nested `??` left operands, append-offset and
+  object-property `??=` targets, dynamic property names, non-public visibility
+  context, magic methods, unparenthesized chained coalescing, precedence
+  interactions beyond the current single-operator expression slice,
+  references/copy-on-write, exact native error objects, and native lowering are
+  not implemented.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
