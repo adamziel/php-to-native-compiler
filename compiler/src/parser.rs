@@ -704,6 +704,11 @@ impl Parser {
                 {
                     return Err(self.error_at(token.span, unsupported_long_array_literal_message()));
                 }
+                if name.eq_ignore_ascii_case("unset")
+                    && self.check(|kind| matches!(kind, TokenKind::LParen))
+                {
+                    return Err(self.error_at(token.span, unsupported_unset_message()));
+                }
                 if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -1120,6 +1125,10 @@ fn unsupported_namespace_qualified_class_name_message() -> &'static str {
 
 fn unsupported_long_array_literal_message() -> &'static str {
     "unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset"
+}
+
+fn unsupported_unset_message() -> &'static str {
+    "unsupported unset: variable, array offset, and property removal are not implemented"
 }
 
 fn unsupported_class_expression_message() -> &'static str {

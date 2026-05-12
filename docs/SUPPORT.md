@@ -67,6 +67,7 @@
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
 - explicit parse diagnostics for unsupported long `array(...)` literal syntax
+- explicit parse diagnostics for unsupported `unset(...)` syntax
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
   property declarations, anonymous class expressions, method calls, dynamic
@@ -237,17 +238,18 @@
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
-- Array gaps: long `array(...)` literal syntax is rejected with a stable parse
-  diagnostic; executing long array literals is not implemented. Nested indexed
+- Array gaps: long `array(...)` literal syntax and `unset(...)` syntax are
+  rejected with stable parse diagnostics; executing long array literals and
+  variable, offset, or property removal is not implemented. Nested indexed
   writes, complex assignment lvalues, `$array[]` as a read expression, string
-  offset access, `unset`, `foreach`, destructuring, spread, references,
-  copy-on-write containers, and object/resource keys are not implemented. Array
-  keys are currently limited to values that evaluate to integers or strings;
-  PHP's boolean, null, float, object, and resource key coercions are rejected
-  with a stable runtime error. Writes to existing non-array scalar variables
-  other than `null` are rejected instead of following PHP's full automatic
-  conversion behavior. Negative-key auto-index behavior is not claimed beyond
-  the current non-negative allocator.
+  offset access, `foreach`, destructuring, spread, references, copy-on-write
+  containers, and object/resource keys are not implemented. Array keys are
+  currently limited to values that evaluate to integers or strings; PHP's
+  boolean, null, float, object, and resource key coercions are rejected with a
+  stable runtime error. Writes to existing non-array scalar variables other
+  than `null` are rejected instead of following PHP's full automatic conversion
+  behavior. Negative-key auto-index behavior is not claimed beyond the current
+  non-negative allocator.
 
 ## Test Support
 
@@ -298,6 +300,8 @@
   by-reference calls
 - long `array(...)` literals; direct syntax is rejected with a stable parse
   diagnostic before execution
+- `unset(...)`; direct syntax is rejected with a stable parse diagnostic before
+  variable, array offset, or object property removal exists
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

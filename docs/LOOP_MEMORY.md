@@ -1355,3 +1355,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:00:26Z
 
 - Post-round 22 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:00:28Z
+
+- Starting round 23 at 20260512T010028Z from HEAD `8ea9afb`.
+
+## Loop Event 2026-05-12T01:00:30Z
+
+- Pre-round 23 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:03:21Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  `unset(...)` syntax before unset execution exists. Direct variable, array
+  offset, object property, and uppercase `UNSET(...)` forms now fail during
+  parsing with a targeted diagnostic instead of reaching dynamic function
+  lookup or runtime execution.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test syntax_boundaries` passed with 2 tests; `cargo test -p phpc --test
+  unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 2 fixtures; `cargo
+  run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 2 `.phpc-only`
+  skips; direct `phpc run` for `unsupported_unset.php` exited `1` with the
+  expected stable diagnostic; `tools/run-tests.sh` passed with 72 fixtures, 28
+  system PHP comparisons, and 44 `.phpc-only` skips.
+- Remaining semantic gaps: unset execution remains unsupported for variables,
+  array offsets, object properties, multiple operands, references,
+  copy-on-write containers, string offsets, `$GLOBALS`/superglobals, magic
+  object behavior, and native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `foreach` syntax before implementing iteration.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject unset syntax"`
+  after the full suite passes.

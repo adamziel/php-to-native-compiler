@@ -43,3 +43,54 @@ $items = ARRAY("a", "b");
         );
     }
 }
+
+#[test]
+fn unset_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+$value = 1;
+unset($value);
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+$items = ["name" => "Ada"];
+unset($items["name"]);
+"#,
+            3,
+            1,
+        ),
+        (
+            r#"<?php
+class Box {
+    public $name;
+}
+$box = new Box();
+unset($box->name);
+"#,
+            6,
+            1,
+        ),
+        (
+            r#"<?php
+$value = 1;
+UNSET($value);
+"#,
+            3,
+            1,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported unset: variable, array offset, and property removal are not implemented"
+        );
+    }
+}
