@@ -70,6 +70,66 @@ echo count($none);
 }
 
 #[test]
+fn array_intersect_compares_against_all_variadic_operands() {
+    let source = r#"<?php
+$base = [];
+$base["name"] = "Ada";
+$base[1] = "1";
+$base["two"] = "two";
+$base["ten"] = 10;
+$base["float-ten"] = 10.0;
+$base["drop"] = "drop";
+$base[8] = "eight";
+$base["keep"] = "keep";
+$base[] = "next";
+
+$first = [];
+$first[] = "Ada";
+$first[] = "1";
+$first[] = "10";
+$first[] = "eight";
+$first[] = "next";
+$first[] = "extra";
+
+$second = [];
+$second[] = "Ada";
+$second[] = "10";
+$second[] = "eight";
+$second[] = "drop";
+$second[] = "next";
+
+$third = [];
+$third[] = "Ada";
+$third[] = "10";
+$third[] = "eight";
+$third[] = "next";
+
+$intersected = array_intersect($base, $first, $second, $third);
+print_r($intersected);
+echo count($intersected), "\n";
+echo $intersected["name"], "|", $intersected["ten"], "|", $intersected["float-ten"], "|", $intersected[8], "|", $intersected[9], "\n";
+$intersected[] = "after";
+echo $intersected[10], "\n";
+print_r($base);
+
+$call = "array_intersect";
+$again = $call($base, $first, $second, $third);
+echo $again["name"], "|", $again["ten"], "|", $again["float-ten"], "|", $again[8], "|", $again[9], "\n";
+
+$none = array_intersect(["name" => "x"], $first, $second, $third);
+print_r($none);
+echo count($none);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [name] => Ada\n    [ten] => 10\n    [float-ten] => 10\n    [8] => eight\n    [9] => next\n)\n5\nAda|10|10|eight|next\nafter\nArray\n(\n    [name] => Ada\n    [1] => 1\n    [two] => two\n    [ten] => 10\n    [float-ten] => 10\n    [drop] => drop\n    [8] => eight\n    [keep] => keep\n    [9] => next\n)\nAda|10|10|eight|next\nArray\n(\n)\n0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_intersect_requires_array_first_argument() {
     let error = runtime_error("<?php\n$right = [];\necho array_intersect(42, $right);\n");
 
@@ -94,14 +154,16 @@ fn array_intersect_requires_array_second_argument() {
 }
 
 #[test]
-fn array_intersect_rejects_variadic_operands_in_current_slice() {
-    let error = runtime_error("<?php\necho array_intersect([], [], []);\n");
+fn array_intersect_requires_array_variadic_arguments() {
+    let error = runtime_error(
+        "<?php\n$left = [];\n$right = [];\necho array_intersect($left, $right, 42);\n",
+    );
 
-    assert_eq!(error.line, 2);
+    assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "arity mismatch for array_intersect(): expected 2 argument(s), got 3"
+        "unsupported call array_intersect(): third argument must be array, got int"
     );
 }
 

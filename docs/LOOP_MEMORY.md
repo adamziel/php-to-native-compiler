@@ -5577,3 +5577,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T10:21:15Z
 
 - Post-round 87 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T10:21:21Z
+
+- Starting round 88 at 20260512T102121Z from HEAD `aa78586`.
+
+## Loop Event 2026-05-12T10:21:27Z
+
+- Pre-round 88 test exit code: `0`.
+
+## Loop Event 2026-05-12T10:31:30Z
+
+- Task attempted: extended `array_intersect` beyond the previous two-array
+  value-intersection slice. The supported path now accepts two or more array
+  operands, preserves first-array entries whose current scalar string-form
+  value is present in every subsequent array, keeps first-array keys, values,
+  insertion order, and append-index behavior, supports string-valued dynamic
+  calls, and reports stable non-array positional diagnostics for variadic
+  operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_intersect.rs`,
+  `compiler/tests/array_value_intersection_builtins_cli.rs`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`,
+  `tests/fixtures/milestone44/array_intersect_variadic.*`,
+  `tests/fixtures/runtime_errors/array_intersect_third_non_array.*`, and
+  removed `tests/fixtures/runtime_errors/array_intersect_variadic_unsupported.*`.
+- Tests run this round: `cargo test -p php_runtime array_intersect` passed with
+  5 focused runtime tests; `cargo test -p phpc --test array_intersect` passed
+  with 7 tests; `cargo test -p phpc --test
+  array_value_intersection_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone44` passed with 1 fixture; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone44` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_intersect_third_non_array.php` exited
+  `1` with the expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone44/array_intersect_variadic.php --emit-ir` exited
+  `1` with the current explicit array native-lowering rejection; `cargo run -p
+  phpc -- run tests/fixtures/milestone44/array_intersect_variadic.php` printed
+  the committed output; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 89 fixtures; `cargo test -p phpc --test runtime_errors` passed
+  with 24 tests; `tools/run-tests.sh` passed with 206 fixtures, 83 system PHP
+  comparisons, and 123 `.phpc-only` skips.
+- Remaining semantic gaps: `array_intersect` is still limited to current scalar
+  string-form value comparisons. Non-scalar value comparisons, references,
+  copy-on-write containers, object/resource values, exact native `TypeError`
+  objects, PHP warning-and-string-conversion behavior for arrays/objects, and
+  native lowering remain unsupported.
+- Next concrete task: extend `array_diff` beyond the current two-array slice
+  with variadic array operands while keeping non-scalar comparisons,
+  references, copy-on-write, exact native `TypeError` objects,
+  object/resource values, and native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: extend array_intersect variadic"`
+  after the full suite passes.

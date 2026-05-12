@@ -1405,28 +1405,43 @@ impl Interpreter {
                 }
             }
             "array_intersect" => {
-                expect_arity(name, &args, 2, span)?;
-                match args.as_slice() {
-                    [Value::Array(left), Value::Array(right)] => left
-                        .intersect_values_with(right)
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
-                    [Value::Array(_), other] => Err(runtime_error(
+                if args.len() < 2 {
+                    return Err(runtime_error(
                         span,
-                        RuntimeError::unsupported_call(
+                        RuntimeError::arity_mismatch(
                             "array_intersect()",
-                            format!("second argument must be array, got {}", other.type_name()),
+                            ArityExpectation::AtLeast(2),
+                            args.len(),
                         ),
-                    )),
-                    [other, _] => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_intersect()",
-                            format!("first argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                    _ => unreachable!("array_intersect arity is checked above"),
+                    ));
                 }
+
+                let mut arrays = Vec::with_capacity(args.len());
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        Value::Array(array) => arrays.push(array),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_intersect()",
+                                    format!(
+                                        "{} must be array, got {}",
+                                        positional_argument_label(index),
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+
+                let (left, others) = arrays
+                    .split_first()
+                    .expect("array_intersect requires at least two arrays");
+                left.intersect_values_with_all(others.iter().copied())
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error))
             }
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;

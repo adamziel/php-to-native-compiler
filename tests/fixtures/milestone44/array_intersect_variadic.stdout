@@ -1,0 +1,29 @@
+Array
+(
+    [name] => Ada
+    [ten] => 10
+    [float-ten] => 10
+    [8] => eight
+    [9] => next
+)
+5
+Ada|10|10|eight|next
+after
+Array
+(
+    [name] => Ada
+    [1] => 1
+    [two] => two
+    [ten] => 10
+    [float-ten] => 10
+    [drop] => drop
+    [8] => eight
+    [keep] => keep
+    [9] => next
+)
+Ada|10|10|eight|next
+Array
+(
+)
+0
+done

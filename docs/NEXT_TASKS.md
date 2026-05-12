@@ -483,8 +483,17 @@ handled.
 
 ## Milestone 44: Array Value Intersection Variadic Follow-ups
 
-- [ ] Extend `array_intersect` beyond the current two-array slice with
+- [x] Extend `array_intersect` beyond the current two-array slice with
   variadic array operands, including intersection across all subsequent arrays,
+  non-array variadic operand diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for non-scalar comparisons, references/copy-on-write,
+  exact native `TypeError` objects, object/resource values, and native
+  lowering.
+
+## Milestone 45: Array Value Difference Variadic Follow-ups
+
+- [ ] Extend `array_diff` beyond the current two-array slice with variadic
+  array operands, including differences against all subsequent arrays,
   non-array variadic operand diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for non-scalar comparisons, references/copy-on-write,
   exact native `TypeError` objects, object/resource values, and native
