@@ -1,0 +1,61 @@
+exit: 0
+stdout:
+Array
+(
+    [name] => Di
+    [5] => five second
+    [2] => two
+    [6] => left next
+    [keep] => first keep
+    [7] => seven second
+    [8] => first next
+    [9] => nine
+    [extra] => extra third
+    [0] => third zero
+    [10] => ten
+)
+11
+Di|five second|two|left next|first keep|seven second|first next|nine|extra third|third zero|ten
+after
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [6] => left next
+    [keep] => keep
+)
+Array
+(
+    [name] => Bea
+    [7] => seven
+    [keep] => first keep
+    [8] => first next
+)
+Array
+(
+    [name] => Cy
+    [7] => seven second
+    [9] => nine
+    [extra] => extra
+    [5] => five second
+)
+Array
+(
+    [name] => Di
+    [extra] => extra third
+    [0] => third zero
+    [10] => ten
+)
+Di|extra third|ten
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [6] => left next
+    [keep] => keep
+)
+single after--- stdout end ---
+stderr:
+--- stderr end ---

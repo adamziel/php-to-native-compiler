@@ -678,9 +678,15 @@ impl PhpArray {
     }
 
     pub fn replaced_with(&self, replacement: &Self) -> Self {
+        self.replaced_with_all([replacement])
+    }
+
+    pub fn replaced_with_all<'a>(&self, replacements: impl IntoIterator<Item = &'a Self>) -> Self {
         let mut array = self.clone();
-        for entry in &replacement.entries {
-            array.insert(entry.key.clone(), entry.value.clone());
+        for replacement in replacements {
+            for entry in &replacement.entries {
+                array.insert(entry.key.clone(), entry.value.clone());
+            }
         }
         array
     }
@@ -3320,6 +3326,83 @@ mod tests {
             replacement.get(5),
             Some(&Value::String("five right".to_string())),
             "array_replace must not mutate the replacement array"
+        );
+    }
+
+    #[test]
+    fn array_replace_accepts_one_array_and_variadic_replacements() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(5, Value::String("five".to_string()));
+        left.insert("2", Value::String("two".to_string()));
+        left.append(Value::String("left next".to_string())).unwrap();
+        left.insert("keep", Value::String("keep".to_string()));
+
+        let single = left.replaced_with_all(std::iter::empty::<&PhpArray>());
+        assert_eq!(single.entries(), left.entries());
+
+        let mut first = PhpArray::new();
+        first.insert("name", Value::String("Bea".to_string()));
+        first.insert(7, Value::String("seven".to_string()));
+        first.insert("keep", Value::String("first keep".to_string()));
+        first
+            .append(Value::String("first next".to_string()))
+            .unwrap();
+
+        let mut second = PhpArray::new();
+        second.insert("name", Value::String("Cy".to_string()));
+        second.insert("7", Value::String("seven second".to_string()));
+        second.insert(9, Value::String("nine".to_string()));
+        second.insert("extra", Value::String("extra".to_string()));
+        second.insert(5, Value::String("five second".to_string()));
+
+        let mut third = PhpArray::new();
+        third.insert("name", Value::String("Di".to_string()));
+        third.insert("extra", Value::String("extra third".to_string()));
+        third
+            .append(Value::String("third zero".to_string()))
+            .unwrap();
+        third.insert(10, Value::String("ten".to_string()));
+
+        let mut replaced = left.replaced_with_all([&first, &second, &third]);
+        let entries = replaced.entries();
+
+        assert_eq!(entries.len(), 11);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("Di".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(5));
+        assert_eq!(entries[1].value, Value::String("five second".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(2));
+        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(6));
+        assert_eq!(entries[3].value, Value::String("left next".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::String("keep".to_string()));
+        assert_eq!(entries[4].value, Value::String("first keep".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::Int(7));
+        assert_eq!(entries[5].value, Value::String("seven second".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::Int(8));
+        assert_eq!(entries[6].value, Value::String("first next".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::Int(9));
+        assert_eq!(entries[7].value, Value::String("nine".to_string()));
+        assert_eq!(entries[8].key, ArrayKey::String("extra".to_string()));
+        assert_eq!(entries[8].value, Value::String("extra third".to_string()));
+        assert_eq!(entries[9].key, ArrayKey::Int(0));
+        assert_eq!(entries[9].value, Value::String("third zero".to_string()));
+        assert_eq!(entries[10].key, ArrayKey::Int(10));
+        assert_eq!(entries[10].value, Value::String("ten".to_string()));
+        assert_eq!(
+            replaced.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(11)
+        );
+        assert_eq!(
+            first.get("name"),
+            Some(&Value::String("Bea".to_string())),
+            "array_replace must not mutate replacement arrays"
+        );
+        assert_eq!(
+            third.get("extra"),
+            Some(&Value::String("extra third".to_string())),
+            "array_replace must not mutate later replacement arrays"
         );
     }
 

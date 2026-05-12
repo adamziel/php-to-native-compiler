@@ -95,8 +95,8 @@
   non-int/non-positive `array_chunk` lengths, non-bool `array_chunk`
   preserve-key flag values, non-array `array_pad` operands, non-int
   `array_pad` lengths, oversized `array_pad` padding requests, non-array
-  `array_merge` operands, non-array `array_replace` operands, unsupported
-  variadic `array_replace` arguments, non-array `array_combine` operands,
+  `array_merge` operands, non-array `array_replace` operands including
+  variadic replacement operands, non-array `array_combine` operands,
   `array_combine` length mismatches, unsupported non-int/string
   `array_combine` key values, non-array `array_intersect_key` operands,
   non-array variadic `array_intersect_key` operands, non-array
@@ -302,12 +302,12 @@
   appends and reindexes integer-keyed entries from zero, preserves string keys,
   and overwrites duplicate string-key values with later values without moving
   the original string-key slot. It is also available through string-valued
-  dynamic function calls. `array_replace($array, $replacement)` accepts two
-  arrays, starts with a clone of the first array, overwrites matching integer
-  or string keys from the replacement without moving existing slots, appends
-  new replacement keys in replacement insertion order, preserves integer and
-  string keys, and is available through string-valued dynamic function calls.
-  Variadic replacements are not implemented yet.
+  dynamic function calls. `array_replace($array, ...$replacements)` accepts one
+  or more arrays, starts with a clone of the first array, applies replacement
+  arrays left to right, overwrites matching integer or string keys without
+  moving existing slots, appends new replacement keys in replacement insertion
+  order, preserves integer and string keys, and is available through
+  string-valued dynamic function calls.
   `array_combine($keys, $values)` accepts two arrays
   with the same number of entries, reads key values and value values in
   insertion-order lockstep, uses integer key values directly as result keys,
@@ -466,7 +466,7 @@
   non-bool `array_chunk` preserve-key flag values, non-array `array_pad`
   operands, non-int `array_pad` lengths, oversized `array_pad` padding
   requests, non-array `array_merge` operands, non-array `array_replace`
-  operands, unsupported variadic `array_replace` arguments, non-array
+  operands including variadic replacement operands, non-array
   `array_combine` operands, `array_combine` length mismatches, unsupported non-int/string
   `array_combine` key values, non-array `array_intersect_key` operands,
   non-array variadic `array_intersect_key` operands, non-array
@@ -642,17 +642,18 @@
   positional argument. References, copy-on-write containers, object handle
   identity preservation, resource values, exact native `TypeError` objects, and
   native lowering are not implemented.
-  `array_replace($array, $replacement)` accepts exactly two arrays, clones the
-  first array, and inserts replacement entries by normalized integer or string
-  key. Existing keys are overwritten in place without moving their slots, new
-  replacement keys are appended in replacement insertion order, integer keys
-  are preserved rather than reindexed, and later append behavior follows the
-  highest non-negative integer key seen in the result. It is also available
-  through string-valued dynamic function calls. Non-array operands fail with
-  stable diagnostics. Variadic replacement operands, references,
-  copy-on-write containers, object handle identity preservation for object
-  values, resource values, exact native `TypeError` objects, and native
-  lowering are not implemented.
+  `array_replace($array, ...$replacements)` accepts one or more arrays, clones
+  the first array, and inserts replacement entries by normalized integer or
+  string key from each replacement array left to right. Existing keys are
+  overwritten in place without moving their slots, new replacement keys are
+  appended in replacement insertion order, integer keys are preserved rather
+  than reindexed, and later append behavior follows the highest non-negative
+  integer key seen in the result. It is also available through string-valued
+  dynamic function calls. Non-array operands, including variadic replacement
+  operands, fail with stable diagnostics. References, copy-on-write
+  containers, object handle identity preservation for object values, resource
+  values, exact native `TypeError` objects, and native lowering are not
+  implemented.
   `array_combine($keys, $values)` accepts two array operands with equal entry
   counts, reads both arrays in insertion order, converts integer and string
   values from the first array into result keys using the current key
@@ -843,8 +844,8 @@
   non-int/non-positive length coercion, non-int `array_pad` length coercion,
   oversized `array_pad` native `ValueError` objects, exact native
   `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
-  behavior, `array_replace` variadic replacements and reference/copy-on-write
-  behavior, `array_combine` key coercions beyond integer/string values,
+  behavior, `array_replace` reference/copy-on-write behavior,
+  `array_combine` key coercions beyond integer/string values,
   `array_combine` object/resource key values, `array_intersect_key` and
   `array_diff_key` exact native `TypeError` objects and
   reference/copy-on-write behavior, `array_diff` and `array_intersect`
@@ -1001,9 +1002,9 @@
 - `array_merge` reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
-- `array_replace` variadic replacement operands, reference/copy-on-write
-  behavior, object handle identity preservation for object values, resource
-  values, exact native `TypeError` objects, and native lowering
+- `array_replace` reference/copy-on-write behavior, object handle identity
+  preservation for object values, resource values, exact native `TypeError`
+  objects, and native lowering
 - `array_combine` key-value coercions beyond integers and strings, length
   mismatch native `ValueError` objects, non-array native `TypeError` objects,
   reference/copy-on-write behavior, object handle identity preservation for

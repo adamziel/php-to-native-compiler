@@ -1249,27 +1249,41 @@ impl Interpreter {
                 Ok(Value::Array(PhpArray::merged_from(arrays)))
             }
             "array_replace" => {
-                expect_arity(name, &args, 2, span)?;
-                match args.as_slice() {
-                    [Value::Array(array), Value::Array(replacement)] => {
-                        Ok(Value::Array(array.replaced_with(replacement)))
-                    }
-                    [Value::Array(_), other] => Err(runtime_error(
+                if args.is_empty() {
+                    return Err(runtime_error(
                         span,
-                        RuntimeError::unsupported_call(
+                        RuntimeError::arity_mismatch(
                             "array_replace()",
-                            format!("second argument must be array, got {}", other.type_name()),
+                            ArityExpectation::AtLeast(1),
+                            args.len(),
                         ),
-                    )),
-                    [other, _] => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "array_replace()",
-                            format!("first argument must be array, got {}", other.type_name()),
-                        ),
-                    )),
-                    _ => unreachable!("array_replace arity is checked above"),
+                    ));
                 }
+
+                let mut arrays = Vec::with_capacity(args.len());
+                for (index, arg) in args.iter().enumerate() {
+                    match arg {
+                        Value::Array(array) => arrays.push(array),
+                        other => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "array_replace()",
+                                    format!(
+                                        "{} must be array, got {}",
+                                        positional_argument_label(index),
+                                        other.type_name()
+                                    ),
+                                ),
+                            ));
+                        }
+                    }
+                }
+
+                let first = arrays[0];
+                Ok(Value::Array(
+                    first.replaced_with_all(arrays.iter().skip(1).copied()),
+                ))
             }
             "array_flip" => {
                 expect_arity(name, &args, 1, span)?;

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_replace_third_non_array.php:4:6: unsupported call array_replace(): third argument must be array, got int
+--- stderr end ---

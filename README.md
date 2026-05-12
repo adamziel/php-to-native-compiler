@@ -76,8 +76,9 @@ subset:
   reindexing and boolean preserve-key mode, `array_pad($array, $length,
   $value)` with positive right-padding, negative left-padding, and integer-key
   reindexing when padding is needed, `array_merge` over zero or more array
-  operands, `array_replace` over two arrays with key-preserving overwrite
-  behavior, `array_combine` over equal-length key/value arrays with
+  operands, `array_replace` over one or more arrays with key-preserving
+  left-to-right overwrite behavior, `array_combine` over equal-length
+  key/value arrays with
   integer/string key values, variadic `array_intersect_key` and
   `array_diff_key` over two or more arrays with first-array key/value
   preservation, variadic `array_diff` and `array_intersect` over two or more

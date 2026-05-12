@@ -54,6 +54,57 @@ echo $empty_replacement[7];
 }
 
 #[test]
+fn array_replace_accepts_one_array_and_variadic_replacements() {
+    let source = r#"<?php
+$left = [];
+$left["name"] = "Ada";
+$left[5] = "five";
+$left["2"] = "two";
+$left[] = "left next";
+$left["keep"] = "keep";
+
+$first = [];
+$first["name"] = "Bea";
+$first[7] = "seven";
+$first["keep"] = "first keep";
+$first[] = "first next";
+
+$second = [];
+$second["name"] = "Cy";
+$second["7"] = "seven second";
+$second[9] = "nine";
+$second["extra"] = "extra";
+$second[5] = "five second";
+
+$third = [];
+$third["name"] = "Di";
+$third["extra"] = "extra third";
+$third[] = "third zero";
+$third[10] = "ten";
+
+$replaced = array_replace($left, $first, $second, $third);
+echo $replaced["name"], "|", $replaced[5], "|", $replaced[2], "|", $replaced[6], "|", $replaced["keep"], "|", $replaced[7], "|", $replaced[8], "|", $replaced[9], "|", $replaced["extra"], "|", $replaced[0], "|", $replaced[10], "\n";
+$replaced[] = "after";
+echo $replaced[11], "\n";
+
+$call = "array_replace";
+$again = $call($left, $first, $second, $third);
+echo $again["name"], "|", $again["extra"], "|", $again[10], "\n";
+
+$single = array_replace($left);
+$single[] = "single after";
+echo $single[7];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Di|five second|two|left next|first keep|seven second|first next|nine|extra third|third zero|ten\nafter\nDi|extra third|ten\nsingle after"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_replace_requires_array_first_argument() {
     let error = runtime_error("<?php\n$right = [];\necho array_replace(42, $right);\n");
 
@@ -78,21 +129,33 @@ fn array_replace_requires_array_second_argument() {
 }
 
 #[test]
-fn array_replace_rejects_variadic_replacements_until_supported() {
+fn array_replace_requires_at_least_one_argument() {
+    let error = runtime_error("<?php\necho array_replace();\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "arity mismatch for array_replace(): expected at least 1 argument(s), got 0"
+    );
+}
+
+#[test]
+fn array_replace_requires_array_variadic_arguments() {
     let error =
-        runtime_error("<?php\n$left = [];\n$right = [];\necho array_replace($left, $right, []);\n");
+        runtime_error("<?php\n$left = [];\n$right = [];\necho array_replace($left, $right, 42);\n");
 
     assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "arity mismatch for array_replace(): expected 2 argument(s), got 3"
+        "unsupported call array_replace(): third argument must be array, got int"
     );
 }
 
 #[test]
 fn emit_ir_rejects_array_replace_until_native_call_lowering_exists() {
-    let error = emit_ir_source("<?php\necho array_replace([1], [2]);\n").unwrap_err();
+    let error = emit_ir_source("<?php\necho array_replace([1], [2], [3]);\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

@@ -513,14 +513,22 @@ handled.
 - [x] Implement `array_replace($array, $replacement)` for two arrays over the
   current ordered integer/string key model, including replacement overwrite
   behavior, new-key insertion order, non-array diagnostics, fixture CLI
-  coverage, documentation, and explicit gaps for variadic replacements,
-  references/copy-on-write, exact native `TypeError` objects,
-  object/resource values, and native lowering.
+  coverage, documentation, and explicit gaps for references/copy-on-write,
+  exact native `TypeError` objects, object/resource values, and native
+  lowering.
 
 ## Milestone 48: Array Replacement Variadic Follow-ups
 
-- [ ] Extend `array_replace` beyond the current two-array slice with variadic
+- [x] Extend `array_replace` beyond the current two-array slice with variadic
   replacement arrays, including left-to-right overwrite behavior across all
   replacements, non-array variadic operand diagnostics, fixture CLI coverage,
   documentation, and explicit gaps for references/copy-on-write, exact native
   `TypeError` objects, object/resource values, and native lowering.
+
+## Milestone 49: Array Numeric Aggregation Builtins
+
+- [ ] Implement `array_sum($array)` over the current scalar numeric-coercion
+  subset, including integer/float accumulation behavior, non-array diagnostics,
+  fixture CLI coverage, documentation, and explicit gaps for PHP warning
+  recovery, object/resource values, references/copy-on-write, exact native
+  `TypeError` objects, and native lowering.
