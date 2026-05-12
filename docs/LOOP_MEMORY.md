@@ -9683,3 +9683,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T21:51:24Z
 
 - Post-round 3 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T21:51:32Z
+
+- Starting round 4 at 20260512T215132Z from HEAD `460b3a9`.
+
+## Loop Event 2026-05-12T21:51:39Z
+
+- Pre-round 4 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:55:04Z
+
+- Task attempted: added `trait_exists($name[, $autoload])` as the next honest
+  object/class introspection boundary. The supported slice accepts string
+  names, accepts only boolean autoload flags, returns false for all supported
+  calls because trait metadata is not represented yet, works through
+  string-valued dynamic calls, includes invalid-argument diagnostics, and keeps
+  native lowering rejected through the current function-call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone113/trait_exists.*`,
+  `tests/fixtures/runtime_errors/trait_exists_invalid_name.*`,
+  `tests/fixtures/runtime_errors/trait_exists_invalid_autoload.*`,
+  `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`,
+  `docs/OBJECT_MODEL.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model trait_exists`
+  passed with 3 focused tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone113` passed with 1 fixture; `cargo run -p phpc --
+  run tests/fixtures/milestone113/trait_exists.php` printed the committed
+  trait-existence output; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone113` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 136 fixtures;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo test -p phpc
+  --test object_introspection_builtins_cli` passed; `cargo run -p phpc --
+  compile tests/fixtures/milestone113/trait_exists.php --emit-ir` exited `1`
+  with the expected explicit codegen rejection; `tools/run-tests.sh` passed
+  with 328 fixtures, 120 system PHP comparisons, and 208 skips.
+- Remaining semantic gaps: trait declarations are still rejected before
+  metadata exists, `trait_exists()` never reports true for declared,
+  built-in, internal, autoloaded, or namespace/import-aliased traits, exact
+  native `TypeError` objects are not modeled, and native lowering still
+  rejects the builtin call.
+- Next concrete task: add the documented `enum_exists($name[, $autoload])`
+  boundary over the current no-enum metadata model.
+- Known-good tag: not created; this is a narrow incremental boundary, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add trait_exists boundary"`
+  after the full suite passes.

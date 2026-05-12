@@ -1073,3 +1073,23 @@ handled.
   documentation, and explicit gaps for declared interfaces, built-in/internal
   interfaces, autoloading, namespaces/import aliases, exact native `TypeError`
   behavior, and native lowering.
+
+## Milestone 113: Trait Existence Boundary
+
+- [x] Add the next honest `trait_exists($name[, $autoload])` boundary over the
+  current no-trait metadata model: either a stable unsupported diagnostic or a
+  narrow executable always-false slice with string-valued dynamic-call
+  coverage, invalid argument diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for declared traits, built-in/internal traits, autoloading,
+  namespaces/import aliases, exact native `TypeError` behavior, and native
+  lowering.
+
+## Milestone 114: Enum Existence Boundary
+
+- [ ] Add the next honest `enum_exists($name[, $autoload])` boundary over the
+  current no-enum metadata model: either a stable unsupported diagnostic or a
+  narrow executable always-false slice with string-valued dynamic-call
+  coverage, invalid argument diagnostics, fixture CLI coverage, documentation,
+  and explicit gaps for declared enums, built-in/internal enums, autoloading,
+  namespaces/import aliases, exact native `TypeError` behavior, and native
+  lowering.

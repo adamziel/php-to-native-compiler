@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+class:not-trait
+missing:not-trait
+missing:false-autoload
+dynamic:not-trait
+--- stdout end ---
+stderr:
+--- stderr end ---

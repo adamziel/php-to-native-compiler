@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `trait_exists($name[, $autoload])` as an always-false boundary for
+  the current no-trait metadata model, with runtime coverage, fixture
+  coverage, dynamic-call coverage, invalid-argument diagnostics, and a
+  `phpc run` CLI snapshot.
 - Added `interface_exists($name[, $autoload])` as an always-false boundary for
   the current no-interface metadata model, with runtime coverage, fixture
   coverage, dynamic-call coverage, invalid-argument diagnostics, and a

@@ -175,6 +175,9 @@ and does not trigger autoloading in the current subset.
 `interface_exists($name[, $autoload])` accepts the same string-name and boolean
 autoload boundary, returns false for all supported calls because interface
 metadata is not represented yet, and does not trigger autoloading.
+`trait_exists($name[, $autoload])` accepts the same string-name and boolean
+autoload boundary, returns false for all supported calls because trait metadata
+is not represented yet, and does not trigger autoloading.
 `property_exists($object_or_class, $property)` checks the same declared
 property metadata for current object values or string class names, with
 case-sensitive property names and no autoload side effects.

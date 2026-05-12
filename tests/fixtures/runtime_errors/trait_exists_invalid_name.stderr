@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call trait_exists(): trait name argument must be string, got int
+
