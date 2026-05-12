@@ -3610,3 +3610,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:59:59Z
 
 - Post-round 57 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:00:03Z
+
+- Starting round 58 at 20260512T050003Z from HEAD `a42c5e3`.
+
+## Loop Event 2026-05-12T05:00:07Z
+
+- Pre-round 58 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:07:17Z
+
+- Task attempted: implemented `array_keys($array, $search_value, true)` strict
+  filtering for the current scalar value subset. The supported slice scans
+  ordered array values in insertion order with current scalar strict identity
+  rules, emits all matching integer/string keys as values in a new array
+  reindexed from zero, treats a boolean `false` third argument as the existing
+  loose path, supports string-valued dynamic calls, and reports a stable
+  diagnostic for non-bool strict flags.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_keys.rs`,
+  `tests/fixtures/milestone16/array_keys_filter.*`,
+  `tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo fmt --check` passed;
+  `cargo test -p php_runtime array_keys` passed with 5 focused runtime tests;
+  `cargo test -p phpc --test array_keys` passed with 7 tests;
+  `cargo test -p phpc --test array_key_filtering_builtins_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone16` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone16` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 43 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone16/array_keys_filter.php` printed the committed loose
+  and strict filter output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 130
+  fixtures, 53 system PHP comparisons, and 77 `.phpc-only` skips.
+- Remaining semantic gaps: `array_keys` filtering still rejects array/object
+  search values or array/object values, resources and references remain absent,
+  non-bool strict-flag coercion is not modeled, references, copy-on-write
+  containers, exact native `TypeError` objects, and native function-call
+  lowering remain unsupported.
+- Next concrete task: implement `array_key_first($array)` for the current
+  ordered array value model, including empty-array `null` behavior, non-array
+  diagnostics, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add strict array_keys filter"`
+  after the full suite passes.

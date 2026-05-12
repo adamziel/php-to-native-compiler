@@ -243,7 +243,14 @@ handled.
   value subset using loose comparison semantics, including fixture CLI
   coverage, documentation, non-array/search-value diagnostics, and explicit
   gaps for arrays, objects, resources, references, and native lowering.
-- [ ] Implement `array_keys($array, $search_value, true)` for the current
+- [x] Implement `array_keys($array, $search_value, true)` for the current
   scalar value subset using strict identity semantics, including fixture CLI
   coverage, documentation, non-bool strict flag diagnostics, and explicit gaps
   for arrays, objects, resources, references, and native lowering.
+
+## Milestone 17: Array Key Introspection Builtins
+
+- [ ] Implement `array_key_first($array)` for the current ordered array value
+  model, including first-key return behavior for integer/string keys,
+  empty-array `null` behavior, non-array diagnostics, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.

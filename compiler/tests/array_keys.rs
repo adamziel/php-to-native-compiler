@@ -96,9 +96,85 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
 }
 
 #[test]
+fn array_keys_strict_mode_filters_values_with_scalar_identity() {
+    let source = r#"<?php
+$items = [];
+$items["null"] = null;
+$items["false"] = false;
+$items["int-zero"] = 0;
+$items["string-zero"] = "0";
+$items["empty"] = "";
+$items["int-ten"] = 10;
+$items["string-ten"] = "10";
+$items["numeric-string"] = "10.0";
+$items["text"] = "abc";
+
+$empty = array_keys($items, "", true);
+echo count($empty), "\n";
+echo $empty[0], "\n";
+
+$false = array_keys($items, false, true);
+echo count($false), "\n";
+echo $false[0], "\n";
+
+$int_zero = array_keys($items, 0, true);
+echo count($int_zero), "\n";
+echo $int_zero[0], "\n";
+
+$string_zero = array_keys($items, "0", true);
+echo count($string_zero), "\n";
+echo $string_zero[0], "\n";
+
+$float_ten = array_keys($items, 10.0, true);
+echo count($float_ten), "\n";
+
+$int_ten = array_keys($items, 10, true);
+echo count($int_ten), "\n";
+echo $int_ten[0], "\n";
+
+$string_ten = array_keys($items, "10", true);
+echo count($string_ten), "\n";
+echo $string_ten[0], "\n";
+
+$null = array_keys($items, null, true);
+echo count($null), "\n";
+echo $null[0], "\n";
+
+$missing = array_keys($items, "missing", true);
+echo count($missing), "\n";
+
+$loose = array_keys($items, "10.0", false);
+echo $loose[0], "|", $loose[1], "|", $loose[2], "\n";
+
+$call = "array_keys";
+$dynamic = $call($items, "abc", true);
+echo $dynamic[0];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1\nempty\n1\nfalse\n1\nint-zero\n1\nstring-zero\n0\n1\nint-ten\n1\nstring-ten\n1\nnull\n0\nint-ten|string-ten|numeric-string\ntext"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_keys_rejects_non_bool_strict_mode_argument() {
+    let error = runtime_error("<?php\n$items = [1];\necho array_keys($items, 1, \"yes\");\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_keys(): strict mode argument must be bool in the current subset, got string"
+    );
+}
+
+#[test]
 fn array_keys_rejects_array_and_object_search_gaps() {
     let array_search_value_error =
-        runtime_error("<?php\n$items = [1];\necho array_keys($items, []);\n");
+        runtime_error("<?php\n$items = [1];\necho array_keys($items, [], true);\n");
 
     assert_eq!(array_search_value_error.line, 3);
     assert_eq!(array_search_value_error.column, 6);

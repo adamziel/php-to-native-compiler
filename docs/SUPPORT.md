@@ -85,8 +85,9 @@
   `array_reverse` preserve-key flag values, non-array `array_merge`
   operands, non-array `in_array`/`array_search` haystacks, non-bool
   `in_array`/`array_search` strict-mode flag values, unsupported non-scalar
-  `array_keys` search-value comparisons, unsupported non-scalar
-  `in_array`/`array_search` comparisons, unsupported `global` declarations,
+  `array_keys` search-value comparisons, non-bool `array_keys` strict-mode
+  flag values, unsupported non-scalar `in_array`/`array_search` comparisons,
+  unsupported `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
   unsupported non-public property access, object-to-string conversion,
@@ -221,8 +222,10 @@
   integer/string keys as values in insertion order with integer keys starting at
   zero. `array_keys($array, $search_value)` returns only keys whose values match
   the supplied current scalar `search_value` under the same loose comparison
-  rules used by `in_array` and `array_search`, reindexed from zero. Both forms
-  are available through string-valued dynamic function calls.
+  rules used by `in_array` and `array_search`, reindexed from zero.
+  `array_keys($array, $search_value, true)` uses the current scalar strict
+  identity rules, and `array_keys($array, $search_value, false)` uses the loose
+  path. These forms are available through string-valued dynamic function calls.
   `array_reverse($array)` and `array_reverse($array, false)` return a new
   ordered array in reverse insertion order, reindex integer-keyed entries from
   zero, preserve string keys, and are available through string-valued dynamic
@@ -304,7 +307,8 @@
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
   operands, non-array `array_keys` operands, unsupported `array_keys`
-  search-value comparisons, non-array `array_reverse` operands, non-bool
+  search-value comparisons, non-bool `array_keys` strict-mode flag values,
+  non-array `array_reverse` operands, non-bool
   `array_reverse` preserve-key flag values, non-array
   `array_merge` operands, non-array `in_array` operands, non-array
   `array_search` operands, non-array `foreach` iterables, non-bool
@@ -378,10 +382,12 @@
   $search_value)` accepts current scalar search values, scans array values in
   insertion order with the current PHP 8-style loose scalar comparison rules,
   emits every matching integer/string key as a value, and reindexes the returned
-  key array from zero. Both forms are also available through string-valued
-  dynamic function calls. The strict flag for `array_keys` is not implemented;
-  array/object search values or array/object values encountered during
-  filtering fail with stable unsupported-call diagnostics.
+  key array from zero. `array_keys($array, $search_value, true)` uses current
+  scalar strict identity semantics, and `array_keys($array, $search_value,
+  false)` uses the loose path. The third argument must evaluate to a boolean in
+  the current subset. These forms are also available through string-valued
+  dynamic function calls. Array/object search values or array/object values
+  encountered during filtering fail with stable unsupported-call diagnostics.
   `array_reverse($array)` and `array_reverse($array, false)` accept arrays only,
   return a new array in
   reverse insertion order, reindex integer-keyed entries from zero, preserve
@@ -437,8 +443,8 @@
   `array_values`, `array_keys`, `array_reverse`, `array_merge`, `in_array`,
   `array_search`, and both current `foreach` array forms follow the current
   by-value model; PHP references, copy-on-write containers, object handle
-  identity preservation, resource values, `array_keys` strict-mode filtering,
-  array, object, resource, or reference search values for `array_keys`,
+  identity preservation, resource values, array, object, resource, or reference
+  search values for `array_keys`, non-bool `array_keys` strict-flag coercion,
   non-bool `array_reverse` preserve-key flag coercion, and `array_merge`
   reference/copy-on-write behavior are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
@@ -558,8 +564,8 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
-- `array_keys` strict-mode filtering and array, object, resource, or reference
-  search values or array values during filtering
+- `array_keys` filtering over array, object, resource, or reference search
+  values or array values, plus non-bool strict-flag coercion
 - `in_array` and `array_search` strict-mode searches involving
   array/object/resource/reference values, non-bool strict-flag coercion, and
   array/object needle or haystack-value comparisons for the current

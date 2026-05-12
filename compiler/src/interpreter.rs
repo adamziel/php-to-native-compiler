@@ -884,7 +884,25 @@ impl Interpreter {
                     .keys_matching_loose_scalar(search_value)
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error)),
-                [other] | [other, _] => Err(runtime_error(
+                [Value::Array(array), search_value, Value::Bool(true)] => array
+                    .keys_matching_strict_scalar(search_value)
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), search_value, Value::Bool(false)] => array
+                    .keys_matching_loose_scalar(search_value)
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(_), _, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_keys()",
+                        format!(
+                            "strict mode argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [other] | [other, _] | [other, _, _] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_keys()",
@@ -895,7 +913,7 @@ impl Interpreter {
                     span,
                     RuntimeError::arity_mismatch(
                         "array_keys()",
-                        ArityExpectation::Between { min: 1, max: 2 },
+                        ArityExpectation::Between { min: 1, max: 3 },
                         args.len(),
                     ),
                 )),

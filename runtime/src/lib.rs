@@ -492,6 +492,19 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn keys_matching_strict_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            ensure_array_keys_filter_values_supported(search_value, &entry.value)?;
+            if search_value.php_identical_checked(&entry.value)? {
+                let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
+                array.insert(key, array_key_to_value(&entry.key));
+            }
+        }
+
+        Ok(array)
+    }
+
     pub fn reversed_reindexed(&self) -> Self {
         let mut array = Self::new();
         for entry in self.entries.iter().rev() {
@@ -2094,6 +2107,76 @@ mod tests {
     }
 
     #[test]
+    fn array_keys_filters_with_strict_scalar_identity_in_insertion_order() {
+        let mut array = PhpArray::new();
+
+        array.insert("null", Value::Null);
+        array.insert("false", Value::Bool(false));
+        array.insert("int-zero", Value::Int(0));
+        array.insert("string-zero", Value::String("0".to_string()));
+        array.insert("empty", Value::String(String::new()));
+        array.insert("int-ten", Value::Int(10));
+        array.insert("string-ten", Value::String("10".to_string()));
+        array.insert("numeric-string", Value::String("10.0".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_strict_scalar(&Value::String(String::new()))
+                    .unwrap()
+            ),
+            vec![Value::String("empty".to_string())]
+        );
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_strict_scalar(&Value::Bool(false))
+                    .unwrap()
+            ),
+            vec![Value::String("false".to_string())]
+        );
+        assert_eq!(
+            array_key_values(&array.keys_matching_strict_scalar(&Value::Int(0)).unwrap()),
+            vec![Value::String("int-zero".to_string())]
+        );
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_strict_scalar(&Value::String("0".to_string()))
+                    .unwrap()
+            ),
+            vec![Value::String("string-zero".to_string())]
+        );
+        assert!(array
+            .keys_matching_strict_scalar(&Value::Float(10.0))
+            .unwrap()
+            .entries()
+            .is_empty());
+        assert_eq!(
+            array_key_values(&array.keys_matching_strict_scalar(&Value::Int(10)).unwrap()),
+            vec![Value::String("int-ten".to_string())]
+        );
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_strict_scalar(&Value::String("10".to_string()))
+                    .unwrap()
+            ),
+            vec![Value::String("string-ten".to_string())]
+        );
+        assert_eq!(
+            array_key_values(&array.keys_matching_strict_scalar(&Value::Null).unwrap()),
+            vec![Value::String("null".to_string())]
+        );
+        assert!(array
+            .keys_matching_strict_scalar(&Value::String("missing".to_string()))
+            .unwrap()
+            .entries()
+            .is_empty());
+    }
+
+    #[test]
     fn array_reverse_reindexes_integer_keys_and_preserves_string_keys() {
         let mut array = PhpArray::new();
 
@@ -2538,6 +2621,14 @@ mod tests {
             "unsupported call array_keys(): array search values and array values are not implemented"
         );
 
+        let error = array
+            .keys_matching_strict_scalar(&Value::Array(PhpArray::new()))
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_keys(): array search values and array values are not implemented"
+        );
+
         let mut array = PhpArray::new();
         array.insert("nested", Value::Array(PhpArray::new()));
 
@@ -2551,6 +2642,14 @@ mod tests {
                 reason: "array search values and array values are not implemented".to_string(),
             }
         );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_keys(): array search values and array values are not implemented"
+        );
+
+        let error = array
+            .keys_matching_strict_scalar(&Value::String("needle".to_string()))
+            .unwrap_err();
         assert_eq!(
             error.message(),
             "unsupported call array_keys(): array search values and array values are not implemented"

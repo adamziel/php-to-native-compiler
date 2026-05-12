@@ -29,4 +29,48 @@ Array
     [1] => string-ten
     [2] => numeric-string
 )
+Array
+(
+    [0] => empty
+)
+Array
+(
+    [0] => false
+)
+Array
+(
+    [0] => int-zero
+)
+Array
+(
+    [0] => string-zero
+)
+Array
+(
+)
+Array
+(
+    [0] => int-ten
+)
+Array
+(
+    [0] => string-ten
+)
+Array
+(
+    [0] => null
+)
+Array
+(
+)
+Array
+(
+    [0] => int-ten
+    [1] => string-ten
+    [2] => numeric-string
+)
+Array
+(
+    [0] => text
+)
 
