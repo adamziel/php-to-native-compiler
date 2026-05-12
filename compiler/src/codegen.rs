@@ -177,6 +177,10 @@ impl LlvmGenerator {
                 *span,
                 "__LINE__ is supported by phpc run but not LLVM IR emission yet",
             )),
+            Expr::MagicFile { span } => Err(self.unsupported(
+                *span,
+                "__FILE__ is supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
                 "global constants are supported by phpc run for the current built-in/runtime-defined subset but not LLVM IR emission yet",
@@ -724,6 +728,10 @@ impl CGenerator {
             Expr::MagicLine { span } => Err(self.unsupported(
                 *span,
                 "__LINE__ is supported by phpc run but not assembly emission yet",
+            )),
+            Expr::MagicFile { span } => Err(self.unsupported(
+                *span,
+                "__FILE__ is supported by phpc run but not assembly emission yet",
             )),
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,

@@ -233,6 +233,9 @@ pub enum Expr {
     MagicLine {
         span: Span,
     },
+    MagicFile {
+        span: Span,
+    },
     GlobalConstant {
         name: String,
         span: Span,
@@ -289,6 +292,7 @@ impl Expr {
             | Expr::String(_, span)
             | Expr::Variable(_, span)
             | Expr::MagicLine { span }
+            | Expr::MagicFile { span }
             | Expr::GlobalConstant { span, .. }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }

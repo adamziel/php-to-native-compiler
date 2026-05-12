@@ -1166,6 +1166,9 @@ impl Parser {
                     if magic_name == "__LINE__" {
                         return Ok(Expr::MagicLine { span: token.span });
                     }
+                    if magic_name == "__FILE__" {
+                        return Ok(Expr::MagicFile { span: token.span });
+                    }
                     return Err(
                         self.error_at(token.span, unsupported_magic_constant_message(magic_name))
                     );
@@ -1440,6 +1443,7 @@ impl Parser {
             }
             Expr::GlobalConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
+            Expr::MagicFile { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Index { .. }
             | Expr::Property { .. }
@@ -1475,6 +1479,7 @@ impl Parser {
             }
             Expr::GlobalConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
+            Expr::MagicFile { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Index { .. }
             | Expr::Property { .. }

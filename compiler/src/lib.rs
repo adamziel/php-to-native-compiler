@@ -20,6 +20,14 @@ pub fn run_source(source: &str) -> CompileResult<Execution> {
     interpreter::run_program(&program)
 }
 
+pub fn run_source_with_source_file(
+    source: &str,
+    source_file: impl Into<String>,
+) -> CompileResult<Execution> {
+    let program = parse(source)?;
+    interpreter::run_program_with_source_file(&program, source_file)
+}
+
 pub fn class_metadata_source(source: &str) -> CompileResult<PhpClassTable> {
     let program = parse(source)?;
     interpreter::class_metadata(&program)

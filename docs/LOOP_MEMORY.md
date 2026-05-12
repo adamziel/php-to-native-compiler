@@ -7439,3 +7439,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:10:02Z
 
 - Post-round 21 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:10:10Z
+
+- Starting round 22 at 20260512T171010Z from HEAD `c218bba`.
+
+## Loop Event 2026-05-12T17:10:17Z
+
+- Pre-round 22 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:16:45Z
+
+- Task attempted: completed Milestone 73 by implementing `__FILE__` as the
+  second executable magic constant. The parser now emits a dedicated magic-file
+  expression, `phpc run` supplies the current input path string to the
+  interpreter, ordinary expressions/default parameters/top-level `const`
+  declarations evaluate it as a string, and LLVM/assembly emission reject it
+  explicitly until native source mapping exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/lib.rs`, `compiler/src/main.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone73/magic_file.*`, `README.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo check -p phpc`
+  passed; `cargo test -p phpc --test functions_and_scopes magic` passed;
+  `cargo test -p phpc --test functions_and_scopes` passed with 27 tests;
+  `cargo test -p phpc --test magic_constants_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone73` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone73` passed with 1
+  `.phpc-only` skip; direct `cargo run -p phpc -- run
+  tests/fixtures/milestone73/magic_file.php` printed the current input path
+  string four times; direct `cargo run -p phpc -- compile
+  tests/fixtures/milestone73/magic_file.php --emit-ir` exited `1` with the
+  expected `__FILE__` native-lowering rejection; `tools/run-tests.sh` passed
+  with 260 fixtures, 105 system PHP comparisons, and 155 skips.
+- Remaining semantic gaps: `__FILE__` currently reports the `phpc run` input
+  path string rather than PHP's canonical absolute filename in every entry
+  path. Path-less library execution evaluates it as an empty string. `__DIR__`,
+  eval/include source mapping, function/method/class context constants,
+  namespaces, traits, references/copy-on-write interactions, exact PHP error
+  objects, and native lowering for magic constants remain unsupported.
+- Next concrete task: implement `__DIR__` as the next executable magic constant
+  over the current input path boundary.
+- Checkpoint: pending `tools/checkpoint.sh "parser: execute __FILE__ magic constant"`
+  after the full suite passes.

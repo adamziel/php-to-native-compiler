@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use php_compiler::codegen::{emit_assembly, emit_llvm_ir};
 use php_compiler::error::{CompileResult, Diagnostic, Phase};
-use php_compiler::interpreter::run_program;
+use php_compiler::interpreter::run_program_with_source_file;
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{run_fixture_dir_with_options, FixtureRunOptions};
 
@@ -82,7 +82,8 @@ fn command_run(args: &[String]) -> CompileResult<u8> {
     let input = PathBuf::from(&args[0]);
     let source = read_source(&input)?;
     let program = parse_source(&source).map_err(|error| error.with_file(&input))?;
-    let execution = run_program(&program).map_err(|error| error.with_file(&input))?;
+    let execution = run_program_with_source_file(&program, input.display().to_string())
+        .map_err(|error| error.with_file(&input))?;
     print!("{}", execution.stdout);
     eprint!("{}", execution.stderr);
     Ok(execution.exit_code as u8)

@@ -8,8 +8,14 @@ fn magic_constant_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone72");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let fixture_dirs = [
+        workspace_root.join("tests/fixtures/milestone72"),
+        workspace_root.join("tests/fixtures/milestone73"),
+    ];
+    let mut fixtures = fixture_dirs
+        .iter()
+        .flat_map(|fixture_dir| cli_snapshot_fixtures(fixture_dir))
+        .collect::<Vec<_>>();
 
     fixtures.sort();
     assert!(
@@ -22,7 +28,12 @@ fn magic_constant_cli_snapshots_match_committed_outputs() {
             .file_name()
             .and_then(|value| value.to_str())
             .expect("magic constant fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone72/{file_name}");
+        let milestone = fixture
+            .parent()
+            .and_then(|path| path.file_name())
+            .and_then(|value| value.to_str())
+            .expect("magic constant milestone directory name is valid UTF-8");
+        let fixture_arg = format!("tests/fixtures/{milestone}/{file_name}");
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])

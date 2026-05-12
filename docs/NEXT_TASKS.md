@@ -727,8 +727,16 @@ handled.
 
 ## Milestone 73: Magic Constant File Slice
 
-- [ ] Implement `__FILE__` as the next executable magic constant using the
+- [x] Implement `__FILE__` as the next executable magic constant using the
   current input path where available, including parser/interpreter support,
   fixture CLI coverage, documentation, and explicit gaps for `__DIR__`,
   eval/include source mapping, function/method/class context constants,
   namespaces, traits, and native lowering.
+
+## Milestone 74: Magic Constant Directory Slice
+
+- [ ] Implement `__DIR__` as the next executable magic constant over the
+  current input path boundary, including parser/interpreter support, fixture
+  CLI coverage, documentation, and explicit gaps for eval/include source
+  mapping, function/method/class context constants, namespaces, traits,
+  canonical PHP path behavior, and native lowering.

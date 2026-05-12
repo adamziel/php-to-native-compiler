@@ -1,6 +1,6 @@
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
-use php_compiler::run_source;
+use php_compiler::{run_source, run_source_with_source_file};
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -452,16 +452,46 @@ fn emit_ir_rejects_magic_line_until_native_source_mapping_exists() {
 }
 
 #[test]
-fn magic_constants_except_line_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-echo __FILE__;
+fn magic_file_constant_evaluates_from_current_source_file_when_available() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+echo __FILE__, "\n";
+$file = __FILE__;
+echo $file, "\n";
+function default_file($file = __FILE__) {
+    echo $file, "\n";
+}
+const DECLARED_FILE = __FILE__;
+default_file();
+echo DECLARED_FILE, "\n";
 "#,
-            2,
-            6,
-            "__FILE__",
-        ),
+        "virtual/input.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "virtual/input.php\nvirtual/input.php\nvirtual/input.php\nvirtual/input.php\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_magic_file_until_native_source_mapping_exists() {
+    let error = emit_ir_source("<?php\necho __FILE__;\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert!(
+        error.message.contains("__FILE__") && error.message.contains("not LLVM IR emission yet"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn magic_constants_except_line_and_file_are_rejected_with_stable_parse_error() {
+    let cases = [
         (
             r#"<?php
 echo __dir__;

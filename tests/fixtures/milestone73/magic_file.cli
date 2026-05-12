@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+tests/fixtures/milestone73/magic_file.php
+tests/fixtures/milestone73/magic_file.php
+tests/fixtures/milestone73/magic_file.php
+tests/fixtures/milestone73/magic_file.php
+--- stdout end ---
+stderr:
+--- stderr end ---

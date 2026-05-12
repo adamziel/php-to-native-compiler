@@ -23,18 +23,27 @@ pub struct Execution {
 }
 
 pub fn run_program(program: &Program) -> CompileResult<Execution> {
-    let mut interpreter = Interpreter::from_program(program)?;
+    let mut interpreter = Interpreter::from_program(program, None)?;
+    interpreter.run(program)
+}
+
+pub fn run_program_with_source_file(
+    program: &Program,
+    source_file: impl Into<String>,
+) -> CompileResult<Execution> {
+    let mut interpreter = Interpreter::from_program(program, Some(source_file.into()))?;
     interpreter.run(program)
 }
 
 pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
-    Interpreter::from_program(program).map(|interpreter| interpreter.classes)
+    Interpreter::from_program(program, None).map(|interpreter| interpreter.classes)
 }
 
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     classes: PhpClassTable,
     constants: ConstantTable,
+    source_file: Option<String>,
     call_depth: usize,
     stdout: String,
 }
@@ -146,7 +155,7 @@ enum Flow {
 }
 
 impl Interpreter {
-    fn from_program(program: &Program) -> CompileResult<Self> {
+    fn from_program(program: &Program, source_file: Option<String>) -> CompileResult<Self> {
         let mut functions = HashMap::new();
         let mut classes = PhpClassTable::new();
         for stmt in &program.statements {
@@ -170,6 +179,7 @@ impl Interpreter {
             functions,
             classes,
             constants: ConstantTable::new(),
+            source_file,
             call_depth: 0,
             stdout: String::new(),
         })
@@ -530,6 +540,9 @@ impl Interpreter {
             Expr::String(value, _) => Ok(Value::String(value.clone())),
             Expr::Variable(name, span) => scope.read_static(name, *span),
             Expr::MagicLine { span } => Ok(Value::Int(span.line as i64)),
+            Expr::MagicFile { .. } => {
+                Ok(Value::String(self.source_file.clone().unwrap_or_default()))
+            }
             Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {

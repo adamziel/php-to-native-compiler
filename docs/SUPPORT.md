@@ -9,7 +9,9 @@
 - float literals
 - single-quoted and double-quoted string literals with basic escapes
 - `null`, `true`, and `false`
-- magic constant `__LINE__`, evaluated from the expression token's source line
+- magic constants `__LINE__`, evaluated from the expression token's source
+  line, and `__FILE__`, evaluated from the current `phpc run` input path when
+  one is available
 - static variables backed by per-scope materialized symbol tables
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
@@ -164,8 +166,8 @@
   static local variable declarations inside functions, anonymous functions,
   arrow functions, named arguments, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
-  `__FILE__`, `__DIR__`, `__FUNCTION__`, `__CLASS__`, `__TRAIT__`,
-  `__METHOD__`, and `__NAMESPACE__`
+  `__DIR__`, `__FUNCTION__`, `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
+  `__NAMESPACE__`
 - explicit parse diagnostics for unsupported include/require syntax:
   `include`, `include_once`, `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
@@ -632,13 +634,17 @@
   also fail with a stable parse diagnostic before function-local static storage
   exists. The `__LINE__` magic constant evaluates to the source line of the
   expression token in ordinary expressions, default parameter values, and
-  top-level `const` declarations. Other magic constants such as
-  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__FILE__`, and `__DIR__` fail
-  with stable parse diagnostics before their source/context-aware evaluation
-  exists. Nullable, union, and intersection types, `mixed`, `void`/`never`,
-  class/interface type names, coercive versus strict typing, variance, static
-  local initialization expressions, per-function persistence,
-  recursion/reentrancy behavior, file/dir magic constant source mapping,
+  top-level `const` declarations. The `__FILE__` magic constant evaluates to
+  the current `phpc run` input path string when one is available, including
+  ordinary expressions, default parameter values, and top-level `const`
+  declarations; path-less library execution currently evaluates it as an empty
+  string. Other magic constants such as `__FUNCTION__`, `__METHOD__`,
+  `__CLASS__`, and `__DIR__` fail with stable parse diagnostics before their
+  source/context-aware evaluation exists. Nullable, union, and intersection
+  types, `mixed`, `void`/`never`, class/interface type names, coercive versus
+  strict typing, variance, static local initialization expressions,
+  per-function persistence, recursion/reentrancy behavior, canonical absolute
+  `__FILE__` paths matching PHP exactly, `__DIR__` source mapping,
   function/method/class magic constant context, namespace and trait magic
   constants, magic constant native lowering, array callables, object/method
   callables, first-class callable
@@ -1151,11 +1157,12 @@
 - static local variable declarations inside functions, including
   initialization expressions, per-function persistence, references,
   recursion/reentrancy behavior, and native lowering
-- magic constants other than `__LINE__`, such as `__FILE__`, `__DIR__`,
+- magic constants other than `__LINE__` and `__FILE__`, such as `__DIR__`,
   `__FUNCTION__`, `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
-  `__NAMESPACE__`; these fail with stable parse diagnostics before file/dir
+  `__NAMESPACE__`; these fail with stable parse diagnostics before directory
   mapping, function/method/class context, namespace/trait context, or native
-  lowering exists
+  lowering exists. `__FILE__` currently reports the `phpc run` input path
+  string, not PHP's canonical absolute filename in all entry paths.
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex
@@ -1264,8 +1271,9 @@
   constants, namespace-qualified constants, nested `const` declarations,
   dynamic declaration values, `constant()`/`defined()` lookup
   for class constants, names lexed as language keywords or literals for bare
-  reads, magic constants other than `__LINE__`, reference/copy-on-write
-  behavior for constant values, and native lowering remain unsupported
+  reads, magic constants other than `__LINE__` and `__FILE__`,
+  reference/copy-on-write behavior for constant values, and native lowering
+  remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

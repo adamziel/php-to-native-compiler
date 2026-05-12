@@ -120,6 +120,11 @@ Implemented:
   from the expression token's source line in ordinary expressions, default
   parameter values, and top-level `const` declarations. Other magic constants
   and native lowering remain unsupported.
+- Implemented `__FILE__` as the second executable magic constant, evaluated
+  from the current `phpc run` input path string when one is available in
+  ordinary expressions, default parameter values, and top-level `const`
+  declarations. Path-less library execution currently evaluates it as an empty
+  string, and native lowering remains unsupported.
 - Added a materialized interpreter symbol table for top-level and function-local
   scopes. Current static variable reads, writes, `unset($name)`,
   `isset($name)`, parameter binding, default-parameter evaluation, and direct
@@ -2285,14 +2290,16 @@ Still fails:
   arguments, and `declare(strict_types=1)` now fail with explicit parse
   diagnostics. Static local variable declarations inside functions also fail
   with an explicit parse diagnostic before static local storage exists.
-  `__LINE__` evaluates from expression source spans, while other magic
-  constants fail with explicit parse diagnostics before source/context-aware
-  magic constant evaluation exists.
+  `__LINE__` evaluates from expression source spans, and `__FILE__` evaluates
+  from the current `phpc run` input path string when one is available. Other
+  magic constants fail with explicit parse diagnostics before
+  source/context-aware magic constant evaluation exists.
   Nullable, union, and intersection types, `mixed`, `void`/`never`,
   class/interface type names, coercive versus strict typing, variance, runtime
   type enforcement, static local initialization expressions, per-function
-  persistence, references, recursion/reentrancy behavior, file/dir magic
-  constant source mapping, function/method/class magic constant context,
+  persistence, references, recursion/reentrancy behavior, canonical absolute
+  `__FILE__` paths matching PHP exactly, `__DIR__` magic constant source
+  mapping, function/method/class magic constant context,
   namespace and trait magic constants, native static-local lowering, magic
   constant lowering, and native type lowering are not implemented.
   Dynamic function calls are limited to string-valued function names resolving
@@ -2333,8 +2340,8 @@ Still fails:
   previously defined unqualified constants and the current built-in
   `ARRAY_FILTER_*` constants. Forward references, other built-in constants,
   names lexed as language keywords or literals for bare reads, magic constants
-  other than `__LINE__`, case-insensitive legacy constants, extension
-  constants, namespace-qualified constants, nested declarations, dynamic
+  other than `__LINE__` and `__FILE__`, case-insensitive legacy constants,
+  extension constants, namespace-qualified constants, nested declarations, dynamic
   declaration values, class constants through `constant()`/`defined()`,
   references/copy-on-write behavior for constant values, and native lowering
   for constants are not implemented.
@@ -2353,6 +2360,6 @@ Still fails:
 
 Next:
 
-- Implement `__FILE__` as the next executable magic constant using the current
-  input path where available while keeping `__DIR__` and
+- Implement `__DIR__` as the next executable magic constant over the current
+  input path boundary while keeping eval/include source mapping and
   function/method/class context constants explicitly unsupported.
