@@ -719,8 +719,16 @@ handled.
 
 ## Milestone 72: Magic Constant Line Slice
 
-- [ ] Implement `__LINE__` as the first executable magic constant using
+- [x] Implement `__LINE__` as the first executable magic constant using
   expression source spans, including parser/interpreter support, fixture CLI
   coverage, documentation, and explicit gaps for `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, namespaces, traits, and native
   lowering.
+
+## Milestone 73: Magic Constant File Slice
+
+- [ ] Implement `__FILE__` as the next executable magic constant using the
+  current input path where available, including parser/interpreter support,
+  fixture CLI coverage, documentation, and explicit gaps for `__DIR__`,
+  eval/include source mapping, function/method/class context constants,
+  namespaces, traits, and native lowering.

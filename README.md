@@ -55,6 +55,7 @@ subset:
 - minimal object instantiation with `new ClassName()` for declared classes that
   do not define constructors; public instance properties can be read and
   written by static property name and checked with `isset($object->name)`
+- magic constant `__LINE__`, evaluated from the expression token's source line
 - narrow global constant resolution: exact uppercase `ARRAY_FILTER_USE_KEY` and
   `ARRAY_FILTER_USE_BOTH` work as bare built-in constants, and
   `define($name, $value)`, `constant($name)`, `defined($name)`, and bare
@@ -122,7 +123,8 @@ subset:
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, parameter and return type declarations, static local
-  variable declarations, magic constants, closures, named arguments,
+  variable declarations, magic constants other than executable `__LINE__`,
+  closures, named arguments,
   `declare(strict_types=1)`,
   unsupported nested, namespace-aware, or dynamic-value `const` declarations,
   unsupported array spread/reference elements, unsupported broader

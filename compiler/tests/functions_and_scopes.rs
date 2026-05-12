@@ -1,3 +1,4 @@
+use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
@@ -416,16 +417,43 @@ function counter($enabled) {
 }
 
 #[test]
-fn magic_constants_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-echo __LINE__;
+fn magic_line_constant_evaluates_from_expression_source_span() {
+    let execution = run_source(
+        r#"<?php
+echo __LINE__, "\n";
+$line = __LINE__;
+echo $line, "\n";
+function default_line($line = __LINE__) {
+    echo $line, "\n";
+    echo __LINE__, "\n";
+}
+const DECLARED_LINE = __LINE__;
+default_line();
+echo DECLARED_LINE, "\n";
 "#,
-            2,
-            6,
-            "__LINE__",
-        ),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2\n3\n5\n7\n9\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_magic_line_until_native_source_mapping_exists() {
+    let error = emit_ir_source("<?php\necho __LINE__;\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert!(
+        error.message.contains("__LINE__") && error.message.contains("not LLVM IR emission yet"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn magic_constants_except_line_are_rejected_with_stable_parse_error() {
+    let cases = [
         (
             r#"<?php
 echo __FILE__;

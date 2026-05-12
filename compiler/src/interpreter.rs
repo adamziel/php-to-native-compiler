@@ -529,6 +529,7 @@ impl Interpreter {
             Expr::Float(value, _) => Ok(Value::Float(*value)),
             Expr::String(value, _) => Ok(Value::String(value.clone())),
             Expr::Variable(name, span) => scope.read_static(name, *span),
+            Expr::MagicLine { span } => Ok(Value::Int(span.line as i64)),
             Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {

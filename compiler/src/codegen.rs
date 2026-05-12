@@ -173,6 +173,10 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
+            Expr::MagicLine { span } => Err(self.unsupported(
+                *span,
+                "__LINE__ is supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
                 "global constants are supported by phpc run for the current built-in/runtime-defined subset but not LLVM IR emission yet",
@@ -717,6 +721,10 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
+            Expr::MagicLine { span } => Err(self.unsupported(
+                *span,
+                "__LINE__ is supported by phpc run but not assembly emission yet",
+            )),
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
                 "global constants are supported by phpc run for the current built-in/runtime-defined subset but not assembly emission yet",

@@ -7385,3 +7385,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:02:35Z
 
 - Post-round 20 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:02:42Z
+
+- Starting round 21 at 20260512T170242Z from HEAD `0e973f5`.
+
+## Loop Event 2026-05-12T17:02:50Z
+
+- Pre-round 21 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:09:02Z
+
+- Task attempted: completed Milestone 72 by implementing `__LINE__` as the
+  first executable magic constant. The parser now emits a dedicated
+  source-span expression for `__LINE__`, the interpreter evaluates it to the
+  token source line, default parameter values and top-level `const`
+  declarations allow it as a constant expression, and LLVM/assembly emission
+  reject it explicitly until native source mapping exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone72/magic_line.*`, `README.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt -- --check` passed; `cargo check -p phpc`
+  passed; `cargo test -p phpc --test functions_and_scopes magic` passed;
+  `cargo test -p phpc --test functions_and_scopes` passed with 25 tests;
+  `cargo test -p phpc --test magic_constants_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone72` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone72` passed with 1 system PHP comparison;
+  `tools/run-tests.sh` passed with 259 fixtures, 105 system PHP comparisons,
+  and 154 skips.
+- Remaining semantic gaps: `__FILE__`, `__DIR__`, `__FUNCTION__`,
+  `__METHOD__`, `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__` still reject
+  with stable parse diagnostics. Eval/include source mapping, namespaces,
+  traits, function/method/class context values, references/copy-on-write
+  interactions, exact PHP error objects, and native lowering for magic
+  constants remain unsupported.
+- Next concrete task: implement `__FILE__` as the next executable magic
+  constant using the current input path where available.
+- Checkpoint: pending `tools/checkpoint.sh "parser: execute __LINE__ magic constant"`
+  after the full suite passes.

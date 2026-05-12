@@ -1163,6 +1163,9 @@ impl Parser {
             )),
             TokenKind::Identifier(name) => {
                 if let Some(magic_name) = magic_constant_name(&name) {
+                    if magic_name == "__LINE__" {
+                        return Ok(Expr::MagicLine { span: token.span });
+                    }
                     return Err(
                         self.error_at(token.span, unsupported_magic_constant_message(magic_name))
                     );
@@ -1436,6 +1439,7 @@ impl Parser {
                 self.ensure_supported_default_expr(right)
             }
             Expr::GlobalConstant { .. } => Ok(()),
+            Expr::MagicLine { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Index { .. }
             | Expr::Property { .. }
@@ -1470,6 +1474,7 @@ impl Parser {
                 self.ensure_supported_const_declaration_expr(right)
             }
             Expr::GlobalConstant { .. } => Ok(()),
+            Expr::MagicLine { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Index { .. }
             | Expr::Property { .. }

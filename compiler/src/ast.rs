@@ -230,6 +230,9 @@ pub enum Expr {
     Float(f64, Span),
     String(String, Span),
     Variable(String, Span),
+    MagicLine {
+        span: Span,
+    },
     GlobalConstant {
         name: String,
         span: Span,
@@ -285,6 +288,7 @@ impl Expr {
             | Expr::Float(_, span)
             | Expr::String(_, span)
             | Expr::Variable(_, span)
+            | Expr::MagicLine { span }
             | Expr::GlobalConstant { span, .. }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
