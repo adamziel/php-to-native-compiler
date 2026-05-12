@@ -60,6 +60,7 @@ impl Parser {
             TokenKind::Foreach => self.parse_foreach(),
             TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_switch(),
+            TokenKind::Match => self.parse_unsupported_match_expression(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Throw => self.parse_unsupported_throw(),
@@ -81,6 +82,9 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("for") => self.parse_for(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("switch") => {
                 self.parse_switch()
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("match") => {
+                self.parse_unsupported_match_expression()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("break") => self.parse_break(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
@@ -388,6 +392,11 @@ impl Parser {
     fn parse_unsupported_try_catch_finally(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
         Err(self.error_at(span, unsupported_try_catch_finally_message()))
+    }
+
+    fn parse_unsupported_match_expression(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_match_expression_message()))
     }
 
     fn parse_unsupported_nested_const_declaration(&mut self) -> CompileResult<Stmt> {
@@ -1268,6 +1277,9 @@ impl Parser {
             TokenKind::Switch => {
                 Err(self.error_at(token.span, unsupported_switch_expression_message()))
             }
+            TokenKind::Match => {
+                Err(self.error_at(token.span, unsupported_match_expression_message()))
+            }
             TokenKind::Break => {
                 Err(self.error_at(token.span, unsupported_break_expression_message()))
             }
@@ -1327,6 +1339,9 @@ impl Parser {
                 }
                 if name.eq_ignore_ascii_case("switch") {
                     return Err(self.error_at(token.span, unsupported_switch_expression_message()));
+                }
+                if name.eq_ignore_ascii_case("match") {
+                    return Err(self.error_at(token.span, unsupported_match_expression_message()));
                 }
                 if name.eq_ignore_ascii_case("break") {
                     return Err(self.error_at(token.span, unsupported_break_expression_message()));
@@ -1870,6 +1885,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Foreach => "foreach",
         TokenKind::For => "for",
         TokenKind::Switch => "switch",
+        TokenKind::Match => "match",
         TokenKind::Break => "break",
         TokenKind::Continue => "continue",
         TokenKind::Throw => "throw",
@@ -2003,6 +2019,10 @@ fn unsupported_throw_message() -> &'static str {
 
 fn unsupported_try_catch_finally_message() -> &'static str {
     "unsupported try/catch/finally: exception handling and stack unwinding are not implemented"
+}
+
+fn unsupported_match_expression_message() -> &'static str {
+    "unsupported match expression: expression-form branching is not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

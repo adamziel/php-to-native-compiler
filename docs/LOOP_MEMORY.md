@@ -10224,3 +10224,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T22:49:02Z
 
 - Post-round 12 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T22:49:27Z
+
+- Starting round 13 at 20260512T224926Z from HEAD `be05720`.
+
+## Loop Event 2026-05-12T22:49:55Z
+
+- Pre-round 13 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:52:50Z
+
+- Task attempted: added explicit parse diagnostics for unsupported PHP 8
+  `match` expressions before expression-form branching exists. The lexer now
+  reserves lowercase `match`, the parser rejects `match` in statement and
+  expression positions including uppercase identifier fallback, fixture/CLI
+  snapshots cover the parse boundary, and `compile --emit-ir` rejects the same
+  syntax at parse time. Added the next queued ternary-expression boundary task
+  for future unattended rounds.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_match.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all` completed; `cargo test -p phpc
+  --test syntax_boundaries match -- --nocapture` passed; `cargo test -p phpc
+  --test unsupported_syntax_features_cli
+  unsupported_syntax_feature_cli_snapshots_match_committed_outputs` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 15 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 15 `.phpc-only` PHP
+  comparisons skipped; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_match.php` exited `1`
+  with the expected parse diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_match.php --emit-ir`
+  exited `1` with the expected parse diagnostic; `tools/run-tests.sh` passed
+  with 344 fixtures, 123 system PHP comparisons, and 221 skips.
+- Remaining semantic gaps: `match` support is only an explicit parse boundary.
+  Strict arm matching, default arms, exhaustiveness errors, thrown expressions
+  inside arms, value evaluation order, exact native error objects, and native
+  lowering remain unsupported.
+- Next concrete task: add explicit diagnostics for unsupported ternary
+  conditional expressions before expression-form branching exists.
+- Known-good tag: not created; this is a narrow syntax boundary, not a major
+  verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add match expression boundary"`
+  after the full suite passes.

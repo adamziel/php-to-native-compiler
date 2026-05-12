@@ -1162,8 +1162,17 @@ handled.
 
 ## Milestone 122: Match Expression Boundary
 
-- [ ] Add explicit diagnostics for unsupported PHP 8 `match` expressions
+- [x] Add explicit diagnostics for unsupported PHP 8 `match` expressions
   before expression-form branching exists, including parser coverage, fixture
   CLI coverage, documentation, and named gaps for strict arm matching,
   default arms, exhaustiveness errors, thrown expressions inside arms, value
   evaluation order, exact native error objects, and native lowering.
+
+## Milestone 123: Ternary Expression Boundary
+
+- [ ] Add explicit diagnostics for unsupported ternary conditional expressions
+  (`$condition ? $if_true : $if_false` and `$value ?: $fallback`) before
+  expression-form branching exists, including parser coverage, fixture CLI
+  coverage, documentation, and named gaps for condition truthiness, short
+  ternary evaluation, nesting/precedence, thrown expressions inside arms,
+  exact native error objects, and native lowering.

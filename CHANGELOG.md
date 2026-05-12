@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added explicit unsupported PHP 8 `match` expression diagnostics before
+  expression-form branching exists, with parser regression coverage,
+  fixture/CLI coverage, documentation, and native emission rejection at the
+  parse boundary.
 - Added explicit unsupported exception syntax diagnostics for `throw`
   statements/expressions and `try`/`catch`/`finally` blocks before exception
   objects or stack unwinding exist, with parser regression coverage,

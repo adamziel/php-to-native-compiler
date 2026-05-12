@@ -195,6 +195,46 @@ fn emit_ir_rejects_exception_syntax_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_match_expression_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$value = match ($status) {\n    200 => 'ok',\n    default => 'other',\n};\n",
+            2,
+            10,
+        ),
+        (
+            "<?php\nMATCH ($status) {\n    200 => 'ok',\n    default => 'other',\n};\n",
+            2,
+            1,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported match expression: expression-form branching is not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_match_expression_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source(
+        "<?php\n$value = match ($status) {\n    default => 'other',\n};\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported match expression: expression-form branching is not implemented"
+    );
+}
+
+#[test]
 fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (

@@ -291,6 +291,15 @@ execution, stack traces, or exact native error objects. Native lowering must
 continue rejecting these constructs until exception control flow has explicit
 runtime and IR semantics.
 
+## Match Expression Boundary
+
+PHP 8 `match` expressions are reserved by the lexer/parser today and rejected
+with a stable parse diagnostic before execution. They do not build AST nodes yet
+because expression-form branching needs explicit semantics for strict arm
+matching, default arms, exhaustiveness errors, thrown expressions inside arms,
+value evaluation order, and exact native error objects. Native lowering must
+continue rejecting `match` until those runtime and IR semantics exist.
+
 ## Fixture Tests
 
 Fixture tests are stored as `.php` files with sibling `.stdout`, `.stderr`, and

@@ -2692,7 +2692,15 @@ Still fails:
   `Throwable`, `Exception`, custom exception classes, `finally` execution,
   stack traces, exact native error objects, and native lowering remain
   unsupported.
+- Added explicit parse diagnostics for unsupported PHP 8 `match` expressions
+  before expression-form branching exists. The parser now rejects `match` in
+  statement and expression positions with a stable diagnostic, fixture and CLI
+  snapshot coverage record the behavior, and native emission rejects the same
+  syntax at parse time. Strict arm matching, default arms, exhaustiveness
+  errors, thrown expressions inside arms, value evaluation order, exact native
+  error objects, and native lowering remain unsupported.
 
 Next:
 
-- Continue the next unchecked task in `docs/NEXT_TASKS.md`.
+- Add explicit diagnostics for unsupported ternary conditional expressions
+  before expression-form branching exists.
