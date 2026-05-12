@@ -9971,3 +9971,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint: pending `tools/checkpoint.sh "objects: add spl_object_hash boundary"`
   after the full suite passes. No known-good tag was created because this is a
   narrow incremental boundary, not a major stable state.
+
+## Loop Event 2026-05-12T22:19:07Z
+
+- Codex round 8 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T221306Z-8.log`.
+
+## Loop Event 2026-05-12T22:19:19Z
+
+- Post-round 8 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:19:19Z
+
+- Post-round 8 tests passed; running checkpoint for this round.
