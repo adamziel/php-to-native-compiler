@@ -1343,3 +1343,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   `unset(...)` syntax before implementing unset.
 - Checkpoint: pending `tools/checkpoint.sh "parser: reject long array syntax"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T01:00:24Z
+
+- Codex round 22 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T005529Z-22.log`.
+
+## Loop Event 2026-05-12T01:00:26Z
+
+- Post-round 22 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:00:26Z
+
+- Post-round 22 tests passed; running checkpoint for this round.
