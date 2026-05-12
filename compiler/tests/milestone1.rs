@@ -132,6 +132,17 @@ fn emit_ir_rejects_for_until_native_loop_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_do_while_until_native_loop_lowering_exists() {
+    let error = emit_ir_source("<?php\ndo { echo 1; } while (false);\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("do-while loops"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_ir_rejects_arrays_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\necho [1];\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);

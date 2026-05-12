@@ -214,31 +214,20 @@ echo for ($i = 0; $i < 3; $i = $i + 1);
 }
 
 #[test]
-fn do_while_syntax_is_rejected_with_stable_parse_error() {
+fn do_while_expression_form_is_rejected_with_stable_parse_error() {
     let cases = [
-        (
-            r#"<?php
-$i = 0;
-do {
-    echo $i;
-    $i = $i + 1;
-} while ($i < 3);
-"#,
-            3,
-            1,
-        ),
-        (
-            r#"<?php
-DO echo "tick"; WHILE (false);
-"#,
-            2,
-            1,
-        ),
         (
             r#"<?php
 echo do {
     echo "tick";
 } while (false);
+"#,
+            2,
+            6,
+        ),
+        (
+            r#"<?php
+echo DO echo "tick"; WHILE (false);
 "#,
             2,
             6,
@@ -251,7 +240,7 @@ echo do {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported do-while: post-condition loops are not implemented"
+            "unsupported do-while: do-while loops are only supported as statements in the current subset"
         );
     }
 }

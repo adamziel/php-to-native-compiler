@@ -220,6 +220,22 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
+            Stmt::DoWhile {
+                body, condition, ..
+            } => {
+                loop {
+                    match self.execute_statements(body, scope)? {
+                        Flow::Normal | Flow::Continue(_) => {}
+                        Flow::Break(_) => break,
+                        flow @ Flow::Return(_) => return Ok(flow),
+                    }
+
+                    if !self.evaluate(condition, scope)?.is_truthy() {
+                        break;
+                    }
+                }
+                Ok(Flow::Normal)
+            }
             Stmt::For {
                 initializer,
                 condition,

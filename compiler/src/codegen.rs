@@ -115,6 +115,10 @@ impl LlvmGenerator {
                 *span,
                 "while is supported by phpc run but not LLVM IR emission yet",
             )),
+            Stmt::DoWhile { span, .. } => Err(self.unsupported(
+                *span,
+                "do-while loops are supported by phpc run but not LLVM IR emission yet",
+            )),
             Stmt::For { span, .. } => Err(self.unsupported(
                 *span,
                 "for loops are supported by phpc run but not LLVM IR emission yet",
@@ -634,6 +638,10 @@ impl CGenerator {
             Stmt::While { span, .. } => Err(self.unsupported(
                 *span,
                 "while is supported by phpc run but not assembly emission yet",
+            )),
+            Stmt::DoWhile { span, .. } => Err(self.unsupported(
+                *span,
+                "do-while loops are supported by phpc run but not assembly emission yet",
             )),
             Stmt::For { span, .. } => Err(self.unsupported(
                 *span,

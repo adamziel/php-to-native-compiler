@@ -45,6 +45,11 @@ pub enum Stmt {
         body: Vec<Stmt>,
         span: Span,
     },
+    DoWhile {
+        body: Vec<Stmt>,
+        condition: Expr,
+        span: Span,
+    },
     For {
         initializer: Option<ForAction>,
         condition: Option<Expr>,

@@ -41,7 +41,7 @@ impl Parser {
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
-            TokenKind::Do => self.parse_unsupported_do_while(),
+            TokenKind::Do => self.parse_do_while(),
             TokenKind::Foreach => self.parse_foreach(),
             TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_unsupported_switch(),
@@ -49,9 +49,7 @@ impl Parser {
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => {
-                self.parse_unsupported_do_while()
-            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => self.parse_do_while(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
                 self.parse_foreach()
             }
@@ -358,6 +356,22 @@ impl Parser {
         })
     }
 
+    fn parse_do_while(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        let body = self.parse_block_or_statement()?;
+        self.consume_while_keyword("expected 'while' after do body")?;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after while")?;
+        let condition = self.parse_expression()?;
+        self.consume_keyword(TokenKind::RParen, "expected ')' after while condition")?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after do-while")?;
+
+        Ok(Stmt::DoWhile {
+            body,
+            condition,
+            span,
+        })
+    }
+
     fn parse_for(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after for")?;
@@ -469,11 +483,6 @@ impl Parser {
             body,
             span,
         })
-    }
-
-    fn parse_unsupported_do_while(&mut self) -> CompileResult<Stmt> {
-        let token = self.advance().clone();
-        Err(self.error_at(token.span, unsupported_do_while_message()))
     }
 
     fn parse_unsupported_switch(&mut self) -> CompileResult<Stmt> {
@@ -910,7 +919,9 @@ impl Parser {
                 "unsupported closure: arrow functions are not implemented",
             )),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
-            TokenKind::Do => Err(self.error_at(token.span, unsupported_do_while_message())),
+            TokenKind::Do => {
+                Err(self.error_at(token.span, unsupported_do_while_expression_message()))
+            }
             TokenKind::Foreach => {
                 Err(self.error_at(token.span, unsupported_foreach_expression_message()))
             }
@@ -942,7 +953,9 @@ impl Parser {
             )),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("do") {
-                    return Err(self.error_at(token.span, unsupported_do_while_message()));
+                    return Err(
+                        self.error_at(token.span, unsupported_do_while_expression_message())
+                    );
                 }
                 if name.eq_ignore_ascii_case("foreach") {
                     return Err(self.error_at(token.span, unsupported_foreach_expression_message()));
@@ -1260,6 +1273,15 @@ impl Parser {
         }
     }
 
+    fn consume_while_keyword(&mut self, message: &str) -> CompileResult<()> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::While => Ok(()),
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("while") => Ok(()),
+            _ => Err(self.error_at(token.span, message)),
+        }
+    }
+
     fn consume_keyword(&mut self, expected: TokenKind, message: &str) -> CompileResult<Token> {
         if same_variant(&self.peek().kind, &expected) {
             Ok(self.advance().clone())
@@ -1473,8 +1495,8 @@ fn unsupported_foreach_destructuring_message() -> &'static str {
     "unsupported foreach: destructuring loop targets are not implemented"
 }
 
-fn unsupported_do_while_message() -> &'static str {
-    "unsupported do-while: post-condition loops are not implemented"
+fn unsupported_do_while_expression_message() -> &'static str {
+    "unsupported do-while: do-while loops are only supported as statements in the current subset"
 }
 
 fn unsupported_for_expression_message() -> &'static str {

@@ -2798,3 +2798,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T03:21:26Z
 
 - Post-round 44 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T03:21:29Z
+
+- Starting round 45 at 20260512T032129Z from HEAD `e01c0ee`.
+
+## Loop Event 2026-05-12T03:21:33Z
+
+- Pre-round 45 test exit code: `0`.
+
+## Loop Event 2026-05-12T03:28:05Z
+
+- Task attempted: implemented `do ... while` loops over the current expression
+  and assignment subset. Statement-form loops now parse block and
+  single-statement bodies, execute at least once, evaluate the condition after
+  the body, handle `continue;` by evaluating the post-condition before the next
+  iteration, consume `break;` at the innermost active loop, keep
+  expression-form `do ... while` as a stable parse diagnostic, and reject
+  native lowering explicitly.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/do_while.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone10/do_while_loops.php`,
+  `tests/fixtures/milestone10/do_while_loops.stdout`,
+  `tests/fixtures/milestone10/do_while_loops.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_do_while.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_do_while.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_do_while.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test do_while` passed with 3 tests; `cargo test -p phpc --test
+  syntax_boundaries` passed with 9 tests; `cargo test -p phpc --test
+  milestone1 emit_ir_rejects_do_while_until_native_loop_lowering_exists`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone10` passed with
+  3 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone10` passed with 3 system PHP comparisons; `cargo
+  test -p phpc --test syntax_expansion_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 9 fixtures; `cargo
+  test -p phpc --test unsupported_syntax_features_cli` passed; `cargo run -p
+  phpc -- run tests/fixtures/milestone10/do_while_loops.php` printed the
+  committed do-while output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone10/do_while_loops.php --emit-ir` exited `1` with the
+  expected explicit `do-while loops` codegen rejection; `tools/run-tests.sh`
+  passed with 112 fixtures, 45 system PHP comparisons, and 67 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `do ... while` is statement-only; expression-form
+  `do ... while`, loop-depth arguments, `switch` interaction, `finally`/
+  exception behavior, and native loop lowering remain unsupported. Broader PHP
+  warning/Error object behavior, references, and copy-on-write effects remain
+  unsupported.
+- Next concrete task: implement `switch (...)` over the current scalar
+  comparison subset, including `case`, `default`, fallthrough, `break;`
+  behavior, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection while lowering remains unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "loops: add do-while execution"`
+  after the full suite passes.

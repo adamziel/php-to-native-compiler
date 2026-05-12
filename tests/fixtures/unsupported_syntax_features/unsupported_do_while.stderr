@@ -1,2 +1,2 @@
-parse error at 3:1: unsupported do-while: post-condition loops are not implemented
+parse error at 2:6: unsupported do-while: do-while loops are only supported as statements in the current subset
 
