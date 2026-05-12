@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/constant_unsupported_name.php:2:6: unsupported call constant(): only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset, got PHP_VERSION
+--- stderr end ---

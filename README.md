@@ -55,7 +55,8 @@ subset:
   do not define constructors; public instance properties can be read and
   written by static property name and checked with `isset($object->name)`
 - narrow built-in global constant resolution for exact uppercase
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, including
+  `constant(...)` lookup for those exact string names
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -97,7 +98,8 @@ subset:
   and with string-valued value-only callbacks, including explicit integer mode
   flag `0` for those value-only paths, plus string-valued key-only callbacks
   through integer mode flag `2` and string-valued value/key callbacks through
-  integer mode flag `1`, `array_map` over the current one-array null-callback
+  integer mode flag `1`, `constant` over the documented built-in constant
+  name slice, `array_map` over the current one-array null-callback
   identity, variadic null-callback zip, and variadic
   string-callback subset with one-array key preservation and multi-array
   reindexing,
@@ -120,7 +122,8 @@ subset:
   arguments, object method calls, dynamic property names, anonymous classes,
   unsupported class forms, static member access, class constants, and bare
   global constants outside the current narrow built-in slice, such as
-  `PHP_VERSION`
+  `PHP_VERSION`; `constant(...)` lookup is similarly limited to the current
+  documented built-in constant names
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,

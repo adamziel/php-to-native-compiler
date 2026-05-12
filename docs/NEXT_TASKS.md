@@ -609,8 +609,15 @@ handled.
 
 ## Milestone 59: Constant Lookup Boundary
 
-- [ ] Add an explicit `constant()` boundary: either a stable unsupported
+- [x] Add an explicit `constant()` boundary: either a stable unsupported
   diagnostic for `constant(...)` before executable lookup exists, or the first
   narrow executable slice with parser/runtime tests, fixture CLI coverage,
   docs, and named gaps for user-defined, extension, namespace-qualified, and
   native-lowered constants.
+
+## Milestone 60: User Constant Definition Boundary
+
+- [ ] Add an explicit `define(...)` boundary before user-defined constants are
+  executable, including parser/runtime tests, fixture CLI coverage,
+  documentation, and named gaps for runtime-defined constants, case-insensitive
+  legacy constants, namespaces, extension constants, and native lowering.

@@ -412,6 +412,12 @@ Implemented:
   as named `array_filter` mode arguments with fixture and CLI coverage, keeps
   other bare constants on stable parse diagnostics, and rejects native lowering
   explicitly.
+- Added the first `constant(...)` lookup boundary. The supported slice resolves
+  string names `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` to the same
+  integer values as bare constants, works through string-valued dynamic calls to
+  `constant`, has fixture and CLI coverage, keeps unknown constant names and
+  non-string names on stable runtime diagnostics, and still rejects native
+  lowering through the current function-call codegen boundary.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -2156,9 +2162,10 @@ Still fails:
   imports, constant imports, trait `use` execution, autoload interaction, and
   namespace-aware native lowering are not implemented.
 - Global constant resolution is limited to exact uppercase
-  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`. Other built-in
-  constants, user-defined constants, extension constants, namespace-qualified
-  constants, `constant()` lookup, and native lowering for constants are not
+  `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; `constant(...)` lookup is
+  limited to those exact string names. Other built-in constants, user-defined
+  constants, extension constants, namespace-qualified constants, class
+  constants through `constant()`, and native lowering for constants are not
   implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
@@ -2175,6 +2182,5 @@ Still fails:
 
 Next:
 
-- Add a narrow `constant()` unsupported boundary or first executable slice,
-  keeping user-defined, extension, and namespace-qualified constant resolution
-  explicit.
+- Add an explicit `define(...)` boundary before user-defined constants can be
+  created at runtime.

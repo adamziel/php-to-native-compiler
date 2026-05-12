@@ -1,0 +1,2 @@
+runtime error at 2:6: unsupported call constant(): only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset, got PHP_VERSION
+

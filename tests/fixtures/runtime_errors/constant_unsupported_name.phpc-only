@@ -1,0 +1,1 @@
+phpc intentionally supports constant() only for the documented ARRAY_FILTER_* slice.

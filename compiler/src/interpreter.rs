@@ -894,6 +894,34 @@ impl Interpreter {
                     )),
                 }
             }
+            "constant" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(name) => builtin_global_constant_value(name)
+                        .map(Value::Int)
+                        .ok_or_else(|| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "constant()",
+                                    format!(
+                                        "only ARRAY_FILTER_USE_KEY and ARRAY_FILTER_USE_BOTH are implemented in the current subset, got {name}"
+                                    ),
+                                ),
+                            )
+                        }),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "constant()",
+                            format!(
+                                "name argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "array_key_exists" => {
                 expect_arity(name, &args, 2, span)?;
                 let key =
@@ -2350,6 +2378,7 @@ fn is_builtin(name: &str) -> bool {
         name,
         "strlen"
             | "count"
+            | "constant"
             | "array_key_exists"
             | "array_values"
             | "array_key_first"
@@ -2381,6 +2410,14 @@ fn is_builtin(name: &str) -> bool {
             | "var_dump"
             | "print_r"
     )
+}
+
+fn builtin_global_constant_value(name: &str) -> Option<i64> {
+    match name {
+        "ARRAY_FILTER_USE_BOTH" => Some(1),
+        "ARRAY_FILTER_USE_KEY" => Some(2),
+        _ => None,
+    }
 }
 
 fn expect_arity(name: &str, args: &[Value], expected: usize, span: Span) -> CompileResult<()> {

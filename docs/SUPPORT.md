@@ -58,7 +58,8 @@
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `ARRAY_FILTER_USE_KEY` and
-  `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`
+  `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`; `constant`
+  resolves those same exact string names
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -75,6 +76,7 @@
 - `empty($name)` and `empty($array[$key])` for direct variables and direct
   array-variable offset operands over the current scalar/array value model
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
+  `constant`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -86,7 +88,8 @@
   minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
-  undefined functions, non-string dynamic function callees, unsupported array
+  undefined functions, non-string dynamic function callees, unsupported
+  `constant` names and non-string `constant` name arguments, unsupported array
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
@@ -867,6 +870,9 @@
   current undefined-function diagnostic. Exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants may be used as
   the mode argument and evaluate to the same current integer mode values as PHP.
+  `constant("ARRAY_FILTER_USE_KEY")` and
+  `constant("ARRAY_FILTER_USE_BOTH")` resolve to the same integer values and
+  may also be used as mode expressions.
   Array/object callables, closures, first-class callables, method calls,
   integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
   `false`, references,
@@ -1157,9 +1163,10 @@
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - global constant resolution outside exact uppercase `ARRAY_FILTER_USE_KEY`
-  and `ARRAY_FILTER_USE_BOTH`; other built-in constants, user-defined
-  constants, extension constants, namespace-qualified constants, `constant()`
-  lookup, and native lowering remain unsupported
+  and `ARRAY_FILTER_USE_BOTH`; `constant(...)` lookup outside those exact
+  string names; user-defined constants, extension constants,
+  namespace-qualified constants, `constant()` lookup for class constants, and
+  native lowering remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

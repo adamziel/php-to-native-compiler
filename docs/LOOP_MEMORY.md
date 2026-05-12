@@ -6576,3 +6576,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T14:17:26Z
 
 - Post-round 7 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T14:17:33Z
+
+- Starting round 8 at 20260512T141733Z from HEAD `3ea4f05`.
+
+## Loop Event 2026-05-12T14:17:40Z
+
+- Pre-round 8 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:25:41Z
+
+- Task attempted: implemented the Milestone 59 `constant(...)` boundary as a
+  narrow executable slice. `constant("ARRAY_FILTER_USE_KEY")` and
+  `constant("ARRAY_FILTER_USE_BOTH")` now resolve to integer values `2` and
+  `1`, work through string-valued dynamic calls to `constant`, and can be used
+  as `array_filter` mode expressions. Unknown constant names and non-string
+  names fail with stable runtime diagnostics, while native lowering still
+  rejects the function-call path explicitly.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/dynamic_features.rs`, `compiler/tests/constant_lookup_cli.rs`,
+  `tests/fixtures/milestone59/constant_lookup.*`,
+  `tests/fixtures/runtime_errors/constant_unsupported_name.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  dynamic_features` passed with 14 tests; `cargo test -p phpc --test
+  constant_lookup_cli` passed; `cargo test -p phpc --test runtime_error_cli`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone59` passed with
+  1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone59` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 105 fixtures;
+  `cargo run -p phpc -- run tests/fixtures/milestone59/constant_lookup.php`
+  printed the committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/constant_unsupported_name.php` exited `1` with
+  the expected stable diagnostic; `tools/run-tests.sh` passed with 237
+  fixtures, 97 system PHP comparisons, and 140 `.phpc-only` skips.
+- Remaining semantic gaps: global constant resolution is limited to exact
+  uppercase `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; `constant(...)`
+  lookup is limited to those exact string names. Other built-in constants,
+  user-defined constants, extension constants, namespace-qualified constants,
+  class constants through `constant(...)`, PHP's exact undefined-constant
+  `Error` objects, and native lowering for constants are unsupported.
+- Next concrete task: add an explicit `define(...)` boundary before
+  user-defined constants can be created at runtime.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add constant lookup boundary"`
+  after the full suite passes.
