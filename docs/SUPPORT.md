@@ -104,8 +104,8 @@
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `interface_exists`, `trait_exists`, `property_exists`,
-  `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
+  `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
+  `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `var_dump`, and `print_r`;
@@ -117,6 +117,8 @@
   accepts string names and returns false for the current no-interface metadata
   model without autoloading, `trait_exists` accepts string names and returns
   false for the current no-trait metadata model without autoloading,
+  `enum_exists` accepts string names and returns false for the current no-enum
+  metadata model without autoloading,
   `property_exists` checks
   case-sensitive declared property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared method
@@ -331,6 +333,10 @@
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, return false for all supported calls because trait metadata is
   not represented yet, and are available through string-valued dynamic function
+  calls. The autoload flag must be boolean and does not trigger autoloading.
+  `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
+  names, return false for all supported calls because enum metadata is not
+  represented yet, and are available through string-valued dynamic function
   calls. The autoload flag must be boolean and does not trigger autoloading.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
@@ -710,6 +716,7 @@
   non-string `class_exists` names, non-bool `class_exists` autoload flags,
   non-string `interface_exists` names, non-bool `interface_exists` autoload
   flags, non-string `trait_exists` names, non-bool `trait_exists` autoload
+  flags, non-string `enum_exists` names, non-bool `enum_exists` autoload
   flags,
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
   non-object/non-string `is_subclass_of` first arguments, non-string
@@ -730,7 +737,7 @@
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `interface_exists(...)`, `trait_exists(...)`,
-  `property_exists(...)`,
+  `enum_exists(...)`, `property_exists(...)`,
   `method_exists(...)`,
   `get_class_methods(...)`, `get_class_vars(...)`, `is_a(...)`,
   `get_object_vars(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
@@ -752,8 +759,9 @@
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `interface_exists`, `trait_exists`, `property_exists`,
-  `method_exists`, `get_class_methods`, `get_class_vars`, `get_object_vars`,
+  `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
+  `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
+  `get_object_vars`,
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
@@ -827,8 +835,8 @@
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
-  `trait_exists`, `property_exists`, `method_exists`, `get_class_methods`,
-  `is_a`, `is_subclass_of`, `get_class_vars`, `get_parent_class`,
+  `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
+  `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `var_dump`, and `print_r`
   cover the documented scalar/array/object subset.
@@ -848,6 +856,10 @@
   trait names and return false for all supported calls because trait metadata
   is not represented yet; the autoload flag must be boolean and does not
   trigger autoloading.
+  `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
+  names and return false for all supported calls because enum metadata is not
+  represented yet; the autoload flag must be boolean and does not trigger
+  autoloading.
   `property_exists($object_or_class, $property)` checks declared property
   metadata for current object values or string class names with case-sensitive
   property names. `method_exists($object_or_class, $method)` checks declared
@@ -1540,6 +1552,9 @@
   entries, autoloading, namespaces/import aliases, exact native `TypeError`
   behavior, and native lowering
 - `trait_exists` declared trait metadata, built-in/internal trait entries,
+  autoloading, namespaces/import aliases, exact native `TypeError` behavior,
+  and native lowering
+- `enum_exists` declared enum metadata, built-in/internal enum entries,
   autoloading, namespaces/import aliases, exact native `TypeError` behavior,
   and native lowering
 - `get_declared_interfaces` declared interface metadata, built-in/internal

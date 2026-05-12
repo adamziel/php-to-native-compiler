@@ -1086,10 +1086,19 @@ handled.
 
 ## Milestone 114: Enum Existence Boundary
 
-- [ ] Add the next honest `enum_exists($name[, $autoload])` boundary over the
+- [x] Add the next honest `enum_exists($name[, $autoload])` boundary over the
   current no-enum metadata model: either a stable unsupported diagnostic or a
   narrow executable always-false slice with string-valued dynamic-call
   coverage, invalid argument diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for declared enums, built-in/internal enums, autoloading,
   namespaces/import aliases, exact native `TypeError` behavior, and native
   lowering.
+
+## Milestone 115: Called Class Context Boundary
+
+- [ ] Add the next honest `get_called_class()` boundary before method/static
+  class context exists: either a stable unsupported diagnostic or a narrow
+  executable context-aware slice, with parser/runtime coverage, fixture CLI
+  coverage, documentation, and explicit gaps for method dispatch, late static
+  binding, inheritance, namespaces/import aliases, exact native `Error`
+  behavior, and native lowering.

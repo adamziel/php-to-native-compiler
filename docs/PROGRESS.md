@@ -2627,10 +2627,16 @@ Still fails:
   lowering through the current function-call boundary. Declared traits,
   built-in/internal traits, autoloading, namespace/import aliases, exact native
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `enum_exists($name[, $autoload])` as a no-enum metadata boundary. The
+  supported slice accepts string names, accepts only boolean autoload flags,
+  returns false for all supported calls because enum metadata is not
+  represented yet, works through string-valued dynamic calls, has fixture CLI
+  coverage plus stable invalid-argument diagnostics, and rejects native
+  lowering through the current function-call boundary. Declared enums,
+  built-in/internal enums, autoloading, namespace/import aliases, exact native
+  `TypeError` behavior, and native lowering remain unsupported.
 
 Next:
 
-- Continue with `enum_exists($name[, $autoload])` as the next small
-  object/class value introspection boundary over the current no-enum metadata
-  model, keeping behavior, tests, CLI coverage, documentation, and unsupported
-  gaps narrow.
+- Continue with the next small object/class context boundary, keeping behavior,
+  tests, CLI coverage, documentation, and unsupported gaps narrow.

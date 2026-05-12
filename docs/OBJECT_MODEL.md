@@ -128,6 +128,8 @@ until object property value extraction has native support.
 interface metadata lookup has native support.
 `trait_exists` is rejected through that function-call boundary until trait
 metadata lookup has native support.
+`enum_exists` is rejected through that function-call boundary until enum
+metadata lookup has native support.
 `get_declared_interfaces` is rejected through that function-call boundary until
 interface metadata lookup has native support.
 `get_declared_traits` is rejected through that function-call boundary until
@@ -158,6 +160,7 @@ inputs, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
 `interface_exists` true results for declared/built-in/internal interfaces,
 `trait_exists` true results for declared/built-in/internal traits,
+`enum_exists` true results for declared/built-in/internal enums,
 `get_declared_interfaces` declared interface metadata and built-in/internal
 interface entries, `get_declared_traits` declared trait metadata and
 built-in/internal trait entries,

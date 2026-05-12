@@ -9744,3 +9744,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T21:55:43Z
 
 - Post-round 4 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T21:55:50Z
+
+- Starting round 5 at 20260512T215550Z from HEAD `ad297f6`.
+
+## Loop Event 2026-05-12T21:55:57Z
+
+- Pre-round 5 test exit code: `0`.
+
+## Loop Event 2026-05-12T22:00:52Z
+
+- Task attempted: added `enum_exists($name[, $autoload])` as the next honest
+  object/enum metadata boundary over the current no-enum model. The supported
+  slice accepts string names, validates a boolean autoload flag, returns false
+  for all supported calls, works through string-valued dynamic calls, records
+  stable invalid-argument diagnostics, and keeps native lowering rejected
+  through the current function-call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone114/enum_exists.*`,
+  `tests/fixtures/runtime_errors/enum_exists_invalid_name.*`,
+  `tests/fixtures/runtime_errors/enum_exists_invalid_autoload.*`,
+  `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`,
+  `docs/OBJECT_MODEL.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p phpc --test
+  object_model enum_exists` passed with 3 focused tests; `cargo run -p phpc
+  -- test tests/fixtures/milestone114` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone114` passed with 1
+  system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 138 fixtures; `cargo test -p
+  phpc --test runtime_error_cli` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone114/enum_exists.php` printed the committed
+  enum-existence output; `tools/run-tests.sh` passed with 331 fixtures, 121
+  system PHP comparisons, and 210 skips.
+- Remaining semantic gaps: enum declarations are still rejected before metadata
+  exists, `enum_exists()` never reports true for declared, built-in, internal,
+  autoloaded, or namespace/import-aliased enums, exact native `TypeError`
+  objects are not modeled, and native lowering still rejects the builtin call.
+- Next concrete task: add the documented `get_called_class()` boundary before
+  method/static class context exists.
+- Known-good tag: not created; this is a narrow incremental boundary, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add enum_exists boundary"`
+  after the full suite passes.

@@ -117,7 +117,7 @@ subset:
   `in_array` and `array_search` including strict scalar searches,
   `get_class($object)`, `is_object($value)`, `get_debug_type($value)`,
   `class_exists($name[, $autoload])`, `interface_exists($name[, $autoload])`,
-  `trait_exists($name[, $autoload])`, and
+  `trait_exists($name[, $autoload])`, `enum_exists($name[, $autoload])`, and
   `property_exists($object_or_class, $property)` and
   `method_exists($object_or_class, $method)` and
   `get_class_methods($object_or_class)` and
@@ -181,6 +181,9 @@ metadata is not represented yet, and does not trigger autoloading.
 `trait_exists($name[, $autoload])` accepts the same string-name and boolean
 autoload boundary, returns false for all supported calls because trait metadata
 is not represented yet, and does not trigger autoloading.
+`enum_exists($name[, $autoload])` accepts the same string-name and boolean
+autoload boundary, returns false for all supported calls because enum metadata
+is not represented yet, and does not trigger autoloading.
 `property_exists($object_or_class, $property)` accepts current object values or
 string class names, uses case-sensitive declared property names, reports
 declared public/protected/private and static properties, and returns false for
@@ -223,8 +226,8 @@ declarations, static property storage, static method dispatch, magic static
 receivers such as `self::`, `parent::`, and `static::`, class constants, trait
 use inside classes, enum declarations, built-in/internal/extension classes in
 `get_declared_classes()`, true results from `interface_exists()`,
-true results from `trait_exists()`, declared/built-in/internal interface entries
-in `get_declared_interfaces()`,
+true results from `trait_exists()`, true results from `enum_exists()`,
+declared/built-in/internal interface entries in `get_declared_interfaces()`,
 declared/built-in/internal trait entries in
 `get_declared_traits()`, non-public/context-sensitive method listing for
 `get_class_methods()`, inherited/trait/interface methods, anonymous classes,

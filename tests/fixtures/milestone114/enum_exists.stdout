@@ -1,0 +1,5 @@
+class:not-enum
+missing:not-enum
+missing:false-autoload
+dynamic:not-enum
+

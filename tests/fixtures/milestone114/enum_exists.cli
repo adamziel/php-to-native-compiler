@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+class:not-enum
+missing:not-enum
+missing:false-autoload
+dynamic:not-enum
+--- stdout end ---
+stderr:
+--- stderr end ---

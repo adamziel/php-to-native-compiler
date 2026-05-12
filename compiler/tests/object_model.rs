@@ -399,6 +399,55 @@ fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn enum_exists_reports_false_for_current_no_enum_model() {
+    let source = r#"<?php
+class Box {}
+
+if (!enum_exists("Box")) {
+    echo "class:not-enum\n";
+}
+if (!enum_exists("Missing")) {
+    echo "missing:not-enum\n";
+}
+if (!enum_exists("Missing", false)) {
+    echo "missing:false-autoload\n";
+}
+$call = "enum_exists";
+if (!$call("Box", true)) {
+    echo "dynamic:not-enum\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "class:not-enum\nmissing:not-enum\nmissing:false-autoload\ndynamic:not-enum\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
+    let name_error = runtime_error("<?php\nvar_dump(enum_exists(42));\n");
+
+    assert_eq!(name_error.line, 2);
+    assert_eq!(name_error.column, 10);
+    assert_eq!(
+        name_error.message,
+        "unsupported call enum_exists(): enum name argument must be string, got int"
+    );
+
+    let autoload_error = runtime_error("<?php\nvar_dump(enum_exists(\"Box\", 1));\n");
+
+    assert_eq!(autoload_error.line, 2);
+    assert_eq!(autoload_error.column, 10);
+    assert_eq!(
+        autoload_error.message,
+        "unsupported call enum_exists(): autoload argument must be bool in the current subset, got int"
+    );
+}
+
+#[test]
 fn property_exists_checks_declared_property_metadata() {
     let source = r#"<?php
 class Box {
@@ -1022,6 +1071,18 @@ fn emit_ir_rejects_interface_exists_until_native_object_lowering_exists() {
 #[test]
 fn emit_ir_rejects_trait_exists_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho trait_exists(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_enum_exists_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho enum_exists(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
