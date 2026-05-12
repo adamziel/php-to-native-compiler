@@ -774,3 +774,19 @@ handled.
   coverage, documentation, and explicit gaps for trait declarations/use,
   method/class/trait context tracking, namespaces, eval/include source mapping,
   canonical PHP behavior, and native lowering.
+
+## Milestone 79: Magic Constant Namespace Boundary
+
+- [x] Define the next honest `__NAMESPACE__` path before executable
+  namespace-context magic constant evaluation exists, including parser
+  coverage, fixture CLI coverage, documentation, and explicit gaps for
+  namespace declarations/imports, namespace-aware name resolution,
+  eval/include source mapping, canonical PHP behavior, and native lowering.
+
+## Milestone 80: Trait Declaration Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported `trait` declarations
+  before trait parsing or trait use execution exists, including parser
+  coverage, fixture CLI coverage, documentation, and named gaps for trait
+  methods/properties/constants, conflict resolution, aliases, visibility
+  changes, namespace-aware traits, and native lowering.

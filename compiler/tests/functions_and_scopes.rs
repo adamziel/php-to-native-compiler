@@ -574,30 +574,19 @@ fn emit_ir_rejects_magic_function_until_native_source_mapping_exists() {
 }
 
 #[test]
-fn magic_constants_except_line_file_dir_and_function_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
+fn magic_namespace_constant_is_rejected_until_namespace_resolution_exists() {
+    let error = parse_error(
+        r#"<?php
 echo __NAMESPACE__;
 "#,
-            2,
-            6,
-            "__NAMESPACE__",
-        ),
-    ];
+    );
 
-    for (source, line, column, magic_name) in cases {
-        let error = parse_error(source);
-
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            format!(
-                "unsupported magic constant {magic_name}: source-aware magic constant evaluation is not implemented"
-            )
-        );
-    }
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported magic constant __NAMESPACE__: namespace context evaluation requires namespace-aware name resolution, which is not implemented"
+    );
 }
 
 #[test]

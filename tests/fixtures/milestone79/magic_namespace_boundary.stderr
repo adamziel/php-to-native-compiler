@@ -1,0 +1,2 @@
+parse error at 2:6: unsupported magic constant __NAMESPACE__: namespace context evaluation requires namespace-aware name resolution, which is not implemented
+

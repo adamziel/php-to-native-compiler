@@ -649,9 +649,8 @@
   a stable parse diagnostic tied to the current missing class-context tracking
   boundary. `__TRAIT__` fails with a stable parse diagnostic tied to the
   current missing trait declaration/use and trait-context tracking boundary.
-  Other magic constants such as `__NAMESPACE__` fail with stable parse
-  diagnostics before their source/context-aware evaluation exists. Nullable,
-  union, and intersection
+  `__NAMESPACE__` fails with a stable parse diagnostic tied to the current
+  missing namespace-aware name-resolution boundary. Nullable, union, and intersection
   types, `mixed`, `void`/`never`, class/interface type names, coercive versus
   strict typing, variance, static local initialization expressions,
   per-function persistence, recursion/reentrancy behavior, canonical absolute
@@ -1175,8 +1174,8 @@
   implemented, and `__CLASS__` specifically fails because class-context
   tracking is not implemented. `__TRAIT__` specifically fails because trait
   declarations, trait use, and trait-context tracking are not implemented,
-  while the remaining unsupported magic constants fail before namespace
-  context or native lowering exists.
+  and `__NAMESPACE__` specifically fails because namespace-aware name
+  resolution is not implemented.
   `__FUNCTION__` is limited to user-function context and the top-level empty
   string behavior; closure context is not implemented. `__FILE__` currently
   reports the `phpc run` input path string, and `__DIR__` derives from that

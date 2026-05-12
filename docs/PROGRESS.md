@@ -2383,7 +2383,12 @@ Still fails:
   the current missing trait declaration/use and trait-context tracking path,
   plus fixture and CLI snapshot coverage. `__TRAIT__` remains unsupported until
   trait-context magic constant evaluation exists.
+- Tightened the `__NAMESPACE__` boundary with a stable parse diagnostic tied
+  to the current missing namespace-aware name-resolution path, plus fixture and
+  CLI snapshot coverage. `__NAMESPACE__` remains unsupported until namespace
+  context magic constant evaluation exists.
 
 Next:
 
-- Continue with the next unchecked item in `docs/NEXT_TASKS.md`.
+- Add explicit parse diagnostics for unsupported `trait` declarations before
+  trait parsing or trait use execution exists.

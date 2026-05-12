@@ -7802,3 +7802,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T17:52:23Z
 
 - Post-round 27 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T17:52:32Z
+
+- Starting round 28 at 20260512T175232Z from HEAD `4a9bed5`.
+
+## Loop Event 2026-05-12T17:52:40Z
+
+- Pre-round 28 test exit code: `0`.
+
+## Loop Event 2026-05-12T17:57:11Z
+
+- Task attempted: completed Milestone 79 by tightening the `__NAMESPACE__`
+  magic constant boundary. The parser now reports a stable diagnostic tied to
+  missing namespace-aware name resolution instead of the generic
+  source-aware magic-constant fallback. Added parser coverage, fixture
+  coverage, `phpc run` CLI snapshot coverage, support/progress docs, a new
+  changelog entry, and a new unchecked Milestone 80 queue item for trait
+  declaration diagnostics.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone79/magic_namespace_boundary.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test functions_and_scopes
+  magic_namespace_constant_is_rejected_until_namespace_resolution_exists`
+  passed; `cargo test -p phpc --test magic_constants_cli` passed; `cargo run
+  -p phpc -- test tests/fixtures/milestone79` passed; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone79` passed with 1 `.phpc-only`
+  skip; direct `cargo run -p phpc -- run
+  tests/fixtures/milestone79/magic_namespace_boundary.php` exited `1` with
+  the expected stable parse diagnostic; `cargo fmt -- --check` passed;
+  `tools/run-tests.sh` passed with 266 fixtures, 106 system PHP comparisons,
+  and 160 skips.
+- Remaining semantic gaps: `__NAMESPACE__` remains unsupported until namespace
+  declarations/imports and namespace-aware name resolution exist. Namespace
+  blocks, imports, namespace-qualified constants/classes/functions,
+  eval/include source mapping, canonical PHP behavior, exact PHP error
+  objects, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported `trait`
+  declarations before trait parsing or trait use execution exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: tighten __NAMESPACE__ magic constant boundary"`
+  after the full suite passes.
