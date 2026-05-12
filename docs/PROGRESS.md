@@ -2594,6 +2594,14 @@ Still fails:
   interfaces, aliases/imports, namespace-aware names, references/copy-on-write,
   exact native ordering and `TypeError` behavior, and native lowering remain
   unsupported.
+- Added `get_declared_interfaces()` as an explicit empty-interface-table
+  boundary. The supported slice returns an empty zero-indexed array because
+  interface declarations and internal interface metadata are not represented
+  yet, works through string-valued dynamic calls, has fixture CLI coverage plus
+  arity coverage, and rejects native lowering through the current function-call
+  boundary. Declared interfaces, built-in/internal interfaces, autoloading,
+  namespaces/import aliases, exact native ordering, and native lowering remain
+  unsupported.
 
 Next:
 

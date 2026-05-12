@@ -1,0 +1,1 @@
+phpc only: system PHP reports built-in/internal interfaces, while this compiler currently has no interface metadata.

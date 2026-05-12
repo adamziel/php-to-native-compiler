@@ -1045,3 +1045,12 @@ handled.
   CLI coverage, documentation, and explicit gaps for dynamic properties,
   visibility context, references/copy-on-write, inheritance, traits,
   aliases/imports, exact native ordering, and native lowering.
+
+## Milestone 110: Declared Interface List Boundary
+
+- [x] Add the next honest `get_declared_interfaces()` boundary over the current
+  no-interface metadata model: either a stable unsupported diagnostic or a
+  narrow executable empty-list slice with string-valued dynamic-call coverage,
+  arity diagnostics, fixture CLI coverage, documentation, and explicit gaps
+  for declared interfaces, built-in/internal interfaces, autoloading,
+  namespaces/import aliases, exact native ordering, and native lowering.

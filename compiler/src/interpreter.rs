@@ -2022,6 +2022,10 @@ impl Interpreter {
                 }
                 Ok(Value::Array(classes))
             }
+            "get_declared_interfaces" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Array(PhpArray::new()))
+            }
             "property_exists" => match args.as_slice() {
                 [object_or_class, Value::String(property_name)] => {
                     let exists = match object_or_class {
@@ -3064,6 +3068,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_debug_type"
             | "class_exists"
             | "get_declared_classes"
+            | "get_declared_interfaces"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"

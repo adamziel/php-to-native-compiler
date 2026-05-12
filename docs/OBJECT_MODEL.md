@@ -124,6 +124,8 @@ metadata lookup has native support. `get_class_vars` is rejected through the
 same function-call boundary until property-list metadata lookup has native
 support. `get_object_vars` is rejected through the same function-call boundary
 until object property value extraction has native support.
+`get_declared_interfaces` is rejected through that function-call boundary until
+interface metadata lookup has native support.
 
 ## Unsupported Edge Cases
 
@@ -148,5 +150,7 @@ context-sensitive method listing, `get_class_vars` property defaults,
 inheritance/trait/interface properties, context-sensitive visibility, object
 inputs, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
+`get_declared_interfaces` declared interface metadata and built-in/internal
+interface entries,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `get_declared_interfaces()` as an empty interface-list boundary for
+  the current no-interface metadata model, with runtime coverage, fixture
+  coverage, dynamic-call coverage, and a `phpc run` CLI snapshot.
 - Added `get_parent_class($object_or_class)` as a no-inheritance metadata
   boundary that accepts current object/declared-string inputs, returns false
   until parent metadata exists, and has runtime, fixture, and CLI snapshot

@@ -9510,3 +9510,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T20:55:33Z
 
 - Post-round 58 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T20:55:52Z
+
+- Starting round 59 at 20260512T205552Z from HEAD `c9cbace`.
+
+## Loop Event 2026-05-12T20:56:04Z
+
+- Pre-round 59 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:37:02Z
+
+- Starting round 1 at 20260512T213702Z from HEAD `c9cbace`.
+
+## Loop Event 2026-05-12T21:37:36Z
+
+- Pre-round 1 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:38:32Z
+
+- Task attempted: completed the in-flight `get_declared_interfaces()`
+  boundary over the current no-interface metadata model. The supported slice
+  returns an empty zero-indexed array, works through string-valued dynamic
+  calls, has arity coverage, has fixture and CLI snapshot coverage, documents
+  named unsupported interface gaps, and rejects native lowering through the
+  existing function-call boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone110/get_declared_interfaces.*`, `README.md`,
+  `CHANGELOG.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  get_declared_interfaces -- --nocapture` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli -- --nocapture` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone110` passed; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone110` passed with 1
+  `.phpc-only` skip; `cargo run -p phpc -- run
+  tests/fixtures/milestone110/get_declared_interfaces.php` printed the
+  committed empty-list output; `tools/run-tests.sh` passed with 321 fixtures,
+  118 system PHP comparisons, and 203 skips.
+- Remaining semantic gaps: interface declarations are still rejected before
+  metadata exists, and `get_declared_interfaces()` does not report
+  declared/built-in/internal interfaces, autoloaded interfaces,
+  namespace/import aliases, exact native ordering, or native-lowered results.
+- Next concrete task: continue with the next small documented object/class
+  metadata or value introspection boundary that can be completed with
+  executable behavior, tests, CLI coverage, and named unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add get_declared_interfaces boundary"`
+  after the full suite passes.
