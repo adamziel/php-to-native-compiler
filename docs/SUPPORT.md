@@ -195,10 +195,10 @@
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
 - explicit parse diagnostics for unsupported object/class syntax: nested class
-  declarations, inheritance, interface implementation, trait declarations,
-  typed/default/multiple property declarations, anonymous class expressions,
-  method calls, dynamic property names, static property access, static method
-  calls, and class constant access
+  declarations, inheritance, interface declarations and implementation, trait
+  declarations, typed/default/multiple property declarations, anonymous class
+  expressions, method calls, dynamic property names, static property access,
+  static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -1070,9 +1070,10 @@
   not implemented.
 - Object/class gaps: nested and conditional class declarations, method calls,
   `$this`, constructor execution, constructor arguments, inheritance,
-  interfaces, trait declarations, trait methods/properties/constants, trait
-  conflict resolution, aliases, visibility changes, namespace-aware traits,
-  abstract/final/readonly modifiers, typed properties,
+  interface declarations, interface constants, interface method signatures,
+  interface inheritance, namespace-aware interfaces, trait declarations, trait
+  methods/properties/constants, trait conflict resolution, aliases, visibility
+  changes, namespace-aware traits, abstract/final/readonly modifiers, typed properties,
   property defaults, multiple properties in one declaration, constants, static
   property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
@@ -1150,8 +1151,10 @@
   direct variable
 - constructor execution and constructor arguments for `new ClassName()`
 - unsupported class forms including nested/conditional declarations,
-  inheritance, interface implementation, typed properties, property defaults,
-  multiple properties in one declaration, constants, and anonymous classes
+  inheritance, interface declarations and implementation, interface constants,
+  interface method signatures, interface inheritance, typed properties,
+  property defaults, multiple properties in one declaration, constants, and
+  anonymous classes
 - static property access, static method calls, and class constant access through
   `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex

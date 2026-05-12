@@ -2392,8 +2392,13 @@ Still fails:
   parsing or trait use execution exists. Trait methods, properties, constants,
   conflict resolution, aliases, visibility changes, namespace-aware traits, and
   native lowering remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture coverage,
+  and `phpc run` CLI snapshot for unsupported `interface` declarations before
+  interface parsing or implementation execution exists. Interface constants,
+  method signatures, inheritance, namespace-aware interfaces,
+  class/interface type names, and native lowering remain unsupported.
 
 Next:
 
-- Add explicit parse diagnostics for unsupported `interface` declarations before
-  interface parsing or implementation execution exists.
+- Add explicit parse diagnostics for unsupported `enum` declarations before
+  enum parsing or case/value execution exists.

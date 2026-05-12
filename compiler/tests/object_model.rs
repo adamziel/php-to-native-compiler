@@ -321,6 +321,16 @@ trait Logs {
         ),
         (
             r#"<?php
+interface Logger {
+    public function write($message);
+}
+"#,
+            2,
+            1,
+            "unsupported interface declaration: interface parsing and implementation execution are not implemented",
+        ),
+        (
+            r#"<?php
 if (true) {
     trait NestedTrait {}
 }
@@ -328,6 +338,16 @@ if (true) {
             3,
             5,
             "unsupported trait declaration: trait parsing and trait use execution are not implemented",
+        ),
+        (
+            r#"<?php
+if (true) {
+    interface NestedLogger {}
+}
+"#,
+            3,
+            5,
+            "unsupported interface declaration: interface parsing and implementation execution are not implemented",
         ),
         (
             r#"<?php

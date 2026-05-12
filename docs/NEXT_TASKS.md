@@ -793,8 +793,15 @@ handled.
 
 ## Milestone 81: Interface Declaration Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported `interface` declarations
+- [x] Add explicit parse diagnostics for unsupported `interface` declarations
   before interface parsing or implementation execution exists, including parser
   coverage, fixture CLI coverage, documentation, and named gaps for interface
   constants, method signatures, inheritance, namespace-aware interfaces,
   class/interface type names, and native lowering.
+
+## Milestone 82: Enum Declaration Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported `enum` declarations before
+  enum parsing or case/value execution exists, including parser coverage,
+  fixture CLI coverage, documentation, and named gaps for backed enums, unit
+  enums, methods, interfaces, namespace-aware enums, and native lowering.

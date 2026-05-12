@@ -7909,3 +7909,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T18:05:38Z
 
 - Post-round 29 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T18:05:45Z
+
+- Starting round 30 at 20260512T180545Z from HEAD `0653825`.
+
+## Loop Event 2026-05-12T18:05:52Z
+
+- Pre-round 30 test exit code: `0`.
+
+## Loop Event 2026-05-12T18:10:09Z
+
+- Task attempted: completed Milestone 81 by adding an explicit unsupported
+  `interface` declaration boundary. The lexer now reserves `interface`, the
+  parser rejects top-level and nested interface declarations with a stable parse
+  diagnostic before interface parsing or implementation execution exists, and
+  unsupported object/class coverage includes a committed `phpc run` CLI
+  snapshot.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_interface_declaration.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 9 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 9 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_interface_declaration.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt -- --check`
+  passed; `tools/run-tests.sh` passed with 268 fixtures, 106 system PHP
+  comparisons, and 162 skips.
+- Remaining semantic gaps: interface declarations, interface constants,
+  interface method signatures, interface inheritance, class implementation
+  execution, namespace-aware interfaces, class/interface type names, exact PHP
+  parse/error objects, and native lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported `enum`
+  declarations before enum parsing or case/value execution exists.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject interface declarations"`
+  after the full suite passes.
