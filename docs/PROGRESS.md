@@ -418,6 +418,11 @@ Implemented:
   `constant`, has fixture and CLI coverage, keeps unknown constant names and
   non-string names on stable runtime diagnostics, and still rejects native
   lowering through the current function-call codegen boundary.
+- Added an explicit `define(...)` boundary before user-defined constants are
+  executable. Direct calls and string-valued dynamic calls to `define` now
+  reach a stable unsupported-call runtime diagnostic, fixture and CLI coverage
+  record the exit behavior, and direct `define(...)` calls reject native
+  lowering explicitly.
 - Added `array_map($callback, $array)` support for the first mapping slice over
   the current ordered array value model. The supported slice accepts callbacks
   that evaluate to string-valued user-function or callable-builtin names,
@@ -2163,10 +2168,11 @@ Still fails:
   namespace-aware native lowering are not implemented.
 - Global constant resolution is limited to exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`; `constant(...)` lookup is
-  limited to those exact string names. Other built-in constants, user-defined
-  constants, extension constants, namespace-qualified constants, class
-  constants through `constant()`, and native lowering for constants are not
-  implemented.
+  limited to those exact string names. `define(...)` is reserved as a stable
+  unsupported runtime boundary. Other built-in constants, executable
+  user-defined constants, case-insensitive legacy constants, extension
+  constants, namespace-qualified constants, class constants through
+  `constant()`, and native lowering for constants are not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
@@ -2182,5 +2188,5 @@ Still fails:
 
 Next:
 
-- Add an explicit `define(...)` boundary before user-defined constants can be
-  created at runtime.
+- Implement a first runtime-defined constant table for `define($name, $value)`
+  and `constant($name)` over a narrow value/name subset.

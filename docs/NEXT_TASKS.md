@@ -617,7 +617,16 @@ handled.
 
 ## Milestone 60: User Constant Definition Boundary
 
-- [ ] Add an explicit `define(...)` boundary before user-defined constants are
+- [x] Add an explicit `define(...)` boundary before user-defined constants are
   executable, including parser/runtime tests, fixture CLI coverage,
   documentation, and named gaps for runtime-defined constants, case-insensitive
   legacy constants, namespaces, extension constants, and native lowering.
+
+## Milestone 61: User Constant Definition Slice
+
+- [ ] Implement a first runtime-defined constant table for
+  `define($name, $value)` and `constant($name)` over a narrow string-name and
+  scalar/array value subset, including duplicate-definition diagnostics,
+  fixture CLI coverage, documentation, and explicit gaps for bare user
+  constants, case-insensitive legacy constants, namespaces, extension
+  constants, class constants, references/copy-on-write, and native lowering.

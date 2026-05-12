@@ -6634,3 +6634,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T14:26:58Z
 
 - Post-round 8 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T14:27:05Z
+
+- Starting round 9 at 20260512T142705Z from HEAD `0eaf9b4`.
+
+## Loop Event 2026-05-12T14:27:12Z
+
+- Pre-round 9 test exit code: `0`.
+
+## Loop Event 2026-05-12T14:37:33Z
+
+- Task attempted: added the Milestone 60 `define(...)` boundary before
+  user-defined constants are executable. Direct calls and string-valued dynamic
+  calls to `define` now resolve to a stable unsupported-call runtime
+  diagnostic, and direct `define(...)` calls get a specific LLVM IR rejection.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/runtime_errors/define_unsupported.php`,
+  `tests/fixtures/runtime_errors/define_unsupported.stderr`,
+  `tests/fixtures/runtime_errors/define_unsupported.exit`,
+  `tests/fixtures/runtime_errors/define_unsupported.phpc-only`,
+  `tests/fixtures/runtime_errors/define_unsupported.cli`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo fmt -- --check` passed;
+  `cargo test -p phpc --test dynamic_features` passed with 17 tests;
+  `cargo test -p phpc --test runtime_error_cli` initially failed while the
+  fixture still referenced a bare `APP_NAME` constant, which the parser
+  rejected before runtime; after narrowing the fixture to the `define(...)`
+  call, `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` initially failed
+  for the same fixture issue and then passed with 106 fixtures; `cargo run -p
+  phpc -- run tests/fixtures/runtime_errors/define_unsupported.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 238
+  fixtures, 97 system PHP comparisons, and 141 `.phpc-only` skips.
+- Remaining semantic gaps: `define(...)` does not create runtime constants.
+  Bare user constants, runtime-defined constant storage, duplicate definition
+  behavior, case-insensitive legacy constants, namespace-qualified constants,
+  extension constants, class constants, references/copy-on-write interactions,
+  and native constant lowering are unsupported.
+- Next concrete task: implement a first runtime-defined constant table for
+  `define($name, $value)` and `constant($name)` over a narrow value/name
+  subset.
+- Checkpoint: pending `tools/checkpoint.sh "dynamic: add define boundary"`
+  after the full suite passes.

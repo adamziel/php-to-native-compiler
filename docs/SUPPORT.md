@@ -60,6 +60,9 @@
 - exact uppercase built-in global constants `ARRAY_FILTER_USE_KEY` and
   `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`; `constant`
   resolves those same exact string names
+- an explicit runtime boundary for `define(...)`: direct calls and
+  string-valued dynamic calls to `define` with the current arity shape fail
+  with a stable unsupported-call diagnostic instead of creating user constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -89,8 +92,9 @@
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, non-numeric string arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
-  `constant` names and non-string `constant` name arguments, unsupported array
-  keys, undefined array keys, invalid array access including non-array
+  `constant` names and non-string `constant` name arguments, unsupported
+  `define()` user-constant definitions, unsupported array keys, undefined
+  array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
   `empty` operands, non-array `array_key_first`/`array_key_last` operands,
   non-array `array_is_list` operands, non-array `array_reverse` operands,
@@ -495,9 +499,10 @@
   mode yet. Representative runtime errors are covered by committed `phpc run`
   CLI snapshots that record exit code, stdout, and stderr for undefined
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
-  unsupported array keys, undefined array keys, invalid `array_key_exists`
-  keys, non-array `array_key_exists` operands, non-array `array_key_first`
-  or `array_key_last` operands, non-array `array_is_list` operands,
+  unsupported `define()` user-constant definitions, unsupported array keys,
+  undefined array keys, invalid `array_key_exists` keys, non-array
+  `array_key_exists` operands, non-array `array_key_first` or
+  `array_key_last` operands, non-array `array_is_list` operands,
   non-array `array_values` operands, non-array
   `array_keys` operands, unsupported `array_keys` search-value comparisons,
   non-bool `array_keys` strict-mode flag values,
@@ -548,7 +553,8 @@
   arrays, array indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
-  and object property writes are rejected with explicit codegen errors.
+  object property writes, and `define(...)` constant definitions are rejected
+  with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -557,14 +563,16 @@
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
-  `array_pad`, `array_merge`, `array_replace`, `array_combine`,
+  `array_pad`, `array_merge`, `array_replace`, `array_combine`, `constant`,
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `var_dump`, or `print_r`.
-  Unresolved names fail with a stable undefined-function runtime error, and
-  non-string callees fail with a stable unsupported-call runtime error. Required
-  parameters and trailing default parameter values are supported. Defaults may
+  The reserved `define` name resolves to an unsupported runtime boundary rather
+  than creating user constants. Unresolved names fail with a stable
+  undefined-function runtime error, and non-string callees fail with a stable
+  unsupported-call runtime error. Required parameters and trailing default
+  parameter values are supported. Defaults may
   use the current constant-expression subset: `null`, booleans, integers,
   floats, strings, short and long arrays with supported keys, unary
   expressions, and binary expressions over those values. Omitted arguments bind
@@ -873,6 +881,9 @@
   `constant("ARRAY_FILTER_USE_KEY")` and
   `constant("ARRAY_FILTER_USE_BOTH")` resolve to the same integer values and
   may also be used as mode expressions.
+  Direct calls to `define(...)`, and string-valued dynamic calls to `define`,
+  are reserved as an explicit unsupported runtime boundary; they do not create
+  constants in the current subset.
   Array/object callables, closures, first-class callables, method calls,
   integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
   `false`, references,
@@ -1164,9 +1175,10 @@
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - global constant resolution outside exact uppercase `ARRAY_FILTER_USE_KEY`
   and `ARRAY_FILTER_USE_BOTH`; `constant(...)` lookup outside those exact
-  string names; user-defined constants, extension constants,
-  namespace-qualified constants, `constant()` lookup for class constants, and
-  native lowering remain unsupported
+  string names; executable user-defined constants through `define(...)`,
+  case-insensitive legacy constants, extension constants, namespace-qualified
+  constants, `constant()` lookup for class constants, and native lowering
+  remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
 - closures and arrow functions

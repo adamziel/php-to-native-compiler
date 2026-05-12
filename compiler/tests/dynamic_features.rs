@@ -404,6 +404,39 @@ echo constant(42);
 }
 
 #[test]
+fn define_builtin_is_an_explicit_user_constant_boundary() {
+    let error = runtime_error(
+        r#"<?php
+define("APP_NAME", "compiler");
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call define(): runtime-defined constants are not implemented in the current subset"
+    );
+}
+
+#[test]
+fn dynamic_define_call_uses_the_same_user_constant_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$call = "define";
+$call("APP_NAME", "compiler");
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call define(): runtime-defined constants are not implemented in the current subset"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_constant_lookup_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\necho constant(\"ARRAY_FILTER_USE_KEY\");\n").unwrap_err();
 
@@ -413,4 +446,12 @@ fn emit_ir_rejects_constant_lookup_until_native_lowering_exists() {
         "{}",
         error.message
     );
+}
+
+#[test]
+fn emit_ir_rejects_define_until_user_constant_lowering_exists() {
+    let error = emit_ir_source("<?php\ndefine(\"APP_NAME\", \"compiler\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(error.message.contains("define()"), "{}", error.message);
 }

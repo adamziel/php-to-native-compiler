@@ -191,6 +191,12 @@ impl LlvmGenerator {
                     format!("variable '${name}' is not known in LLVM lowering"),
                 )
             }),
+            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("define") => {
+                Err(self.unsupported(
+                    *span,
+                    "define() user-defined constants are not implemented by phpc run or LLVM IR emission yet",
+                ))
+            }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 "function calls are supported by phpc run but not LLVM IR emission yet",

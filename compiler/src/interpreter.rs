@@ -871,6 +871,26 @@ impl Interpreter {
 
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
+            "define" => {
+                if !(2..=3).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "define()",
+                            ArityExpectation::Between { min: 2, max: 3 },
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "define()",
+                        "runtime-defined constants are not implemented in the current subset",
+                    ),
+                ))
+            }
             "strlen" => {
                 expect_arity(name, &args, 1, span)?;
                 if matches!(&args[0], Value::Array(_)) {
@@ -2376,7 +2396,8 @@ impl From<RuntimeError> for Diagnostic {
 fn is_builtin(name: &str) -> bool {
     matches!(
         name,
-        "strlen"
+        "define"
+            | "strlen"
             | "count"
             | "constant"
             | "array_key_exists"

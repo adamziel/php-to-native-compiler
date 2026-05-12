@@ -56,7 +56,8 @@ subset:
   written by static property name and checked with `isset($object->name)`
 - narrow built-in global constant resolution for exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`, including
-  `constant(...)` lookup for those exact string names
+  `constant(...)` lookup for those exact string names; `define(...)` is an
+  explicit unsupported runtime boundary and does not create user constants yet
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -107,8 +108,8 @@ subset:
   and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
-  `global` declarations, invalid `break`/`continue` outside a loop, and runaway
-  recursion
+  `global` declarations, unsupported `define(...)` constant definitions,
+  invalid `break`/`continue` outside a loop, and runaway recursion
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
