@@ -8536,3 +8536,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Checkpoint: pending
   `tools/checkpoint.sh "parser: reject unsupported instanceof expressions"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T19:17:04Z
+
+- Codex round 41 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T191109Z-41.log`.
+
+## Loop Event 2026-05-12T19:17:13Z
+
+- Post-round 41 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:17:13Z
+
+- Post-round 41 tests passed; running checkpoint for this round.
