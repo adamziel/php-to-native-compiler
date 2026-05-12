@@ -1,0 +1,2 @@
+parse error at 2:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented
+

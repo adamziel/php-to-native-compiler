@@ -43,6 +43,11 @@ impl Parser {
             TokenKind::Interface => self.parse_unsupported_interface_declaration(),
             TokenKind::Trait => self.parse_unsupported_trait_declaration(),
             TokenKind::Enum => self.parse_unsupported_enum_declaration(),
+            TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
+                if matches!(self.peek_next().kind, TokenKind::Class) =>
+            {
+                self.parse_unsupported_class_modifier_declaration()
+            }
             TokenKind::Namespace => self.parse_unsupported_namespace(),
             TokenKind::Use => self.parse_unsupported_use(),
             TokenKind::Declare => self.parse_unsupported_declare(),
@@ -228,6 +233,11 @@ impl Parser {
             .consume_keyword(TokenKind::Enum, "expected 'enum'")?
             .span;
         Err(self.error_at(span, unsupported_enum_declaration_message()))
+    }
+
+    fn parse_unsupported_class_modifier_declaration(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_class_modifier_declaration_message()))
     }
 
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
@@ -694,6 +704,12 @@ impl Parser {
                         self.error_at(self.peek().span, unsupported_enum_declaration_message())
                     );
                 }
+                if self.check_unsupported_class_modifier_declaration() {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_class_modifier_declaration_message(),
+                    ));
+                }
                 statements.push(self.parse_statement()?);
             }
             Ok(statements)
@@ -944,6 +960,12 @@ impl Parser {
                     return Err(
                         self.error_at(self.peek().span, unsupported_enum_declaration_message())
                     );
+                }
+                if self.check_unsupported_class_modifier_declaration() {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_class_modifier_declaration_message(),
+                    ));
                 }
                 statements.push(self.parse_statement()?);
             }
@@ -1730,6 +1752,9 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Interface => "interface",
         TokenKind::Trait => "trait",
         TokenKind::Enum => "enum",
+        TokenKind::Abstract => "abstract",
+        TokenKind::Final => "final",
+        TokenKind::Readonly => "readonly",
         TokenKind::New => "new",
         TokenKind::Public => "public",
         TokenKind::Protected => "protected",
@@ -1974,6 +1999,10 @@ fn unsupported_enum_declaration_message() -> &'static str {
     "unsupported enum declaration: enum parsing and case/value execution are not implemented"
 }
 
+fn unsupported_class_modifier_declaration_message() -> &'static str {
+    "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented"
+}
+
 fn unsupported_method_call_message() -> &'static str {
     "unsupported method call: method dispatch is not implemented"
 }
@@ -1992,6 +2021,18 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
         TokenKind::Interface => unsupported_interface_declaration_message().to_string(),
         TokenKind::Trait => unsupported_trait_declaration_message().to_string(),
         TokenKind::Enum => unsupported_enum_declaration_message().to_string(),
+        TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly => {
+            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented".to_string()
+        }
         _ => format!("expected class member, found {}", token_name(kind)),
+    }
+}
+
+impl Parser {
+    fn check_unsupported_class_modifier_declaration(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
+        ) && matches!(self.peek_next().kind, TokenKind::Class)
     }
 }

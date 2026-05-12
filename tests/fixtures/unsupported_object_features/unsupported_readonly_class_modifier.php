@@ -1,0 +1,2 @@
+<?php
+readonly class Value {}

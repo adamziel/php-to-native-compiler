@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_readonly_class_modifier.php:2:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented
+--- stderr end ---

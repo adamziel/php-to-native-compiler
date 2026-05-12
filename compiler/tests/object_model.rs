@@ -341,6 +341,30 @@ enum Status {
         ),
         (
             r#"<?php
+abstract class Base {}
+"#,
+            2,
+            1,
+            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
+        ),
+        (
+            r#"<?php
+final class Leaf {}
+"#,
+            2,
+            1,
+            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
+        ),
+        (
+            r#"<?php
+readonly class Value {}
+"#,
+            2,
+            1,
+            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
+        ),
+        (
+            r#"<?php
 if (true) {
     trait NestedTrait {}
 }
@@ -368,6 +392,16 @@ if (true) {
             3,
             5,
             "unsupported enum declaration: enum parsing and case/value execution are not implemented",
+        ),
+        (
+            r#"<?php
+if (true) {
+    abstract class NestedBase {}
+}
+"#,
+            3,
+            5,
+            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
         ),
         (
             r#"<?php

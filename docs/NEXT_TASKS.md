@@ -808,8 +808,16 @@ handled.
 
 ## Milestone 83: Class Modifier Boundaries
 
-- [ ] Add explicit parse diagnostics for unsupported `abstract`, `final`, and
+- [x] Add explicit parse diagnostics for unsupported `abstract`, `final`, and
   `readonly` class modifiers before modifier-aware class parsing exists,
   including parser coverage, fixture CLI coverage, documentation, and named
   gaps for abstract methods/classes, final inheritance restrictions, readonly
   classes/properties, namespace-aware classes, and native lowering.
+
+## Milestone 84: Class Member Modifier Boundaries
+
+- [ ] Add explicit parse diagnostics for unsupported `abstract`, `final`, and
+  `readonly` class member modifiers before modifier-aware member parsing exists,
+  including parser coverage, fixture CLI coverage, documentation, and named
+  gaps for abstract methods, final methods, readonly properties, property
+  initialization rules, inheritance interactions, and native lowering.

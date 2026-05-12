@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added explicit unsupported `abstract`, `final`, and `readonly` class modifier
+  boundaries with parser regression coverage, fixture coverage, and `phpc run`
+  CLI snapshots.
 - Added an explicit unsupported `enum` declaration boundary with parser
   regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `interface` declaration boundary with parser

@@ -2402,8 +2402,14 @@ Still fails:
   parsing or case/value execution exists. Unit enums, backed enums, cases,
   values, methods, interface implementations, namespace-aware enums, exact PHP
   parse/error objects, and native lowering remain unsupported.
+- Added explicit stable parse diagnostics, parser coverage, fixture coverage,
+  and `phpc run` CLI snapshots for unsupported `abstract`, `final`, and
+  `readonly` class modifiers before modifier-aware class parsing exists.
+  Abstract classes/methods, final inheritance restrictions, readonly
+  classes/properties, namespace-aware classes, exact PHP parse/error objects,
+  and native lowering remain unsupported.
 
 Next:
 
 - Add explicit parse diagnostics for unsupported `abstract`, `final`, and
-  `readonly` class modifiers before modifier-aware class parsing exists.
+  `readonly` class member modifiers before modifier-aware member parsing exists.

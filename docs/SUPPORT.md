@@ -196,9 +196,10 @@
   arguments
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface declarations and implementation, trait
-  declarations, enum declarations, typed/default/multiple property
-  declarations, anonymous class expressions, method calls, dynamic property
-  names, static property access, static method calls, and class constant access
+  declarations, enum declarations, `abstract`/`final`/`readonly` class
+  modifiers, typed/default/multiple property declarations, anonymous class
+  expressions, method calls, dynamic property names, static property access,
+  static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -1075,8 +1076,8 @@
   methods/properties/constants, trait conflict resolution, aliases, visibility
   changes, namespace-aware traits, enum declarations, enum cases, backed enum
   values, enum methods, enum interface implementations, namespace-aware enums,
-  abstract/final/readonly modifiers, typed properties, property defaults,
-  multiple properties in one declaration, constants, static property storage,
+  `abstract`/`final`/`readonly` class modifiers, typed properties, property
+  defaults, multiple properties in one declaration, constants, static property storage,
   late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, non-public property access, static member execution
