@@ -10677,3 +10677,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Known-good tag: not created; this is a narrow null-aware assignment
   follow-up, not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "syntax: add object property null coalescing assignment"`.
+
+## Loop Event 2026-05-12T23:44:43Z
+
+- Codex round 20 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T233702Z-20.log`.
+
+## Loop Event 2026-05-12T23:44:52Z
+
+- Post-round 20 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:44:52Z
+
+- Post-round 20 tests passed; running checkpoint for this round.
