@@ -2511,3 +2511,64 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T02:45:37Z
 
 - Post-round 40 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T02:45:40Z
+
+- Starting round 41 at 20260512T024540Z from HEAD `a24f312`.
+
+## Loop Event 2026-05-12T02:45:42Z
+
+- Pre-round 41 test exit code: `0`.
+
+## Loop Event 2026-05-12T02:52:55Z
+
+- Task attempted: implemented direct `unset($name)` for static variables backed
+  by the active interpreter symbol table. Existing top-level and function-local
+  symbols are removed from the current scope, undefined names are no-ops, later
+  reads reuse the stable undefined-variable diagnostic, and native codegen now
+  rejects variable unset explicitly until symbol-table mutation lowering exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/variable_unset.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone9/variable_unset.php`,
+  `tests/fixtures/milestone9/variable_unset.stdout`,
+  `tests/fixtures/milestone9/variable_unset.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.php`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.stderr`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc
+  interpreter::tests::symbol_table` passed with 4 symbol-table tests; `cargo
+  test -p phpc --test variable_unset` passed with 3 tests; `cargo test -p phpc
+  --test array_mutation_cli` passed; `cargo test -p phpc --test
+  syntax_boundaries` passed with 8 tests; `cargo test -p phpc --test
+  unsupported_syntax_features_cli` passed; `cargo test -p phpc --test
+  milestone1 emit_ir_rejects_variable_unset_until_native_lowering_exists`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone9` passed with 2
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone9` passed with 2 system PHP comparisons; `cargo run
+  -p phpc -- run tests/fixtures/milestone9/variable_unset.php` printed the
+  committed direct variable unset output; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_unset.php` exited `1`
+  with the expected stable parse diagnostic for multiple operands; `cargo run
+  -p phpc -- compile tests/fixtures/milestone9/variable_unset.php --emit-ir`
+  exited `1` with the expected explicit `variable unset` codegen rejection. The
+  first `tools/run-tests.sh` attempt caught a missing fixture newline in
+  `unsupported_unset.stderr`; after repairing that fixture, `tools/run-tests.sh`
+  passed with 107 fixtures, 41 system PHP comparisons, and 66 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `unset` execution is limited to a single direct
+  variable or a single direct array offset on a direct variable. Object property
+  removal, multiple operands, append-offset unset, nested/complex unset
+  operands, dynamic variable names, `$GLOBALS`/superglobal behavior, string
+  offset removal, references, copy-on-write alias effects, exact PHP
+  warning/Error objects, and native lowering remain unsupported.
+- Next concrete task: implement multiple-operand `unset(...)` over the
+  currently supported direct variable and direct array-offset operands,
+  including left-to-right behavior, fixture CLI coverage, documentation, and
+  explicit native-codegen rejection while property, append-offset, and nested
+  unset forms remain unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "unset: add direct variable removal"`
+  after the full suite passes.

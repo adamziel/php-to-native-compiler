@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+value:unset
+missing:empty
+nullable:unset
+local:unset
+global=global
+reassigned=Bea
+--- stdout end ---
+stderr:
+--- stderr end ---

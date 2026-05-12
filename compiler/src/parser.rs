@@ -488,6 +488,14 @@ impl Parser {
         };
 
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                self.advance();
+                self.consume_keyword(TokenKind::Semicolon, "expected ';' after unset")?;
+                return Ok(Stmt::UnsetVariable { name, span });
+            }
+            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                return Err(self.error_at(self.previous().span, unsupported_unset_message()));
+            }
             return Err(self.error_at(target_span, unsupported_unset_message()));
         }
         let bracket_span = self.previous().span;
@@ -1316,7 +1324,7 @@ fn unsupported_long_array_literal_message() -> &'static str {
 }
 
 fn unsupported_unset_message() -> &'static str {
-    "unsupported unset: only direct array offset removal like unset($array[$key]) is implemented; variable, property, multiple, append, and nested unset forms are not implemented"
+    "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented"
 }
 
 fn unsupported_foreach_expression_message() -> &'static str {

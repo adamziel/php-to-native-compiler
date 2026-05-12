@@ -1,3 +1,3 @@
 <?php
-$items = ["name" => "Ada"];
-unset($items);
+$items = ["name" => "Ada", "city" => "Paris"];
+unset($items["name"], $items["city"]);

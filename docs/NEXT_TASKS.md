@@ -152,7 +152,12 @@ handled.
   current integer/string key subset, including missing-key behavior, fixture CLI
   coverage, documentation, and explicit native-codegen rejection while broader
   `unset` forms remain unsupported.
-- [ ] Implement direct `unset($name)` for static variables backed by the current
+- [x] Implement direct `unset($name)` for static variables backed by the current
   symbol table, including undefined-variable no-op behavior, fixture CLI
   coverage, documentation, and explicit native-codegen rejection while property,
   multiple, and nested unset forms remain unsupported.
+- [ ] Implement multiple-operand `unset(...)` over the currently supported
+  direct variable and direct array-offset operands, including left-to-right
+  behavior, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection while property, append-offset, and nested unset forms remain
+  unsupported.

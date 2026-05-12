@@ -95,10 +95,10 @@ Implemented:
   parameters, variadic argument unpacking, references, anonymous functions,
   arrow functions, named arguments, and `declare(strict_types=1)`.
 - Added a materialized interpreter symbol table for top-level and function-local
-  scopes. Current static variable reads, writes, `isset($name)`, parameter
-  binding, default-parameter evaluation, and direct array write materialization
-  now route through named symbol-table APIs without changing static variable
-  behavior.
+  scopes. Current static variable reads, writes, `unset($name)`,
+  `isset($name)`, parameter binding, default-parameter evaluation, and direct
+  array write materialization now route through named symbol-table APIs without
+  changing static variable behavior.
 - Added an explicit stable lex diagnostic, fixture coverage, and `phpc run` CLI
   snapshot for unsupported variable-variable syntax such as `$$name`.
 - Designed the first include/require resolution boundary and added explicit
@@ -208,9 +208,9 @@ Implemented:
   snapshots for unsupported long `array(...)` literal syntax before long array
   literals are implemented.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
-  snapshots for unsupported broader `unset(...)` forms before variable,
-  property, multiple-operand, append-offset, or nested/complex removal is
-  implemented.
+  snapshots for unsupported broader `unset(...)` forms before direct variable
+  removal was implemented. The remaining unsupported forms are property,
+  multiple-operand, append-offset, and nested/complex removal.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run`
   CLI snapshots for unsupported `foreach (...)` syntax before array/object
   iteration is implemented.
@@ -261,6 +261,13 @@ Implemented:
   keys, existing non-array targets fail with a stable invalid-array-access
   runtime diagnostic, broader unset forms remain explicit parse diagnostics,
   and native lowering rejects array-offset unset explicitly.
+- Implemented direct `unset($name)` for static variables backed by the active
+  materialized symbol table. Existing symbols are removed from the current
+  top-level or function-local scope, undefined names are no-ops, later plain
+  reads use the existing undefined-variable diagnostic, fixture CLI coverage
+  records current-scope and local-scope behavior, property/multiple/
+  append-offset/nested unset forms remain explicit parse diagnostics, and
+  native lowering rejects variable unset explicitly.
 
 Tested:
 
@@ -281,7 +288,7 @@ Tested:
 - `cargo test -p phpc --test unsupported_function_features_cli` passes with 1
   CLI snapshot test covering 6 representative unsupported function-feature
   fixtures.
-- `cargo test -p phpc interpreter::tests::symbol_table` passes with 3 focused
+- `cargo test -p phpc interpreter::tests::symbol_table` passes with 4 focused
   symbol-table unit tests.
 - `cargo test -p phpc --test dynamic_features` passes with 9 tests covering
   static symbol-table behavior, dynamic function lookup behavior, and
@@ -315,6 +322,10 @@ Tested:
 - `cargo test -p phpc --test array_unset` passes with direct array-offset
   unset behavior, missing-key no-op behavior, undefined/`null` target no-op
   behavior, append-index preservation, and non-array target diagnostics.
+- `cargo test -p phpc --test variable_unset` passes with direct variable unset
+  behavior, undefined-name no-op behavior, current-scope function-local
+  behavior, reassignment after unset, and the later-read undefined-variable
+  diagnostic.
 - `cargo test -p phpc --test array_mutation_cli` passes with 1 CLI snapshot
   test covering the Milestone 9 array mutation fixtures.
 - `cargo test -p phpc --test array_isset` passes with direct array-offset
@@ -364,9 +375,12 @@ Tested:
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_foreach_key_value_until_native_iteration_lowering_exists`
   passes with rejection coverage for key/value `foreach` before native
   iteration lowering exists.
-- `cargo run -p phpc -- test` passes with 106 fixture tests.
+- `cargo test -p phpc --test milestone1 emit_ir_rejects_variable_unset_until_native_lowering_exists`
+  passes with rejection coverage for direct variable unset before native
+  symbol-table mutation lowering exists.
+- `cargo run -p phpc -- test` passes with 107 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 40 fixtures and skipping 66 `.phpc-only` fixtures.
+  installed, comparing 41 fixtures and skipping 66 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -392,10 +406,10 @@ Tested:
   `foreach` fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone8` passes
   with 2 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone9` passes with 1 array
-  mutation fixture.
+- `cargo run -p phpc -- test tests/fixtures/milestone9` passes with 2 array
+  mutation fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone9` passes
-  with 1 system PHP comparison.
+  with 2 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -521,7 +535,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_long_array_literal.php:2:10: unsupported long array syntax: array(...) literals are not implemented; use short [] literals in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_unset.php`
-  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:7: unsupported unset: only direct array offset removal like unset($array[$key]) is implemented; variable, property, multiple, append, and nested unset forms are not implemented`.
+  exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_unset.php:3:21: unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_foreach.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_syntax_features/unsupported_foreach.php:3:20: unsupported foreach: destructuring loop targets are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_for.php`
@@ -554,6 +568,8 @@ Tested:
   prints the committed key/value ordered array `foreach` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone9/array_unset.php`
   prints the committed direct array-offset `unset` output.
+- `cargo run -p phpc -- run tests/fixtures/milestone9/variable_unset.php`
+  prints the committed direct variable `unset` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/foreach_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/foreach_non_array.php:2:1: invalid foreach: can only iterate arrays in the current subset, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unset_non_array.php`
@@ -606,7 +622,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/runtime_errors/unset_non_array.php --emit-ir`
   exits 1 with an explicit `array offset unset` codegen rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes and now includes optional system PHP comparison.
+- `cargo run -p phpc -- compile tests/fixtures/milestone9/variable_unset.php --emit-ir`
+  exits 1 with an explicit `variable unset` codegen rejection before emitting
+  misleading native code.
+- `tools/run-tests.sh` passes with 107 fixtures, 41 system PHP comparisons,
+  and 66 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -629,9 +649,10 @@ Still fails:
   float string precision.
 - Arrays do not implement long `array(...)` literal execution; direct syntax
   now fails with a stable parse diagnostic before execution. `unset(...)` is
-  limited to single direct array-offset statements on direct variables;
-  variable removal, object property removal, multiple operands, append-offset
-  unset, and nested/complex unset operands fail with stable parse diagnostics.
+  limited to single direct variable statements and single direct array-offset
+  statements on direct variables; object property removal, multiple operands,
+  append-offset unset, and nested/complex unset operands fail with stable parse
+  diagnostics.
   `for (...)` fails with a stable parse diagnostic before C-style loops exist,
   `do ... while` fails with a stable parse diagnostic before post-condition
   loops exist, and `switch (...)` fails with a stable parse diagnostic before
@@ -665,6 +686,9 @@ Still fails:
   not implement strict mode, array/object needles or haystack values,
   references, copy-on-write containers, exact native `TypeError` objects, or
   native lowering for function calls.
+  Direct variable `unset` removes only the current top-level or function-local
+  symbol-table entry; it does not implement dynamic variable names, `$GLOBALS`,
+  superglobal behavior, references, or copy-on-write alias effects.
   Direct array-offset `unset` treats undefined and `null` targets as no-ops
   but does not model PHP's warning for undefined variables; existing non-array
   targets fail with a stable project diagnostic instead of PHP's exact
@@ -735,7 +759,7 @@ Still fails:
 
 Next:
 
-- Implement direct `unset($name)` for static variables backed by the current
-  symbol table, including undefined-variable no-op behavior, fixture CLI
-  coverage, documentation, and explicit native-codegen rejection while property,
-  multiple, and nested unset forms remain unsupported.
+- Implement multiple-operand `unset(...)` over the currently supported direct
+  variable and direct array-offset operands, including left-to-right behavior,
+  fixture CLI coverage, documentation, and explicit native-codegen rejection
+  while property, append-offset, and nested unset forms remain unsupported.

@@ -10,6 +10,8 @@
 - single-quoted and double-quoted string literals with basic escapes
 - `null`, `true`, and `false`
 - static variables backed by per-scope materialized symbol tables
+- direct variable removal: `unset($name)` removes static variables from the
+  current scope and treats undefined names as no-ops
 - assignment statements
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings
@@ -87,7 +89,7 @@
   class names such as `App\fn()` and `new App\Box()`
 - explicit parse diagnostics for unsupported long `array(...)` literal syntax
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
-  current direct array-offset statement subset
+  current direct-variable and direct array-offset statement subset
 - explicit parse diagnostics for unsupported `foreach` by-reference iteration,
   destructuring loop targets, and expression-position `foreach`
 - explicit parse diagnostics for unsupported `for (...)` syntax
@@ -107,10 +109,12 @@
 
 - Variable storage: top-level code and each user-function call use materialized
   symbol tables keyed by variable name. Current static variable reads, writes,
-  `isset($name)`, parameter binding, default-parameter evaluation, and direct
-  array writes route through that symbol table path. Runtime lookup by a value
-  computed from PHP code is not implemented yet, so variable variables still do
-  not execute.
+  direct `unset($name)`, `isset($name)`, parameter binding, default-parameter
+  evaluation, and direct array writes route through that symbol table path.
+  Direct `unset($name)` removes the current-scope symbol and treats missing
+  names as no-ops; later plain reads use the existing undefined-variable
+  diagnostic. Runtime lookup by a value computed from PHP code is not
+  implemented yet, so variable variables still do not execute.
 - Include/require: `include`, `include_once`, `require`, and `require_once`
   are reserved by the lexer/parser and rejected with stable parse diagnostics.
   The planned first executable slice resolves string paths relative to the
@@ -245,9 +249,9 @@
   runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Arrays, array indexing, array
-  assignment, array offset unset, `foreach`, `break`, `continue`, class
-  declarations, object instantiation, object property reads, and object
-  property writes are rejected with explicit codegen errors.
+  assignment, variable unset, array offset unset, `foreach`, `break`,
+  `continue`, class declarations, object instantiation, object property reads,
+  and object property writes are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -352,12 +356,12 @@
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
   are not implemented.
 - Array gaps: long `array(...)` literal syntax, `unset(...)` forms outside
-  single direct array-offset statements, direct `for (...)` syntax, direct
-  `do ... while` syntax, and direct `switch (...)` syntax are rejected with
-  stable parse diagnostics; executing long array literals, variable/property
-  removal, multiple unset operands, append-offset unset, nested/complex unset
-  operands, C-style/post-condition loops, and switch/case control flow is not
-  implemented.
+  single direct variable or direct array-offset statements, direct `for (...)`
+  syntax, direct `do ... while` syntax, and direct `switch (...)` syntax are
+  rejected with stable parse diagnostics; executing long array literals, object
+  property removal, multiple unset operands, append-offset unset,
+  nested/complex unset operands, C-style/post-condition loops, and switch/case
+  control flow is not implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
   `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
   expression, string offset access, by-reference `foreach`, object iteration,
@@ -421,9 +425,9 @@
   by-reference calls
 - long `array(...)` literals; direct syntax is rejected with a stable parse
   diagnostic before execution
-- `unset(...)` forms outside single direct array offsets, including variable
-  removal, object property removal, multiple operands, append-offset unset, and
-  nested/complex operands; these fail with stable parse diagnostics
+- `unset(...)` forms outside single direct variables and direct array offsets,
+  including object property removal, multiple operands, append-offset unset,
+  and nested/complex operands; these fail with stable parse diagnostics
 - by-reference `foreach`, object iteration, destructuring loop targets, and
   expression-form `foreach`
 - `for (...)`; direct syntax is rejected with a stable parse diagnostic before

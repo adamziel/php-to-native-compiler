@@ -52,6 +52,10 @@ pub enum Stmt {
         body: Vec<Stmt>,
         span: Span,
     },
+    UnsetVariable {
+        name: String,
+        span: Span,
+    },
     UnsetArrayIndex {
         name: String,
         index: Expr,

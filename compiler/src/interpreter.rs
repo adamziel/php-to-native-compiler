@@ -69,6 +69,10 @@ impl SymbolTable {
         matches!(self.read_named(name), Some(value) if !matches!(value, Value::Null))
     }
 
+    fn unset_static(&mut self, name: &str) {
+        self.symbols.remove(name);
+    }
+
     fn array_slot_for_static_write(&mut self, name: &str) -> &mut Value {
         self.symbols
             .entry(name.to_string())
@@ -248,6 +252,10 @@ impl Interpreter {
                     }
                 }
 
+                Ok(Flow::Normal)
+            }
+            Stmt::UnsetVariable { name, .. } => {
+                scope.unset_static(name);
                 Ok(Flow::Normal)
             }
             Stmt::UnsetArrayIndex { name, index, span } => {
@@ -1328,6 +1336,19 @@ mod tests {
 
         assert_eq!(symbols.read_static("name", span).unwrap(), Value::Null);
         assert!(!symbols.is_set_static("name"));
+    }
+
+    #[test]
+    fn symbol_table_static_unset_removes_existing_symbol_and_ignores_missing_names() {
+        let mut symbols = SymbolTable::new();
+        let span = Span::new(7, 3);
+
+        symbols.write_static("name", Value::String("Ada".to_string()));
+        symbols.unset_static("name");
+        symbols.unset_static("missing");
+
+        assert!(!symbols.is_set_static("name"));
+        assert!(symbols.read_static("name", span).is_err());
     }
 
     #[test]

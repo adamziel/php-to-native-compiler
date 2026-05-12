@@ -49,14 +49,6 @@ fn unsupported_unset_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
-$value = 1;
-unset($value);
-"#,
-            3,
-            7,
-        ),
-        (
-            r#"<?php
 class Box {
     public $name;
 }
@@ -65,6 +57,15 @@ unset($box->name);
 "#,
             6,
             7,
+        ),
+        (
+            r#"<?php
+$value = 1;
+$other = 2;
+unset($value, $other);
+"#,
+            4,
+            13,
         ),
         (
             r#"<?php
@@ -98,7 +99,7 @@ UNSET($items[]);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported unset: only direct array offset removal like unset($array[$key]) is implemented; variable, property, multiple, append, and nested unset forms are not implemented"
+            "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented"
         );
     }
 }

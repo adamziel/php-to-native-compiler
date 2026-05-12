@@ -1,2 +1,2 @@
-parse error at 3:7: unsupported unset: only direct array offset removal like unset($array[$key]) is implemented; variable, property, multiple, append, and nested unset forms are not implemented
+parse error at 3:21: unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, multiple, append, and nested unset forms are not implemented
 

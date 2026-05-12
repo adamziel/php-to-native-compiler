@@ -33,7 +33,8 @@ subset:
 
 - `echo`
 - integer, float, and string literals
-- static variables and assignment through per-scope symbol tables
+- static variables, assignment, and `unset($name)` through per-scope symbol
+  tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons used by control flow
 - `if` / `else`
@@ -52,6 +53,7 @@ subset:
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
+- direct `unset($name)` for static variables in the current scope
 - direct `unset($array[$key])` for the documented direct array-variable offset
   subset
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
@@ -70,7 +72,8 @@ subset:
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  long `array(...)` literals, unsupported broader `unset(...)` forms,
+  long `array(...)` literals, unsupported broader `unset(...)` forms such as
+  property, multiple-operand, append-offset, and nested unset,
   unsupported `foreach` by-reference/destructuring forms, `for (...)`,
   `do ... while`, `switch (...)`, `break`/`continue` depth arguments, object
   method calls, dynamic property names, anonymous classes, and unsupported

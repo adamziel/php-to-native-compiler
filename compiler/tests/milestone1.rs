@@ -158,6 +158,17 @@ fn emit_ir_rejects_array_offset_unset_until_native_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_variable_unset_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\nunset($value);\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("variable unset"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn emit_ir_rejects_global_declarations_until_scope_imports_exist() {
     let error = emit_ir_source("<?php\nglobal $value;\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
