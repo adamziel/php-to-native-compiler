@@ -79,6 +79,8 @@ subset:
 - direct `empty($name)`, `empty($array[$key])`, and
   `empty($object->publicProperty)` checks for the documented
   variable/array-offset/public-property subset
+- null coalescing `??` for direct static variables and direct array offsets
+  over the current value model
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
   `empty`, `count`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, including loose and strict
@@ -164,7 +166,8 @@ subset:
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
   `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
-  conditional expressions, unsupported null coalescing expressions, object
+  conditional expressions, unsupported null coalescing assignment and chained
+  coalescing forms, object
   method calls, dynamic property names, anonymous classes,
   unsupported class forms, `abstract`/`final`/`readonly` class modifiers,
   unsupported `abstract`/`final`/`readonly` class member modifiers,

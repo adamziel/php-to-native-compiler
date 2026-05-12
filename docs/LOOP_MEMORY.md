@@ -10392,3 +10392,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:05:38Z
 
 - Post-round 15 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:05:48Z
+
+- Starting round 16 at 20260512T230548Z from HEAD `ca2d9ff`.
+
+## Loop Event 2026-05-12T23:06:00Z
+
+- Pre-round 16 test exit code: `0`.
+
+## Loop Event 2026-05-12T23:14:02Z
+
+- Task attempted: implemented the first executable null coalescing `??` slice
+  for direct static variables and direct array-variable offsets over the
+  current value model.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/null_coalescing.rs`, `compiler/tests/null_coalescing_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone125/null_coalescing.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test null_coalescing` passed;
+  `cargo test -p phpc --test null_coalescing_cli` passed; `cargo test -p phpc
+  --test syntax_boundaries unsupported_null_coalescing -- --nocapture` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone125` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone125` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/unsupported_syntax_features` passed with 18
+  fixtures; `tools/run-tests.sh` passed with 348 fixtures, 124 system PHP
+  comparisons, and 224 skips.
+- Remaining semantic gaps: `??` support is limited to direct static variables
+  and direct array-variable offsets. Complex or nested left operands,
+  object-property operands, unparenthesized chained coalescing, precedence
+  interactions beyond the current single-operator slice, `??=` assignment
+  execution, references/copy-on-write, exact native error objects, and native
+  lowering remain unsupported.
+- Next concrete task: implement `??` for direct public object-property operands
+  over the current minimal object value model, or keep that property-offset
+  boundary explicit if the object model is not ready.
+- Known-good tag: not created; this is a narrow expression slice, not a major
+  verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add null coalescing execution slice"`.

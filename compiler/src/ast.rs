@@ -335,4 +335,5 @@ pub enum BinaryOp {
     Le,
     Gt,
     Ge,
+    NullCoalesce,
 }

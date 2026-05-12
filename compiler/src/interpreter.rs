@@ -581,6 +581,9 @@ impl Interpreter {
                 right,
                 span,
             } => {
+                if matches!(op, BinaryOp::NullCoalesce) {
+                    return self.evaluate_null_coalescing(left, right, *span, scope);
+                }
                 let left = self.evaluate(left, scope)?;
                 let right = self.evaluate(right, scope)?;
                 self.apply_binary(*op, left, right, *span)
@@ -768,6 +771,64 @@ impl Interpreter {
                     other.type_name()
                 )),
             )),
+        }
+    }
+
+    fn evaluate_null_coalescing(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = match left {
+            Expr::Variable(name, _) => scope
+                .read_named(name)
+                .cloned()
+                .filter(|value| !matches!(value, Value::Null)),
+            Expr::Index { target, index, .. } => {
+                self.evaluate_direct_array_offset_for_null_coalescing(target, index, scope)?
+            }
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "??",
+                        "left operand must be a direct variable or direct array offset in the current subset",
+                    ),
+                ));
+            }
+        };
+
+        match value {
+            Some(value) => Ok(value),
+            None => self.evaluate(right, scope),
+        }
+    }
+
+    fn evaluate_direct_array_offset_for_null_coalescing(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let Expr::Variable(name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "??",
+                    "left operand must be a direct variable or direct array offset in the current subset",
+                ),
+            ));
+        };
+
+        let key = self.evaluate_array_key(index, scope)?;
+        match scope.read_named(name).cloned() {
+            Some(Value::Array(array)) => Ok(array
+                .get(key)
+                .cloned()
+                .filter(|value| !matches!(value, Value::Null))),
+            Some(_) | None => Ok(None),
         }
     }
 
@@ -3145,6 +3206,7 @@ impl Interpreter {
             BinaryOp::StrictNe => left
                 .php_identical_checked(&right)
                 .map(|identical| Value::Bool(!identical)),
+            BinaryOp::NullCoalesce => unreachable!("null coalescing is evaluated lazily"),
             BinaryOp::Lt => left
                 .php_cmp_checked(&right, Comparison::Lt)
                 .map(Value::Bool),

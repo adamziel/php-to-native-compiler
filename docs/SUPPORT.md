@@ -96,6 +96,11 @@
   `empty($object->publicProperty)` for direct variables, direct array-variable
   offset operands, and direct object-variable public-property operands over
   the current value model
+- null coalescing `??` for direct static variables and direct array-variable
+  offset operands over the current value model; undefined variables, missing
+  array keys, null variables, and null array values evaluate the fallback,
+  while falsey non-null values such as `false`, `0`, `""`, and `"0"` are
+  returned without evaluating the fallback
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -248,7 +253,8 @@
   `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
 - explicit parse diagnostics for unsupported ternary conditional expressions
-- explicit parse diagnostics for unsupported null coalescing expressions
+- explicit parse diagnostics for unsupported null coalescing assignment and
+  chained coalescing forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface declarations and implementation, trait
   declarations, trait use inside classes, enum declarations,
@@ -275,6 +281,15 @@
   diagnostic. Multiple supported `unset(...)` operands run left to right.
   Runtime lookup by a value computed from PHP code is not implemented yet, so
   variable variables still do not execute.
+- Null coalescing: `phpc run` supports a first executable `??` slice where the
+  left operand is a direct static variable or direct array-variable offset.
+  The left operand uses PHP-style isset semantics for the current value model:
+  undefined variables, missing array keys, null variables, null array values,
+  and non-array array-offset targets use the fallback, while falsey non-null
+  values are returned as-is and the fallback expression is not evaluated.
+  Complex or nested left operands, object-property operands, unparenthesized
+  chained coalescing, `??=` assignment forms, references/copy-on-write,
+  exact native error objects, and native lowering remain unsupported.
 - Include/require: `include`, `include_once`, `require`, and `require_once`
   are reserved by the lexer/parser and rejected with stable parse diagnostics.
   The planned first executable slice resolves string paths relative to the
@@ -1516,11 +1531,12 @@
   forms are rejected. Condition truthiness, short-ternary value reuse,
   nesting/precedence, thrown expressions inside arms, exact native error
   objects, and native lowering are not implemented.
-- Null coalescing expressions currently fail with a stable parse diagnostic
-  before null-aware expression-form branching exists. `$value ?? $fallback`,
-  chained coalescing, precedence interactions, `??=` assignment forms,
-  undefined-variable/null-aware reads, exact native error objects, and native
-  lowering are not implemented.
+- Null coalescing is limited to direct static variables and direct
+  array-variable offsets on the left side. Complex or nested left operands,
+  object-property operands, unparenthesized chained coalescing, precedence
+  interactions beyond the current single-operator expression slice, `??=`
+  assignment forms, references/copy-on-write, exact native error objects, and
+  native lowering are not implemented.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

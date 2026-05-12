@@ -1,0 +1,19 @@
+exit: 0
+stdout:
+value
+missing-fallback
+null-fallback
+false-kept
+zero-kept
+empty-string-kept
+array-value
+missing-key-fallback
+null-key-fallback
+array-false-kept
+array-zero-kept
+array-empty-string-kept
+two
+undefined-array-fallback
+scalar-target-fallback--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1035,9 +1035,23 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
-        let expr = self.parse_equality()?;
+        let mut expr = self.parse_equality()?;
         if self.match_token(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
-            return Err(self.error_at(self.previous().span, unsupported_null_coalescing_message()));
+            let operator_span = self.previous().span;
+            if self.check(|kind| matches!(kind, TokenKind::Equal)) {
+                return Err(self.error_at(operator_span, unsupported_null_coalescing_message()));
+            }
+            let right = self.parse_equality()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::NullCoalesce,
+                right: Box::new(right),
+                span,
+            };
+            if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
+                return Err(self.error_at(self.peek().span, unsupported_null_coalescing_message()));
+            }
         }
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
             return Err(self.error_at(self.previous().span, unsupported_ternary_message()));
@@ -1623,7 +1637,12 @@ impl Parser {
                 Ok(())
             }
             Expr::Unary { expr, .. } => self.ensure_supported_default_expr(expr),
-            Expr::Binary { left, right, .. } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                if matches!(op, BinaryOp::NullCoalesce) {
+                    return Err(self.error_at(expr.span(), unsupported_null_coalescing_message()));
+                }
                 self.ensure_supported_default_expr(left)?;
                 self.ensure_supported_default_expr(right)
             }
@@ -1661,7 +1680,12 @@ impl Parser {
                 Ok(())
             }
             Expr::Unary { expr, .. } => self.ensure_supported_const_declaration_expr(expr),
-            Expr::Binary { left, right, .. } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                if matches!(op, BinaryOp::NullCoalesce) {
+                    return Err(self.error_at(expr.span(), unsupported_null_coalescing_message()));
+                }
                 self.ensure_supported_const_declaration_expr(left)?;
                 self.ensure_supported_const_declaration_expr(right)
             }

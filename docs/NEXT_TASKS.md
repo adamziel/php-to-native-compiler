@@ -1187,10 +1187,20 @@ handled.
 
 ## Milestone 125: Null Coalescing Expression Slice
 
-- [ ] Implement the first executable `??` expression slice for direct static
+- [x] Implement the first executable `??` expression slice for direct static
   variables and direct array offsets over the current value model, including
   undefined-variable, missing-key, null, falsey-non-null, and fallback
   evaluation behavior, fixture CLI coverage, documentation, explicit native
   lowering rejection, and named gaps for chained precedence interactions,
   `??=` assignment, property offsets, dynamic lvalues, references/copy-on-write,
   exact native error objects, and native lowering.
+
+## Milestone 126: Null Coalescing Property Follow-up
+
+- [ ] Implement `??` for direct public object-property operands over the
+  current minimal object value model, including null, falsey-non-null,
+  missing-property, undefined-variable, and non-object target behavior, fixture
+  CLI coverage, documentation, explicit native-codegen rejection, and named
+  gaps for dynamic property names, non-public visibility context, magic
+  methods, references/copy-on-write, exact native error objects, `??=`, and
+  native lowering.

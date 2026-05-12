@@ -1,4 +1,4 @@
 <?php
 $value = null;
-$result = $value ?? "fallback";
-echo $result;
+$value ??= "fallback";
+echo $value;

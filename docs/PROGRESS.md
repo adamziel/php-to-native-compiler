@@ -2709,16 +2709,23 @@ Still fails:
   error objects, and native lowering remain unsupported.
 - Added explicit parse diagnostics for unsupported null coalescing expressions
   before null-aware expression-form branching exists. The lexer now tokenizes
-  `??` distinctly from ternary `?`, the parser rejects `$value ?? $fallback`,
-  chained coalescing, and `??=` assignment-form syntax at the `??` token with a
-  stable diagnostic, fixture and CLI snapshot coverage record the behavior, and
-  native emission rejects the same syntax at parse time. Undefined-variable
-  behavior, null-aware reads, chained evaluation, precedence, `??=` assignment
-  execution, exact native error objects, and native lowering remain
-  unsupported.
+  `??` distinctly from ternary `?`; after the first executable slice, the
+  parser still rejects unparenthesized chained coalescing and `??=`
+  assignment-form syntax at the `??` token with a stable diagnostic.
+- Implemented the first executable null coalescing expression slice for direct
+  static variables and direct array-variable offsets over the current value
+  model. Undefined variables, missing array keys, null variables, null array
+  values, and non-array array-offset targets evaluate the fallback; falsey
+  non-null values such as `false`, `0`, and `""` are returned as-is without
+  evaluating the fallback. Fixture and CLI snapshot coverage record the
+  behavior, system PHP comparison passes for the supported fixture, and LLVM IR
+  emission rejects `??` explicitly until native null-aware lowering exists.
+  Complex or nested left operands, object-property operands, unparenthesized
+  chained coalescing, `??=` assignment execution, references/copy-on-write,
+  exact native error objects, and native lowering remain unsupported.
 
 Next:
 
-- Implement the first executable null coalescing expression slice for direct
-  static variables and direct array offsets, with undefined/null behavior
-  documented before adding broader expression-form branching.
+- Implement `??` for direct public object-property operands over the current
+  minimal object value model, or keep that property-offset boundary explicit
+  if the object model is not ready for null-aware property reads.

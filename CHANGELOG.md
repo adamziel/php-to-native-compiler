@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-- Added explicit unsupported null coalescing expression diagnostics for `??`
-  and `??=` forms before null-aware expression-form branching exists, with
-  parser regression coverage, fixture/CLI coverage, documentation, and native
-  emission rejection at the parse boundary.
+- Implemented the first executable `??` slice for direct static variables and
+  direct array offsets, with isset-like fallback behavior for undefined,
+  missing, and null values, lazy fallback evaluation for present non-null
+  values, fixture/CLI coverage, documentation, and native-codegen rejection.
+- Kept explicit unsupported diagnostics for `??=` assignment and
+  unparenthesized chained null coalescing while broader null-aware lvalue
+  behavior remains unimplemented.
 - Added explicit unsupported ternary conditional expression diagnostics for
   full and short ternary forms before expression-form branching exists, with
   parser regression coverage, fixture/CLI coverage, documentation, and native
