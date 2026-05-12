@@ -76,14 +76,14 @@ print_roadmap_summary() {
       return value
     }
 
-    function marker(index) {
-      if (total[index] == 0) {
+    function marker(idx) {
+      if (total[idx] == 0) {
         return "[ ]"
       }
-      if (done[index] == total[index]) {
+      if (done[idx] == total[idx]) {
         return "[x]"
       }
-      if (index == active_milestone || done[index] > 0) {
+      if (idx == active_milestone || done[idx] > 0) {
         return "[>]"
       }
       return "[ ]"
@@ -124,8 +124,8 @@ print_roadmap_summary() {
       percent = total_tasks == 0 ? 0 : int((done_tasks * 100) / total_tasks)
       filled = total_tasks == 0 ? 0 : int((done_tasks * width) / total_tasks)
       bar = ""
-      for (index = 1; index <= width; index++) {
-        bar = bar (index <= filled ? "#" : "-")
+      for (idx = 1; idx <= width; idx++) {
+        bar = bar (idx <= filled ? "#" : "-")
       }
 
       printf "\n"
@@ -145,14 +145,14 @@ print_roadmap_summary() {
 
       printf "\n"
       printf "  Milestones:\n"
-      for (index = 1; index <= milestone_count; index++) {
-        if (total[index] == 0) {
+      for (idx = 1; idx <= milestone_count; idx++) {
+        if (total[idx] == 0) {
           continue
         }
 
-        milestone_percent = int((done[index] * 100) / total[index])
-        printf "    %s %-48s %3d/%-3d %3d%%", marker(index), milestone[index], done[index], total[index], milestone_percent
-        if (index == active_milestone) {
+        milestone_percent = int((done[idx] * 100) / total[idx])
+        printf "    %s %-48s %3d/%-3d %3d%%", marker(idx), milestone[idx], done[idx], total[idx], milestone_percent
+        if (idx == active_milestone) {
           printf "  <- in progress"
         }
         printf "\n"
