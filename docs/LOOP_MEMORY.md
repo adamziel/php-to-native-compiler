@@ -3792,3 +3792,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T05:23:06Z
 
 - Post-round 60 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T05:23:10Z
+
+- Starting round 61 at 20260512T052310Z from HEAD `73ac277`.
+
+## Loop Event 2026-05-12T05:23:14Z
+
+- Pre-round 61 test exit code: `0`.
+
+## Loop Event 2026-05-12T05:31:58Z
+
+- Task attempted: implemented `array_flip($array)` for the current ordered
+  array value model. The supported slice converts integer and string source
+  values into result keys using current array-key normalization, stores each
+  original integer/string key as the result value, overwrites duplicate flipped
+  keys with later source entries without moving the first flipped-key slot,
+  supports string-valued dynamic calls, and reports stable diagnostics for
+  non-array arguments and unsupported non-int/string source values.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_flip.rs`,
+  `compiler/tests/array_transform_builtins_cli.rs`,
+  `tests/fixtures/milestone18/array_flip.*`,
+  `tests/fixtures/runtime_errors/array_flip_non_array.*`,
+  `tests/fixtures/runtime_errors/array_flip_unsupported_value.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo fmt --check`; `cargo test -p
+  php_runtime array_flip`; `cargo test -p php_runtime`; `cargo test -p
+  php_runtime array_`; `cargo test -p phpc --test array_flip`; `cargo test
+  -p phpc --test array_transform_builtins_cli`; `cargo test -p phpc --test
+  runtime_error_cli`; `cargo run -p phpc -- test tests/fixtures/milestone18`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone18`;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`; `cargo run -p
+  phpc -- run tests/fixtures/milestone18/array_flip.php`; `cargo run -p phpc
+  -- run tests/fixtures/runtime_errors/array_flip_non_array.php` exited `1`
+  with the expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_flip_unsupported_value.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 137
+  fixtures, 56 system PHP comparisons, and 81 `.phpc-only` skips.
+- Remaining semantic gaps: `array_flip` is limited to arrays whose source
+  values are integers or strings. Unsupported `null`, bool, float, array,
+  object, future resource, and reference values fail with a stable project
+  diagnostic instead of PHP's warning-and-skip behavior. References,
+  copy-on-write containers, exact native warning/`TypeError` objects, and
+  native lowering remain unsupported.
+- Next concrete task: implement `array_fill_keys($keys, $value)` for the
+  current ordered array value model, including integer/string key-value
+  conversion, duplicate-key overwrite behavior, non-array and unsupported-key
+  diagnostics, fixture CLI coverage, documentation, and explicit native-codegen
+  rejection.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_flip builtin"`
+  after the full suite passes.

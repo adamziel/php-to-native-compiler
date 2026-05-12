@@ -261,7 +261,11 @@ handled.
 
 ## Milestone 18: Array Transform Builtins
 
-- [ ] Implement `array_flip($array)` for the current ordered array value model,
+- [x] Implement `array_flip($array)` for the current ordered array value model,
   including integer/string value-to-key conversion, duplicate-key overwrite
   behavior, non-array and unsupported-value diagnostics, fixture CLI coverage,
   documentation, and explicit native-codegen rejection.
+- [ ] Implement `array_fill_keys($keys, $value)` for the current ordered array
+  value model, including integer/string key-value conversion, duplicate-key
+  overwrite behavior, non-array and unsupported-key diagnostics, fixture CLI
+  coverage, documentation, and explicit native-codegen rejection.

@@ -68,8 +68,9 @@ subset:
   `empty`, `count`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_values`, `array_keys`, including loose and strict scalar search-value
   filtering, `array_reverse` with default reindexing and boolean preserve-key
-  behavior, `array_merge` over zero or more array operands, `in_array` and
-  `array_search` including strict scalar searches, `var_dump`, and `print_r`
+  behavior, `array_merge` over zero or more array operands, `array_flip` over
+  integer/string array values, `in_array` and `array_search` including strict
+  scalar searches, `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, invalid `break`/`continue` outside a loop, and runaway

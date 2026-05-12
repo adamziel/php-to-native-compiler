@@ -1,0 +1,24 @@
+exit: 0
+stdout:
+Array
+(
+    [name] => dup-string
+    [2] => two
+    [02] => 02
+    [-1] => 6
+)
+4
+dup-string|two|02|6
+after
+Array
+(
+    [first] => name
+    [5] => 2
+    [two] => 2
+    [02] => 02
+    [6] => -1
+    [dup-string] => name
+)
+dup-string|two|02|6--- stdout end ---
+stderr:
+--- stderr end ---

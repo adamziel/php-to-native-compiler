@@ -556,6 +556,15 @@ impl PhpArray {
         array
     }
 
+    pub fn flipped(&self) -> RuntimeResult<Self> {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let key = array_flip_key_from_value(&entry.value)?;
+            array.insert(key, array_key_to_value(&entry.key));
+        }
+        Ok(array)
+    }
+
     fn merge_entries_from(&mut self, source: &Self) {
         for entry in &source.entries {
             match &entry.key {
@@ -674,6 +683,20 @@ fn array_key_to_value(key: &ArrayKey) -> Value {
     match key {
         ArrayKey::Int(value) => Value::Int(*value),
         ArrayKey::String(value) => Value::String(value.clone()),
+    }
+}
+
+fn array_flip_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+    match value {
+        Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::String(value) => Ok(ArrayKey::string(value.clone())),
+        other => Err(RuntimeError::unsupported_call(
+            "array_flip()",
+            format!(
+                "values must be int or string in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
     }
 }
 
@@ -2424,6 +2447,60 @@ mod tests {
         assert_eq!(entries[5].value, Value::String("three extra".to_string()));
         assert_eq!(entries[6].key, ArrayKey::Int(3));
         assert_eq!(entries[6].value, Value::String("eleven".to_string()));
+    }
+
+    #[test]
+    fn array_flip_uses_int_string_values_as_keys_and_overwrites_duplicates() {
+        let mut array = PhpArray::new();
+
+        array.insert("first", Value::String("name".to_string()));
+        array.insert(5, Value::String("2".to_string()));
+        array.insert("two", Value::Int(2));
+        array.insert("02", Value::String("02".to_string()));
+        array.append(Value::Int(-1)).unwrap();
+        array.insert("dup-string", Value::String("name".to_string()));
+
+        let mut flipped = array.flipped().unwrap();
+        let entries = flipped.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("dup-string".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[2].value, Value::String("02".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(-1));
+        assert_eq!(entries[3].value, Value::Int(6));
+        assert_eq!(
+            flipped.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(3)
+        );
+        assert_eq!(
+            array.get("dup-string"),
+            Some(&Value::String("name".to_string())),
+            "array_flip must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_flip_rejects_unsupported_value_types() {
+        let mut array = PhpArray::new();
+        array.insert("ok", Value::String("name".to_string()));
+        array.insert("bad", Value::Bool(true));
+
+        let error = array.flipped().unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::UnsupportedCall {
+                callable: "array_flip()".to_string(),
+                reason: "values must be int or string in the current subset, got bool".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "unsupported call array_flip(): values must be int or string in the current subset, got bool"
+        );
     }
 
     #[test]

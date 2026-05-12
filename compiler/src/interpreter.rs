@@ -1008,6 +1008,22 @@ impl Interpreter {
 
                 Ok(Value::Array(PhpArray::merged_from(arrays)))
             }
+            "array_flip" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => array
+                        .flipped()
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_flip()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1423,6 +1439,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_keys"
             | "array_reverse"
             | "array_merge"
+            | "array_flip"
             | "in_array"
             | "array_search"
             | "var_dump"
