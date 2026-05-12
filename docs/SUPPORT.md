@@ -200,9 +200,10 @@
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
-  unsupported `$this` usage, unsupported `clone` expressions, anonymous class
-  expressions, method calls, dynamic property names, static property access,
-  static method calls, and class constant access
+  unsupported `$this` usage, unsupported `clone` expressions, unsupported
+  `instanceof` expressions, anonymous class expressions, method calls, dynamic
+  property names, static property access, static method calls, and class
+  constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -271,10 +272,14 @@
   including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
   fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
-  implemented. Method dispatch, dynamic property names, `$this` object context
-  binding, visibility enforcement for non-public properties, static storage,
-  class constants, object handle aliasing/identity, shallow/deep clone property
-  copying, `__clone`, and native object lowering are not implemented.
+  implemented. `$object instanceof ClassName` expressions fail with a stable
+  parse diagnostic before class/interface relationship checks exist. Method
+  dispatch, dynamic property names, `$this` object context binding, visibility
+  enforcement for non-public properties, static storage, class constants,
+  object handle aliasing/identity, shallow/deep clone property copying,
+  `__clone`, inheritance/interface relationship checks, namespace/autoload-aware
+  class resolution, exact PHP `Error` objects, and native object lowering are
+  not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -1094,8 +1099,8 @@
   through `::`, `::class`, property assignment targets other than a direct
   variable, object handle identity/aliasing, cloning, destructors,
   serialization hooks, visibility enforcement, `self`/`parent`/`static`, object
-  comparisons, object-to-string conversion, object callables, and native
-  lowering are unsupported.
+  comparisons, `instanceof` relationship checks, object-to-string conversion,
+  object callables, and native lowering are unsupported.
 - Constructor boundary: declaring a class with `__construct` or supplying
   arguments to `new ClassName(...)` fails with stable runtime diagnostics before
   any user constructor body executes. `$this` binding, constructor property

@@ -1009,6 +1009,8 @@ impl Parser {
                 BinaryOp::StrictEq
             } else if self.match_token(|kind| matches!(kind, TokenKind::StrictBangEqual)) {
                 BinaryOp::StrictNe
+            } else if self.check_instanceof_operator() {
+                return Err(self.error_at(self.peek().span, unsupported_instanceof_message()));
             } else {
                 break;
             };
@@ -1213,6 +1215,9 @@ impl Parser {
             }
             TokenKind::New => self.parse_new_expression(token.span),
             TokenKind::Clone => Err(self.error_at(token.span, unsupported_clone_message())),
+            TokenKind::Instanceof => {
+                Err(self.error_at(token.span, unsupported_instanceof_message()))
+            }
             TokenKind::Function => Err(self.error_at(
                 token.span,
                 "unsupported closure: anonymous functions are not implemented",
@@ -1298,6 +1303,9 @@ impl Parser {
                 }
                 if name.eq_ignore_ascii_case("clone") {
                     return Err(self.error_at(token.span, unsupported_clone_message()));
+                }
+                if name.eq_ignore_ascii_case("instanceof") {
+                    return Err(self.error_at(token.span, unsupported_instanceof_message()));
                 }
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -1689,6 +1697,14 @@ impl Parser {
         )
     }
 
+    fn check_instanceof_operator(&self) -> bool {
+        match &self.peek().kind {
+            TokenKind::Instanceof => true,
+            TokenKind::Identifier(name) => name.eq_ignore_ascii_case("instanceof"),
+            _ => false,
+        }
+    }
+
     fn match_array_close(&mut self, delimiter: ArrayLiteralDelimiter) -> bool {
         self.match_token(|kind| same_variant(kind, &delimiter.close_token()))
     }
@@ -1783,6 +1799,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Extends => "extends",
         TokenKind::Implements => "implements",
         TokenKind::Clone => "clone",
+        TokenKind::Instanceof => "instanceof",
         TokenKind::Return => "return",
         TokenKind::Global => "global",
         TokenKind::Namespace => "namespace",
@@ -2042,6 +2059,10 @@ fn unsupported_this_message() -> &'static str {
 
 fn unsupported_clone_message() -> &'static str {
     "unsupported clone expression: object handle copying and __clone dispatch are not implemented"
+}
+
+fn unsupported_instanceof_message() -> &'static str {
+    "unsupported instanceof expression: class/interface relationship checks are not implemented"
 }
 
 fn unsupported_class_member_message(kind: &TokenKind) -> String {

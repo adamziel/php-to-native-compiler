@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added an explicit unsupported `instanceof` expression boundary with parser
+  regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added an explicit unsupported `clone` expression boundary with parser
   regression coverage, fixture coverage, and a `phpc run` CLI snapshot.
 - Added explicit unsupported constructor execution and constructor argument

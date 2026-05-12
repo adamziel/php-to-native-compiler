@@ -8493,3 +8493,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:11:02Z
 
 - Post-round 40 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:11:09Z
+
+- Starting round 41 at 20260512T191109Z from HEAD `3092fff`.
+
+## Loop Event 2026-05-12T19:11:17Z
+
+- Pre-round 41 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:16:01Z
+
+- Task attempted: completed Milestone 92 by adding an explicit unsupported
+  `instanceof` expression parse boundary before class/interface relationship
+  checks exist. Lowercase `instanceof` now lexes as a keyword, uppercase
+  identifier-form `INSTANCEOF` gets the same stable parse diagnostic, object
+  parser regression coverage includes both forms, and unsupported-object
+  fixture coverage includes a committed `phpc run` CLI snapshot.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_instanceof_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run this round: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli`
+  passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with 25 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 25 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_instanceof_expression.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt --
+  --check` passed; `git diff --check` passed; `tools/run-tests.sh` passed
+  with 284 fixtures, 106 system PHP comparisons, and 178 skips.
+- Remaining semantic gaps: `instanceof` execution remains unsupported,
+  including inheritance checks, interface implementation checks,
+  namespace-aware class names, aliases/imports, autoloading, exact PHP `Error`
+  objects, and native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `ClassName::class` expressions before class-name constant resolution exists.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject unsupported instanceof expressions"`
+  after the full suite passes.

@@ -881,8 +881,16 @@ handled.
 
 ## Milestone 92: Instanceof Expression Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported `instanceof` expressions
+- [x] Add explicit parse diagnostics for unsupported `instanceof` expressions
   before class/interface relationship checks exist, including parser coverage,
   fixture CLI coverage, documentation, and named gaps for inheritance,
   interfaces, namespaces, autoloading, exact PHP `Error` objects, and native
   lowering.
+
+## Milestone 93: Class Name Constant Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported `ClassName::class`
+  expressions before class-name constant resolution exists, including parser
+  coverage, fixture CLI coverage, documentation, and named gaps for namespaces,
+  aliases/imports, magic class names, autoloading, exact PHP behavior, and
+  native lowering.

@@ -553,6 +553,26 @@ $copy = CLONE $box;
         ),
         (
             r#"<?php
+class Box {}
+$box = new Box();
+echo $box instanceof Box;
+"#,
+            4,
+            11,
+            "unsupported instanceof expression: class/interface relationship checks are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {}
+$box = new Box();
+echo $box INSTANCEOF Box;
+"#,
+            4,
+            11,
+            "unsupported instanceof expression: class/interface relationship checks are not implemented",
+        ),
+        (
+            r#"<?php
 Box::$cache;
 "#,
             2,
