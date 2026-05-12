@@ -2012,6 +2012,38 @@ impl Interpreter {
                     )),
                 }
             }
+            "interface_exists" => match args.as_slice() {
+                [Value::String(_interface_name)] => Ok(Value::Bool(false)),
+                [Value::String(_interface_name), Value::Bool(_autoload)] => Ok(Value::Bool(false)),
+                [other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "interface_exists()",
+                        format!(
+                            "interface name argument must be string, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [_, other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "interface_exists()",
+                        format!(
+                            "autoload argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "interface_exists()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "get_declared_classes" => {
                 expect_arity(name, &args, 0, span)?;
                 let mut classes = PhpArray::new();
@@ -3071,6 +3103,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_object"
             | "get_debug_type"
             | "class_exists"
+            | "interface_exists"
             | "get_declared_classes"
             | "get_declared_interfaces"
             | "get_declared_traits"

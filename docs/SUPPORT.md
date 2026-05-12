@@ -104,7 +104,7 @@
   `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
   `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `is_a`,
+  `class_exists`, `interface_exists`, `property_exists`, `method_exists`, `is_a`,
   `get_class_methods`, `get_class_vars`, `get_object_vars`,
   `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `var_dump`, and `print_r`;
@@ -112,7 +112,9 @@
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
-  class metadata by string name without autoloading, `property_exists` checks
+  class metadata by string name without autoloading, `interface_exists`
+  accepts string names and returns false for the current no-interface metadata
+  model without autoloading, `property_exists` checks
   case-sensitive declared property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared method
   metadata for current object values or string class names, `get_class_methods`
@@ -318,6 +320,11 @@
   program, accept only boolean autoload flags, and are available through
   string-valued dynamic function calls. The autoload flag does not trigger
   autoloading in the current subset.
+  `interface_exists($name)` and `interface_exists($name, $autoload)` accept
+  string interface names, return false for all supported calls because
+  interface metadata is not represented yet, and are available through
+  string-valued dynamic function calls. The autoload flag must be boolean and
+  does not trigger autoloading.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared property metadata with case-sensitive property names, reports
@@ -694,6 +701,8 @@
   metadata, undefined classes, undefined object properties, invalid property
   targets, non-public property access, non-object `get_class` operands,
   non-string `class_exists` names, non-bool `class_exists` autoload flags,
+  non-string `interface_exists` names, non-bool `interface_exists` autoload
+  flags,
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
   non-object/non-string `is_subclass_of` first arguments, non-string
   `is_subclass_of` class names, non-bool `is_subclass_of` allow_string flags,
@@ -712,7 +721,8 @@
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, global constants, top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
-  `class_exists(...)`, `property_exists(...)`, `method_exists(...)`,
+  `class_exists(...)`, `interface_exists(...)`, `property_exists(...)`,
+  `method_exists(...)`,
   `get_class_methods(...)`, `get_class_vars(...)`, `is_a(...)`,
   `get_object_vars(...)`, `is_subclass_of(...)`, `get_parent_class(...)`,
   `get_declared_classes(...)`, `get_declared_interfaces(...)`,
@@ -733,8 +743,9 @@
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
   `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `property_exists`, `method_exists`, `get_class_methods`,
-  `get_class_vars`, `get_object_vars`, `is_a`, `is_subclass_of`,
+  `class_exists`, `interface_exists`, `property_exists`, `method_exists`,
+  `get_class_methods`, `get_class_vars`, `get_object_vars`, `is_a`,
+  `is_subclass_of`,
   `get_parent_class`, `get_declared_classes`, `get_declared_interfaces`,
   `get_declared_traits`, `var_dump`, or `print_r`.
   The `define`, `constant`, and `defined` names resolve through the documented
@@ -807,8 +818,9 @@
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
   `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
-  `is_object`, `get_debug_type`, `class_exists`, `property_exists`,
-  `method_exists`, `get_class_methods`, `is_a`, `is_subclass_of`,
+  `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
+  `property_exists`, `method_exists`, `get_class_methods`, `is_a`,
+  `is_subclass_of`,
   `get_class_vars`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `var_dump`, and `print_r`
   cover the documented scalar/array/object subset.
@@ -820,6 +832,10 @@
   and `class_exists($name, $autoload)` accept string class names, return whether
   the current parsed program declared that class, and accept only boolean
   autoload flags without triggering autoloading.
+  `interface_exists($name)` and `interface_exists($name, $autoload)` accept
+  string interface names and return false for all supported calls because
+  interface metadata is not represented yet; the autoload flag must be boolean
+  and does not trigger autoloading.
   `property_exists($object_or_class, $property)` checks declared property
   metadata for current object values or string class names with case-sensitive
   property names. `method_exists($object_or_class, $method)` checks declared
@@ -1508,6 +1524,9 @@
 - `get_parent_class` inheritance lookup, interfaces, aliases/imports,
   namespace-aware names, autoloading, default `$this` behavior, exact native
   `TypeError` behavior, and native lowering
+- `interface_exists` declared interface metadata, built-in/internal interface
+  entries, autoloading, namespaces/import aliases, exact native `TypeError`
+  behavior, and native lowering
 - `get_declared_interfaces` declared interface metadata, built-in/internal
   interface entries, autoloading, namespaces/import aliases, exact native
   ordering, and native lowering

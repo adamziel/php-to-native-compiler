@@ -2510,6 +2510,15 @@ Still fails:
   native-codegen rejection through the current function-call boundary.
   Autoloading, namespace/import aliases, anonymous classes, exact native
   `TypeError` behavior, and native lowering remain unsupported.
+- Added `interface_exists($name[, $autoload])` as a no-interface metadata
+  boundary. The supported slice accepts string names, accepts only boolean
+  autoload flags, returns false for all supported calls because interface
+  metadata is not represented yet, works through string-valued dynamic calls,
+  has fixture CLI coverage plus stable invalid-argument diagnostics, and
+  rejects native lowering through the current function-call boundary. Declared
+  interfaces, built-in/internal interfaces, autoloading, namespace/import
+  aliases, exact native `TypeError` behavior, and native lowering remain
+  unsupported.
 - Added `property_exists($object_or_class, $property)` support over the current
   declared property metadata. The supported slice accepts current object values
   or string class names, uses case-sensitive property names, reports declared

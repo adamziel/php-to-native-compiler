@@ -301,6 +301,55 @@ fn class_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn interface_exists_reports_false_for_current_no_interface_model() {
+    let source = r#"<?php
+class Box {}
+
+if (!interface_exists("Box")) {
+    echo "class:not-interface\n";
+}
+if (!interface_exists("Missing")) {
+    echo "missing:not-interface\n";
+}
+if (!interface_exists("Missing", false)) {
+    echo "missing:false-autoload\n";
+}
+$call = "interface_exists";
+if (!$call("Box", true)) {
+    echo "dynamic:not-interface\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "class:not-interface\nmissing:not-interface\nmissing:false-autoload\ndynamic:not-interface\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
+    let name_error = runtime_error("<?php\nvar_dump(interface_exists(42));\n");
+
+    assert_eq!(name_error.line, 2);
+    assert_eq!(name_error.column, 10);
+    assert_eq!(
+        name_error.message,
+        "unsupported call interface_exists(): interface name argument must be string, got int"
+    );
+
+    let autoload_error = runtime_error("<?php\nvar_dump(interface_exists(\"Box\", 1));\n");
+
+    assert_eq!(autoload_error.line, 2);
+    assert_eq!(autoload_error.column, 10);
+    assert_eq!(
+        autoload_error.message,
+        "unsupported call interface_exists(): autoload argument must be bool in the current subset, got int"
+    );
+}
+
+#[test]
 fn property_exists_checks_declared_property_metadata() {
     let source = r#"<?php
 class Box {
@@ -899,6 +948,19 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
 #[test]
 fn emit_ir_rejects_class_exists_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\necho class_exists(\"Box\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_interface_exists_until_native_object_lowering_exists() {
+    let error =
+        php_compiler::emit_ir_source("<?php\necho interface_exists(\"Box\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

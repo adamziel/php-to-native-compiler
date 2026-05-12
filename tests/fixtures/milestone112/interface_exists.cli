@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+class:not-interface
+missing:not-interface
+missing:false-autoload
+dynamic:not-interface
+--- stdout end ---
+stderr:
+--- stderr end ---

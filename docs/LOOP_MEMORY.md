@@ -9623,3 +9623,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T21:45:13Z
 
 - Post-round 2 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T21:45:23Z
+
+- Starting round 3 at 20260512T214523Z from HEAD `d3b7e66`.
+
+## Loop Event 2026-05-12T21:45:34Z
+
+- Pre-round 3 test exit code: `0`.
+
+## Loop Event 2026-05-12T21:50:32Z
+
+- Task attempted: added `interface_exists($name[, $autoload])` as the next
+  honest object/interface metadata boundary over the current no-interface
+  model. The supported slice accepts string names, validates a boolean
+  autoload flag, returns false for all supported calls, works through
+  string-valued dynamic calls, records stable invalid-argument diagnostics, and
+  keeps native lowering rejected through the existing function-call codegen
+  boundary.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `compiler/tests/object_introspection_builtins_cli.rs`,
+  `tests/fixtures/milestone112/interface_exists.*`,
+  `tests/fixtures/runtime_errors/interface_exists_invalid_name.*`,
+  `tests/fixtures/runtime_errors/interface_exists_invalid_autoload.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p phpc --test
+  object_model interface_exists` passed; `cargo test -p phpc --test
+  object_introspection_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone112` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone112` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 134 fixtures; `tools/run-tests.sh` passed with 325 fixtures,
+  119 system PHP comparisons, and 206 skips.
+- Remaining semantic gaps: interface declarations are still rejected before
+  metadata exists, `interface_exists()` never reports true for declared,
+  built-in, internal, autoloaded, or namespace/import-aliased interfaces, exact
+  native `TypeError` objects are not modeled, and native lowering still
+  rejects the builtin call.
+- Next concrete task: continue with the next small object/class/interface value
+  introspection boundary that can be completed with executable behavior,
+  tests, CLI coverage, docs, and named unsupported gaps.
+- Known-good tag: not created; this is a narrow incremental boundary, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add interface_exists boundary"`
+  after the full suite passes.

@@ -1063,3 +1063,13 @@ handled.
   diagnostics, fixture CLI coverage, documentation, and explicit gaps for
   declared traits, built-in/internal traits, autoloading, namespaces/import
   aliases, exact native ordering, and native lowering.
+
+## Milestone 112: Interface Existence Boundary
+
+- [x] Add the next honest `interface_exists($name[, $autoload])` boundary over
+  the current no-interface metadata model: either a stable unsupported
+  diagnostic or a narrow executable always-false slice with string-valued
+  dynamic-call coverage, invalid argument diagnostics, fixture CLI coverage,
+  documentation, and explicit gaps for declared interfaces, built-in/internal
+  interfaces, autoloading, namespaces/import aliases, exact native `TypeError`
+  behavior, and native lowering.

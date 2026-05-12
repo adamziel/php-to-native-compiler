@@ -1,0 +1,2 @@
+runtime error at 2:10: unsupported call interface_exists(): autoload argument must be bool in the current subset, got int
+
