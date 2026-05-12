@@ -81,9 +81,9 @@
   undefined functions, non-string dynamic function callees, unsupported array
   keys, undefined array keys, invalid array access including non-array
   `unset($array[$key])` targets, unsupported complex
-  `empty` operands, non-array `in_array`/`array_search` haystacks, unsupported
-  `in_array` strict-mode flag values, unsupported `array_search` strict-mode,
-  unsupported non-scalar `in_array`/`array_search` comparisons, unsupported
+  `empty` operands, non-array `in_array`/`array_search` haystacks, non-bool
+  `in_array`/`array_search` strict-mode flag values, unsupported non-scalar
+  `in_array`/`array_search` comparisons, unsupported
   `global` declarations,
   duplicate class/member metadata, undefined classes, unsupported object
   instantiation, undefined object properties, invalid property targets,
@@ -223,7 +223,9 @@
   false)` uses the loose path. `in_array` is also available through
   string-valued dynamic function calls. `array_search($needle, $array)` uses
   the same loose scalar scan, returning the first matching integer/string key or
-  `false` when no value matches; it is also available through string-valued
+  `false` when no value matches; `array_search($needle, $array, true)` uses the
+  current scalar strict identity rules, and `array_search($needle, $array,
+  false)` uses the loose path. It is also available through string-valued
   dynamic function calls. `foreach ($array as $value)` iterates array values in
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
@@ -285,9 +287,9 @@
   unsupported array keys, undefined array keys, invalid `array_key_exists`
   keys, non-array `array_key_exists` operands, non-array `array_values`
   operands, non-array `array_keys` operands, non-array `in_array` operands,
-  non-array `array_search` operands, non-array `foreach` iterables, unsupported
-  `in_array` strict-mode flag values, unsupported `array_search` strict-mode,
-  and array-value comparisons for `in_array`/`array_search`,
+  non-array `array_search` operands, non-array `foreach` iterables, non-bool
+  `in_array`/`array_search` strict-mode flag values, and array-value
+  comparisons for `in_array`/`array_search`,
   unsupported complex `empty` operands, non-array `unset($array[$key])`
   targets, unresolved dynamic function callees, division by zero, non-numeric
   string arithmetic, duplicate class metadata, undefined classes, undefined
@@ -362,14 +364,16 @@
   haystacks and rejects array or object needles/values when encountered instead
   of modeling PHP's full non-scalar comparison behavior. `in_array` is also
   available through string-valued dynamic function calls.
-  `array_search($needle, $array)` accepts
-  the two-argument form with an array haystack, scans values in insertion order
-  with the same loose scalar comparison rules, returns the first matching
-  integer/string key as an `int` or `string`, and returns `false` when no value
-  matches. It rejects non-array haystacks, rejects the third strict-mode
-  argument, and rejects array or object needles/values when encountered.
-  `array_search` is also available through string-valued dynamic function
-  calls. `isset` supports direct variable
+  `array_search($needle, $array)` accepts an array haystack, scans values in
+  insertion order, returns the first matching integer/string key as an `int` or
+  `string`, and returns `false` when no value matches. The two-argument form
+  uses the current loose scalar comparison rules, `array_search($needle,
+  $array, true)` uses current scalar strict identity with no numeric/string
+  coercion, and `array_search($needle, $array, false)` uses the loose path. The
+  third argument must evaluate to a boolean in the current subset. It rejects
+  non-array haystacks and rejects array or object needles/values when
+  encountered. `array_search` is also available through string-valued dynamic
+  function calls. `isset` supports direct variable
   operands, direct array offset operands such as `isset($array[$key])`,
   and direct public object-property
   operands such as `isset($object->name)`; it can safely check undefined
@@ -503,9 +507,10 @@
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
-- `array_search` strict-mode searches, `in_array` strict-mode searches
-  involving array/object/resource/reference values, and array/object
-  needle or haystack-value comparisons for the current array-search builtins
+- `in_array` and `array_search` strict-mode searches involving
+  array/object/resource/reference values, non-bool strict-flag coercion, and
+  array/object needle or haystack-value comparisons for the current
+  array-search builtins
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - namespace-aware name resolution, imports, aliases, grouped imports, and

@@ -516,6 +516,17 @@ impl PhpArray {
         Ok(None)
     }
 
+    pub fn search_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
+        for entry in &self.entries {
+            ensure_array_search_values_supported("array_search()", needle, &entry.value)?;
+            if needle.php_identical_checked(&entry.value)? {
+                return Ok(Some(entry.key.clone()));
+            }
+        }
+
+        Ok(None)
+    }
+
     fn bump_next_auto_index(&mut self, key: &ArrayKey) {
         let ArrayKey::Int(value) = key else {
             return;
@@ -2064,6 +2075,75 @@ mod tests {
         assert_eq!(
             array
                 .search_value_loose_scalar(&Value::String("missing".to_string()))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn array_search_strict_mode_returns_first_scalar_identity_match_key() {
+        let mut array = PhpArray::new();
+
+        array.insert("false", Value::Bool(false));
+        array.insert("int-zero", Value::Int(0));
+        array.insert("string-zero", Value::String("0".to_string()));
+        array.insert("int-ten", Value::Int(10));
+        array.insert("string-ten", Value::String("10".to_string()));
+        array.insert("null", Value::Null);
+        array.insert(2, Value::String("int-key".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String(String::new()))
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::Bool(false))
+                .unwrap(),
+            Some(ArrayKey::String("false".to_string()))
+        );
+        assert_eq!(
+            array.search_value_strict_scalar(&Value::Int(0)).unwrap(),
+            Some(ArrayKey::String("int-zero".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String("0".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("string-zero".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::Float(10.0))
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            array.search_value_strict_scalar(&Value::Int(10)).unwrap(),
+            Some(ArrayKey::String("int-ten".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String("10".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("string-ten".to_string()))
+        );
+        assert_eq!(
+            array.search_value_strict_scalar(&Value::Null).unwrap(),
+            Some(ArrayKey::String("null".to_string()))
+        );
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String("int-key".to_string()))
+                .unwrap(),
+            Some(ArrayKey::Int(2))
+        );
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String("missing".to_string()))
                 .unwrap(),
             None
         );

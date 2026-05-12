@@ -1,5 +1,5 @@
 use php_compiler::error::Phase;
-use php_compiler::run_source;
+use php_compiler::{emit_ir_source, run_source};
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -54,14 +54,51 @@ fn array_search_requires_array_second_argument() {
 }
 
 #[test]
-fn array_search_rejects_strict_mode_argument_until_implemented() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_search(1, $items, true);\n");
+fn array_search_strict_mode_uses_scalar_identity_and_returns_keys() {
+    let source = r#"<?php
+$items = [];
+$items["false"] = false;
+$items["int-zero"] = 0;
+$items["string-zero"] = "0";
+$items["int-ten"] = 10;
+$items["string-ten"] = "10";
+$items["null"] = null;
+$items[2] = "int-key";
+$items["text"] = "abc";
+
+var_dump(array_search("", $items, true));
+var_dump(array_search(false, $items, true));
+var_dump(array_search(0, $items, true));
+var_dump(array_search("0", $items, true));
+var_dump(array_search(10.0, $items, true));
+var_dump(array_search(10, $items, true));
+var_dump(array_search("10", $items, true));
+var_dump(array_search(null, $items, true));
+var_dump(array_search("int-key", $items, true));
+var_dump(array_search("missing", $items, true));
+var_dump(array_search("10.0", $items, false));
+
+$call = "array_search";
+var_dump($call("abc", $items, true));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nstring(5) \"false\"\nstring(8) \"int-zero\"\nstring(11) \"string-zero\"\nbool(false)\nstring(7) \"int-ten\"\nstring(10) \"string-ten\"\nstring(4) \"null\"\nint(2)\nbool(false)\nstring(7) \"int-ten\"\nstring(4) \"text\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_search_rejects_non_bool_strict_mode_argument() {
+    let error = runtime_error("<?php\n$items = [1];\necho array_search(1, $items, \"yes\");\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_search(): strict mode argument is not implemented"
+        "unsupported call array_search(): strict mode argument must be bool in the current subset, got string"
     );
 }
 
@@ -91,5 +128,17 @@ echo array_search("needle", $items);
     assert_eq!(
         object_error.message,
         "unsupported call array_search(): object needles and object values are not implemented"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_array_search_until_native_call_lowering_exists() {
+    let error = emit_ir_source("<?php\necho array_search(1, [1], true);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("function calls"),
+        "{}",
+        error.message
     );
 }

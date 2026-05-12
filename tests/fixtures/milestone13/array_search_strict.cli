@@ -1,0 +1,17 @@
+exit: 0
+stdout:
+bool(false)
+string(5) "false"
+string(8) "int-zero"
+string(11) "string-zero"
+bool(false)
+string(7) "int-ten"
+string(10) "string-ten"
+string(4) "null"
+int(2)
+bool(false)
+string(7) "int-ten"
+string(4) "text"
+--- stdout end ---
+stderr:
+--- stderr end ---

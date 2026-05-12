@@ -946,6 +946,22 @@ impl Interpreter {
                         None => Value::Bool(false),
                     })
                     .map_err(|error| runtime_error(span, error)),
+                [needle, Value::Array(array), Value::Bool(true)] => array
+                    .search_value_strict_scalar(needle)
+                    .map(|key| match key {
+                        Some(ArrayKey::Int(value)) => Value::Int(value),
+                        Some(ArrayKey::String(value)) => Value::String(value),
+                        None => Value::Bool(false),
+                    })
+                    .map_err(|error| runtime_error(span, error)),
+                [needle, Value::Array(array), Value::Bool(false)] => array
+                    .search_value_loose_scalar(needle)
+                    .map(|key| match key {
+                        Some(ArrayKey::Int(value)) => Value::Int(value),
+                        Some(ArrayKey::String(value)) => Value::String(value),
+                        None => Value::Bool(false),
+                    })
+                    .map_err(|error| runtime_error(span, error)),
                 [_, other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -953,11 +969,14 @@ impl Interpreter {
                         format!("second argument must be array, got {}", other.type_name()),
                     ),
                 )),
-                [_, Value::Array(_), _] => Err(runtime_error(
+                [_, Value::Array(_), other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_search()",
-                        "strict mode argument is not implemented",
+                        format!(
+                            "strict mode argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
                     ),
                 )),
                 [_, other, _] => Err(runtime_error(

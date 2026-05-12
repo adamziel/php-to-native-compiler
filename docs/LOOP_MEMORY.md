@@ -3241,3 +3241,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:13:02Z
 
 - Post-round 51 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T04:13:05Z
+
+- Starting round 52 at 20260512T041305Z from HEAD `2de115b`.
+
+## Loop Event 2026-05-12T04:13:08Z
+
+- Pre-round 52 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:18:28Z
+
+- Task attempted: implemented `array_search($needle, $array, true)` for the
+  current scalar needle/value subset using strict identity semantics. The
+  two-argument form remains loose, `array_search(..., false)` routes to loose
+  search, string-valued dynamic calls can pass the strict flag, non-bool strict
+  flags fail with a stable runtime diagnostic, non-scalar needles/values remain
+  explicit unsupported gaps, and native lowering rejects `array_search` calls.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_search.rs`, `tests/fixtures/milestone13/array_search_strict.*`,
+  `tests/fixtures/runtime_errors/array_search_strict_flag_non_bool.*`, removed
+  obsolete `tests/fixtures/runtime_errors/array_search_strict_mode.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p php_runtime array_search` passed with 3
+  focused runtime tests; `cargo test -p phpc --test array_search` passed with
+  6 tests; `cargo test -p phpc --test strict_array_search_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/milestone13` passed with 2 fixtures;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 36
+  fixtures; `cargo run -p phpc -- test --compare-php tests/fixtures/milestone13`
+  passed with 2 system PHP comparisons; `cargo run -p phpc -- run
+  tests/fixtures/milestone13/array_search_strict.php` printed the committed
+  strict scalar key-return output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_search_strict_flag_non_bool.php` exited
+  `1` with the expected stable diagnostic; `tools/run-tests.sh` passed with
+  120 fixtures, 50 system PHP comparisons, and 70 `.phpc-only` skips.
+- Remaining semantic gaps: strict `array_search` is limited to current scalar
+  needles and haystack values. Array/object/resource/reference identity,
+  PHP's coercion for non-bool strict flags, copy-on-write/reference behavior,
+  exact native `TypeError` objects, and native call lowering remain
+  unsupported.
+- Next concrete task: implement `array_reverse($array)` for the current ordered
+  array value model with default reindexing behavior.
+- Checkpoint: pending `tools/checkpoint.sh "runtime: add strict array_search"`
+  after the full suite passes.

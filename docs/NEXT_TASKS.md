@@ -208,7 +208,14 @@ handled.
   needle/value subset using strict identity semantics, including fixture CLI
   coverage, documentation, and explicit gaps for arrays, objects, resources,
   references, and native lowering.
-- [ ] Implement `array_search($needle, $array, true)` for the current scalar
+- [x] Implement `array_search($needle, $array, true)` for the current scalar
   needle/value subset using strict identity semantics and key-return behavior,
   including fixture CLI coverage, documentation, and explicit gaps for arrays,
   objects, resources, references, and native lowering.
+
+## Milestone 14: Array Ordering Builtins
+
+- [ ] Implement `array_reverse($array)` for the current ordered array value
+  model with default reindexing behavior, non-array diagnostics, fixture CLI
+  coverage, documentation, and explicit gaps for `preserve_keys`, references,
+  copy-on-write containers, objects/resources, and native lowering.
