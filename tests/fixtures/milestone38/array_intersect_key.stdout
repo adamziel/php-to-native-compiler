@@ -1,0 +1,40 @@
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [02] => zero two
+    [-1] => negative
+)
+5
+Ada|five|two|zero two|negative
+after
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [02] => zero two
+    [-1] => negative
+    [drop] => drop
+    [6] => next
+)
+Array
+(
+    [name] => ignored
+    [5] => ignored
+    [2] => ignored
+    [02] => ignored
+    [-1] => ignored
+    [extra] => ignored
+)
+Ada|five|two|zero two|negative
+Array
+(
+)
+0
+Array
+(
+)
+0
+done

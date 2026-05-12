@@ -77,7 +77,8 @@ subset:
   $value)` with positive right-padding, negative left-padding, and integer-key
   reindexing when padding is needed, `array_merge` over zero or more array
   operands, `array_combine` over equal-length key/value arrays with
-  integer/string key values,
+  integer/string key values, `array_intersect_key($left, $right)` over two
+  arrays with first-array key/value preservation,
   `array_flip` over integer/string array values,
   `array_fill_keys` over integer/string key values, `array_count_values` over
   integer/string array values,

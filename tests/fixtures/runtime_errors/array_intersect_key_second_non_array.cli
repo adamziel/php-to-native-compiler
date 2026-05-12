@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_intersect_key_second_non_array.php:3:6: unsupported call array_intersect_key(): second argument must be array, got int
+--- stderr end ---

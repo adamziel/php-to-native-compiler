@@ -715,6 +715,16 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn intersect_keys_with(&self, right: &Self) -> Self {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            if right.contains_key(entry.key.clone()) {
+                array.insert(entry.key.clone(), entry.value.clone());
+            }
+        }
+        array
+    }
+
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -3305,6 +3315,57 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_combine(): key values must be int or string in the current subset, got bool"
+        );
+    }
+
+    #[test]
+    fn array_intersect_key_preserves_left_entries_with_matching_right_keys() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(5, Value::String("five".to_string()));
+        left.insert("2", Value::String("two".to_string()));
+        left.insert("02", Value::String("zero two".to_string()));
+        left.insert(-1, Value::String("negative".to_string()));
+        left.insert("drop", Value::String("drop".to_string()));
+        left.append(Value::String("next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.insert("name", Value::String("ignored".to_string()));
+        right.insert("5", Value::String("ignored".to_string()));
+        right.insert(2, Value::String("ignored".to_string()));
+        right.insert("02", Value::String("ignored".to_string()));
+        right.insert(-1, Value::String("ignored".to_string()));
+        right.insert("extra", Value::String("ignored".to_string()));
+
+        let intersected = left.intersect_keys_with(&right);
+        let entries = intersected.entries();
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(5));
+        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(2));
+        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[3].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(-1));
+        assert_eq!(entries[4].value, Value::String("negative".to_string()));
+        assert!(!intersected.contains_key("drop"));
+        assert!(!intersected.contains_key(6));
+
+        let mut appended = intersected.clone();
+        assert_eq!(
+            appended.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(6)
+        );
+        assert_eq!(
+            left.get("drop"),
+            Some(&Value::String("drop".to_string())),
+            "array_intersect_key must not mutate the left array"
+        );
+        assert!(
+            right.contains_key("extra"),
+            "array_intersect_key must not mutate the right array"
         );
     }
 

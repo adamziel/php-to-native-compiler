@@ -245,6 +245,13 @@ Implemented:
   later pairs without moving the first result-key slot, supports empty arrays
   and string-valued dynamic calls, and has stable diagnostics for non-array
   operands, length mismatches, and unsupported non-int/string key values.
+- Added `array_intersect_key($left, $right)` support for the current ordered
+  integer/string key model. The supported slice accepts two arrays, preserves
+  first-array entries whose normalized keys exist in the second array,
+  preserves the first array's keys, values, and insertion order, supports
+  empty and no-match results, is available through string-valued dynamic
+  function calls, preserves the source arrays, and has stable diagnostics for
+  non-array operands and unsupported variadic operands.
 - Added `array_flip($array)` support for the current ordered array value model.
   The supported slice uses integer and string source values as result keys with
   the current string-key normalization rules, writes original integer/string
@@ -531,8 +538,8 @@ Implemented:
 Tested:
 
 - `cargo test` passes.
-- `cargo test -p php_runtime` passes with 56 runtime unit tests.
-- `cargo test -p php_runtime array_` passes with 41 focused array value tests.
+- `cargo test -p php_runtime` passes with 57 runtime unit tests.
+- `cargo test -p php_runtime array_` passes with 42 focused array value tests.
 - `cargo test -p php_runtime array_is_list` passes with 1 focused list-shape
   runtime test.
 - `cargo test -p php_runtime array_pad` passes with 3 focused array-padding
@@ -547,6 +554,8 @@ Tested:
   array-combination runtime tests.
 - `cargo test -p php_runtime array_combine` passes with 2 focused
   array-pairing runtime tests.
+- `cargo test -p php_runtime array_intersect_key` passes with 1 focused
+  array-key-set runtime test.
 - `cargo test -p php_runtime array_flip` passes with 2 focused array-transform
   runtime tests.
 - `cargo test -p php_runtime array_fill_keys` passes with 2 focused
@@ -569,7 +578,7 @@ Tested:
   identity tests.
 - `cargo test -p phpc --test runtime_errors` passes with 24 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
-  covering 71 representative runtime error fixtures.
+  covering 74 representative runtime error fixtures.
 - `cargo test -p phpc --test strict_identity` passes with 4 tests covering
   scalar strict identity execution, array/object strict identity diagnostics,
   and LLVM IR rejection.
@@ -726,6 +735,11 @@ Tested:
   behavior, dynamic string-call coverage, original-array preservation,
   non-array diagnostics, length-mismatch diagnostics, unsupported-key
   diagnostics, and LLVM IR rejection coverage.
+- `cargo test -p phpc --test array_intersect_key` passes with first-array
+  key/value preservation, normalized integer/string key matching, empty and
+  no-match result behavior, dynamic string-call coverage, original-array
+  preservation, non-array diagnostics, unsupported variadic-operand
+  diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test in_array` passes with `in_array` loose scalar
   search behavior, strict scalar search behavior, dynamic string-call coverage,
   non-array haystack diagnostics, non-bool strict-flag diagnostics, explicit
@@ -774,6 +788,8 @@ Tested:
   snapshot test covering the Milestone 36 `array_pad` fixture.
 - `cargo test -p phpc --test array_pairing_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 37 `array_combine` fixture.
+- `cargo test -p phpc --test array_key_set_builtins_cli` passes with 1 CLI
+  snapshot test covering the Milestone 38 `array_intersect_key` fixture.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for short array literals, array indexing, and array
@@ -912,7 +928,7 @@ Tested:
   prints the committed `elseif` chain output with first-match branch
   selection, skipped later conditions, single-statement bodies, and final
   `else` fallback.
-- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 71
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 78
   runtime error fixtures.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_variable.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_variable.php:2:6: undefined variable '$missing'`.
@@ -990,6 +1006,12 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_length_mismatch.php:4:6: unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_combine_unsupported_key.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_combine_unsupported_key.php:4:6: unsupported call array_combine(): key values must be int or string in the current subset, got bool`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_key_first_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_first_non_array.php:3:6: unsupported call array_intersect_key(): first argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_key_second_non_array.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_second_non_array.php:3:6: unsupported call array_intersect_key(): second argument must be array, got int`.
+- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_key_variadic_unsupported.php`
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_key_variadic_unsupported.php:5:6: arity mismatch for array_intersect_key(): expected 2 argument(s), got 3`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
@@ -1299,6 +1321,14 @@ Tested:
 - `cargo run -p phpc -- test tests/fixtures/milestone37` passes with 1 fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone37` passes
   with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone38/array_intersect_key.php`
+  prints the committed `array_intersect_key` output with first-array key/value
+  preservation, normalized integer/string key matching, empty and no-match
+  results, original-array preservation, and string-valued dynamic calls to
+  `array_intersect_key`.
+- `cargo run -p phpc -- test tests/fixtures/milestone38` passes with 1 fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone38` passes
+  with 1 system PHP comparison.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
@@ -1421,8 +1451,11 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone37/array_combine.php --emit-ir`
   exits 1 with the current explicit array native-lowering rejection before
   emitting misleading native code.
-- `tools/run-tests.sh` passes with 185 fixtures, 76 system PHP comparisons,
-  and 109 `.phpc-only` skips.
+- `cargo run -p phpc -- compile tests/fixtures/milestone38/array_intersect_key.php --emit-ir`
+  exits 1 with the current explicit array native-lowering rejection before
+  emitting misleading native code.
+- `tools/run-tests.sh` passes with 189 fixtures, 77 system PHP comparisons,
+  and 112 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1514,6 +1547,11 @@ Still fails:
   behavior; references, copy-on-write containers, object handle identity
   preservation for object values, resource values, exact native
   `ValueError`/`TypeError` objects, and native lowering are not implemented.
+  `array_intersect_key` is limited to two array operands over the current
+  integer/string key model. Variadic intersections across three or more arrays,
+  references, copy-on-write containers, object handle identity preservation for
+  object values, resource values, exact native `TypeError` objects, and native
+  lowering are not implemented.
   `array_flip` is limited to arrays whose source values are integers or
   strings. Unsupported `null`, bool, float, array, object, future resource, and
   reference values fail with a stable project diagnostic instead of PHP's

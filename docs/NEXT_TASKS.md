@@ -432,8 +432,17 @@ handled.
 
 ## Milestone 38: Array Key Set Builtins
 
-- [ ] Implement `array_intersect_key($left, $right)` over the current ordered
+- [x] Implement `array_intersect_key($left, $right)` over the current ordered
   integer/string key model, including first-array key/value preservation,
   non-array diagnostics, fixture CLI coverage, documentation, and explicit
   gaps for variadic operands, references/copy-on-write, exact native
   `TypeError` objects, object/resource values, and native lowering.
+
+## Milestone 39: Array Key Difference Builtins
+
+- [ ] Implement `array_diff_key($left, $right)` over the current ordered
+  integer/string key model, including first-array key/value preservation for
+  keys absent from the second array, non-array diagnostics, fixture CLI
+  coverage, documentation, and explicit gaps for variadic operands,
+  references/copy-on-write, exact native `TypeError` objects, object/resource
+  values, and native lowering.

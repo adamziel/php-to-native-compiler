@@ -5164,3 +5164,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T08:54:31Z
 
 - Post-round 81 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T08:54:37Z
+
+- Starting round 82 at 20260512T085437Z from HEAD `d2ca79f`.
+
+## Loop Event 2026-05-12T08:54:42Z
+
+- Pre-round 82 test exit code: `0`.
+
+## Loop Event 2026-05-12T09:06:18Z
+
+- Task attempted: implemented `array_intersect_key($left, $right)` over the
+  current ordered integer/string key model. The supported slice preserves
+  entries from the first array whose normalized keys exist in the second array,
+  keeps the first array's keys, values, and insertion order, supports empty and
+  no-match results, supports string-valued dynamic calls, preserves the source
+  arrays, and reports stable diagnostics for non-array operands and unsupported
+  variadic operands.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_intersect_key.rs`,
+  `compiler/tests/array_key_set_builtins_cli.rs`,
+  `tests/fixtures/milestone38/array_intersect_key.*`,
+  `tests/fixtures/runtime_errors/array_intersect_key_first_non_array.*`,
+  `tests/fixtures/runtime_errors/array_intersect_key_second_non_array.*`,
+  `tests/fixtures/runtime_errors/array_intersect_key_variadic_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --all --check` passed; `git diff --check`
+  passed; `cargo test -p php_runtime array_intersect_key` passed with 1
+  focused runtime test; `cargo test -p php_runtime` passed with 57 runtime
+  unit tests; `cargo test -p php_runtime array_` passed with 42 focused array
+  tests; `cargo test -p phpc --test array_intersect_key` passed with 5 tests;
+  `cargo test -p phpc --test array_key_set_builtins_cli` passed; `cargo test
+  -p phpc --test runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone38` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone38` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 78 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone38/array_intersect_key.php` printed the committed
+  output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone38/array_intersect_key.php --emit-ir` exited `1`
+  with the current explicit array native-lowering rejection; `tools/run-tests.sh`
+  passed with 189 fixtures, 77 system PHP comparisons, and 112 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_intersect_key` is limited to two array
+  operands over the current integer/string key model. Variadic intersections
+  across three or more arrays, references, copy-on-write containers, object
+  handle identity preservation for object values, resource values, exact native
+  `TypeError` objects, and native lowering remain unsupported.
+- Next concrete task: implement `array_diff_key($left, $right)` over the
+  current ordered integer/string key model while keeping variadic operands,
+  references, copy-on-write, exact native `TypeError` objects,
+  object/resource values, and native lowering explicitly unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_intersect_key builtin"`
+  after the full suite passes.
