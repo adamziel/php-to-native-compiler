@@ -126,13 +126,15 @@ declaration order while skipping static properties.
 
 `phpc run` can read and write public instance properties by static property
 name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
-current object value stored in that variable. Missing properties, non-object
-targets, and non-public properties produce stable runtime diagnostics. Objects
-do not bind `$this`, execute methods, run constructors, enforce visibility for
-non-public properties, expose reflection, implement dynamic property names, or
-model PHP object handles/aliasing. Native lowering rejects class declarations,
-object instantiation, object property reads, and object property writes
-explicitly. See `docs/OBJECT_MODEL.md` for the named unsupported edge cases.
+current object value stored in that variable. Direct `isset($box->name)` checks
+the current public slot without treating a missing name as a property read.
+Missing properties, non-object targets, and non-public properties still produce
+stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
+execute methods, run constructors, enforce visibility for non-public
+properties, expose reflection, implement dynamic property names, or model PHP
+object handles/aliasing. Native lowering rejects class declarations, object
+instantiation, object property reads, and object property writes explicitly. See
+`docs/OBJECT_MODEL.md` for the named unsupported edge cases.
 
 ## Include/Require Resolution Design
 

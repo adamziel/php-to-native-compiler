@@ -828,6 +828,25 @@ impl PhpObject {
         Ok(&property.value)
     }
 
+    pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
+        let Some(property) = self
+            .properties
+            .iter()
+            .find(|property| property.name == name)
+        else {
+            return Ok(false);
+        };
+
+        if property.visibility != Visibility::Public {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires visibility enforcement, which is not implemented",
+                self.class_name, name
+            )));
+        }
+
+        Ok(!matches!(property.value, Value::Null))
+    }
+
     pub fn write_public_property(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
         let property = self
             .properties
@@ -1773,10 +1792,13 @@ mod tests {
         let mut object = PhpObject::from_class(class);
 
         assert_eq!(object.read_public_property("id").unwrap(), &Value::Null);
+        assert!(!object.is_public_property_set("id").unwrap());
         object
             .write_public_property("id", Value::Int(42))
             .expect("public property write should update the slot");
         assert_eq!(object.read_public_property("id").unwrap(), &Value::Int(42));
+        assert!(object.is_public_property_set("id").unwrap());
+        assert!(!object.is_public_property_set("ID").unwrap());
 
         let missing = object.read_public_property("ID").unwrap_err();
         assert_eq!(
@@ -1793,6 +1815,12 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             private.message(),
+            "unsupported object property access: non-public property Packet::$secret requires visibility enforcement, which is not implemented"
+        );
+
+        let private_isset = object.is_public_property_set("secret").unwrap_err();
+        assert_eq!(
+            private_isset.message(),
             "unsupported object property access: non-public property Packet::$secret requires visibility enforcement, which is not implemented"
         );
     }

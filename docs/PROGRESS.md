@@ -148,6 +148,13 @@ Implemented:
   names, `$this`, visibility enforcement for non-public properties,
   constructors, PHP object handle identity/aliasing, and native object lowering
   remain unsupported.
+- Added direct `isset($object->publicProperty)` support for public instance
+  properties in the current object value model. The supported slice checks
+  direct object-variable operands, treats null slots, missing property names,
+  undefined target variables, and non-object target variables as false, supports
+  multiple `isset` operands, and keeps array offsets, dynamic property names,
+  non-public property operands, complex lvalues, and method dispatch
+  unsupported.
 
 Tested:
 
@@ -156,7 +163,7 @@ Tested:
 - `cargo test -p php_runtime array_` passes with 4 focused array value tests.
 - `cargo test -p php_runtime scalar_comparison_matrix_matches_php_8_scalar_subset`
   passes.
-- `cargo test -p phpc --test runtime_errors` passes with 17 runtime error tests.
+- `cargo test -p phpc --test runtime_errors` passes with 19 runtime error tests.
 - `cargo test -p phpc --test runtime_error_cli` passes with 1 CLI snapshot test
   covering 18 representative runtime error fixtures.
 - `cargo test -p phpc --test functions_and_scopes` passes with 17
@@ -172,11 +179,11 @@ Tested:
 - `cargo test -p phpc --test unsupported_dynamic_features_cli` passes with 1
   CLI snapshot test covering 7 unsupported variable-variable,
   include/require, and eval fixtures.
-- `cargo test -p phpc --test object_model` passes with 8 tests covering class
+- `cargo test -p phpc --test object_model` passes with 9 tests covering class
   metadata registration, minimal object instantiation, duplicate metadata
   diagnostics, undefined-class diagnostics, constructor rejection, public
-  property reads/writes, and stable parse diagnostics for unsupported
-  object/class syntax.
+  property reads/writes, public property `isset`, and stable parse diagnostics
+  for unsupported object/class syntax.
 - `cargo test -p phpc --test unsupported_object_features_cli` passes with 1 CLI
   snapshot test covering 4 unsupported object/class fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
@@ -192,9 +199,9 @@ Tested:
   passes with rejection coverage for object instantiation.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_object_property`
   passes with rejection coverage for object property reads and writes.
-- `cargo run -p phpc -- test` passes with 62 fixture tests.
+- `cargo run -p phpc -- test` passes with 63 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 27 fixtures and skipping 35 `.phpc-only` fixtures.
+  installed, comparing 28 fixtures and skipping 35 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -203,11 +210,11 @@ Tested:
   scope/default-parameter fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone4` passes
   with 3 system PHP comparisons.
-- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 5 static
+- `cargo run -p phpc -- test tests/fixtures/milestone5` passes with 6 static
   symbol-table, dynamic-function, class-declaration, object-instantiation, and
   public object-property fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone5` passes
-  with 5 system PHP comparisons.
+  with 6 system PHP comparisons.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`
   passes with 6 unsupported function-feature fixtures.
 - `cargo run -p phpc -- test --compare-php
@@ -265,6 +272,8 @@ Tested:
   prints the committed object truthiness, `isset`, and `print_r` output.
 - `cargo run -p phpc -- run tests/fixtures/milestone5/object_properties.php`
   prints the committed public property read/write and object rendering output.
+- `cargo run -p phpc -- run tests/fixtures/milestone5/object_isset.php`
+  prints the committed public object-property `isset` output.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/undefined_dynamic_function.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_dynamic_function.php:3:6: undefined function missing()`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/invalid_dynamic_callable.php`
@@ -383,17 +392,18 @@ Still fails:
   not implemented.
 - Object/class execution remains narrow. `new ClassName()` works only for
   declared constructor-free classes with no constructor arguments. Public
-  instance property reads and direct-variable writes work by static property
-  name, but method dispatch, dynamic property names, `$this`, constructor
-  execution, visibility enforcement for non-public properties, nested and
-  conditional classes, inheritance, interfaces, traits, typed/default/multiple
-  properties, constants, static property storage, magic methods,
-  namespaces/autoloading, object identity/handle aliasing, `isset($object->prop)`,
+  instance property reads, direct-variable writes, and direct
+  `isset($object->prop)` checks work by static property name, but method
+  dispatch, dynamic property names, `$this`, constructor execution, visibility
+  enforcement for non-public properties, nested and conditional classes,
+  inheritance, interfaces, traits, typed/default/multiple properties,
+  constants, static property storage, magic methods, namespaces/autoloading,
+  object identity/handle aliasing, array-offset/complex `isset` operands,
   object comparisons, object-to-string conversion, object callables, reflection,
   and native lowering are not implemented.
 
 Next:
 
-- Continue Milestone 5+ by adding `isset($object->publicProperty)` support for
-  public instance properties while keeping array offsets, dynamic property
-  names, non-public visibility enforcement, and method dispatch unsupported.
+- Continue Milestone 5+ by adding explicit parse diagnostics for unsupported
+  static property, static method, and class constant syntax such as
+  `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`.

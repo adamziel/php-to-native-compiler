@@ -659,22 +659,59 @@ impl Interpreter {
         }
 
         for arg in args {
-            match arg {
-                Expr::Variable(name, _) if caller_scope.is_set_static(name) => {}
-                Expr::Variable(_, _) => return Ok(Value::Bool(false)),
-                _ => {
-                    return Err(runtime_error(
-                        arg.span(),
-                        RuntimeError::unsupported_call(
-                            "isset()",
-                            "only direct variable operands are supported",
-                        ),
-                    ));
-                }
+            if !self.is_isset_operand(arg, caller_scope)? {
+                return Ok(Value::Bool(false));
             }
         }
 
         Ok(Value::Bool(true))
+    }
+
+    fn is_isset_operand(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        match arg {
+            Expr::Variable(name, _) => Ok(caller_scope.is_set_static(name)),
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.is_direct_object_property_set(target, property, *span, caller_scope),
+            _ => Err(runtime_error(
+                arg.span(),
+                RuntimeError::unsupported_call(
+                    "isset()",
+                    "only direct variables and direct object property operands are supported",
+                ),
+            )),
+        }
+    }
+
+    fn is_direct_object_property_set(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Expr::Variable(name, _) = target else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "isset()",
+                    "only direct variables and direct object property operands are supported",
+                ),
+            ));
+        };
+
+        match caller_scope.read_named(name) {
+            Some(Value::Object(object)) => object
+                .is_public_property_set(property)
+                .map_err(|error| runtime_error(span, error)),
+            Some(_) | None => Ok(false),
+        }
     }
 
     fn apply_binary(

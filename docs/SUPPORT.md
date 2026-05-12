@@ -37,6 +37,8 @@
   do not define `__construct` and are called without constructor arguments
 - public instance property reads and direct-variable writes by static property
   name: `$object->name` and `$object->name = ...`
+- `isset($object->name)` for direct public instance property operands on direct
+  object variables
 - short array literals: `[]`, `[value]`, and `[key => value]` for the currently
   supported expression subset
 - ordered arrays with integer and string keys
@@ -111,9 +113,12 @@
   classes, constructor methods, and constructor arguments fail with stable
   runtime diagnostics. Public instance property reads and direct-variable
   writes work by static property name; property names are case-sensitive, and
-  writes mutate the current object value stored in that variable. Undefined
-  properties, property access on non-object values, and non-public properties
-  fail with stable runtime diagnostics. Method dispatch, dynamic property names,
+  writes mutate the current object value stored in that variable.
+  `isset($object->name)` works for direct object-variable operands and returns
+  false for `null` slots, missing property names, undefined target variables,
+  and non-object target variables. Undefined properties, property access on
+  non-object values, and non-public properties still fail with stable runtime
+  diagnostics for normal reads/writes. Method dispatch, dynamic property names,
   `$this`, visibility enforcement for non-public properties, object handle
   aliasing/identity, and native object lowering are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
@@ -187,14 +192,16 @@
   syntax, `call_user_func`, namespace-qualified callable resolution, and
   autoload interaction are also unsupported.
 - Builtins: `strlen`, `isset`, `count`, `var_dump`, and `print_r` cover the
-  documented scalar/array subset. `print_r` can also render the current minimal
-  object values. `strlen` remains scalar-only and rejects arrays and objects.
-  `count` accepts arrays only. `isset` supports direct variable operands and can
-  safely check undefined variables; array offsets, object properties, complex
-  lvalues, and expression operands are unsupported even though public property
-  reads themselves are implemented. Because `isset` is modeled as a special
-  static form, it is not available through dynamic function lookup. PHP's
-  complete warning behavior is not implemented.
+  documented scalar/array/object subset. `print_r` can also render the current
+  minimal object values. `strlen` remains scalar-only and rejects arrays and
+  objects. `count` accepts arrays only. `isset` supports direct variable
+  operands and direct public object-property operands such as
+  `isset($object->name)`; it can safely check undefined variables and undefined
+  object-property targets. Array offsets, dynamic property names, non-public
+  property operands, complex lvalues, and expression operands remain
+  unsupported. Because `isset` is modeled as a special static form, it is not
+  available through dynamic function lookup. PHP's complete warning behavior is
+  not implemented.
 - Object/class gaps: nested and conditional class declarations, method calls,
   `$this`, constructor execution, constructor arguments, inheritance,
   interfaces, traits, abstract/final/readonly modifiers, typed properties,

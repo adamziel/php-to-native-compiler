@@ -66,6 +66,10 @@ handled.
 - [x] Add public instance property reads and writes for the current object value
   model while keeping method dispatch, constructors, and visibility enforcement
   unsupported.
-- [ ] Add `isset($object->publicProperty)` support for public instance
+- [x] Add `isset($object->publicProperty)` support for public instance
   properties while keeping array offsets, dynamic property names, non-public
   visibility enforcement, and method dispatch unsupported.
+- [ ] Add explicit parse diagnostics for unsupported static property, static
+  method, and class constant syntax such as `ClassName::$prop`,
+  `ClassName::method()`, and `ClassName::CONST` before implementing static
+  member storage or dispatch.

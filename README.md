@@ -47,12 +47,12 @@ subset:
   metadata for the documented subset
 - minimal object instantiation with `new ClassName()` for declared classes that
   do not define constructors; public instance properties can be read and
-  written by static property name
+  written by static property name and checked with `isset($object->name)`
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
-- builtins for the documented scalar/array subset: `strlen`, `isset`, `count`,
-  `var_dump`, and `print_r`
+- builtins for the documented scalar/array/object subset: `strlen`, `isset`,
+  `count`, `var_dump`, and `print_r`
 - stable runtime diagnostics for the currently covered runtime errors,
   including unresolved or non-string dynamic function calls, unsupported
   `global` declarations, and runaway recursion
@@ -63,11 +63,11 @@ subset:
   unsupported class forms
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
-object values. `phpc run` can instantiate declared constructor-free classes and
-read/write public instance properties by static name, but constructors, `$this`,
-method dispatch, dynamic property names, visibility enforcement for non-public
-properties, object handle identity, and native object lowering are not supported
-yet.
+object values. `phpc run` can instantiate declared constructor-free classes,
+read/write public instance properties by static name, and check those public
+properties with `isset`, but constructors, `$this`, method dispatch, dynamic
+property names, visibility enforcement for non-public properties, object handle
+identity, and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

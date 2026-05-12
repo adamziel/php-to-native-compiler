@@ -113,6 +113,54 @@ print_r($profile);
 }
 
 #[test]
+fn isset_public_instance_properties_checks_current_slot_values() {
+    let source = r#"<?php
+class Profile {
+    public $name;
+    public $visits;
+    private $token;
+}
+
+$profile = new profile();
+if (isset($profile->name)) {
+    echo "name:set before\n";
+} else {
+    echo "name:unset before\n";
+}
+
+$profile->name = "Ada";
+$profile->visits = 0;
+if (isset($profile->name, $profile->visits)) {
+    echo "name+visits:set\n";
+}
+if (isset($profile->missing)) {
+    echo "missing:set\n";
+} else {
+    echo "missing:unset\n";
+}
+
+$value = 1;
+if (isset($value->name)) {
+    echo "scalar:set\n";
+} else {
+    echo "scalar:unset\n";
+}
+if (isset($missing->name)) {
+    echo "missing-target:set\n";
+} else {
+    echo "missing-target:unset";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "name:unset before\nname+visits:set\nmissing:unset\nscalar:unset\nmissing-target:unset"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php

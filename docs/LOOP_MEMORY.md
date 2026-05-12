@@ -1077,3 +1077,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:33:32Z
 
 - Post-round 17 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:33:34Z
+
+- Starting round 18 at 20260512T003334Z from HEAD `6693e13`.
+
+## Loop Event 2026-05-12T00:33:36Z
+
+- Pre-round 18 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:41:00Z
+
+- Task attempted: added direct `isset($object->publicProperty)` support for
+  the current public object-property slice. The interpreter now handles direct
+  object-variable property operands in `isset`, returns false for null slots,
+  missing property names, undefined target variables, and non-object target
+  variables, supports multiple operands, and keeps array offsets, dynamic
+  property names, non-public property operands, complex lvalues, and method
+  dispatch unsupported.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/runtime_errors.rs`,
+  `tests/fixtures/milestone5/object_isset.php`,
+  `tests/fixtures/milestone5/object_isset.stdout`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p
+  php_runtime object_public_property_reads_and_writes_use_exact_slot_names`
+  passed; `cargo test -p phpc --test object_model
+  isset_public_instance_properties_checks_current_slot_values` passed; `cargo
+  test -p phpc --test runtime_errors isset_` passed; `cargo test -p phpc
+  --test object_model` passed with 9 tests; `cargo test -p phpc --test
+  runtime_errors` passed with 19 tests; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone5` passed with 6 fixtures; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone5` passed with 6 system PHP
+  comparisons; `cargo run -p phpc -- run
+  tests/fixtures/milestone5/object_isset.php` printed the committed output;
+  `tools/run-tests.sh` passed with 63 fixtures, 28 system PHP comparisons, and
+  35 `.phpc-only` skips.
+- Remaining semantic gaps: `isset` still rejects array offsets, dynamic
+  property names, non-public property operands, complex lvalues, and expression
+  operands. Object execution still lacks method dispatch, `$this`, constructor
+  execution, non-public visibility enforcement, static property storage,
+  inheritance/interfaces/traits, object identity/aliasing, and native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported static
+  property, static method, and class constant syntax such as
+  `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add public property isset"`
+  after the full suite passes.

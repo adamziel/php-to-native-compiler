@@ -213,6 +213,38 @@ fn isset_can_check_undefined_variables_without_reading_them() {
 }
 
 #[test]
+fn isset_array_offsets_remain_explicitly_unsupported() {
+    let error = runtime_error("<?php\n$items = [1];\necho isset($items[0]);\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported call isset(): only direct variables and direct object property operands are supported"
+    );
+}
+
+#[test]
+fn isset_non_public_property_access_remains_explicitly_unsupported() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $secret;
+}
+$box = new Box();
+echo isset($box->secret);
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 12);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+    );
+}
+
+#[test]
 fn runaway_user_function_recursion_hits_stable_depth_guard() {
     let error = runtime_error(
         r#"<?php
