@@ -1,0 +1,2 @@
+parse error at 3:5: unsupported trait use: trait composition inside classes is not implemented
+

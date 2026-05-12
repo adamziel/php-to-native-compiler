@@ -196,7 +196,8 @@
   arguments
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface declarations and implementation, trait
-  declarations, enum declarations, `abstract`/`final`/`readonly` class
+  declarations, trait use inside classes, enum declarations,
+  `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
@@ -1089,8 +1090,9 @@
   `$this`, constructor execution, constructor arguments, inheritance,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
-  interfaces, trait declarations, trait methods/properties/constants, trait
-  conflict resolution, aliases, visibility changes, namespace-aware traits,
+  interfaces, trait declarations, trait use inside classes,
+  trait methods/properties/constants, trait conflict resolution, aliases,
+  visibility changes, namespace-aware traits,
   enum declarations, enum cases, backed enum values, enum methods, enum
   interface implementations, namespace-aware enums,
   `abstract`/`final`/`readonly` class modifiers,

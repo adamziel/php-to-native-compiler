@@ -148,9 +148,9 @@ subset:
   declarations, unsupported `$this` usage, unsupported `clone` expressions,
   unsupported `instanceof` expressions, unsupported `ClassName::class`
   expressions, unsupported magic static receivers such as `self::`,
-  `parent::`, and `static::`, trait declarations, interface declarations,
-  interface implementation clauses, enum declarations, static member access,
-  and class constants
+  `parent::`, and `static::`, trait declarations, trait use inside classes,
+  interface declarations, interface implementation clauses, enum declarations,
+  static member access, and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,
@@ -162,8 +162,8 @@ relationship checks, class-name constant resolution through `::class`,
 property default values, constructor arguments, multiple properties in one
 declaration, class constant declarations, static property storage, static
 method dispatch, magic static receivers such as `self::`, `parent::`, and
-`static::`, class constants, enum declarations, and native object lowering are
-not supported yet.
+`static::`, class constants, trait use inside classes, enum declarations, and
+native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

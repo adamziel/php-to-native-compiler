@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_trait_use.php:3:5: unsupported trait use: trait composition inside classes is not implemented
+--- stderr end ---

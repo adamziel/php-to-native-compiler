@@ -2102,7 +2102,7 @@ fn unsupported_class_member_message(kind: &TokenKind) -> String {
         TokenKind::Implements => {
             "unsupported interface implementation: implements is not implemented".to_string()
         }
-        TokenKind::Use => "unsupported trait use: traits are not implemented".to_string(),
+        TokenKind::Use => unsupported_trait_use_message().to_string(),
         TokenKind::Interface => unsupported_interface_declaration_message().to_string(),
         TokenKind::Trait => unsupported_trait_declaration_message().to_string(),
         TokenKind::Enum => unsupported_enum_declaration_message().to_string(),
@@ -2119,6 +2119,10 @@ fn unsupported_class_member_modifier_message() -> &'static str {
 
 fn unsupported_class_constant_declaration_message() -> &'static str {
     "unsupported class constant declaration: class constant metadata and lookup are not implemented"
+}
+
+fn unsupported_trait_use_message() -> &'static str {
+    "unsupported trait use: trait composition inside classes is not implemented"
 }
 
 impl Parser {

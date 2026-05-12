@@ -512,6 +512,16 @@ class Box {
         (
             r#"<?php
 class Box {
+    use Labels;
+}
+"#,
+            3,
+            5,
+            "unsupported trait use: trait composition inside classes is not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
     private const string NAME = "box";
 }
 "#,

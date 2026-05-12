@@ -2478,6 +2478,11 @@ Still fails:
   exist. Interface method enforcement, inheritance interactions, namespace-aware
   interface names, autoloading, exact PHP `Error` objects, and native lowering
   remain unsupported.
+- Added an explicit stable parse diagnostic, parser coverage, fixture
+  coverage, and a `phpc run` CLI snapshot for unsupported trait use inside
+  classes before trait composition exists. Trait methods/properties/constants,
+  conflict resolution, aliases, visibility adaptations, namespace-aware traits,
+  exact PHP parse/error objects, and native lowering remain unsupported.
 
 Next:
 

@@ -1,0 +1,1 @@
+phpc intentionally rejects trait use inside classes before trait composition exists.

@@ -911,3 +911,11 @@ handled.
   including parser coverage, fixture CLI coverage, documentation, and named
   gaps for interface method enforcement, inheritance, namespaces, autoloading,
   exact PHP `Error` objects, and native lowering.
+
+## Milestone 96: Trait Use Boundary
+
+- [x] Add explicit parse diagnostics for unsupported trait use inside class
+  bodies before trait composition exists, including parser coverage, fixture
+  CLI coverage, documentation, and named gaps for trait
+  methods/properties/constants, conflict resolution, aliases, visibility
+  adaptations, namespaces, exact PHP parse/error objects, and native lowering.

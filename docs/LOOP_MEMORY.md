@@ -8712,3 +8712,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T19:32:13Z
 
 - Post-round 44 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T19:32:27Z
+
+- Starting round 45 at 20260512T193227Z from HEAD `c36ebf6`.
+
+## Loop Event 2026-05-12T19:32:44Z
+
+- Pre-round 45 test exit code: `0`.
+
+## Loop Event 2026-05-12T19:37:16Z
+
+- Task attempted: completed Milestone 96 by making trait use inside class
+  bodies an explicit object/class parse boundary before trait composition
+  exists. The parser now routes class-body `use` members through a named stable
+  diagnostic, object parser regression coverage includes `class Box { use
+  Labels; }`, and unsupported-object fixture coverage includes a committed
+  `phpc run` CLI snapshot.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_trait_use.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `CHANGELOG.md`.
+- Tests run so far: `cargo test -p phpc --test object_model
+  unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test unsupported_object_features_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed with 29 fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 29 `.phpc-only`
+  system PHP comparison skips; direct `cargo run -p phpc -- run
+  tests/fixtures/unsupported_object_features/unsupported_trait_use.php`
+  exited `1` with the expected stable parse diagnostic; `cargo fmt --
+  --check` passed; `git diff --check` passed; `tools/run-tests.sh` passed
+  with 288 fixtures, 106 system PHP comparisons, and 182 skips.
+- Remaining semantic gaps: trait composition remains unsupported, including
+  trait methods/properties/constants, conflict resolution, aliases, visibility
+  adaptations, namespace-aware trait names, exact PHP parse/error objects, and
+  native lowering.
+- Next concrete task: continue the next small object/class boundary from
+  `docs/NEXT_TASKS.md`.
+- Checkpoint: pending
+  `tools/checkpoint.sh "parser: reject unsupported trait use"` after the full
+  suite passes.
