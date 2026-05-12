@@ -132,7 +132,10 @@ Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public
 properties, expose reflection, implement dynamic property names, or model PHP
-object handles/aliasing. Native lowering rejects class declarations, object
+object handles/aliasing. Static member syntax through `::`, including
+`ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
+with explicit parse diagnostics until static storage, dispatch, and class
+constants exist. Native lowering rejects class declarations, object
 instantiation, object property reads, and object property writes explicitly. See
 `docs/OBJECT_MODEL.md` for the named unsupported edge cases.
 

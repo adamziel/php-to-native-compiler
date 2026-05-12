@@ -337,6 +337,30 @@ class Box {
             18,
             "unsupported property default: property default values are not implemented",
         ),
+        (
+            r#"<?php
+Box::$cache;
+"#,
+            2,
+            4,
+            "unsupported static property access: static property storage is not implemented",
+        ),
+        (
+            r#"<?php
+Box::make();
+"#,
+            2,
+            4,
+            "unsupported static method call: static method dispatch is not implemented",
+        ),
+        (
+            r#"<?php
+Box::VERSION;
+"#,
+            2,
+            4,
+            "unsupported class constant access: class constants are not implemented",
+        ),
     ];
 
     for (source, line, column, message) in cases {

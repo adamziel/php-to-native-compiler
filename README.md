@@ -60,14 +60,15 @@ subset:
   including variable variables, include/require/eval constructs,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
   object method calls, dynamic property names, anonymous classes, and
-  unsupported class forms
+  unsupported class forms, static member access, and class constants
 
 `php_runtime` also contains a tested object/class metadata registry and minimal
 object values. `phpc run` can instantiate declared constructor-free classes,
 read/write public instance properties by static name, and check those public
 properties with `isset`, but constructors, `$this`, method dispatch, dynamic
 property names, visibility enforcement for non-public properties, object handle
-identity, and native object lowering are not supported yet.
+identity, static property storage, static method dispatch, class constants, and
+native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

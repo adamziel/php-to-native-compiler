@@ -55,6 +55,7 @@ pub enum TokenKind {
     Slash,
     Dot,
     ObjectOperator,
+    DoubleColon,
     Ellipsis,
     Ampersand,
     Colon,
@@ -146,7 +147,13 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 '&' => TokenKind::Ampersand,
-                ':' => TokenKind::Colon,
+                ':' => {
+                    if self.match_char(':') {
+                        TokenKind::DoubleColon
+                    } else {
+                        TokenKind::Colon
+                    }
+                }
                 '=' => {
                     if self.match_char('=') {
                         TokenKind::EqualEqual

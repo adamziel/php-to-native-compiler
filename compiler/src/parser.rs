@@ -685,6 +685,9 @@ impl Parser {
                 "unsupported reference expression: references are not implemented",
             )),
             TokenKind::Identifier(name) => {
+                if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                    return self.reject_unsupported_static_member_access();
+                }
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let args = self.parse_call_arguments_after_open()?;
                 Ok(Expr::Call {
@@ -692,6 +695,9 @@ impl Parser {
                     args,
                     span: token.span,
                 })
+            }
+            TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
+                self.reject_unsupported_static_member_access()
             }
             TokenKind::LParen => {
                 let expr = self.parse_expression()?;
@@ -701,6 +707,40 @@ impl Parser {
             other => Err(self.error_at(
                 token.span,
                 format!("expected expression, found {}", token_name(&other)),
+            )),
+        }
+    }
+
+    fn reject_unsupported_static_member_access(&mut self) -> CompileResult<Expr> {
+        let operator_span = self
+            .consume_keyword(TokenKind::DoubleColon, "expected '::'")?
+            .span;
+        let member = self.peek();
+        match &member.kind {
+            TokenKind::Variable(_) => Err(self.error_at(
+                operator_span,
+                "unsupported static property access: static property storage is not implemented",
+            )),
+            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                Err(self.error_at(
+                    operator_span,
+                    "unsupported static method call: static method dispatch is not implemented",
+                ))
+            }
+            TokenKind::Identifier(_) => Err(self.error_at(
+                operator_span,
+                "unsupported class constant access: class constants are not implemented",
+            )),
+            TokenKind::Class => Err(self.error_at(
+                operator_span,
+                "unsupported class constant access: class constants and ::class are not implemented",
+            )),
+            _ => Err(self.error_at(
+                operator_span,
+                format!(
+                    "expected static member name after '::', found {}",
+                    token_name(&member.kind)
+                ),
             )),
         }
     }
@@ -965,6 +1005,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Slash => "/",
         TokenKind::Dot => ".",
         TokenKind::ObjectOperator => "->",
+        TokenKind::DoubleColon => "::",
         TokenKind::Ellipsis => "...",
         TokenKind::Ampersand => "&",
         TokenKind::Colon => ":",

@@ -1,0 +1,1 @@
+phpc intentionally rejects static method syntax before dispatch exists.

@@ -155,6 +155,9 @@ Implemented:
   multiple `isset` operands, and keeps array offsets, dynamic property names,
   non-public property operands, complex lvalues, and method dispatch
   unsupported.
+- Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
+  snapshots for unsupported static property access, static method calls, and
+  class constant access through `::`.
 
 Tested:
 
@@ -185,7 +188,7 @@ Tested:
   property reads/writes, public property `isset`, and stable parse diagnostics
   for unsupported object/class syntax.
 - `cargo test -p phpc --test unsupported_object_features_cli` passes with 1 CLI
-  snapshot test covering 4 unsupported object/class fixtures.
+  snapshot test covering 7 unsupported object/class fixtures.
 - `cargo test -p phpc --test php_comparison` passes.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_array` passes with
   rejection coverage for array literals, array indexing, and array assignment.
@@ -199,9 +202,9 @@ Tested:
   passes with rejection coverage for object instantiation.
 - `cargo test -p phpc --test milestone1 emit_ir_rejects_object_property`
   passes with rejection coverage for object property reads and writes.
-- `cargo run -p phpc -- test` passes with 63 fixture tests.
+- `cargo run -p phpc -- test` passes with 66 fixture tests.
 - `cargo run -p phpc -- test --compare-php` passes with system `php`
-  installed, comparing 28 fixtures and skipping 35 `.phpc-only` fixtures.
+  installed, comparing 28 fixtures and skipping 38 `.phpc-only` fixtures.
 - `cargo run -p phpc -- test tests/fixtures/milestone3` passes with 2 array
   fixtures.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone3` passes
@@ -226,9 +229,9 @@ Tested:
   tests/fixtures/unsupported_dynamic_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
-  passes with 4 unsupported object/class fixtures.
+  passes with 7 unsupported object/class fixtures.
 - `cargo run -p phpc -- test --compare-php
-  tests/fixtures/unsupported_object_features` passes with 4 `.phpc-only` PHP
+  tests/fixtures/unsupported_object_features` passes with 7 `.phpc-only` PHP
   comparisons skipped.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2` passes
   with system `php` installed, comparing 7 Milestone 2 fixtures.
@@ -312,6 +315,12 @@ Tested:
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_object_access.php:6:5: unsupported method call: method dispatch is not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_dynamic_property.php`
   exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_dynamic_property.php:7:7: unsupported dynamic property access: dynamic property names are not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_static_property.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_static_property.php:2:4: unsupported static property access: static property storage is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_static_method.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_static_method.php:2:4: unsupported static method call: static method dispatch is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/unsupported_object_features/unsupported_class_constant.php`
+  exits 1 and reports `parse error at tests/fixtures/unsupported_object_features/unsupported_class_constant.php:2:4: unsupported class constant access: class constants are not implemented`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_literals.php --emit-ir`
   exits 1 with `arrays are supported by phpc run but not LLVM IR emission yet`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone3/array_indexing.php --emit-ir`
@@ -394,16 +403,17 @@ Still fails:
   declared constructor-free classes with no constructor arguments. Public
   instance property reads, direct-variable writes, and direct
   `isset($object->prop)` checks work by static property name, but method
-  dispatch, dynamic property names, `$this`, constructor execution, visibility
+  dispatch, dynamic property names, static property access, static method calls,
+  class constants, `::class`, `$this`, constructor execution, visibility
   enforcement for non-public properties, nested and conditional classes,
-  inheritance, interfaces, traits, typed/default/multiple properties,
-  constants, static property storage, magic methods, namespaces/autoloading,
-  object identity/handle aliasing, array-offset/complex `isset` operands,
-  object comparisons, object-to-string conversion, object callables, reflection,
-  and native lowering are not implemented.
+  inheritance, interfaces, traits, typed/default/multiple properties, static
+  property storage, magic methods, namespaces/autoloading, object identity/handle
+  aliasing, array-offset/complex `isset` operands, object comparisons,
+  object-to-string conversion, object callables, reflection, and native lowering
+  are not implemented.
 
 Next:
 
 - Continue Milestone 5+ by adding explicit parse diagnostics for unsupported
-  static property, static method, and class constant syntax such as
-  `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`.
+  namespace and `use` declaration syntax before namespace-aware name resolution
+  or imports exist.

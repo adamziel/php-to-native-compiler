@@ -64,8 +64,9 @@
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - explicit parse diagnostics for unsupported object/class syntax: nested class
   declarations, inheritance, interface implementation, typed/default/multiple
-  property declarations, anonymous class expressions, method calls, and dynamic
-  property names
+  property declarations, anonymous class expressions, method calls, dynamic
+  property names, static property access, static method calls, and class
+  constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 
@@ -118,9 +119,12 @@
   false for `null` slots, missing property names, undefined target variables,
   and non-object target variables. Undefined properties, property access on
   non-object values, and non-public properties still fail with stable runtime
-  diagnostics for normal reads/writes. Method dispatch, dynamic property names,
-  `$this`, visibility enforcement for non-public properties, object handle
-  aliasing/identity, and native object lowering are not implemented.
+  diagnostics for normal reads/writes. Static member expressions through `::`,
+  including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
+  fail with stable parse diagnostics. Method dispatch, dynamic property names,
+  `$this`, visibility enforcement for non-public properties, static storage,
+  class constants, object handle aliasing/identity, and native object lowering
+  are not implemented.
 - Arrays: array values preserve insertion order and normalize string keys that
   are valid decimal integers, such as `"2"` and `"-2"`, to integer keys.
   Strings with leading zeroes, leading `+`, decimal points, exponent notation,
@@ -208,11 +212,12 @@
   property defaults, multiple properties in one declaration, constants, static
   property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
-  dynamic property names, non-public property access, property assignment
-  targets other than a direct variable, object handle identity/aliasing,
-  cloning, destructors, serialization hooks, visibility enforcement,
-  `self`/`parent`/`static`, object comparisons, object-to-string conversion,
-  object callables, and native lowering are unsupported.
+  dynamic property names, non-public property access, static member execution
+  through `::`, `::class`, property assignment targets other than a direct
+  variable, object handle identity/aliasing, cloning, destructors,
+  serialization hooks, visibility enforcement, `self`/`parent`/`static`, object
+  comparisons, object-to-string conversion, object callables, and native
+  lowering are unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -261,6 +266,8 @@
 - unsupported class forms including nested/conditional declarations,
   inheritance, interface implementation, typed properties, property defaults,
   multiple properties in one declaration, constants, and anonymous classes
+- static property access, static method calls, and class constant access through
+  `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

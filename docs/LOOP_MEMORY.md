@@ -1137,3 +1137,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:42:24Z
 
 - Post-round 18 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:42:26Z
+
+- Starting round 19 at 20260512T004226Z from HEAD `6afbcac`.
+
+## Loop Event 2026-05-12T00:42:28Z
+
+- Pre-round 19 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:46:31Z
+
+- Task attempted: added explicit parse diagnostics for unsupported static
+  member syntax through `::`. `ClassName::$prop`, `ClassName::method()`, and
+  `ClassName::CONST` now fail with stable parse errors before static property
+  storage, static method dispatch, or class constants are implemented.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_property.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_method.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_constant.*`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc --test
+  object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors`
+  passed; `cargo test -p phpc --test object_model` passed with 9 tests;
+  `cargo test -p phpc --test unsupported_object_features_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/unsupported_object_features` passed with 7
+  fixtures; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_object_features` passed with 7 `.phpc-only` skips;
+  direct `phpc run` exercises for `unsupported_static_property.php`,
+  `unsupported_static_method.php`, and `unsupported_class_constant.php` each
+  exited `1` with the expected stable diagnostic; `tools/run-tests.sh` passed
+  with 66 fixtures, 28 system PHP comparisons, and 38 `.phpc-only` skips.
+- Remaining semantic gaps: static property storage, static method dispatch,
+  class constants, `::class`, `self`/`parent`/`static` resolution, late static
+  binding, method dispatch, `$this`, constructor execution, visibility
+  enforcement for non-public properties, namespaces/autoloading, object
+  identity/aliasing, and native object lowering remain unsupported.
+- Next concrete task: add explicit parse diagnostics for unsupported namespace
+  and `use` declaration syntax before namespace-aware name resolution or
+  imports exist.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject static member syntax"`
+  after the full suite passes.

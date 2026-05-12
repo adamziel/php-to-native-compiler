@@ -8,7 +8,9 @@ can evaluate `new ClassName()` for declared classes that do not define
 constructors. It stores class identity plus `null` instance-property slots and
 can read/write public instance properties by static property name and check
 direct public property operands with `isset($object->name)`. Method calls and
-dynamic property names still fail with explicit parse diagnostics.
+dynamic property names still fail with explicit parse diagnostics. Static
+member access through `::` also fails with explicit parse diagnostics until
+static property storage, static method dispatch, and class constants exist.
 
 ## Runtime Metadata
 
@@ -72,7 +74,9 @@ properties, property access on non-object values, and non-public properties
 produce stable runtime errors for ordinary reads/writes; `isset` returns false
 for null slots, missing property names, undefined target variables, and
 non-object target variables. Static properties are recorded as metadata but are
-not stored in object values.
+not stored in object values. Static member expressions such as
+`ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST` are rejected
+by the parser instead of falling through to generic expression errors.
 
 Native lowering rejects class declarations, object instantiation, object
 property reads, and object property writes until metadata, object allocation,
@@ -92,4 +96,5 @@ arguments, non-public property access, dynamic property names, property
 assignment targets other than a direct variable, method dispatch, object
 identity/handle aliasing, object comparisons, object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
-operands, complex object-property `isset` operands, and native lowering.
+operands, complex object-property `isset` operands, static member execution
+through `::`, `::class`, and native lowering.

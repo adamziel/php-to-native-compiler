@@ -69,7 +69,9 @@ handled.
 - [x] Add `isset($object->publicProperty)` support for public instance
   properties while keeping array offsets, dynamic property names, non-public
   visibility enforcement, and method dispatch unsupported.
-- [ ] Add explicit parse diagnostics for unsupported static property, static
+- [x] Add explicit parse diagnostics for unsupported static property, static
   method, and class constant syntax such as `ClassName::$prop`,
   `ClassName::method()`, and `ClassName::CONST` before implementing static
   member storage or dispatch.
+- [ ] Add explicit parse diagnostics for unsupported namespace and `use`
+  declaration syntax before namespace-aware name resolution or imports exist.
