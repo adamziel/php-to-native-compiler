@@ -4601,3 +4601,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   while keeping preserve-key mode and native lowering explicitly unsupported.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add offset-only array_slice"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T07:10:54Z
+
+- Codex round 73 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T070003Z-73.log`.
+
+## Loop Event 2026-05-12T07:10:58Z
+
+- Post-round 73 test exit code: `0`.
+
+## Loop Event 2026-05-12T07:10:58Z
+
+- Post-round 73 tests passed; running checkpoint for this round.
