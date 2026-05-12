@@ -97,17 +97,41 @@ fn array_reduce_callback_reports_unknown_function() {
 }
 
 #[test]
-fn array_reduce_rejects_initial_values_for_now() {
-    let error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\necho array_reduce($items, \"strlen\", \"start\");\n",
-    );
+fn array_reduce_uses_initial_value_when_supplied() {
+    let source = r#"<?php
+function join_with_seed($carry, $value) {
+    return $carry . ":" . $value;
+}
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+function collect_with_seed($carry, $value) {
+    $carry[] = $value;
+    return $carry;
+}
+
+function add_value($carry, $value) {
+    return $carry + $value;
+}
+
+$items = ["Ada", "Grace", "Linus"];
+echo array_reduce($items, "join_with_seed", "start"), "\n";
+
+$collected = array_reduce($items, "collect_with_seed", ["seed"]);
+print_r($collected);
+
+if (array_reduce([], "join_with_seed", "empty") === "empty") {
+    echo "empty-initial\n";
+}
+
+$call = "array_reduce";
+echo $call([1, 2, 3], "add_value", 10);
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_reduce(): initial values are not supported in the current subset"
+        execution.stdout,
+        "start:Ada:Grace:Linus\nArray\n(\n    [0] => seed\n    [1] => Ada\n    [2] => Grace\n    [3] => Linus\n)\nempty-initial\n16"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -6080,3 +6080,123 @@ injects this file into every prompt. Each Codex pass should update it with:
   coverage, docs, and explicit unsupported gaps.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_reduce"` after
   the full suite passes.
+
+## Loop Event 2026-05-12T12:13:19Z
+
+- Codex round 95 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T115830Z-95.log`.
+
+## Loop Event 2026-05-12T12:13:34Z
+
+- Post-round 95 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:34Z
+
+- No checkpoint after round 95 because tests failed or checkpoint script is missing.
+
+## Loop Event 2026-05-12T12:13:34Z
+
+- Starting round 96 at 20260512T121334Z from HEAD `a43b255`.
+
+## Loop Event 2026-05-12T12:13:34Z
+
+- Pre-round 96 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Codex round 96 exit code: `101`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T121334Z-96.log`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Post-round 96 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- No checkpoint after round 96 because tests failed or checkpoint script is missing.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Starting round 97 at 20260512T121335Z from HEAD `a43b255`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Pre-round 97 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Codex round 97 exit code: `101`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T121335Z-97.log`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Post-round 97 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- No checkpoint after round 97 because tests failed or checkpoint script is missing.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Starting round 98 at 20260512T121335Z from HEAD `a43b255`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Pre-round 98 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:35Z
+
+- Codex round 98 exit code: `101`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T121335Z-98.log`.
+
+## Loop Event 2026-05-12T12:13:36Z
+
+- Post-round 98 test exit code: `101`.
+
+## Loop Event 2026-05-12T12:13:36Z
+
+- No checkpoint after round 98 because tests failed or checkpoint script is missing.
+
+## Loop Event 2026-05-12T12:49:52Z
+
+- Starting round 1 at 20260512T124952Z from HEAD `a43b255`.
+
+## Loop Event 2026-05-12T12:50:15Z
+
+- Pre-round 1 test exit code: `0`.
+
+## Loop Event 2026-05-12T12:59:57Z
+
+- Task attempted: repaired the truncated loop-memory event left by the prior
+  failed loop automation and extended `array_reduce` with third-argument
+  initial value support over the current value model.
+- Files changed: `compiler/src/interpreter.rs`,
+  `compiler/tests/array_reduce.rs`,
+  `compiler/tests/array_reduction_builtins_cli.rs`,
+  `tests/fixtures/milestone52/array_reduce_initial.php`,
+  `tests/fixtures/milestone52/array_reduce_initial.stdout`,
+  `tests/fixtures/milestone52/array_reduce_initial.cli`,
+  removed `tests/fixtures/runtime_errors/array_reduce_initial_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  array_reduce` passed with 8 tests; `cargo test -p phpc --test
+  array_reduction_builtins_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone52` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone52` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test runtime_error_cli` passed; `cargo
+  run -p phpc -- test tests/fixtures/runtime_errors` passed with 104
+  fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone52/array_reduce_initial.php` printed the committed
+  output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone52/array_reduce_initial.php --emit-ir` exited `1`
+  with the current explicit native-lowering rejection; `tools/run-tests.sh`
+  passed with 229 fixtures, 91 system PHP comparisons, and 138 `.phpc-only`
+  skips.
+- Remaining semantic gaps: `array_reduce` callback support is still limited to
+  string-valued user-function or callable-builtin names. Array/object
+  callables, closures, first-class callables, method calls, references,
+  copy-on-write containers, object handle identity preservation, resource
+  values, exact native `TypeError` objects, and native lowering remain
+  unsupported.
+- Next concrete task: implement `array_filter($array, null)` as the same
+  falsey-value filtering path as omitted callbacks, including fixture CLI
+  coverage, docs, and explicit unsupported gaps.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add array_reduce initial values"`
+  after the full suite passes.

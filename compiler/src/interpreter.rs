@@ -1710,20 +1710,16 @@ impl Interpreter {
     fn call_array_reduce(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match args.as_slice() {
             [Value::Array(array), callback] => {
-                self.reduce_array_with_callback(array, callback, span)
+                self.reduce_array_with_callback(array, callback, Value::Null, span)
+            }
+            [Value::Array(array), callback, initial] => {
+                self.reduce_array_with_callback(array, callback, initial.clone(), span)
             }
             [other, _] => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_reduce()",
                     format!("first argument must be array, got {}", other.type_name()),
-                ),
-            )),
-            [Value::Array(_), _, _] => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_reduce()",
-                    "initial values are not supported in the current subset",
                 ),
             )),
             [other, _, _] => Err(runtime_error(
@@ -1748,10 +1744,11 @@ impl Interpreter {
         &mut self,
         array: &PhpArray,
         callback: &Value,
+        initial: Value,
         span: Span,
     ) -> CompileResult<Value> {
         let callable = self.resolve_array_reduce_callback(callback, span)?;
-        let mut accumulator = Value::Null;
+        let mut accumulator = initial;
 
         for entry in array.entries() {
             accumulator = self.call_callable_with_values(

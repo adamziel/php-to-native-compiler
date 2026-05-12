@@ -358,8 +358,12 @@ Implemented:
   accumulator/current-value arguments in insertion order, returns the final
   callback result, returns `null` for empty arrays, supports string-valued
   dynamic calls to `array_reduce`, and has stable diagnostics for non-array
-  operands, non-string callbacks, unresolved callback names, and unsupported
-  initial values.
+  operands, non-string callbacks, and unresolved callback names.
+- Extended `array_reduce` with third-argument initial value support over the
+  current value model. The supported slice uses the supplied initial value as
+  the first accumulator, returns it unchanged for empty arrays, works through
+  string-valued dynamic calls to `array_reduce`, and keeps callback support
+  limited to string-valued user-function or callable-builtin names.
 - Added `array_filter($array)` support without a callback for the current
   ordered array value model. The supported slice removes values that are falsey
   under the current PHP-shaped truthiness rules, preserves original
@@ -808,8 +812,9 @@ Tested:
   diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_reduce` passes with accumulator/current
   value callback invocation, `null` initial accumulator behavior, empty-array
-  `null` behavior, callback-returned array accumulators, dynamic string-call
-  coverage, original-array preservation, non-array/callback/initial-value
+  `null` behavior, third-argument initial accumulator behavior, empty-array
+  initial-value return behavior, callback-returned array accumulators, dynamic
+  string-call coverage, original-array preservation, non-array/callback
   diagnostics, callback arity diagnostics, and LLVM IR rejection coverage.
 - `cargo test -p phpc --test array_filter` passes with falsey-value removal,
   value-only string callback execution for user functions and callable
@@ -917,7 +922,8 @@ Tested:
   with 1 CLI snapshot test covering the Milestone 49 `array_sum` fixture and
   the Milestone 50 `array_product` fixture.
 - `cargo test -p phpc --test array_reduction_builtins_cli` passes with 1 CLI
-  snapshot test covering the Milestone 51 `array_reduce` fixture.
+  snapshot test covering the Milestone 51 and Milestone 52 `array_reduce`
+  fixtures.
 - `cargo test -p phpc --test array_filtering_builtins_cli` passes with 1 CLI
   snapshot test covering the Milestone 20 and Milestone 21 `array_filter`
   fixtures.
@@ -1246,8 +1252,6 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reduce_callback_non_string.php:3:6: unsupported call array_reduce(): callback must evaluate to string, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reduce_callback_undefined.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reduce_callback_undefined.php:3:6: undefined function missing_reduce()`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reduce_initial_unsupported.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reduce_initial_unsupported.php:3:6: unsupported call array_reduce(): initial values are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_filter_non_array.php:2:6: unsupported call array_filter(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_filter_callback_non_string.php`
@@ -1823,8 +1827,18 @@ Tested:
   emitting misleading native code.
 - `cargo test -p phpc --test array_reduce` includes explicit LLVM IR rejection
   coverage for `array_reduce` until native function-call lowering exists.
-- `tools/run-tests.sh` passes with 229 fixtures, 90 system PHP comparisons,
-  and 139 `.phpc-only` skips.
+- `cargo run -p phpc -- test tests/fixtures/milestone52` passes with 1
+  `array_reduce` initial-value fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone52` passes
+  with 1 system PHP comparison.
+- `cargo run -p phpc -- run tests/fixtures/milestone52/array_reduce_initial.php`
+  prints the committed scalar, array, empty-array, and dynamic-call initial
+  accumulator output.
+- `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 104
+  runtime-error fixtures after removing the obsolete unsupported
+  `array_reduce` initial-value diagnostic fixture.
+- `tools/run-tests.sh` passes with 229 fixtures, 91 system PHP comparisons,
+  and 138 `.phpc-only` skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -1972,11 +1986,10 @@ Still fails:
   copy-on-write containers, object/resource values, exact native `TypeError`
   objects, PHP warning recovery, and native lowering are not implemented.
   `array_reduce` callback support is limited to string-valued user-function or
-  callable-builtin names with no initial value argument. Array/object
-  callables, closures, first-class callables, method calls, initial values,
-  reference and copy-on-write behavior, object handle identity preservation,
-  resource values, exact native `TypeError` objects, and native lowering are
-  not implemented.
+  callable-builtin names. Array/object callables, closures, first-class
+  callables, method calls, reference and copy-on-write behavior, object handle
+  identity preservation, resource values, exact native `TypeError` objects,
+  and native lowering are not implemented.
   `array_filter` callback support is limited to string-valued user-function or
   callable-builtin names in value-only mode. Array/object callables, closures,
   first-class callables, method calls, key-only/key-value callback modes,
@@ -2081,7 +2094,7 @@ Still fails:
 
 Next:
 
-- Extend `array_reduce` with third-argument initial value support over the
-  current value model, including empty-array behavior, callback invocation
-  with supplied initial accumulator, fixture CLI coverage, docs, and explicit
-  unsupported gaps for references/copy-on-write and non-string callbacks.
+- Implement `array_filter($array, null)` as the same falsey-value filtering
+  path as omitted callbacks, with fixture CLI coverage, docs, and explicit
+  unsupported gaps for callback modes, references/copy-on-write, and native
+  lowering.
