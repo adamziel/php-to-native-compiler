@@ -508,6 +508,27 @@ impl PhpArray {
         array
     }
 
+    pub fn merged_with(&self, right: &Self) -> Self {
+        let mut array = Self::new();
+        array.merge_entries_from(self);
+        array.merge_entries_from(right);
+        array
+    }
+
+    fn merge_entries_from(&mut self, source: &Self) {
+        for entry in &source.entries {
+            match &entry.key {
+                ArrayKey::Int(_) => {
+                    self.append(entry.value.clone())
+                        .expect("array length fits in i64");
+                }
+                ArrayKey::String(key) => {
+                    self.insert(key.clone(), entry.value.clone());
+                }
+            }
+        }
+    }
+
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
             ensure_array_search_values_supported("in_array()", needle, &entry.value)?;
@@ -2036,6 +2057,63 @@ mod tests {
             array.get(6),
             Some(&Value::String("next".to_string())),
             "array_reverse preserve_keys must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_merge_reindexes_integer_keys_and_overwrites_string_keys() {
+        let mut left = PhpArray::new();
+        left.insert("name", Value::String("Ada".to_string()));
+        left.insert(5, Value::String("five".to_string()));
+        left.insert("2", Value::String("two".to_string()));
+        left.insert("02", Value::String("zero two".to_string()));
+        left.append(Value::String("left next".to_string())).unwrap();
+
+        let mut right = PhpArray::new();
+        right.insert("name", Value::String("Bea".to_string()));
+        right.insert(7, Value::String("seven".to_string()));
+        right.insert("02", Value::String("zero two right".to_string()));
+        right
+            .append(Value::String("right next".to_string()))
+            .unwrap();
+        right.insert("extra", Value::String("extra".to_string()));
+
+        let mut merged = left.merged_with(&right);
+        let entries = merged.entries();
+
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("Bea".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(
+            entries[3].value,
+            Value::String("zero two right".to_string())
+        );
+        assert_eq!(entries[4].key, ArrayKey::Int(2));
+        assert_eq!(entries[4].value, Value::String("left next".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::Int(3));
+        assert_eq!(entries[5].value, Value::String("seven".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::Int(4));
+        assert_eq!(entries[6].value, Value::String("right next".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::String("extra".to_string()));
+        assert_eq!(entries[7].value, Value::String("extra".to_string()));
+        assert_eq!(
+            merged.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(5)
+        );
+        assert_eq!(
+            left.get("name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_merge must not mutate the left array"
+        );
+        assert_eq!(
+            right.get("02"),
+            Some(&Value::String("zero two right".to_string())),
+            "array_merge must not mutate the right array"
         );
     }
 

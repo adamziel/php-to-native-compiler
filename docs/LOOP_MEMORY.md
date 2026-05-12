@@ -3419,3 +3419,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T04:34:40Z
 
 - Post-round 54 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T04:34:43Z
+
+- Starting round 55 at 20260512T043443Z from HEAD `e2a76d7`.
+
+## Loop Event 2026-05-12T04:34:47Z
+
+- Pre-round 55 test exit code: `0`.
+
+## Loop Event 2026-05-12T04:48:56Z
+
+- Task attempted: implemented `array_merge($left, $right)` for two arrays over
+  the current ordered integer/string key model. The supported slice processes
+  the left array then the right array in insertion order, appends and reindexes
+  integer-keyed entries from zero, preserves string keys, overwrites duplicate
+  string-key values with right-hand values without moving the first string-key
+  slot, supports string-valued dynamic calls, reports stable diagnostics for
+  non-array first or second arguments, and rejects native lowering explicitly.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/array_merge.rs`,
+  `compiler/tests/array_combination_builtins_cli.rs`,
+  `tests/fixtures/milestone15/array_merge.*`,
+  `tests/fixtures/runtime_errors/array_merge_first_non_array.*`,
+  `tests/fixtures/runtime_errors/array_merge_second_non_array.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p
+  php_runtime array_merge` passed with 1 focused runtime test; `cargo test -p
+  php_runtime` passed with 31 runtime tests; `cargo test -p php_runtime
+  array_` passed with 16 focused array tests; `cargo test -p phpc --test
+  array_merge` passed with 5 tests; `cargo test -p phpc --test
+  array_combination_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone15` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone15` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 40 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone15/array_merge.php` printed the committed
+  `array_merge` output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_merge_first_non_array.php` and
+  `array_merge_second_non_array.php` exited `1` with the expected stable
+  diagnostics; `tools/run-tests.sh` passed with 126 fixtures, 52 system PHP
+  comparisons, and 74 `.phpc-only` skips.
+- Remaining semantic gaps: `array_merge` is limited to exactly two array
+  arguments. Zero-argument calls, variadic merges beyond two arrays,
+  references, copy-on-write containers, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native function-call
+  lowering remain unsupported.
+- Next concrete task: extend `array_merge` beyond the current two-array slice
+  with zero-argument empty-array behavior and variadic array operands.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add two-array array_merge"`
+  after the full suite passes.

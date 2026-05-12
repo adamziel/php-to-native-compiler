@@ -226,8 +226,13 @@ handled.
 
 ## Milestone 15: Array Combination Builtins
 
-- [ ] Implement `array_merge($left, $right)` for two arrays over the current
+- [x] Implement `array_merge($left, $right)` for two arrays over the current
   ordered integer/string key model, including string-key overwrite behavior,
   integer-key reindexing, non-array diagnostics, fixture CLI coverage,
   documentation, and explicit gaps for variadic merges, references,
   copy-on-write containers, objects/resources, and native lowering.
+- [ ] Extend `array_merge` beyond the current two-array slice with
+  zero-argument empty-array behavior and variadic array operands, including
+  arity/type diagnostics, fixture CLI coverage, documentation, and explicit
+  gaps for references, copy-on-write containers, objects/resources, and native
+  lowering.

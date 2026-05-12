@@ -932,6 +932,36 @@ impl Interpreter {
                     ),
                 )),
             },
+            "array_merge" => {
+                expect_arity(name, &args, 2, span)?;
+                match args.as_slice() {
+                    [Value::Array(left), Value::Array(right)] => {
+                        Ok(Value::Array(left.merged_with(right)))
+                    }
+                    [other, Value::Array(_)] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_merge()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    [Value::Array(_), other] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_merge()",
+                            format!("second argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    [other, _] => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_merge()",
+                            format!("first argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                    _ => unreachable!("expect_arity ensures exactly two arguments"),
+                }
+            }
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -1344,6 +1374,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_values"
             | "array_keys"
             | "array_reverse"
+            | "array_merge"
             | "in_array"
             | "array_search"
             | "var_dump"

@@ -1,0 +1,31 @@
+Array
+(
+    [name] => Bea
+    [0] => five
+    [1] => two
+    [02] => zero two right
+    [2] => left next
+    [3] => seven
+    [4] => right next
+    [extra] => extra
+)
+8
+Bea|five|two|zero two right|left next|seven|right next|extra
+after
+Array
+(
+    [name] => Ada
+    [5] => five
+    [2] => two
+    [02] => zero two
+    [6] => left next
+)
+Array
+(
+    [name] => Bea
+    [7] => seven
+    [02] => zero two right
+    [8] => right next
+    [extra] => extra
+)
+Bea|five|zero two right|extra
