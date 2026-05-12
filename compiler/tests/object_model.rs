@@ -8,6 +8,12 @@ fn parse_error(source: &str) -> Diagnostic {
     error
 }
 
+fn runtime_error(source: &str) -> Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Runtime);
+    error
+}
+
 #[test]
 fn class_declarations_register_metadata_without_object_execution() {
     let source = r#"<?php
@@ -50,6 +56,80 @@ echo "ready\n";
     let make = class.method("make").unwrap();
     assert_eq!(make.visibility(), Visibility::Public);
     assert!(make.is_static());
+}
+
+#[test]
+fn new_class_name_instantiates_minimal_object_values() {
+    let source = r#"<?php
+class Box {
+    public $value;
+    private static $cache;
+}
+
+$box = new box();
+if ($box) {
+    echo "object is truthy\n";
+}
+if (isset($box)) {
+    echo "object is set\n";
+}
+print_r($box);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object is truthy\nobject is set\nBox Object\n(\n    [value] => \n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn undefined_class_instantiation_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+$box = new Missing();
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 8);
+    assert_eq!(error.message, "undefined class Missing");
+}
+
+#[test]
+fn constructors_remain_explicitly_unsupported_for_instantiation() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    public function __construct() {}
+}
+
+$box = new Box();
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 8);
+    assert_eq!(
+        error.message,
+        "unsupported object instantiation for Box: constructors are not implemented"
+    );
+
+    let argument_error = runtime_error(
+        r#"<?php
+class Box {}
+
+$box = new Box("name");
+"#,
+    );
+
+    assert_eq!(argument_error.line, 4);
+    assert_eq!(argument_error.column, 8);
+    assert_eq!(
+        argument_error.message,
+        "unsupported object instantiation for Box: constructor arguments are not implemented"
+    );
 }
 
 #[test]
@@ -112,19 +192,19 @@ fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
     let cases = [
         (
             r#"<?php
-$box = new Box();
-"#,
-            2,
-            8,
-            "unsupported object instantiation: object/class syntax is not implemented",
-        ),
-        (
-            r#"<?php
 $box->name;
 "#,
             2,
             5,
             "unsupported object access: object property and method access are not implemented",
+        ),
+        (
+            r#"<?php
+$box = new class {};
+"#,
+            2,
+            12,
+            "unsupported anonymous class: anonymous classes are not implemented",
         ),
         (
             r#"<?php

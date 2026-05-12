@@ -61,5 +61,8 @@ handled.
 - [x] Sketch the minimal object/class metadata model before adding syntax.
 - [x] Parse class declarations into a metadata registry while keeping object
   instantiation and member access unsupported.
-- [ ] Add a minimal object value/instantiation boundary for `new ClassName()`
+- [x] Add a minimal object value/instantiation boundary for `new ClassName()`
   while keeping property access and method dispatch unsupported.
+- [ ] Add public instance property reads and writes for the current object value
+  model while keeping method dispatch, constructors, and visibility enforcement
+  unsupported.

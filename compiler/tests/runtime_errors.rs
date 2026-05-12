@@ -74,6 +74,52 @@ fn duplicate_class_has_stable_runtime_error() {
 }
 
 #[test]
+fn undefined_class_has_stable_runtime_error() {
+    let error = runtime_error("<?php\n$box = new Missing();\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 8);
+    assert_eq!(error.message, "undefined class Missing");
+}
+
+#[test]
+fn object_to_string_conversion_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+class Box {}
+$box = new Box();
+echo $box;
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "invalid string conversion: object of class Box cannot be converted to string"
+    );
+}
+
+#[test]
+fn object_comparison_has_stable_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+class Box {}
+$left = new Box();
+$right = new Box();
+echo $left == $right;
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported comparison: object comparisons are not implemented"
+    );
+}
+
+#[test]
 fn array_offset_write_requires_array_compatible_target() {
     let error = runtime_error("<?php\n$value = 1;\n$value[] = 2;\n");
 

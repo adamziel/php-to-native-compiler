@@ -48,8 +48,8 @@ Implemented now:
 - `Float`
 - `String`
 - ordered PHP arrays with integer/string keys
-- class metadata and object-shape descriptors; top-level class declarations can
-  register metadata, but PHP object syntax is not executable yet
+- class metadata, object-shape descriptors, and minimal object values for
+  `new ClassName()` over declared constructor-free classes
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -57,12 +57,13 @@ Implemented now:
 - basic arithmetic, comparison, and concatenation helpers
 - key normalization for array strings that are valid decimal integers
 
-Planned runtime values:
+Planned runtime values and semantics:
 
-- objects and class metadata
 - resources
 - references
 - copy-on-write containers
+- object property access, `$this`, constructor calls, visibility enforcement,
+  and method dispatch
 
 ## Native Codegen
 
@@ -105,26 +106,29 @@ parse diagnostic. Array/object callables, method calls, first-class callable
 syntax, and namespace/autoload-aware callable resolution are still outside the
 implemented dynamic-call subset.
 
-## Object/Class Metadata Boundary
+## Object/Class Boundary
 
-The current object/class step is metadata registration, not executable PHP
-object syntax. `php_runtime` has a `PhpClassTable`, stable `ClassId` handles,
-class metadata, property metadata, method metadata, visibility markers, and
-derived object shapes for instance-property layout. Class and method lookup are
-case-insensitive, property lookup is case-sensitive, and duplicate class/member
-metadata produces structured runtime errors.
+The current object/class step is a narrow instantiation boundary, not full PHP
+object execution. `php_runtime` has a `PhpClassTable`, stable `ClassId` handles,
+class metadata, property metadata, method metadata, visibility markers, derived
+object shapes for instance-property layout, and minimal object values. Class and
+method lookup are case-insensitive, property lookup is case-sensitive, and
+duplicate class/member metadata produces structured runtime errors.
 
-`phpc run` parses top-level `class Name { ... }` declarations into that
-metadata registry. The accepted member subset records public/protected/private
+`phpc run` parses top-level `class Name { ... }` declarations into that metadata
+registry. The accepted member subset records public/protected/private
 visibility, static flags, property names without defaults, and method names
-whose parameters/bodies use the existing function parser subset. Class
-declarations do not allocate objects, bind `$this`, execute methods, or expose
-reflection.
+whose parameters/bodies use the existing function parser subset. `new
+ClassName()` can instantiate a declared class when the class has no
+`__construct` method and the call supplies no constructor arguments. The
+allocated object stores class identity and `null` instance-property slots in
+declaration order while skipping static properties.
 
-`phpc run` still rejects `new` and `->` syntax with stable parse diagnostics,
-and native lowering rejects class declarations explicitly. See
-`docs/OBJECT_MODEL.md` for the named unsupported edge cases that must stay
-rejected until object values and dispatch exist.
+Objects do not bind `$this`, execute methods, run constructors, enforce
+visibility, expose reflection, or support property access. `phpc run` still
+rejects `->` syntax and anonymous classes with stable parse diagnostics, and
+native lowering rejects class declarations and object instantiation explicitly.
+See `docs/OBJECT_MODEL.md` for the named unsupported edge cases.
 
 ## Include/Require Resolution Design
 

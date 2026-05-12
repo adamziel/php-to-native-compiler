@@ -43,8 +43,11 @@ subset:
   local scopes for user-function calls
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions
-- top-level class declarations registered as metadata only, with property and
-  method metadata for the documented subset
+- top-level class declarations registered as metadata, with property and method
+  metadata for the documented subset
+- minimal object instantiation with `new ClassName()` for declared classes that
+  do not define constructors; instance properties are initialized to `null`
+  and method dispatch/property access remain unsupported
 - short array literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -56,11 +59,12 @@ subset:
 - stable lex/parse diagnostics for unsupported dynamic/function features
   including variable variables, include/require/eval constructs,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  object instantiation/member access, and unsupported class forms
+  object member access, anonymous classes, and unsupported class forms
 
-`php_runtime` also contains a tested object/class metadata registry. `phpc run`
-can register top-level class declarations into that registry, but PHP object
-execution is not supported yet.
+`php_runtime` also contains a tested object/class metadata registry and minimal
+object values. `phpc run` can instantiate declared constructor-free classes, but
+constructors, `$this`, property access, method dispatch, visibility
+enforcement, and native object lowering are not supported yet.
 
 LLVM IR emission currently supports a smaller straight-line subset and rejects
 unsupported programs with a structured codegen error.

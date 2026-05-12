@@ -162,6 +162,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    New {
+        class_name: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     Binary {
         left: Box<Expr>,
         op: BinaryOp,
@@ -188,6 +193,7 @@ impl Expr {
             | Expr::Index { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
+            | Expr::New { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. } => *span,
         }

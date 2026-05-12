@@ -1,0 +1,2 @@
+runtime error at 4:6: invalid string conversion: object of class Box cannot be converted to string
+

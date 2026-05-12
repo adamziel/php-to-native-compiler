@@ -151,6 +151,10 @@ impl LlvmGenerator {
                 *span,
                 "function calls are supported by phpc run but not LLVM IR emission yet",
             )),
+            Expr::New { span, .. } => Err(self.unsupported(
+                *span,
+                "object instantiation is supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::Unary { span, .. } => Err(self.unsupported(
                 *span,
                 "unary expressions are supported by phpc run but not LLVM IR emission yet",
@@ -630,6 +634,10 @@ impl CGenerator {
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 "function calls are supported by phpc run but not assembly emission yet",
+            )),
+            Expr::New { span, .. } => Err(self.unsupported(
+                *span,
+                "object instantiation is supported by phpc run but not assembly emission yet",
             )),
             Expr::Unary { span, .. } => Err(self.unsupported(
                 *span,

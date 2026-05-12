@@ -33,6 +33,22 @@ impl RuntimeError {
         })
     }
 
+    pub fn undefined_class(class_name: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UndefinedClass {
+            class_name: class_name.into(),
+        })
+    }
+
+    pub fn unsupported_object_instantiation(
+        class_name: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedObjectInstantiation {
+            class_name: class_name.into(),
+            reason: reason.into(),
+        })
+    }
+
     pub fn duplicate_class_member(
         class_name: impl Into<String>,
         member_kind: ClassMemberKind,
@@ -100,6 +116,18 @@ impl RuntimeError {
         })
     }
 
+    pub fn invalid_string_conversion(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::InvalidStringConversion {
+            reason: reason.into(),
+        })
+    }
+
+    pub fn unsupported_comparison(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedComparison {
+            reason: reason.into(),
+        })
+    }
+
     pub fn kind(&self) -> &RuntimeErrorKind {
         &self.kind
     }
@@ -127,6 +155,13 @@ pub enum RuntimeErrorKind {
     },
     DuplicateClass {
         class_name: String,
+    },
+    UndefinedClass {
+        class_name: String,
+    },
+    UnsupportedObjectInstantiation {
+        class_name: String,
+        reason: String,
     },
     DuplicateClassMember {
         class_name: String,
@@ -160,6 +195,12 @@ pub enum RuntimeErrorKind {
         key: String,
     },
     InvalidArrayAccess {
+        reason: String,
+    },
+    InvalidStringConversion {
+        reason: String,
+    },
+    UnsupportedComparison {
         reason: String,
     },
 }
@@ -212,6 +253,12 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         RuntimeErrorKind::DuplicateClass { class_name } => {
             format!("class {class_name} is already defined")
         }
+        RuntimeErrorKind::UndefinedClass { class_name } => {
+            format!("undefined class {class_name}")
+        }
+        RuntimeErrorKind::UnsupportedObjectInstantiation { class_name, reason } => {
+            format!("unsupported object instantiation for {class_name}: {reason}")
+        }
         RuntimeErrorKind::DuplicateClassMember {
             class_name,
             member_kind,
@@ -247,6 +294,12 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::InvalidArrayAccess { reason } => {
             format!("invalid array access: {reason}")
+        }
+        RuntimeErrorKind::InvalidStringConversion { reason } => {
+            format!("invalid string conversion: {reason}")
+        }
+        RuntimeErrorKind::UnsupportedComparison { reason } => {
+            format!("unsupported comparison: {reason}")
         }
     }
 }
@@ -675,6 +728,67 @@ impl PhpObjectShape {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PhpObject {
+    class_id: ClassId,
+    class_name: String,
+    properties: Vec<ObjectProperty>,
+}
+
+impl PhpObject {
+    pub fn from_class(class: &PhpClassMetadata) -> Self {
+        let properties = class
+            .properties()
+            .iter()
+            .filter(|property| !property.is_static())
+            .map(|property| ObjectProperty {
+                name: property.name().to_string(),
+                visibility: property.visibility(),
+                value: Value::Null,
+            })
+            .collect();
+
+        Self {
+            class_id: class.id(),
+            class_name: class.name().to_string(),
+            properties,
+        }
+    }
+
+    pub fn class_id(&self) -> ClassId {
+        self.class_id
+    }
+
+    pub fn class_name(&self) -> &str {
+        &self.class_name
+    }
+
+    pub fn properties(&self) -> &[ObjectProperty] {
+        &self.properties
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectProperty {
+    name: String,
+    visibility: Visibility,
+    value: Value,
+}
+
+impl ObjectProperty {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+}
+
 fn normalize_string_key(value: String) -> ArrayKey {
     if is_php_integer_array_key(&value) {
         if let Ok(parsed) = value.parse::<i64>() {
@@ -723,6 +837,7 @@ pub enum Value {
     Float(f64),
     String(String),
     Array(PhpArray),
+    Object(PhpObject),
 }
 
 impl Value {
@@ -734,6 +849,7 @@ impl Value {
             Value::Float(_) => "float",
             Value::String(_) => "string",
             Value::Array(_) => "array",
+            Value::Object(_) => "object",
         }
     }
 
@@ -746,6 +862,17 @@ impl Value {
             Value::Float(value) => format_php_float(*value),
             Value::String(value) => value.clone(),
             Value::Array(_) => "Array".to_string(),
+            Value::Object(_) => "Object".to_string(),
+        }
+    }
+
+    pub fn try_echo_string(&self) -> RuntimeResult<String> {
+        match self {
+            Value::Object(object) => Err(RuntimeError::invalid_string_conversion(format!(
+                "object of class {} cannot be converted to string",
+                object.class_name()
+            ))),
+            _ => Ok(self.echo_string()),
         }
     }
 
@@ -757,6 +884,7 @@ impl Value {
             Value::Float(value) => *value != 0.0,
             Value::String(value) => !value.is_empty() && value != "0",
             Value::Array(value) => !value.is_empty(),
+            Value::Object(_) => true,
         }
     }
 
@@ -814,12 +942,25 @@ impl Value {
         }
     }
 
-    pub fn php_concat(&self, other: &Value) -> Value {
-        Value::String(format!("{}{}", self.echo_string(), other.echo_string()))
+    pub fn php_concat(&self, other: &Value) -> RuntimeResult<Value> {
+        Ok(Value::String(format!(
+            "{}{}",
+            self.try_echo_string()?,
+            other.try_echo_string()?
+        )))
     }
 
     pub fn php_eq(&self, other: &Value) -> bool {
         self.php_cmp(other, Comparison::Eq)
+    }
+
+    pub fn php_cmp_checked(&self, other: &Value, op: Comparison) -> RuntimeResult<bool> {
+        match (self, other) {
+            (Value::Object(_), _) | (_, Value::Object(_)) => Err(
+                RuntimeError::unsupported_comparison("object comparisons are not implemented"),
+            ),
+            _ => Ok(self.php_cmp(other, op)),
+        }
     }
 
     pub fn php_cmp(&self, other: &Value, op: Comparison) -> bool {
@@ -838,6 +979,7 @@ impl Value {
                 Some(self.is_truthy().cmp(&other.is_truthy()))
             }
             (Value::Array(_), _) | (_, Value::Array(_)) => None,
+            (Value::Object(_), _) | (_, Value::Object(_)) => None,
             (Value::Null, Value::Null) => Some(Ordering::Equal),
             (Value::Null, Value::String(right)) => compare_binary_strings("", right),
             (Value::String(left), Value::Null) => compare_binary_strings(left, ""),
@@ -869,6 +1011,7 @@ impl Value {
             Value::Bool(true) => Some(Number::Int(1)),
             Value::String(value) => parse_numeric_string(value),
             Value::Array(_) => None,
+            Value::Object(_) => None,
         }
     }
 
@@ -885,6 +1028,10 @@ impl Value {
             Value::Array(_) => Err(RuntimeError::invalid_arithmetic(
                 operation,
                 "arrays are not numeric",
+            )),
+            Value::Object(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "objects are not numeric",
             )),
         }
     }
@@ -1494,5 +1641,40 @@ mod tests {
             shape.instance_properties(),
             &["id".to_string(), "payload".to_string()]
         );
+    }
+
+    #[test]
+    fn object_values_materialize_instance_properties_as_null() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Packet").unwrap();
+        let class = classes.get_mut(id).unwrap();
+
+        class
+            .add_property(PhpPropertyMetadata::instance("id", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::static_property(
+                "nextId",
+                Visibility::Private,
+            ))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance(
+                "payload",
+                Visibility::Protected,
+            ))
+            .unwrap();
+
+        let object = PhpObject::from_class(class);
+
+        assert_eq!(object.class_id(), id);
+        assert_eq!(object.class_name(), "Packet");
+        assert_eq!(object.properties().len(), 2);
+        assert_eq!(object.properties()[0].name(), "id");
+        assert_eq!(object.properties()[0].visibility(), Visibility::Public);
+        assert_eq!(object.properties()[0].value(), &Value::Null);
+        assert_eq!(object.properties()[1].name(), "payload");
+        assert_eq!(object.properties()[1].visibility(), Visibility::Protected);
+        assert_eq!(object.properties()[1].value(), &Value::Null);
     }
 }

@@ -923,3 +923,70 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T00:12:43Z
 
 - Post-round 15 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T00:12:45Z
+
+- Starting round 16 at 20260512T001245Z from HEAD `666f059`.
+
+## Loop Event 2026-05-12T00:12:47Z
+
+- Pre-round 16 test exit code: `0`.
+
+## Loop Event 2026-05-12T00:23:11Z
+
+- Task attempted: added the first minimal object value/instantiation boundary
+  for `new ClassName()`. Declared constructor-free classes can now instantiate
+  object values, class lookup is case-insensitive, instance properties are
+  initialized to `null`, static properties are skipped, object values are
+  truthy, direct `isset($object)` works, and `print_r` can render the current
+  object shape. Property access, method dispatch, `$this`, constructors,
+  visibility enforcement, object-to-string conversion, object comparisons, and
+  native object lowering remain explicit unsupported zones.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/runtime_errors.rs`, `compiler/tests/milestone1.rs`,
+  `tests/fixtures/milestone5/object_instantiation.*`,
+  `tests/fixtures/runtime_errors/undefined_class.*`,
+  `tests/fixtures/runtime_errors/object_to_string.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_anonymous_class.*`,
+  removed obsolete
+  `tests/fixtures/unsupported_object_features/unsupported_new_expression.*`,
+  and updated `README.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo check` passed;
+  `cargo test -p php_runtime object_values_materialize_instance_properties_as_null`
+  passed; `cargo test -p php_runtime` passed with 16 runtime unit tests;
+  `cargo test -p phpc --test object_model` passed with 7 tests; `cargo test
+  -p phpc --test runtime_errors` passed with 14 tests; `cargo test -p phpc
+  --test milestone1 emit_ir_rejects_object_instantiation_until_native_lowering_exists`
+  passed; `cargo test -p phpc --test runtime_error_cli` passed; `cargo test
+  -p phpc --test unsupported_object_features_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone5` passed with 4 fixtures; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone5` passed with 4 system
+  PHP comparisons; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 15 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_object_features` passed with 3 fixtures; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`
+  passed with 3 `.phpc-only` skips; `cargo run -p phpc -- run
+  tests/fixtures/milestone5/object_instantiation.php` printed the committed
+  object truthiness/`isset`/`print_r` output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/undefined_class.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/object_to_string.php` exited `1` with the
+  expected stable diagnostic; `tools/run-tests.sh` passed with 57 fixtures, 26
+  system PHP comparisons, and 31 `.phpc-only` skips.
+- Remaining semantic gaps: `new ClassName()` is limited to declared classes
+  without `__construct` and without constructor arguments. Object property
+  reads/writes, method calls, `$this`, constructor execution, visibility
+  enforcement, inheritance/interfaces/traits, typed/default/multiple
+  properties, constants, static property storage, magic methods,
+  namespaces/autoloading, reflection, dynamic properties, object comparisons,
+  object-to-string conversion, object callables, and native object lowering are
+  unsupported.
+- Next concrete task: add public instance property reads and writes for the
+  current object value model while keeping method dispatch, constructors, and
+  visibility enforcement unsupported.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add minimal instantiation"`
+  after the full suite passes.

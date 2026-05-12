@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use php_runtime::{
-    ArityExpectation, ArrayKey, Comparison, PhpArray, PhpClassTable, PhpMethodMetadata,
-    PhpPropertyMetadata, RuntimeError, RuntimeResult, Value, Visibility,
+    ArityExpectation, ArrayKey, Comparison, ObjectProperty, PhpArray, PhpClassTable,
+    PhpMethodMetadata, PhpObject, PhpPropertyMetadata, RuntimeError, RuntimeResult, Value,
+    Visibility,
 };
 
 use crate::ast::{
@@ -147,13 +148,19 @@ impl Interpreter {
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
                     let value = self.evaluate(expr, scope)?;
-                    self.stdout.push_str(&value.echo_string());
+                    let output = value
+                        .try_echo_string()
+                        .map_err(|error| runtime_error(expr.span(), error))?;
+                    self.stdout.push_str(&output);
                 }
                 Ok(Flow::Continue)
             }
             Stmt::Print { expr, .. } => {
                 let value = self.evaluate(expr, scope)?;
-                self.stdout.push_str(&value.echo_string());
+                let output = value
+                    .try_echo_string()
+                    .map_err(|error| runtime_error(expr.span(), error))?;
+                self.stdout.push_str(&output);
                 Ok(Flow::Continue)
             }
             Stmt::Assign { target, expr, .. } => {
@@ -223,6 +230,11 @@ impl Interpreter {
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
             }
+            Expr::New {
+                class_name,
+                args,
+                span,
+            } => self.instantiate_object(class_name, args, *span),
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
@@ -238,6 +250,40 @@ impl Interpreter {
                 self.apply_binary(*op, left, right, *span)
             }
         }
+    }
+
+    fn instantiate_object(
+        &self,
+        class_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class = self
+            .classes
+            .lookup_class(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+
+        if !args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    class.name(),
+                    "constructor arguments are not implemented",
+                ),
+            ));
+        }
+
+        if class.method("__construct").is_some() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    class.name(),
+                    "constructors are not implemented",
+                ),
+            ));
+        }
+
+        Ok(Value::Object(PhpObject::from_class(class)))
     }
 
     fn execute_assignment(
@@ -493,7 +539,10 @@ impl Interpreter {
                         RuntimeError::unsupported_call("strlen()", "arrays are not supported"),
                     ));
                 }
-                Ok(Value::Int(args[0].echo_string().as_bytes().len() as i64))
+                let value = args[0]
+                    .try_echo_string()
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Int(value.as_bytes().len() as i64))
             }
             "count" => {
                 expect_arity(name, &args, 1, span)?;
@@ -580,13 +629,25 @@ impl Interpreter {
             BinaryOp::Sub => left.php_sub(&right),
             BinaryOp::Mul => left.php_mul(&right),
             BinaryOp::Div => left.php_div(&right),
-            BinaryOp::Concat => Ok(left.php_concat(&right)),
-            BinaryOp::Eq => Ok(Value::Bool(left.php_cmp(&right, Comparison::Eq))),
-            BinaryOp::Ne => Ok(Value::Bool(left.php_cmp(&right, Comparison::Ne))),
-            BinaryOp::Lt => Ok(Value::Bool(left.php_cmp(&right, Comparison::Lt))),
-            BinaryOp::Le => Ok(Value::Bool(left.php_cmp(&right, Comparison::Le))),
-            BinaryOp::Gt => Ok(Value::Bool(left.php_cmp(&right, Comparison::Gt))),
-            BinaryOp::Ge => Ok(Value::Bool(left.php_cmp(&right, Comparison::Ge))),
+            BinaryOp::Concat => left.php_concat(&right),
+            BinaryOp::Eq => left
+                .php_cmp_checked(&right, Comparison::Eq)
+                .map(Value::Bool),
+            BinaryOp::Ne => left
+                .php_cmp_checked(&right, Comparison::Ne)
+                .map(Value::Bool),
+            BinaryOp::Lt => left
+                .php_cmp_checked(&right, Comparison::Lt)
+                .map(Value::Bool),
+            BinaryOp::Le => left
+                .php_cmp_checked(&right, Comparison::Le)
+                .map(Value::Bool),
+            BinaryOp::Gt => left
+                .php_cmp_checked(&right, Comparison::Gt)
+                .map(Value::Bool),
+            BinaryOp::Ge => left
+                .php_cmp_checked(&right, Comparison::Ge)
+                .map(Value::Bool),
         };
 
         result.map_err(|error| runtime_error(span, error))
@@ -724,6 +785,22 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
             output.push_str(&format!("{padding}}}\n"));
             output
         }
+        Value::Object(value) => {
+            let mut output = format!(
+                "{padding}object({}) ({}) {{\n",
+                value.class_name(),
+                value.properties().len()
+            );
+            for property in value.properties() {
+                output.push_str(&format!(
+                    "{padding}  [{}]=>\n",
+                    format_var_dump_object_property(value.class_name(), property)
+                ));
+                output.push_str(&format_var_dump_with_indent(property.value(), indent + 1));
+            }
+            output.push_str(&format!("{padding}}}\n"));
+            output
+        }
     }
 }
 
@@ -741,6 +818,7 @@ fn format_print_r(value: &Value) -> String {
 fn format_print_r_with_indent(value: &Value, indent: usize) -> String {
     match value {
         Value::Array(array) => format_print_r_array(array, indent),
+        Value::Object(object) => format_print_r_object(object, indent),
         _ => value.echo_string(),
     }
 }
@@ -758,6 +836,9 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
             Value::Array(value) => {
                 output.push_str(&format_print_r_array(value, indent + 1));
             }
+            Value::Object(value) => {
+                output.push_str(&format_print_r_object(value, indent + 1));
+            }
             value => {
                 output.push_str(&value.echo_string());
                 output.push('\n');
@@ -766,6 +847,51 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
     }
     output.push_str(&format!("{padding})\n"));
     output
+}
+
+fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
+    let padding = "    ".repeat(indent);
+    let child_padding = "    ".repeat(indent + 1);
+    let mut output = String::new();
+
+    output.push_str(&format!("{} Object\n", object.class_name()));
+    output.push_str(&format!("{padding}(\n"));
+    for property in object.properties() {
+        output.push_str(&format!(
+            "{child_padding}[{}] => ",
+            format_print_r_object_property(object.class_name(), property)
+        ));
+        match property.value() {
+            Value::Array(value) => {
+                output.push_str(&format_print_r_array(value, indent + 1));
+            }
+            Value::Object(value) => {
+                output.push_str(&format_print_r_object(value, indent + 1));
+            }
+            value => {
+                output.push_str(&value.echo_string());
+                output.push('\n');
+            }
+        }
+    }
+    output.push_str(&format!("{padding})\n"));
+    output
+}
+
+fn format_print_r_object_property(class_name: &str, property: &ObjectProperty) -> String {
+    match property.visibility() {
+        Visibility::Public => property.name().to_string(),
+        Visibility::Protected => format!("{}:protected", property.name()),
+        Visibility::Private => format!("{}:{class_name}:private", property.name()),
+    }
+}
+
+fn format_var_dump_object_property(class_name: &str, property: &ObjectProperty) -> String {
+    match property.visibility() {
+        Visibility::Public => format!("\"{}\"", property.name()),
+        Visibility::Protected => format!("\"{}\":protected", property.name()),
+        Visibility::Private => format!("\"{}\":\"{class_name}\":private", property.name()),
+    }
 }
 
 #[cfg(test)]

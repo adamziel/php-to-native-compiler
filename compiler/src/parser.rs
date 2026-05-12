@@ -632,7 +632,7 @@ impl Parser {
             TokenKind::Class => {
                 Err(self.error_at(token.span, unsupported_class_expression_message()))
             }
-            TokenKind::New => Err(self.error_at(token.span, unsupported_new_message())),
+            TokenKind::New => self.parse_new_expression(token.span),
             TokenKind::Function => Err(self.error_at(
                 token.span,
                 "unsupported closure: anonymous functions are not implemented",
@@ -679,6 +679,25 @@ impl Parser {
                 format!("expected expression, found {}", token_name(&other)),
             )),
         }
+    }
+
+    fn parse_new_expression(&mut self, span: Span) -> CompileResult<Expr> {
+        if self.check(|kind| matches!(kind, TokenKind::Class)) {
+            let token = self.advance().clone();
+            return Err(self.error_at(
+                token.span,
+                "unsupported anonymous class: anonymous classes are not implemented",
+            ));
+        }
+
+        let class_name = self.consume_identifier("expected class name after 'new'")?;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after class name")?;
+        let args = self.parse_call_arguments_after_open()?;
+        Ok(Expr::New {
+            class_name,
+            args,
+            span,
+        })
     }
 
     fn parse_array_literal(&mut self, span: Span) -> CompileResult<Expr> {
@@ -774,7 +793,8 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::Index { .. }
             | Expr::Call { .. }
-            | Expr::DynamicCall { .. } => Err(self.error_at(
+            | Expr::DynamicCall { .. }
+            | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
             )),
@@ -937,10 +957,6 @@ fn unsupported_eval_message() -> &'static str {
 
 fn unsupported_class_expression_message() -> &'static str {
     "unsupported class expression: anonymous classes are not implemented"
-}
-
-fn unsupported_new_message() -> &'static str {
-    "unsupported object instantiation: object/class syntax is not implemented"
 }
 
 fn unsupported_object_access_message() -> &'static str {
