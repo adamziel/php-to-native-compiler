@@ -8,8 +8,14 @@ fn array_mapping_builtin_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone22");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let fixture_dirs = [
+        workspace_root.join("tests/fixtures/milestone22"),
+        workspace_root.join("tests/fixtures/milestone23"),
+    ];
+    let mut fixtures = Vec::new();
+    for fixture_dir in fixture_dirs {
+        fixtures.extend(cli_snapshot_fixtures(&fixture_dir));
+    }
 
     fixtures.sort();
     assert!(
@@ -22,7 +28,12 @@ fn array_mapping_builtin_cli_snapshots_match_committed_outputs() {
             .file_name()
             .and_then(|value| value.to_str())
             .expect("array-mapping fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone22/{file_name}");
+        let relative_dir = fixture
+            .parent()
+            .expect("fixture has a parent directory")
+            .strip_prefix(workspace_root)
+            .expect("fixture lives under the workspace root");
+        let fixture_arg = format!("{}/{file_name}", relative_dir.display());
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])

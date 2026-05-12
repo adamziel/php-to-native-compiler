@@ -305,8 +305,15 @@ handled.
 
 ## Milestone 23: Array Mapping Follow-ups
 
-- [ ] Implement `array_map($callback, $left, $right)` for the first
+- [x] Implement `array_map($callback, $left, $right)` for the first
   two-array string-callback subset, including lockstep value arguments,
   shortest/longest-array behavior documented against PHP, integer reindexing,
   diagnostics for unsupported extra arrays and callbacks, fixture CLI coverage,
   documentation, and explicit native-codegen rejection.
+
+## Milestone 24: Array Mapping Key Preservation
+
+- [ ] Align one-array `array_map($callback, $array)` key preservation with PHP
+  for the current string-callback subset, including fixture updates, CLI
+  coverage, documentation, and explicit gaps for null callbacks,
+  references/copy-on-write, and native lowering.

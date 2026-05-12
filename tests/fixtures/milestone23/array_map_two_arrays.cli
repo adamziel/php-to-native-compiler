@@ -1,0 +1,29 @@
+exit: 0
+stdout:
+Array
+(
+    [0] => 0
+    [1] => 1
+    [2] => 2
+)
+L1:R1|L2:R2|NULL:R3
+Array
+(
+    [first] => L1
+    [5] => L2
+)
+Array
+(
+    [a] => R1
+    [b] => R2
+    [c] => R3
+)
+Array
+(
+    [0] => A:1
+    [1] => B:NULL
+    [2] => C:NULL
+)
+--- stdout end ---
+stderr:
+--- stderr end ---

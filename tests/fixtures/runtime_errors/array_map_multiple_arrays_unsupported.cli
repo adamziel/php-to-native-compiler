@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/runtime_errors/array_map_multiple_arrays_unsupported.php:4:6: unsupported call array_map(): multiple input arrays are not supported in the current subset
---- stderr end ---

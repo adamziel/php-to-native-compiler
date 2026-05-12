@@ -92,8 +92,9 @@
   unsupported non-int/string `array_count_values` values, non-array
   `array_filter` operands, non-string `array_filter` callbacks, unsupported
   `array_filter` mode flags, non-array `array_map` operands, non-string or
-  unresolved `array_map` callbacks, unsupported `array_map` null callbacks and
-  multiple input arrays, non-array `in_array`/`array_search` haystacks,
+  unresolved `array_map` callbacks, unsupported `array_map` null callbacks,
+  non-array third `array_map` operands, and more than two `array_map` input
+  arrays, non-array `in_array`/`array_search` haystacks,
   non-bool `in_array`/`array_search` strict-mode flag values, unsupported
   non-scalar `array_keys` search-value comparisons, non-bool `array_keys`
   strict-mode flag values, unsupported non-scalar `in_array`/`array_search`
@@ -273,12 +274,15 @@
   invokes the callback once per value in insertion order with the value as the
   only argument, preserves keys whose callback result is truthy, and is also
   available through string-valued dynamic calls to `array_filter`.
-  `array_map($callback, $array)` accepts callbacks that evaluate to string
-  function names resolving to current user functions or callable builtins,
-  invokes the callback once per value in insertion order with the value as the
-  only argument, and returns mapped values reindexed with integer keys starting
-  at zero. It is also available through string-valued dynamic calls to
-  `array_map`.
+  `array_map($callback, $array)` and `array_map($callback, $left, $right)`
+  accept callbacks that evaluate to string function names resolving to current
+  user functions or callable builtins. The one-array form invokes the callback
+  once per value in insertion order with the value as the only argument and
+  returns mapped values reindexed with integer keys starting at zero. The
+  two-array form invokes the callback with left/right values in lockstep up to
+  the longer array length, supplies `null` for missing values from the shorter
+  array, and returns mapped values reindexed with integer keys starting at zero.
+  Both forms are available through string-valued dynamic calls to `array_map`.
   `in_array($needle, $array)` scans values in insertion order using the
   current loose scalar comparison rules; `in_array($needle, $array, true)` uses
   the current scalar strict identity rules, and `in_array($needle, $array,
@@ -298,8 +302,9 @@
   `array_key_first`, `array_key_last`, `array_values`, `array_keys`,
   `array_reverse`, `array_merge`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_filter` in the current no-callback and
-  string-callback forms, `array_map` in the current one-array string-callback
-  form, `in_array`, `array_search`, both current `foreach` array forms, direct
+  string-callback forms, `array_map` in the current one- and two-array
+  string-callback forms, `in_array`, `array_search`, both current `foreach`
+  array forms, direct
   array-offset
   `unset`, multiple supported `unset(...)` operands, `print_r`, and `var_dump`
   are implemented for this ordered value model.
@@ -364,8 +369,9 @@
   `array_count_values` values, non-array `array_filter` operands, non-string
   `array_filter` callbacks, unsupported `array_filter` mode flags,
   non-array `array_map` operands, non-string and unresolved `array_map`
-  callbacks, unsupported `array_map` null callbacks and multiple input arrays,
-  non-array `in_array` operands,
+  callbacks, unsupported `array_map` null callbacks, non-array third
+  `array_map` operands, and more than two `array_map` input arrays, non-array
+  `in_array` operands,
   non-array `array_search` operands, non-array `foreach` iterables, non-bool
   `in_array`/`array_search` strict-mode flag values, and array-value
   comparisons for `in_array`/`array_search`,
@@ -521,18 +527,22 @@
   `ARRAY_FILTER_USE_KEY` or `ARRAY_FILTER_USE_BOTH`, references, copy-on-write
   containers, exact native `TypeError` objects, object handle identity
   preservation, resource values, and native lowering are not implemented.
-  `array_map($callback, $array)` accepts callback expressions that evaluate to
-  string function names resolving to current user functions or callable
-  builtins, invokes the callback with the value only, and returns mapped values
-  reindexed from integer key zero in insertion order. Non-string callback
-  values fail with a stable diagnostic, unresolved callback names fail with the
-  current undefined-function diagnostic, `null` callbacks are rejected, and
-  calls with multiple input arrays are rejected. PHP's one-array key
-  preservation behavior, null-callback identity/zip modes, array/object
-  callables, closures, first-class callables, method calls, references,
-  copy-on-write containers, exact native `TypeError` objects, object handle
-  identity preservation, resource values, and native lowering are not
-  implemented.
+  `array_map($callback, $array)` and `array_map($callback, $left, $right)`
+  accept callback expressions that evaluate to string function names resolving
+  to current user functions or callable builtins. The one-array form invokes
+  the callback with the value only and returns mapped values reindexed from
+  integer key zero in insertion order. The two-array form invokes the callback
+  with left/right values in insertion-order lockstep, follows PHP's longest
+  array behavior by supplying `null` for missing values from the shorter array,
+  and reindexes mapped values from integer key zero. Non-string callback values
+  fail with a stable diagnostic, unresolved callback names fail with the
+  current undefined-function diagnostic, `null` callbacks are rejected, non-array
+  input arrays fail with stable diagnostics, and more than two input arrays are
+  rejected. PHP's one-array key preservation behavior, null-callback
+  identity/zip modes, array/object callables, closures, first-class callables,
+  method calls, references, copy-on-write containers, exact native `TypeError`
+  objects, object handle identity preservation, resource values, and native
+  lowering are not implemented.
   `in_array($needle, $array)` accepts an array haystack, scans values in
   insertion order, and uses the
   current PHP 8-style loose scalar comparison rules for `null`, booleans,
@@ -580,7 +590,8 @@
   for unsupported key values, `array_count_values` warning-and-skip behavior
   for unsupported values, and `array_filter` callback forms outside the current
   string function-name subset plus key/key-value modes, and `array_map` forms
-  outside the current one-array string-callback subset are not implemented.
+  outside the current one- and two-array string-callback subset are not
+  implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
@@ -726,7 +737,7 @@
   names, `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` callback modes,
   reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
-- `array_map` multiple input arrays, `null` callback identity/zip modes,
+- `array_map` more than two input arrays, `null` callback identity/zip modes,
   one-array key preservation, array/object callables, closures, first-class
   callables, method calls, reference/copy-on-write behavior, object handle
   identity preservation, resource values, exact native `TypeError` objects, and

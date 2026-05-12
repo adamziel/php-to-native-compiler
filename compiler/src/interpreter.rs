@@ -1308,32 +1308,52 @@ impl Interpreter {
     }
 
     fn call_array_map(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
-        match args.as_slice() {
-            [callback, Value::Array(array)] => Ok(Value::Array(
-                self.map_array_with_callback(callback, array, span)?,
-            )),
-            [_, Value::Array(_), ..] => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_map()",
-                    "multiple input arrays are not supported in the current subset",
-                ),
-            )),
-            [_, other] | [_, other, ..] => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "array_map()",
-                    format!("second argument must be array, got {}", other.type_name()),
-                ),
-            )),
-            _ => Err(runtime_error(
+        let args = args.as_slice();
+        if args.len() < 2 {
+            return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
                     "array_map()",
                     ArityExpectation::AtLeast(2),
                     args.len(),
                 ),
+            ));
+        }
+
+        for (array_index, arg) in args[1..].iter().take(2).enumerate() {
+            if !matches!(arg, Value::Array(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_map()",
+                        format!(
+                            "{} must be array, got {}",
+                            positional_argument_label(array_index + 1),
+                            arg.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_map()",
+                    "more than two input arrays are not supported in the current subset",
+                ),
+            ));
+        }
+
+        match args {
+            [callback, Value::Array(array)] => Ok(Value::Array(
+                self.map_array_with_callback(callback, array, span)?,
             )),
+            [callback, Value::Array(left), Value::Array(right)] => Ok(Value::Array(
+                self.map_two_arrays_with_callback(callback, left, right, span)?,
+            )),
+            _ => unreachable!("array_map arguments are validated before mapping"),
         }
     }
 
@@ -1343,6 +1363,56 @@ impl Interpreter {
         array: &PhpArray,
         span: Span,
     ) -> CompileResult<PhpArray> {
+        let callable = self.resolve_array_map_callback(callback, span)?;
+
+        let mut mapped = PhpArray::new();
+        for entry in array.entries() {
+            let value =
+                self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
+            mapped
+                .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(mapped)
+    }
+
+    fn map_two_arrays_with_callback(
+        &mut self,
+        callback: &Value,
+        left: &PhpArray,
+        right: &PhpArray,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let callable = self.resolve_array_map_callback(callback, span)?;
+        let max_len = left.entries().len().max(right.entries().len());
+
+        let mut mapped = PhpArray::new();
+        for index in 0..max_len {
+            let left_value = left
+                .entries()
+                .get(index)
+                .map(|entry| entry.value.clone())
+                .unwrap_or(Value::Null);
+            let right_value = right
+                .entries()
+                .get(index)
+                .map(|entry| entry.value.clone())
+                .unwrap_or(Value::Null);
+            let value = self.call_callable_with_values(
+                callable.clone(),
+                vec![left_value, right_value],
+                span,
+            )?;
+            mapped
+                .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(mapped)
+    }
+
+    fn resolve_array_map_callback(&self, callback: &Value, span: Span) -> CompileResult<Callable> {
         let callback_name = match callback {
             Value::String(name) => name,
             Value::Null => {
@@ -1367,23 +1437,12 @@ impl Interpreter {
                 ));
             }
         };
-        let callable = self.lookup_function(callback_name).ok_or_else(|| {
+        self.lookup_function(callback_name).ok_or_else(|| {
             runtime_error(
                 span,
                 RuntimeError::undefined_function(callable_name(callback_name)),
             )
-        })?;
-
-        let mut mapped = PhpArray::new();
-        for entry in array.entries() {
-            let value =
-                self.call_callable_with_values(callable.clone(), vec![entry.value.clone()], span)?;
-            mapped
-                .append(value)
-                .map_err(|error| runtime_error(span, error))?;
-        }
-
-        Ok(mapped)
+        })
     }
 
     fn call_isset(

@@ -4181,3 +4181,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T06:14:07Z
 
 - Post-round 66 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T06:14:11Z
+
+- Starting round 67 at 20260512T061411Z from HEAD `4134bdf`.
+
+## Loop Event 2026-05-12T06:14:15Z
+
+- Pre-round 67 test exit code: `0`.
+
+## Loop Event 2026-05-12T06:21:47Z
+
+- Task attempted: implemented `array_map($callback, $left, $right)` for the
+  first two-array string-callback subset. The supported slice resolves
+  string-valued user-function or callable-builtin callbacks, invokes them with
+  left/right values in insertion-order lockstep, follows PHP's longest-array
+  behavior by supplying `null` for missing values from the shorter array,
+  returns mapped values reindexed from integer key zero, supports string-valued
+  dynamic calls to `array_map`, and reports stable diagnostics for non-array
+  third operands and more than two input arrays.
+- Files changed: `compiler/src/interpreter.rs`, `compiler/tests/array_map.rs`,
+  `compiler/tests/array_mapping_builtins_cli.rs`,
+  `tests/fixtures/milestone23/array_map_two_arrays.*`,
+  `tests/fixtures/runtime_errors/array_map_third_non_array.*`,
+  `tests/fixtures/runtime_errors/array_map_extra_arrays_unsupported.*`,
+  removed
+  `tests/fixtures/runtime_errors/array_map_multiple_arrays_unsupported.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt`; `cargo fmt --check` passed; `cargo test
+  -p phpc --test array_map` passed with 9 tests; `cargo test -p phpc --test
+  array_mapping_builtins_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone23` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone23` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 61 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone23/array_map_two_arrays.php` printed the committed
+  output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone23/array_map_two_arrays.php --emit-ir` exited `1`
+  with the current function-declaration native-lowering rejection; the focused
+  `array_map` unit test also explicitly covers two-array function-call native
+  rejection; `tools/run-tests.sh` passed with 158 fixtures, 62 system PHP
+  comparisons, and 96 `.phpc-only` skips.
+- Remaining semantic gaps: `array_map` supports only one or two input arrays
+  and string-valued user-function or callable-builtin callbacks. One-array
+  mapping still reindexes from integer key zero instead of preserving keys as
+  PHP does. More than two input arrays, `null` callback identity/zip modes,
+  array/object callables, closures, first-class callables, method calls,
+  references, copy-on-write behavior, object handle identity preservation,
+  resource values, exact native `TypeError` objects, and native lowering remain
+  unsupported.
+- Next concrete task: align one-array `array_map($callback, $array)` key
+  preservation with PHP for the current string-callback subset.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add two-array array_map"`
+  after the full suite passes.
