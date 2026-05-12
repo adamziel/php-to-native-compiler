@@ -6200,3 +6200,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   coverage, docs, and explicit unsupported gaps.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add array_reduce initial values"`
   after the full suite passes.
+
+## Loop Event 2026-05-12T13:01:29Z
+
+- Codex round 1 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260512T124952Z-1.log`.
+
+## Loop Event 2026-05-12T13:01:35Z
+
+- Post-round 1 test exit code: `0`.
+
+## Loop Event 2026-05-12T13:01:35Z
+
+- Post-round 1 tests passed; running checkpoint for this round.
