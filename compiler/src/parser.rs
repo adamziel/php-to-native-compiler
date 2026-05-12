@@ -41,10 +41,14 @@ impl Parser {
             TokenKind::If => self.parse_if(),
             TokenKind::While => self.parse_while(),
             TokenKind::Foreach => self.parse_unsupported_foreach(),
+            TokenKind::For => self.parse_unsupported_for(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
                 self.parse_unsupported_foreach()
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("for") => {
+                self.parse_unsupported_for()
             }
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
@@ -343,6 +347,11 @@ impl Parser {
     fn parse_unsupported_foreach(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
         Err(self.error_at(token.span, unsupported_foreach_message()))
+    }
+
+    fn parse_unsupported_for(&mut self) -> CompileResult<Stmt> {
+        let token = self.advance().clone();
+        Err(self.error_at(token.span, unsupported_for_message()))
     }
 
     fn parse_return(&mut self) -> CompileResult<Stmt> {
@@ -690,6 +699,7 @@ impl Parser {
             )),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Foreach => Err(self.error_at(token.span, unsupported_foreach_message())),
+            TokenKind::For => Err(self.error_at(token.span, unsupported_for_message())),
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_require_message("include")))
             }
@@ -711,6 +721,9 @@ impl Parser {
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("foreach") {
                     return Err(self.error_at(token.span, unsupported_foreach_message()));
+                }
+                if name.eq_ignore_ascii_case("for") {
+                    return Err(self.error_at(token.span, unsupported_for_message()));
                 }
                 if name.eq_ignore_ascii_case("array")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -1069,6 +1082,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Else => "else",
         TokenKind::While => "while",
         TokenKind::Foreach => "foreach",
+        TokenKind::For => "for",
         TokenKind::Null => "null",
         TokenKind::True => "true",
         TokenKind::False => "false",
@@ -1147,6 +1161,10 @@ fn unsupported_unset_message() -> &'static str {
 
 fn unsupported_foreach_message() -> &'static str {
     "unsupported foreach: array and object iteration are not implemented"
+}
+
+fn unsupported_for_message() -> &'static str {
+    "unsupported for: C-style loops are not implemented"
 }
 
 fn unsupported_class_expression_message() -> &'static str {

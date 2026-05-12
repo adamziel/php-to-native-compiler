@@ -1457,3 +1457,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T01:08:31Z
 
 - Post-round 24 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T01:08:33Z
+
+- Starting round 25 at 20260512T010833Z from HEAD `562b436`.
+
+## Loop Event 2026-05-12T01:08:35Z
+
+- Pre-round 25 test exit code: `0`.
+
+## Loop Event 2026-05-12T01:11:20Z
+
+- Task attempted: added explicit stable parse diagnostics for unsupported
+  `for (...)` syntax before C-style loop support exists. The parser now rejects
+  lowercase `for`, uppercase identifier-form `FOR`, and expression-position
+  `for` with the same stable unsupported-for diagnostic.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_for.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries` passed
+  with 4 parse-boundary tests; `cargo test -p phpc --test
+  unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 4 fixtures;
+  `cargo run -p phpc -- test --compare-php
+  tests/fixtures/unsupported_syntax_features` passed with 4 `.phpc-only`
+  comparison skips; `cargo run -p phpc -- run
+  tests/fixtures/unsupported_syntax_features/unsupported_for.php` exited `1`
+  with the expected stable parse diagnostic; `cargo fmt --check` passed;
+  `tools/run-tests.sh` passed with 74 fixtures, 28 system PHP comparisons, and
+  46 `.phpc-only` skips.
+- Remaining semantic gaps: `for` execution is still unsupported, including
+  initializer/test/update expressions, multiple expressions in each clause,
+  omitted clauses, loop-local control flow such as `break`/`continue`, side
+  effects during loop clauses, interaction with arrays/objects/references, and
+  native lowering.
+- Next concrete task: add explicit parse diagnostics for unsupported
+  `do ... while` syntax before implementing do-while loops.
+- Checkpoint: pending `tools/checkpoint.sh "parser: reject for syntax"` after
+  the full suite passes.

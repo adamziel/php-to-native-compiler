@@ -87,5 +87,7 @@ handled.
   implementing unset.
 - [x] Add explicit parse diagnostics for unsupported `foreach` syntax before
   implementing iteration.
-- [ ] Add explicit parse diagnostics for unsupported `for` syntax before
+- [x] Add explicit parse diagnostics for unsupported `for` syntax before
   implementing C-style loops.
+- [ ] Add explicit parse diagnostics for unsupported `do ... while` syntax
+  before implementing do-while loops.

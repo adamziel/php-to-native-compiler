@@ -146,3 +146,42 @@ echo foreach ($items as $item);
         );
     }
 }
+
+#[test]
+fn for_syntax_is_rejected_with_stable_parse_error() {
+    let cases = [
+        (
+            r#"<?php
+for ($i = 0; $i < 3; $i = $i + 1) {
+    echo $i;
+}
+"#,
+            2,
+            1,
+        ),
+        (
+            r#"<?php
+FOR ($i = 0; $i < 3; $i = $i + 1) echo $i;
+"#,
+            2,
+            1,
+        ),
+        (
+            r#"<?php
+echo for ($i = 0; $i < 3; $i = $i + 1);
+"#,
+            2,
+            6,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported for: C-style loops are not implemented"
+        );
+    }
+}
