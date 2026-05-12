@@ -83,8 +83,7 @@ pub enum Stmt {
         span: Span,
     },
     ConstDeclaration {
-        name: String,
-        value: Expr,
+        declarations: Vec<ConstDeclarator>,
         span: Span,
     },
     Function(FunctionDecl),
@@ -121,6 +120,13 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDeclarator {
+    pub name: String,
+    pub value: Expr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

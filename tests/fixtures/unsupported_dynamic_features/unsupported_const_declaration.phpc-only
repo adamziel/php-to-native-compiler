@@ -1,1 +1,1 @@
-
+phpc intentionally rejects namespace-qualified const declarations before namespace-aware constant resolution exists.

@@ -58,8 +58,9 @@ subset:
   `ARRAY_FILTER_USE_BOTH` work as bare built-in constants, and
   `define($name, $value)`, `constant($name)`, `defined($name)`, and bare
   user-constant reads support unqualified names over the documented
-  scalar/array value subset; top-level `const NAME = value;` declarations are
-  executable over the current constant-expression and scalar/array value subset
+  scalar/array value subset; top-level single and grouped `const NAME = value;`
+  declarations are executable over the current constant-expression and
+  scalar/array value subset
 - short array literals and long `array(...)` literals with integer/string keys
 - array indexed reads, indexed writes, and append writes for the documented
   direct-variable array subset
@@ -119,8 +120,7 @@ subset:
   including variable variables, include/require/eval constructs,
   namespace and `use` declarations, namespace-qualified function/class names,
   variadics, references, closures, named arguments, `declare(strict_types=1)`,
-  unsupported grouped, nested, namespace-aware, or dynamic-value `const`
-  declarations,
+  unsupported nested, namespace-aware, or dynamic-value `const` declarations,
   unsupported array spread/reference elements, unsupported broader
   `unset(...)` forms such as property, append-offset, and nested unset,
   unsupported `foreach` by-reference/destructuring forms, unsupported

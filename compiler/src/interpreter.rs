@@ -357,8 +357,15 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            Stmt::ConstDeclaration { name, value, span } => {
-                self.execute_const_declaration(name, value, *span, scope)?;
+            Stmt::ConstDeclaration { declarations, .. } => {
+                for declaration in declarations {
+                    self.execute_const_declaration(
+                        &declaration.name,
+                        &declaration.value,
+                        declaration.span,
+                        scope,
+                    )?;
+                }
                 Ok(Flow::Normal)
             }
             Stmt::Function(_) => Ok(Flow::Normal),

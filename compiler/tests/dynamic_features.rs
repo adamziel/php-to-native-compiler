@@ -516,6 +516,31 @@ echo constant($name), "\n";
 }
 
 #[test]
+fn grouped_top_level_const_declarations_execute_left_to_right() {
+    let execution = run_source(
+        r#"<?php
+const APP_NAME = "compiler", APP_VERSION = 2, APP_SCALE = 1 + 2 * 3;
+CONST APP_FLAGS = ["env" => "dev", "nested" => ["x" => 1]], APP_EMPTY = [];
+echo APP_NAME, "|", APP_VERSION, "|", APP_SCALE, "|", defined("APP_EMPTY"), "\n";
+$copy = APP_FLAGS;
+$copy["env"] = "prod";
+echo $copy["env"], "|", APP_FLAGS["env"], "|", APP_FLAGS["nested"]["x"], "\n";
+function read_grouped_const() {
+    return APP_NAME . ":" . APP_VERSION . ":" . APP_FLAGS["nested"]["x"];
+}
+echo read_grouped_const(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "compiler|2|7|1\nprod|dev|1\ncompiler:2:1\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn duplicate_top_level_const_declarations_have_stable_diagnostics() {
     let duplicate = runtime_error(
         r#"<?php
@@ -538,19 +563,20 @@ const ARRAY_FILTER_USE_KEY = 4;
         builtin.message,
         "constant ARRAY_FILTER_USE_KEY is already defined"
     );
+
+    let grouped = runtime_error(
+        r#"<?php
+const APP_NAME = "compiler", APP_VERSION = 1, APP_NAME = "again";
+"#,
+    );
+    assert_eq!(grouped.line, 2);
+    assert_eq!(grouped.column, 47);
+    assert_eq!(grouped.message, "constant APP_NAME is already defined");
 }
 
 #[test]
 fn unsupported_const_declaration_forms_have_stable_parse_errors() {
     let cases = [
-        (
-            r#"<?php
-const APP_VERSION = 1, APP_ENV = "dev";
-"#,
-            2,
-            22,
-            "unsupported const declaration: grouped constant declarations are not implemented",
-        ),
         (
             r#"<?php
 if (true) {
@@ -752,7 +778,8 @@ fn emit_ir_rejects_defined_until_constant_introspection_lowering_exists() {
 #[test]
 fn emit_ir_rejects_const_declarations_until_native_lowering_exists() {
     let error =
-        emit_ir_source("<?php\nconst APP_NAME = \"compiler\";\necho APP_NAME;\n").unwrap_err();
+        emit_ir_source("<?php\nconst APP_NAME = \"compiler\", APP_VERSION = 2;\necho APP_NAME;\n")
+            .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

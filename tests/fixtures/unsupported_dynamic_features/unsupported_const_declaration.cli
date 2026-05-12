@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php:2:22: unsupported const declaration: grouped constant declarations are not implemented
+parse error at tests/fixtures/unsupported_dynamic_features/unsupported_const_declaration.php:2:10: unsupported const declaration: namespace-qualified constant declarations are not implemented
 --- stderr end ---

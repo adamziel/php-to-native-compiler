@@ -1,2 +1,2 @@
 <?php
-const APP_VERSION = 1, APP_ENV = "dev";
+const APP\NAME = 1;

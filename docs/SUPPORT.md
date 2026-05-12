@@ -66,10 +66,11 @@
   dynamic calls to `define`, `constant`, and `defined` use the same path
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
-- top-level `const NAME = value;` declarations for unqualified constant names
-  whose values use the current constant-expression subset: `null`, booleans,
-  integers, floats, strings, short and long arrays with supported keys, unary
-  expressions, and binary expressions over those values
+- top-level single and grouped `const NAME = value;` declarations for
+  unqualified constant names whose values use the current constant-expression
+  subset: `null`, booleans, integers, floats, strings, short and long arrays
+  with supported keys, unary expressions, and binary expressions over those
+  values
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -164,8 +165,8 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
-- explicit parse diagnostics for unsupported grouped, nested, namespace-aware,
-  or dynamic-value `const` declarations
+- explicit parse diagnostics for unsupported nested, namespace-aware, or
+  dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
@@ -907,17 +908,19 @@
   runtime-defined table or from the exact built-in `ARRAY_FILTER_*` slice.
   `defined($name)` returns true for supported unqualified names present in that
   current table and false for supported unqualified names that are missing.
-  Top-level `const NAME = value;` declarations accept unqualified names and the
-  current constant-expression subset (`null`, booleans, integers, floats,
-  strings, arrays, unary expressions, and binary expressions over those
-  values). Duplicate definitions, redefinition of the built-in constants,
+  Top-level single and grouped `const NAME = value;` declarations accept
+  unqualified names and the current constant-expression subset (`null`,
+  booleans, integers, floats, strings, arrays, unary expressions, and binary
+  expressions over those values). Grouped declarations execute left to right,
+  so duplicate diagnostics point to the later duplicate declarator in the
+  current group. Duplicate definitions, redefinition of the built-in constants,
   non-string or unsupported names, unsupported object-containing values,
   unknown `constant(...)` names, non-string or unsupported `defined(...)`
   names, unknown bare constants, and the legacy third `define(...)` flag fail
   with stable diagnostics. Constant names that are lexed as language keywords
   or literals cannot be read bare, and case-insensitive legacy constants,
-  namespace-qualified constants, extension constants, grouped declarations,
-  nested declarations, dynamic declaration values, class constants through
+  namespace-qualified constants, extension constants, nested declarations,
+  dynamic declaration values, class constants through
   `constant(...)`/`defined(...)`, references/copy-on-write behavior, and native
   lowering are not implemented.
   Array/object callables, closures, first-class callables, method calls,
@@ -1213,8 +1216,8 @@
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, and runtime-defined
   unqualified constants in the current name/value subset; unsupported
   `define(...)` names or values, case-insensitive legacy constants, extension
-  constants, namespace-qualified constants, grouped or nested `const`
-  declarations, dynamic declaration values, `constant()`/`defined()` lookup
+  constants, namespace-qualified constants, nested `const` declarations,
+  dynamic declaration values, `constant()`/`defined()` lookup
   for class constants, names lexed as language keywords or literals for bare
   reads, reference/copy-on-write behavior for constant values, and native
   lowering remain unsupported

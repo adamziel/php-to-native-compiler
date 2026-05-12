@@ -654,22 +654,30 @@ handled.
 - [x] Add explicit parse diagnostics for unsupported top-level `const NAME =
   value;` declarations before implementing constant declarations, including
   parser coverage, fixture CLI coverage, documentation, and named gaps for
-  grouped declarations, namespace-aware constants, class constants, dynamic
-  values, and native lowering.
+  namespace-aware constants, class constants, dynamic values, and native
+  lowering.
 
 ## Milestone 65: Global Constant Declaration Slice
 
 - [x] Implement top-level `const NAME = value;` declarations over the current
   constant-expression and value subset, including parser/interpreter support,
   duplicate and unsupported-value diagnostics, fixture CLI coverage,
-  documentation, and explicit gaps for grouped declarations, namespace-aware
-  constants, class constants, references/copy-on-write, dynamic values, and
-  native lowering.
+  documentation, and explicit gaps for namespace-aware constants, class
+  constants, references/copy-on-write, dynamic values, and native lowering.
 
 ## Milestone 66: Grouped Global Constant Declarations
 
-- [ ] Implement grouped top-level `const A = value, B = value;` declarations
+- [x] Implement grouped top-level `const A = value, B = value;` declarations
   over the current constant-expression and value subset, including
   left-to-right duplicate diagnostics, fixture CLI coverage, documentation,
   and explicit gaps for namespace-aware constants, class constants,
+  references/copy-on-write, dynamic values, and native lowering.
+
+## Milestone 67: Constant Expression References
+
+- [ ] Allow top-level `const` declaration values to reference previously
+  declared unqualified constants and the current built-in global constant
+  slice, including left-to-right grouped declaration behavior, undefined-name
+  diagnostics, fixture CLI coverage, documentation, and explicit gaps for
+  forward references, namespace-aware constants, class constants,
   references/copy-on-write, dynamic values, and native lowering.

@@ -1,7 +1,7 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
-    ClassVisibility, Expr, ForAction, FunctionDecl, FunctionParam, Program, Span, Stmt, SwitchCase,
-    UnaryOp, UnsetTarget,
+    ClassVisibility, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam, Program, Span,
+    Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -309,24 +309,37 @@ impl Parser {
 
     fn parse_const_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
-        let name = self.consume_identifier("expected constant name after const")?;
-        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_namespace_const_declaration_message(),
-            ));
+        let mut declarations = Vec::new();
+
+        loop {
+            let (name, name_span) =
+                self.consume_identifier_with_span("expected constant name after const")?;
+            if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_namespace_const_declaration_message(),
+                ));
+            }
+            self.consume_keyword(TokenKind::Equal, "expected '=' after constant name")?;
+            let value = self.parse_expression()?;
+            self.ensure_supported_const_declaration_expr(&value)?;
+            declarations.push(ConstDeclarator {
+                name,
+                value,
+                span: if declarations.is_empty() {
+                    span
+                } else {
+                    name_span
+                },
+            });
+
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
         }
-        self.consume_keyword(TokenKind::Equal, "expected '=' after constant name")?;
-        let value = self.parse_expression()?;
-        self.ensure_supported_const_declaration_expr(&value)?;
-        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_grouped_const_declaration_message(),
-            ));
-        }
+
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after const declaration")?;
-        Ok(Stmt::ConstDeclaration { name, value, span })
+        Ok(Stmt::ConstDeclaration { declarations, span })
     }
 
     fn parse_unsupported_include_or_require(&mut self) -> CompileResult<Stmt> {
@@ -1458,9 +1471,14 @@ impl Parser {
     }
 
     fn consume_identifier(&mut self, message: &str) -> CompileResult<String> {
+        self.consume_identifier_with_span(message)
+            .map(|(name, _span)| name)
+    }
+
+    fn consume_identifier_with_span(&mut self, message: &str) -> CompileResult<(String, Span)> {
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Identifier(name) => Ok(name),
+            TokenKind::Identifier(name) => Ok((name, token.span)),
             _ => Err(self.error_at(token.span, message)),
         }
     }
@@ -1694,10 +1712,6 @@ fn unsupported_use_message() -> &'static str {
 
 fn unsupported_nested_const_declaration_message() -> &'static str {
     "unsupported const declaration: only top-level constant declarations are implemented"
-}
-
-fn unsupported_grouped_const_declaration_message() -> &'static str {
-    "unsupported const declaration: grouped constant declarations are not implemented"
 }
 
 fn unsupported_namespace_const_declaration_message() -> &'static str {

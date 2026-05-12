@@ -107,9 +107,10 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   built-in constants, while runtime-defined constants can be created with
   `define($name, $value)`, queried with `defined($name)`, and read with
   `constant($name)` or a bare unqualified constant name for the documented
-  string-name and scalar/array value subset. Top-level `const NAME = value;`
-  declarations define unqualified constants at statement execution time over
-  the current constant-expression and scalar/array value subset
+  string-name and scalar/array value subset. Top-level single and grouped
+  `const NAME = value;` declarations define unqualified constants at statement
+  execution time over the current constant-expression and scalar/array value
+  subset
 
 Only the string-valued dynamic function lookup slice is executable today.
 Variable-variable execution, include/require execution, and `eval` remain design
@@ -120,8 +121,8 @@ Array/object callables, method calls, first-class callable syntax, and
 namespace/autoload-aware callable resolution are still outside the implemented
 dynamic-call subset. Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
-constants, namespace-qualified constants, grouped, nested, or namespace-aware
-`const` declarations, dynamic `const` values, class constants through
+constants, namespace-qualified constants, nested or namespace-aware `const`
+declarations, dynamic `const` values, class constants through
 `constant(...)`/`defined(...)`, references/copy-on-write for constant values,
 and constant lowering are still outside the implemented constant subset.
 

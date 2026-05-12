@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+compiler|2|7|1
+prod|dev|1
+compiler:2:1
+--- stdout end ---
+stderr:
+--- stderr end ---

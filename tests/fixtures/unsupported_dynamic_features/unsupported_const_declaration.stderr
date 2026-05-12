@@ -1,2 +1,2 @@
-parse error at 2:22: unsupported const declaration: grouped constant declarations are not implemented
+parse error at 2:10: unsupported const declaration: namespace-qualified constant declarations are not implemented
 

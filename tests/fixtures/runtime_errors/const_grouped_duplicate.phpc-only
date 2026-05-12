@@ -1,0 +1,1 @@
+phpc emits a stable fatal diagnostic for duplicate grouped const declarations instead of PHP's native fatal error text.
