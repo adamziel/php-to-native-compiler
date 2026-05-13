@@ -618,6 +618,10 @@ Implemented:
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
   snapshots for unsupported static property access, static method calls, and
   class constant access through `::`.
+- Added a Milestone 211 `phpc compile --emit-asm` fallback-precedence snapshot
+  with deterministic fake `llc` and `cc` commands available while `clang` is
+  hidden, proving selected `llc` assembly emission is used before the `cc -S`
+  C fallback.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
   snapshots for unsupported long `array(...)` literal syntax before long array
   literals are implemented.

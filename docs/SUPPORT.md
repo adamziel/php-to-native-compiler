@@ -1063,7 +1063,11 @@
   for assembly emission` diagnostics after fallback selection. A
   backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
   `cc` commands together and proves successful `clang` emission is selected
-  before fallback tools when all candidates are available. Bundled toolchains,
+  before fallback tools when all candidates are available. A
+  fallback-precedence snapshot hides `clang` while exposing deterministic fake
+  `llc` and `cc` commands together, proving successful `llc` emission is
+  selected before the `cc -S` C fallback when both fallback candidates are
+  available. Bundled toolchains,
   assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,

@@ -127,6 +127,10 @@ fallback selection.
 A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands together, proving successful `clang` assembly emission is
 selected before fallback tools when all candidates are available.
+A fallback-precedence snapshot hides `clang` while exposing deterministic fake
+`llc` and `cc` commands together, proving successful `llc` assembly emission is
+selected before the `cc -S` C fallback when both fallback candidates are
+available.
 
 ## Current Status
 

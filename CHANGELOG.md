@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  selection precedence when `clang` is unavailable and both `llc` and `cc` are
+  available. The Milestone 211 fixture runs as a lowerable scalar echo/print
+  program, while the assembly CLI test exposes deterministic fake `llc` and
+  `cc` tools where selected `llc` emits a committed marker and `cc` would fail
+  if selected. Bundled toolchains, assembly linking/execution, full
+  backend-specific discovery semantics, exact native error objects, and
+  broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback assembly
   backend commands that pass discovery but cannot be started for actual
   emission. The Milestone 209 fixture runs as a lowerable scalar echo/print
