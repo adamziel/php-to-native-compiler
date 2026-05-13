@@ -12814,4 +12814,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   native comparison rejection.
 - Known-good tag: not created; this is a narrow native-codegen boundary
   checkpoint, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject string arithmetic operands"`.
+- Checkpoint: `584b775 native codegen: reject string arithmetic operands`.
