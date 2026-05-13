@@ -25,6 +25,8 @@ const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound a
 const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unary minus and logical not until native PHP numeric coercion, truthiness conversion, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
 const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unary minus and logical not until native PHP numeric coercion, truthiness conversion, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
+const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const ASSEMBLY_ARITHMETIC_REJECTION: &str = "assembly arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -57,7 +59,6 @@ struct LlvmGenerator {
     strings: Vec<(String, String)>,
     body: Vec<String>,
     variables: HashMap<String, IrValue>,
-    next_temp: usize,
     next_string: usize,
 }
 
@@ -246,6 +247,9 @@ impl LlvmGenerator {
                         "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
                     ));
                 }
+                if is_binary_arithmetic_op(*op) {
+                    return Err(self.unsupported(*span, LLVM_ARITHMETIC_REJECTION));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -278,10 +282,9 @@ impl LlvmGenerator {
     ) -> CompileResult<IrValue> {
         match op {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
-                self.emit_numeric_binary(left, op, right, span)
+                Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION))
             }
-            BinaryOp::Div => self.emit_div(left, right, span),
-            BinaryOp::Mod => self.emit_mod(left, right, span),
+            BinaryOp::Div | BinaryOp::Mod => Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION)),
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -309,114 +312,6 @@ impl LlvmGenerator {
             | BinaryOp::ShiftRight => Err(self.unsupported(
                 span,
                 "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
-            )),
-        }
-    }
-
-    fn emit_numeric_binary(
-        &mut self,
-        left: IrValue,
-        op: BinaryOp,
-        right: IrValue,
-        span: Span,
-    ) -> CompileResult<IrValue> {
-        if matches!(left, IrValue::String(_)) || matches!(right, IrValue::String(_)) {
-            return Err(self.unsupported(
-                span,
-                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            ));
-        }
-
-        match (left, right) {
-            (IrValue::Int(left), IrValue::Int(right)) => {
-                let temp = self.temp();
-                let instr = match op {
-                    BinaryOp::Add => "add",
-                    BinaryOp::Sub => "sub",
-                    BinaryOp::Mul => "mul",
-                    _ => unreachable!("caller restricts op"),
-                };
-                self.body
-                    .push(format!("{temp} = {instr} i64 {left}, {right}"));
-                Ok(IrValue::Int(temp))
-            }
-            (left, right) => {
-                let left = self.into_float(left, span)?;
-                let right = self.into_float(right, span)?;
-                let temp = self.temp();
-                let instr = match op {
-                    BinaryOp::Add => "fadd",
-                    BinaryOp::Sub => "fsub",
-                    BinaryOp::Mul => "fmul",
-                    _ => unreachable!("caller restricts op"),
-                };
-                self.body
-                    .push(format!("{temp} = {instr} double {left}, {right}"));
-                Ok(IrValue::Float(temp))
-            }
-        }
-    }
-
-    fn emit_div(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
-        if matches!(left, IrValue::String(_)) || matches!(right, IrValue::String(_)) {
-            return Err(self.unsupported(
-                span,
-                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            ));
-        }
-
-        match classify_ir_divisor(&right) {
-            NativeDivisorStatus::KnownZero => {
-                return Err(self.unsupported(
-                    span,
-                    "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
-                ));
-            }
-            NativeDivisorStatus::Dynamic => {
-                return Err(self.unsupported(
-                    span,
-                    "LLVM division lowering rejects dynamic divisors until native runtime zero checks exist; phpc run handles runtime division diagnostics",
-                ));
-            }
-            NativeDivisorStatus::KnownNonZero | NativeDivisorStatus::UnsupportedCoercion => {}
-        }
-        let left = self.into_float(left, span)?;
-        let right = self.into_float(right, span)?;
-        let temp = self.temp();
-        self.body
-            .push(format!("{temp} = fdiv double {left}, {right}"));
-        Ok(IrValue::Float(temp))
-    }
-
-    fn emit_mod(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
-        if matches!(left, IrValue::String(_)) || matches!(right, IrValue::String(_)) {
-            return Err(self.unsupported(
-                span,
-                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            ));
-        }
-
-        match (left, right) {
-            (IrValue::Int(left), IrValue::Int(right)) => {
-                let divisor = right.parse::<i64>().map_err(|_| {
-                    self.unsupported(
-                        span,
-                        "LLVM modulo lowering requires an integer divisor known at compile time",
-                    )
-                })?;
-                if divisor == 0 {
-                    return Err(self.unsupported(
-                        span,
-                        "LLVM modulo lowering rejects modulo by zero; phpc run reports a runtime diagnostic",
-                    ));
-                }
-                let temp = self.temp();
-                self.body.push(format!("{temp} = srem i64 {left}, {right}"));
-                Ok(IrValue::Int(temp))
-            }
-            _ => Err(self.unsupported(
-                span,
-                "LLVM modulo lowering currently requires integer operands; phpc run handles the broader int-coercion subset",
             )),
         }
     }
@@ -465,28 +360,6 @@ impl LlvmGenerator {
         }
     }
 
-    fn into_float(&mut self, value: IrValue, span: Span) -> CompileResult<String> {
-        match value {
-            IrValue::Float(value) => Ok(value),
-            IrValue::Int(value) => {
-                let temp = self.temp();
-                self.body
-                    .push(format!("{temp} = sitofp i64 {value} to double"));
-                Ok(temp)
-            }
-            IrValue::Bool(value) => Ok(if value {
-                "1.0".to_string()
-            } else {
-                "0.0".to_string()
-            }),
-            IrValue::Null => Ok("0.0".to_string()),
-            IrValue::String(_) => Err(self.unsupported(
-                span,
-                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            )),
-        }
-    }
-
     fn const_echo_string(&self, value: IrValue) -> Option<String> {
         match value {
             IrValue::Null => Some(String::new()),
@@ -504,12 +377,6 @@ impl LlvmGenerator {
         self.next_string += 1;
         self.strings.push((name.clone(), value.to_string()));
         name
-    }
-
-    fn temp(&mut self) -> String {
-        let temp = format!("%t{}", self.next_temp);
-        self.next_temp += 1;
-        temp
     }
 
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
@@ -696,7 +563,6 @@ fn emit_c_source_for_assembly(program: &Program) -> CompileResult<String> {
 struct CGenerator {
     body: Vec<String>,
     variables: HashMap<String, CValue>,
-    next_temp: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -881,6 +747,9 @@ impl CGenerator {
                         "assembly bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
                     ));
                 }
+                if is_binary_arithmetic_op(*op) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -913,10 +782,11 @@ impl CGenerator {
     ) -> CompileResult<CValue> {
         match op {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
-                self.emit_numeric_binary(left, op, right, span)
+                Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION))
             }
-            BinaryOp::Div => self.emit_div(left, right, span),
-            BinaryOp::Mod => self.emit_mod(left, right, span),
+            BinaryOp::Div | BinaryOp::Mod => {
+                Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION))
+            }
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -944,109 +814,6 @@ impl CGenerator {
             | BinaryOp::ShiftRight => Err(self.unsupported(
                 span,
                 "assembly bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
-            )),
-        }
-    }
-
-    fn emit_numeric_binary(
-        &mut self,
-        left: CValue,
-        op: BinaryOp,
-        right: CValue,
-        span: Span,
-    ) -> CompileResult<CValue> {
-        if matches!(left, CValue::String(_)) || matches!(right, CValue::String(_)) {
-            return Err(self.unsupported(
-                span,
-                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            ));
-        }
-
-        let operator = match op {
-            BinaryOp::Add => "+",
-            BinaryOp::Sub => "-",
-            BinaryOp::Mul => "*",
-            _ => unreachable!("caller restricts op"),
-        };
-
-        match (left, right) {
-            (CValue::Int(left), CValue::Int(right)) => {
-                let temp = self.temp();
-                self.body
-                    .push(format!("long long {temp} = {left} {operator} {right};"));
-                Ok(CValue::Int(temp))
-            }
-            (left, right) => {
-                let left = self.into_float(left, span)?;
-                let right = self.into_float(right, span)?;
-                let temp = self.temp();
-                self.body
-                    .push(format!("double {temp} = {left} {operator} {right};"));
-                Ok(CValue::Float(temp))
-            }
-        }
-    }
-
-    fn emit_div(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
-        if matches!(left, CValue::String(_)) || matches!(right, CValue::String(_)) {
-            return Err(self.unsupported(
-                span,
-                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            ));
-        }
-
-        match classify_c_divisor(&right) {
-            NativeDivisorStatus::KnownZero => {
-                return Err(self.unsupported(
-                    span,
-                    "assembly division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
-                ));
-            }
-            NativeDivisorStatus::Dynamic => {
-                return Err(self.unsupported(
-                    span,
-                    "assembly division lowering rejects dynamic divisors until native runtime zero checks exist; phpc run handles runtime division diagnostics",
-                ));
-            }
-            NativeDivisorStatus::KnownNonZero | NativeDivisorStatus::UnsupportedCoercion => {}
-        }
-        let left = self.into_float(left, span)?;
-        let right = self.into_float(right, span)?;
-        let temp = self.temp();
-        self.body.push(format!("double {temp} = {left} / {right};"));
-        Ok(CValue::Float(temp))
-    }
-
-    fn emit_mod(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
-        if matches!(left, CValue::String(_)) || matches!(right, CValue::String(_)) {
-            return Err(self.unsupported(
-                span,
-                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            ));
-        }
-
-        match (left, right) {
-            (CValue::Int(left), CValue::Int(right)) => {
-                let divisor = right.parse::<i64>().map_err(|_| {
-                    self.unsupported(
-                        span,
-                        "assembly modulo lowering requires an integer divisor known at compile time",
-                    )
-                })?;
-                if divisor == 0 {
-                    return Err(self.unsupported(
-                        span,
-                        "assembly modulo lowering rejects modulo by zero; phpc run reports a runtime diagnostic",
-                    ));
-                }
-                let temp = self.temp();
-                self.body
-                    .push(format!("long long {temp} = {left} % {right};"));
-                Ok(CValue::Int(temp))
-            }
-            _ => Err(self.unsupported(
-                span,
-                "assembly modulo lowering currently requires integer operands; phpc run handles the broader int-coercion subset",
             )),
         }
     }
@@ -1079,23 +846,6 @@ impl CGenerator {
         }
     }
 
-    fn into_float(&self, value: CValue, span: Span) -> CompileResult<String> {
-        match value {
-            CValue::Float(value) => Ok(value),
-            CValue::Int(value) => Ok(format!("(double)({value})")),
-            CValue::Bool(value) => Ok(if value {
-                "1.0".to_string()
-            } else {
-                "0.0".to_string()
-            }),
-            CValue::Null => Ok("0.0".to_string()),
-            CValue::String(_) => Err(self.unsupported(
-                span,
-                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
-            )),
-        }
-    }
-
     fn const_echo_string(&self, value: CValue) -> Option<String> {
         match value {
             CValue::Null => Some(String::new()),
@@ -1106,12 +856,6 @@ impl CGenerator {
             CValue::String(value) => Some(value),
             CValue::Int(_) | CValue::Float(_) => None,
         }
-    }
-
-    fn temp(&mut self) -> String {
-        let temp = format!("t{}", self.next_temp);
-        self.next_temp += 1;
-        temp
     }
 
     fn unsupported(&self, span: Span, message: impl Into<String>) -> Diagnostic {
@@ -1152,61 +896,6 @@ fn c_string(value: &str) -> String {
     escaped
 }
 
-enum NativeDivisorStatus {
-    KnownZero,
-    KnownNonZero,
-    Dynamic,
-    UnsupportedCoercion,
-}
-
-fn classify_ir_divisor(value: &IrValue) -> NativeDivisorStatus {
-    match value {
-        IrValue::Null => NativeDivisorStatus::KnownZero,
-        IrValue::Bool(value) => {
-            if *value {
-                NativeDivisorStatus::KnownNonZero
-            } else {
-                NativeDivisorStatus::KnownZero
-            }
-        }
-        IrValue::Int(value) => match value.parse::<i64>() {
-            Ok(0) => NativeDivisorStatus::KnownZero,
-            Ok(_) => NativeDivisorStatus::KnownNonZero,
-            Err(_) => NativeDivisorStatus::Dynamic,
-        },
-        IrValue::Float(value) => match value.parse::<f64>() {
-            Ok(value) if value == 0.0 => NativeDivisorStatus::KnownZero,
-            Ok(_) => NativeDivisorStatus::KnownNonZero,
-            Err(_) => NativeDivisorStatus::Dynamic,
-        },
-        IrValue::String(_) => NativeDivisorStatus::UnsupportedCoercion,
-    }
-}
-
-fn classify_c_divisor(value: &CValue) -> NativeDivisorStatus {
-    match value {
-        CValue::Null => NativeDivisorStatus::KnownZero,
-        CValue::Bool(value) => {
-            if *value {
-                NativeDivisorStatus::KnownNonZero
-            } else {
-                NativeDivisorStatus::KnownZero
-            }
-        }
-        CValue::Int(value) => match value.parse::<i64>() {
-            Ok(0) => NativeDivisorStatus::KnownZero,
-            Ok(_) => NativeDivisorStatus::KnownNonZero,
-            Err(_) => NativeDivisorStatus::Dynamic,
-        },
-        CValue::Float(value) => match value.parse::<f64>() {
-            Ok(value) if value == 0.0 => NativeDivisorStatus::KnownZero,
-            Ok(_) => NativeDivisorStatus::KnownNonZero,
-            Err(_) => NativeDivisorStatus::Dynamic,
-        },
-        CValue::String(_) => NativeDivisorStatus::UnsupportedCoercion,
-    }
-}
-
 fn is_comparison_op(op: BinaryOp) -> bool {
     matches!(
         op,
@@ -1229,6 +918,13 @@ fn is_bitwise_or_shift_op(op: BinaryOp) -> bool {
             | BinaryOp::BitwiseXor
             | BinaryOp::ShiftLeft
             | BinaryOp::ShiftRight
+    )
+}
+
+fn is_binary_arithmetic_op(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod
     )
 }
 

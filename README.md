@@ -339,14 +339,11 @@ behavior, dynamic property names, non-public visibility context, magic
 `__unset`, references/copy-on-write, and native object lowering are not
 supported yet.
 
-LLVM IR emission currently supports a smaller straight-line subset, including
-integer `+`, `-`, `*`, `/`, and a narrow integer `%` lowering when the divisor
-is a nonzero integer known at compile time. Native `/` lowering rejects
-statically known zero divisors and runtime-computed divisors before emitting
-LLVM IR or fallback C; dynamic zero checks and PHP-shaped native
-`DivisionByZeroError` objects are not implemented. Native arithmetic also
-rejects string operands explicitly until numeric-string coercion exists in
-generated code. Native comparison operators are rejected with a specific
+LLVM IR emission currently supports a smaller straight-line subset. Binary
+arithmetic operators `+`, `-`, `*`, `/`, and `%` are rejected before operand
+lowering until generated code has PHP numeric coercion, dynamic division/modulo
+zero checks, modulo coercions, references/copy-on-write behavior, and exact
+native error behavior. Native comparison operators are rejected with a specific
 codegen diagnostic until generated code has PHP comparison coercions and
 non-scalar comparison diagnostics. Native unary minus and logical not are
 rejected before operand lowering until generated code has PHP numeric coercion,

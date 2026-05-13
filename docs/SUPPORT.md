@@ -900,18 +900,12 @@
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions. Native `/` lowering now
-  rejects statically known zero divisors, including lowerable integer, float,
-  `false`, and `null` zero values, and runtime-computed divisors before
-  emitting LLVM IR or fallback C; dynamic zero checks and PHP-shaped native
-  `DivisionByZeroError` objects are not implemented. Integer `%` has a narrow
-  native lowering for integer
-  operands when the divisor is a nonzero integer known at compile time; runtime
-  `%` coercions for nulls, booleans, floats, numeric strings, dynamic divisors,
-  and exact PHP error objects are still outside native lowering. Native
-  arithmetic rejects string operands for `+`, `-`, `*`, `/`, and `%` with a
-  specific codegen diagnostic until numeric-string coercion and non-numeric
-  string diagnostics exist in generated code. Native comparison operators
+  with statically lowerable scalar expressions outside the explicit rejection
+  boundaries. Native binary arithmetic operators `+`, `-`, `*`, `/`, and `%`
+  are rejected before operand lowering with a specific codegen diagnostic until
+  generated code has PHP numeric coercion, dynamic division/modulo zero checks,
+  modulo coercions, references/copy-on-write behavior, and exact native error
+  objects. Native comparison operators
   `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
   PHP comparison coercions and non-scalar comparison diagnostics. Native
@@ -1571,8 +1565,9 @@
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
-  are not implemented. Native arithmetic does not lower any string operands
-  yet, including well-formed numeric strings that `phpc run` can execute.
+  are not implemented. Native arithmetic does not lower binary arithmetic
+  operators yet, including well-formed numeric strings, scalar coercions, and
+  modulo coercions that `phpc run` can execute.
 - Scalar comparison gaps: strict identity is implemented only for the current
   scalar values. Strict identity for arrays, objects, resources, references,
   object handle identity, and native lowering is not implemented. LLVM
@@ -1822,6 +1817,11 @@
   IR/assembly emission rejects those expression forms before lowering operands,
   so generated code does not imply partial PHP numeric coercion, truthiness
   conversion, references/copy-on-write behavior, or exact native error objects.
+- Native lowering for binary arithmetic operators is not implemented. LLVM
+  IR/assembly emission rejects `+`, `-`, `*`, `/`, and `%` before lowering
+  operands, so generated code does not imply partial PHP numeric coercion,
+  dynamic division/modulo zero checks, modulo coercions,
+  references/copy-on-write behavior, or exact native error objects.
 - Logical operators are limited to `&&`, `||`, `and`, `xor`, and `or` over the
   current truthiness rules. `&&`, `||`, `and`, and `or` short-circuit, `xor`
   evaluates both operands, all return booleans, and fixture coverage exercises

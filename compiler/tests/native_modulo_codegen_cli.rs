@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 #[test]
-fn native_modulo_emit_ir_cli_snapshot_matches_committed_output() {
+fn native_modulo_emit_ir_rejection_cli_snapshot_matches_committed_output() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()

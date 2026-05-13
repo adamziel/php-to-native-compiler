@@ -3311,10 +3311,21 @@ Still fails:
   numeric coercion for unary expressions, truthiness conversion,
   references/copy-on-write side effects, exact native error objects, and
   broader native lowering remain unsupported.
+- Added a native binary-arithmetic boundary. LLVM IR emission now rejects `+`,
+  `-`, `*`, `/`, and `%` before lowering operands, with a specific codegen
+  diagnostic until generated code has PHP numeric coercion, dynamic
+  division/modulo zero checks, modulo coercions, references/copy-on-write
+  behavior, and exact native error behavior. The C assembly fallback carries
+  the same boundary for consistency, superseding earlier narrow native `/` and
+  `%` slices. `phpc run` fixture coverage still proves the current interpreter
+  arithmetic subset, and a `phpc compile --emit-ir` CLI snapshot pins the
+  native rejection. Native PHP numeric coercion, dynamic zero checks, modulo
+  coercions, references/copy-on-write side effects, exact native error
+  objects, and broader native arithmetic lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for binary arithmetic operators
-  before generated code claims PHP numeric coercion, dynamic zero checks,
-  modulo coercions, references/copy-on-write side effects, or exact native
-  error behavior.
+- Add the next honest native-codegen boundary for string concatenation before
+  generated code claims PHP echo/string conversion, dynamic allocation,
+  references/copy-on-write side effects, exact native error objects, or broader
+  string lowering.

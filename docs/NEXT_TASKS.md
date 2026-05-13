@@ -1692,9 +1692,16 @@ handled.
 
 ## Milestone 178: Native Arithmetic Boundary
 
-- [ ] Add the next honest native-codegen boundary for binary arithmetic
+- [x] Add the next honest native-codegen boundary for binary arithmetic
   operators `+`, `-`, `*`, `/`, and `%`, either by broadening a narrow native
   scalar subset or by tightening explicit diagnostics with fixture CLI
   coverage, documentation, and named gaps for PHP numeric coercion, dynamic
   division/modulo zero checks, modulo coercions, references/copy-on-write,
   exact native error objects, and broader native lowering.
+
+## Milestone 179: Native Concatenation Boundary
+
+- [ ] Add the next honest native-codegen boundary for string concatenation `.`
+  before generated code claims PHP echo/string conversion, dynamic allocation,
+  references/copy-on-write side effects, exact native error objects, or broader
+  string lowering.

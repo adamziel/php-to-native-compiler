@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone178/native_arithmetic_boundary.php:2:6: LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior
+--- stderr end ---

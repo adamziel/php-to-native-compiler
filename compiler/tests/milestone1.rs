@@ -79,11 +79,15 @@ echo "done";
 }
 
 #[test]
-fn emit_ir_for_integer_arithmetic() {
-    let ir = emit_ir_source("<?php\n$x = 1 + 2;\necho $x;\n").unwrap();
-    assert!(ir.contains("add i64 1, 2"), "{ir}");
-    assert!(ir.contains("@printf"), "{ir}");
-    assert!(ir.contains("define i32 @main()"), "{ir}");
+fn emit_ir_rejects_integer_arithmetic_until_native_numeric_lowering_exists() {
+    let error = emit_ir_source("<?php\n$x = 1 + 2;\necho $x;\n").unwrap_err();
+
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("arithmetic lowering"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -305,12 +309,12 @@ fn emit_asm_through_available_native_toolchain() {
         return;
     }
 
-    let asm = emit_asm_source("<?php\necho 1 + 2;\n").unwrap();
+    let asm = emit_asm_source("<?php\necho 3;\n").unwrap();
     assert!(asm.contains("main"), "{asm}");
 }
 
 #[test]
-fn emit_asm_lowers_integer_modulo_through_available_native_toolchain() {
+fn emit_asm_rejects_integer_modulo_until_native_numeric_lowering_exists() {
     let has_backend = ["clang", "llc", "cc"]
         .iter()
         .any(|command| Command::new(command).arg("--version").output().is_ok());
@@ -318,6 +322,11 @@ fn emit_asm_lowers_integer_modulo_through_available_native_toolchain() {
         return;
     }
 
-    let asm = emit_asm_source("<?php\necho 10 % 4;\n").unwrap();
-    assert!(asm.contains("main"), "{asm}");
+    let error = emit_asm_source("<?php\necho 10 % 4;\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("arithmetic lowering"),
+        "{}",
+        error.message
+    );
 }

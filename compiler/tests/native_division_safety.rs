@@ -5,15 +5,14 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
+const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+
 #[test]
 fn emit_ir_rejects_static_integer_zero_divisor() {
     let error = emit_ir_source("<?php\necho 10 / 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic"
-    );
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -21,10 +20,7 @@ fn emit_ir_rejects_static_float_zero_divisor() {
     let error = emit_ir_source("<?php\necho 10 / 0.0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic"
-    );
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -34,29 +30,24 @@ fn emit_ir_rejects_static_null_and_false_zero_divisors() {
 
     assert_eq!(null_error.phase, Phase::Codegen);
     assert_eq!(false_error.phase, Phase::Codegen);
-    assert_eq!(
-        null_error.message,
-        "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic"
-    );
-    assert_eq!(
-        false_error.message,
-        "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic"
-    );
+    assert_eq!(null_error.message, ARITHMETIC_REJECTION);
+    assert_eq!(false_error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
-fn emit_ir_still_lowers_nonzero_division() {
-    let ir = emit_ir_source("<?php\necho 10 / 2;\n").unwrap();
+fn emit_ir_rejects_nonzero_division_until_native_numeric_lowering_exists() {
+    let error = emit_ir_source("<?php\necho 10 / 2;\n").unwrap_err();
 
-    assert!(ir.contains("fdiv double"), "{ir}");
-    assert!(!ir.contains("fdiv double %t0, 0.0"), "{ir}");
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
-fn emit_ir_still_lowers_nonzero_literal_variable_divisor() {
-    let ir = emit_ir_source("<?php\n$divisor = 2;\necho 10 / $divisor;\n").unwrap();
+fn emit_ir_rejects_nonzero_literal_variable_divisor_until_native_numeric_lowering_exists() {
+    let error = emit_ir_source("<?php\n$divisor = 2;\necho 10 / $divisor;\n").unwrap_err();
 
-    assert!(ir.contains("fdiv double"), "{ir}");
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -64,10 +55,7 @@ fn emit_ir_rejects_dynamic_divisors_until_runtime_checks_exist() {
     let error = emit_ir_source("<?php\n$divisor = 4 - 2;\necho 10 / $divisor;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM division lowering rejects dynamic divisors until native runtime zero checks exist; phpc run handles runtime division diagnostics"
-    );
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -75,10 +63,7 @@ fn emit_asm_rejects_static_zero_divisor_before_backend_execution() {
     let error = emit_asm_source("<?php\necho 10 / 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic"
-    );
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]

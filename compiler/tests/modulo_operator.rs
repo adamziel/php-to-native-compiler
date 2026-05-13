@@ -1,6 +1,8 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
+const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+
 #[test]
 fn modulo_operator_handles_integer_coercions_and_php_precedence() {
     let execution = run_source(
@@ -62,12 +64,11 @@ fn modulo_non_numeric_string_has_stable_runtime_error() {
 }
 
 #[test]
-fn emit_ir_lowers_integer_modulo() {
-    let ir = emit_ir_source("<?php\n$value = 10 % 4;\necho $value % 2;\n").unwrap();
+fn emit_ir_rejects_integer_modulo_until_native_numeric_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value = 10 % 4;\necho $value % 2;\n").unwrap_err();
 
-    assert!(ir.contains("srem i64 10, 4"), "{ir}");
-    assert!(ir.contains("srem i64 %t0, 2"), "{ir}");
-    assert!(ir.contains("@printf"), "{ir}");
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -75,10 +76,7 @@ fn emit_ir_rejects_modulo_by_zero_until_native_runtime_checks_exist() {
     let error = emit_ir_source("<?php\necho 7 % 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM modulo lowering rejects modulo by zero; phpc run reports a runtime diagnostic"
-    );
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
 
 #[test]
@@ -86,8 +84,5 @@ fn emit_ir_rejects_non_integer_modulo_until_native_coercions_exist() {
     let error = emit_ir_source("<?php\necho 7.5 % 3;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM modulo lowering currently requires integer operands; phpc run handles the broader int-coercion subset"
-    );
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
 }
