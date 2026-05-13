@@ -11034,3 +11034,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   PHP comparisons, and 241 comparison skips.
 - Checkpoint remains pending through
   `tools/checkpoint.sh "syntax: add for header increment decrement"`.
+
+## Loop Event 2026-05-13T00:33:20Z
+
+- Codex round 26 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T002630Z-26.log`.
+
+## Loop Event 2026-05-13T00:33:29Z
+
+- Post-round 26 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:33:29Z
+
+- Post-round 26 tests passed; running checkpoint for this round.
