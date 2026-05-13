@@ -505,6 +505,74 @@ fn native_scalar_echo_emit_asm_cc_success_with_stderr_cli_summary_matches_commit
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_llc_empty_stderr_failure_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone196/native_assembly_empty_fallback_stderr.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_empty_stderr_failing_llc_only(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone196/native_assembly_llc_empty_stderr_emit_asm.cli"),
+    )
+    .expect("native assembly llc empty-stderr failure CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_cc_empty_stderr_failure_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone196/native_assembly_empty_fallback_stderr.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_empty_stderr_failing_cc_only(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone196/native_assembly_cc_empty_stderr_emit_asm.cli"),
+    )
+    .expect("native assembly cc empty-stderr failure CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -972,6 +1040,73 @@ exit 0\n",
         std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
         fs::set_permissions(&cc, permissions)
             .expect("temporary success-with-stderr cc script can be made executable");
+        Self { path }
+    }
+
+    fn with_empty_stderr_failing_llc_only(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-llc-empty-stderr-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary empty-stderr llc PATH directory can be created");
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+exit 53\n",
+        )
+        .expect("temporary empty-stderr llc script can be written");
+        let mut permissions = fs::metadata(&llc)
+            .expect("temporary empty-stderr llc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&llc, permissions)
+            .expect("temporary empty-stderr llc script can be made executable");
+        Self { path }
+    }
+
+    fn with_empty_stderr_failing_cc_only(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-cc-empty-stderr-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("temporary empty-stderr cc PATH directory can be created");
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+exit 54\n",
+        )
+        .expect("temporary empty-stderr cc script can be written");
+        let mut permissions = fs::metadata(&cc)
+            .expect("temporary empty-stderr cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&cc, permissions)
+            .expect("temporary empty-stderr cc script can be made executable");
         Self { path }
     }
 

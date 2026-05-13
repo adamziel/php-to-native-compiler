@@ -1018,7 +1018,10 @@
   backend stderr on successful emission. Additional success-with-stderr
   fallback snapshots expose deterministic fake `llc` and `cc` tools, proving
   the same behavior after LLVM backend fallback selection and after the `cc -S`
-  C fallback selection. Bundled toolchains, assembly
+  C fallback selection. Additional empty-stderr fallback failure snapshots
+  expose deterministic fake `llc` and `cc` tools that exit nonzero without
+  diagnostics, proving the same stable `backend exited without stderr` detail
+  after fallback selection. Bundled toolchains, assembly
   linking/execution, backend-specific discovery semantics for every tool,
   backend-specific stderr guarantees, backend-specific assembly text, PHP
   zvals, native symbol-table storage, references/copy-on-write, exact native
