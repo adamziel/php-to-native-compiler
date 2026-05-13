@@ -1708,9 +1708,17 @@ handled.
 
 ## Milestone 180: Native Scalar Echo Boundary
 
-- [ ] Add the next honest native-codegen boundary for remaining straight-line
+- [x] Add the next honest native-codegen boundary for remaining straight-line
   scalar echo/assignment lowering, either by proving the current literal and
   static-variable subset with stronger CLI coverage or by tightening explicit
   diagnostics with documentation and named gaps for PHP string formatting,
   dynamic values, references/copy-on-write, exact native error objects, and
   broader native lowering.
+
+## Milestone 181: Native Variable Read Boundary
+
+- [ ] Add the next honest native-codegen boundary for undefined or dynamic
+  variable reads in the straight-line lowerer, including explicit diagnostics,
+  fixture CLI coverage, documentation, and named gaps for native symbol-table
+  storage, references/copy-on-write, exact PHP undefined-variable error
+  objects, and broader native lowering.

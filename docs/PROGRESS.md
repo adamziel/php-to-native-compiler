@@ -2065,13 +2065,15 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 112
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 420 fixtures, 166 system PHP comparisons,
-  and 254 comparison skips.
+- `tools/run-tests.sh` passes with 430 fixtures, 175 system PHP comparisons,
+  and 255 comparison skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
-- `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
-  emits LLVM IR containing native arithmetic and `printf` calls.
-- `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-asm`
-  emits native assembly through the available `cc` fallback in this environment.
+- `cargo run -p phpc -- compile tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-ir`
+  emits LLVM IR for the current straight-line literal/static-variable
+  echo/assignment subset.
+- `cargo run -p phpc -- compile tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-asm`
+  emits native assembly through an available LLVM tool or the documented `cc`
+  fallback when one is installed.
 
 Still fails:
 
@@ -3332,10 +3334,21 @@ Still fails:
   Native PHP string conversion, dynamic allocation,
   references/copy-on-write side effects, exact native error objects, and
   broader native string lowering remain unsupported.
+- Added explicit native scalar echo/assignment coverage for the remaining
+  straight-line lowerable subset. The covered subset is literal `null`,
+  booleans, integers, floats, and strings; direct static-variable assignments
+  from those lowerable values; direct reads of previously assigned static
+  variables; and `echo`/`print` through generated static `printf` calls. A
+  Milestone 180 fixture has `phpc run` and system-PHP comparison coverage, a
+  focused native-codegen test checks LLVM IR shape and assembly availability,
+  and a `phpc compile --emit-ir` CLI snapshot pins the emitted IR. Native PHP
+  zvals, symbol-table storage, dynamic values, references/copy-on-write,
+  dynamic string allocation, exact PHP float formatting/error objects, and
+  broader native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for remaining straight-line
-  scalar echo/assignment lowering, either by proving the current literal and
-  static-variable subset with stronger CLI coverage or by tightening explicit
-  diagnostics.
+- Add the next honest native-codegen boundary for undefined or dynamic
+  variable reads in the straight-line lowerer, with explicit diagnostics,
+  fixture CLI coverage, documentation, and named gaps for symbol-table storage,
+  references/copy-on-write, and exact native PHP error objects.

@@ -13792,3 +13792,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:09:21Z
 
 - Post-round 70 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:09:34Z
+
+- Starting round 71 at 20260513T060934Z from HEAD `7f05909`.
+
+## Loop Event 2026-05-13T06:09:49Z
+
+- Pre-round 71 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:24:00Z
+
+- Task attempted: completed Milestone 180 by adding positive native
+  scalar echo/assignment coverage for the remaining straight-line lowerable
+  subset: literal `null`, booleans, integers, floats, and strings; direct
+  static-variable assignments from those values; direct reads of previously
+  assigned static variables; and `echo`/`print` through generated static
+  `printf` calls.
+- Files changed: `compiler/tests/native_scalar_echo_boundary.rs`,
+  `tests/fixtures/milestone180/native_scalar_echo_assignment.php`,
+  `tests/fixtures/milestone180/native_scalar_echo_assignment.stdout`,
+  `tests/fixtures/milestone180/native_scalar_echo_assignment_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_scalar_echo_boundary -- --nocapture` passed with 5 tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone180` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone180` passed with 1 system PHP comparison;
+  `./target/debug/phpc compile
+  tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-ir`
+  exited `0` and printed the committed LLVM IR snapshot; `tools/run-tests.sh`
+  passed with 430 fixtures, 175 system PHP comparisons, and 255 comparison
+  skips.
+- Remaining semantic gaps: native PHP zvals, symbol-table storage, dynamic
+  values, references/copy-on-write, dynamic string allocation,
+  locale/version-specific float formatting, exact native PHP error objects,
+  and broader native lowering remain unsupported.
+- Next concrete task: add Milestone 181, a native variable-read boundary for
+  undefined or dynamic variable reads in the straight-line lowerer with
+  explicit diagnostics, fixture CLI coverage, documentation, and named gaps.
+- Known-good tag: not created; this is a narrow native-codegen coverage
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: cover native scalar echo boundary"`
+  after the full suite passes.

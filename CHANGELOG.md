@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added positive native scalar echo/assignment coverage for the remaining
+  lowerable straight-line subset: literal `null`, booleans, integers, floats,
+  and strings; direct static-variable assignments from those values; direct
+  reads of previously assigned static variables; and `echo`/`print` through
+  generated static `printf` calls. A Milestone 180 fixture has `phpc run`,
+  system-PHP comparison, LLVM IR shape, assembly-availability, and `phpc
+  compile --emit-ir` CLI snapshot coverage. Native PHP zvals, symbol-table
+  storage, dynamic values, references/copy-on-write, dynamic string
+  allocation, exact PHP float formatting/error objects, and broader native
+  lowering remain explicit gaps.
 - Added a native concatenation boundary. LLVM IR emission now rejects `.`
   before lowering operands, with a specific codegen diagnostic until generated
   code has PHP string conversion, dynamic allocation, references/copy-on-write,

@@ -900,8 +900,13 @@
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions outside the explicit rejection
-  boundaries. Native binary arithmetic operators `+`, `-`, `*`, `/`, and `%`
+  for the current statically lowerable scalar subset: literal `null`,
+  booleans, integers, floats, and strings; direct static-variable assignments
+  from those values; direct reads of previously assigned static variables; and
+  `echo`/`print`. Native echo conversion is limited to this static scalar path:
+  `null` and `false` emit nothing, `true` emits `1`, integers use `%lld`,
+  floats use `%g`, and strings are emitted through generated static string
+  constants. Native binary arithmetic operators `+`, `-`, `*`, `/`, and `%`
   are rejected before operand lowering with a specific codegen diagnostic until
   generated code has PHP numeric coercion, dynamic division/modulo zero checks,
   modulo coercions, references/copy-on-write behavior, and exact native error

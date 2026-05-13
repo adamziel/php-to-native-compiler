@@ -339,11 +339,17 @@ behavior, dynamic property names, non-public visibility context, magic
 `__unset`, references/copy-on-write, and native object lowering are not
 supported yet.
 
-LLVM IR emission currently supports a smaller straight-line subset. Binary
-arithmetic operators `+`, `-`, `*`, `/`, and `%` are rejected before operand
-lowering until generated code has PHP numeric coercion, dynamic division/modulo
-zero checks, modulo coercions, references/copy-on-write behavior, and exact
-native error behavior. Native string concatenation `.` is rejected before
+LLVM IR emission currently supports a smaller straight-line subset: literal
+`null`, booleans, integers, floats, and strings, direct static-variable
+assignments from those lowerable values, direct reads of previously assigned
+static variables, `echo`, and `print`. Echo conversion for this native subset
+is limited to the current literal scalar formatting path: `null` and `false`
+emit nothing, `true` emits `1`, integers use `%lld`, floats use `%g`, and
+strings are emitted through static string constants. Binary arithmetic
+operators `+`, `-`, `*`, `/`, and `%` are rejected before operand lowering
+until generated code has PHP numeric coercion, dynamic division/modulo zero
+checks, modulo coercions, references/copy-on-write behavior, and exact native
+error behavior. Native string concatenation `.` is rejected before
 operand lowering until generated code has PHP string conversion, dynamic
 allocation, references/copy-on-write behavior, and exact native error behavior.
 Native comparison operators are rejected with a specific
