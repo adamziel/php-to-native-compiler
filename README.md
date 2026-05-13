@@ -339,8 +339,10 @@ behavior, dynamic property names, non-public visibility context, magic
 `__unset`, references/copy-on-write, and native object lowering are not
 supported yet.
 
-LLVM IR emission currently supports a smaller straight-line subset and rejects
-unsupported programs with a structured codegen error.
+LLVM IR emission currently supports a smaller straight-line subset, including
+integer `+`, `-`, `*`, `/`, and a narrow integer `%` lowering when the divisor
+is a nonzero integer known at compile time. Unsupported programs and broader
+PHP coercions are rejected with structured codegen errors.
 
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`

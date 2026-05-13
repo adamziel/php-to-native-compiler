@@ -12596,3 +12596,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:00:08Z
 
 - Post-round 51 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:00:21Z
+
+- Starting round 52 at 20260513T040020Z from HEAD `44fdfca`.
+
+## Loop Event 2026-05-13T04:00:31Z
+
+- Pre-round 52 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:05:40Z
+
+- Task attempted: implemented Milestone 161 narrow native modulo lowering.
+  LLVM IR now emits `srem` for integer `%` expressions, and the C assembly
+  fallback emits C `%`, when both operands are already native integers and the
+  divisor is a nonzero integer known at compile time. Broader PHP `%`
+  coercions remain on the interpreter path and native lowering rejects
+  non-integer operands, dynamic divisors, and modulo by zero explicitly.
+- Files changed: `compiler/src/codegen.rs`, `compiler/tests/milestone1.rs`,
+  `compiler/tests/modulo_operator.rs`,
+  `compiler/tests/native_modulo_codegen_cli.rs`,
+  `tests/fixtures/milestone161/native_modulo.php`,
+  `tests/fixtures/milestone161/native_modulo.stdout`,
+  `tests/fixtures/milestone161/native_modulo_emit_ir.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test modulo_operator -- --nocapture` passed with 7 tests; `cargo test -p
+  phpc --test native_modulo_codegen_cli -- --nocapture` passed; `cargo test
+  -p phpc --test milestone1
+  emit_asm_lowers_integer_modulo_through_available_native_toolchain --
+  --nocapture` passed; `cargo run -p phpc -- test tests/fixtures/milestone161`
+  passed with 1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone161` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- compile tests/fixtures/milestone161/native_modulo.php --emit-ir`
+  emitted `srem i64 10, 4`; `cargo run -p phpc -- compile
+  tests/fixtures/milestone161/native_modulo.php --emit-asm` passed through the
+  available native toolchain; `tools/run-tests.sh` passed with 411 fixtures,
+  158 system PHP comparisons, and 253 comparison skips.
+- Remaining semantic gaps: native `%` lowering still rejects non-integer
+  operands, dynamic divisors, modulo by zero, PHP coercions for null/bool/
+  float/numeric-string operands, exact native `DivisionByZeroError`/`TypeError`
+  objects, references/copy-on-write side effects, modulo compound assignment,
+  and broader native lowering.
+- Next concrete task: add the Milestone 162 native division safety boundary,
+  starting with compile-time zero-divisor diagnostics for `/` in LLVM IR/C
+  assembly emission before broader runtime checks or PHP-shaped native errors
+  exist.
+- Known-good tag: not created; this is a narrow native-codegen checkpoint, not
+  a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: lower integer modulo"`.

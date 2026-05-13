@@ -3123,13 +3123,17 @@ Still fails:
   and parser now accept `%` with multiplicative precedence, the interpreter
   coerces `null`, booleans, integers, floats, and well-formed numeric strings
   to integers before computing the remainder, and modulo by zero fails with a
-  stable runtime diagnostic. Fixture, CLI snapshot, unit, system PHP
-  comparison, and native-codegen rejection coverage exercise integer results,
-  null/bool/numeric-string coercions, precedence, assignment-expression
-  operands, and the modulo-by-zero diagnostic. Non-numeric strings,
+  stable runtime diagnostic. LLVM IR and assembly emission now lower a narrow
+  integer-only `%` slice when the divisor is a nonzero integer known at compile
+  time. Fixture, CLI snapshot, unit, system PHP comparison, native emit-IR CLI
+  coverage, and native assembly smoke coverage exercise integer results,
+  null/bool/numeric-string coercions in `phpc run`, precedence,
+  assignment-expression operands, and the modulo-by-zero diagnostic.
+  Non-numeric strings,
   arrays/objects, float-to-int precision warnings, exact native
   `DivisionByZeroError`/`TypeError` objects, references/copy-on-write side
-  effects, and native lowering remain unsupported.
+  effects, native non-int `%` coercions, dynamic divisor checks, and broader
+  native lowering remain unsupported.
 - Implemented modulo compound assignment `%=` for the existing direct
   static-variable, direct array-offset, and direct public object-property
   compound-assignment target subset. Statement position, expression position,
@@ -3141,10 +3145,17 @@ Still fails:
   float-to-int precision warnings, exact native warning/error objects,
   references/copy-on-write side effects, and native lowering remain
   unsupported.
+- Implemented a narrow native modulo lowering slice. LLVM IR emits `srem` for
+  integer `%` expressions, and the C assembly fallback emits C `%`, when both
+  operands are already native integers and the divisor is a nonzero integer
+  known at compile time. Focused unit, fixture, `phpc compile --emit-ir` CLI
+  snapshot, and assembly smoke coverage exercise the supported path. Native
+  modulo still rejects non-integer operands, dynamic divisors, modulo by zero,
+  PHP coercions for null/bool/float/numeric-string operands, exact native error
+  objects, references/copy-on-write side effects, and broader native lowering.
 
 Next:
 
-- Add the next honest boundary or executable slice for native modulo lowering,
-  either by lowering a narrow integer `%` subset in LLVM IR/C assembly emission
-  or by tightening explicit codegen diagnostics with fixture coverage and named
-  gaps.
+- Add the next honest native-codegen safety boundary, starting with
+  compile-time division-by-zero diagnostics for `/` before broader runtime
+  checks or PHP-shaped native errors exist.

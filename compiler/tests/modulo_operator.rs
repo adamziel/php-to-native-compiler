@@ -62,12 +62,32 @@ fn modulo_non_numeric_string_has_stable_runtime_error() {
 }
 
 #[test]
-fn emit_ir_rejects_modulo_until_lowering_exists() {
-    let error = emit_ir_source("<?php\necho 7 % 3;\n").unwrap_err();
+fn emit_ir_lowers_integer_modulo() {
+    let ir = emit_ir_source("<?php\n$value = 10 % 4;\necho $value % 2;\n").unwrap();
+
+    assert!(ir.contains("srem i64 10, 4"), "{ir}");
+    assert!(ir.contains("srem i64 %t0, 2"), "{ir}");
+    assert!(ir.contains("@printf"), "{ir}");
+}
+
+#[test]
+fn emit_ir_rejects_modulo_by_zero_until_native_runtime_checks_exist() {
+    let error = emit_ir_source("<?php\necho 7 % 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "modulo is supported by phpc run for the current int-coercion subset but not LLVM IR emission yet"
+        "LLVM modulo lowering rejects modulo by zero; phpc run reports a runtime diagnostic"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_non_integer_modulo_until_native_coercions_exist() {
+    let error = emit_ir_source("<?php\necho 7.5 % 3;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(
+        error.message,
+        "LLVM modulo lowering currently requires integer operands; phpc run handles the broader int-coercion subset"
     );
 }

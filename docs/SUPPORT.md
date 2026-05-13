@@ -900,13 +900,17 @@
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions. `if`/`elseif`/`else`, `while`,
-  arrays, array indexing, array assignment, variable unset, array offset unset,
+  with statically lowerable scalar expressions. Integer `%` has a narrow
+  native lowering for integer operands when the divisor is a nonzero integer
+  known at compile time; runtime `%` coercions for nulls, booleans, floats,
+  numeric strings, dynamic divisors, and exact PHP error objects are still
+  outside native lowering. `if`/`elseif`/`else`, `while`, arrays, array
+  indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, assignment expressions, compound assignment
-  expressions, increment/decrement expressions, global constants,
-  top-level `const` declarations,
+  expressions, increment/decrement expressions, global constants, top-level
+  `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `interface_exists(...)`, `trait_exists(...)`,
   `enum_exists(...)`, `property_exists(...)`,

@@ -1532,9 +1532,18 @@ handled.
 
 ## Milestone 161: Native Modulo Lowering Boundary
 
-- [ ] Add the next honest boundary or executable slice for native modulo
+- [x] Add the next honest boundary or executable slice for native modulo
   lowering, either by lowering a narrow integer `%` subset in LLVM IR/C
   assembly emission or by tightening explicit codegen diagnostics with fixture
   coverage, documentation, and named gaps for non-int coercions,
   modulo-by-zero behavior, references/copy-on-write, exact native error
   objects, and broader native lowering.
+
+## Milestone 162: Native Division Safety Boundary
+
+- [ ] Add the next honest native-codegen safety boundary for division `/`,
+  starting with compile-time zero-divisor diagnostics for statically known
+  zero divisors in LLVM IR/C assembly emission, fixture CLI coverage,
+  documentation, and named gaps for dynamic zero checks, PHP-shaped
+  `DivisionByZeroError` objects, warnings/recovery, references/copy-on-write,
+  and broader numeric lowering.

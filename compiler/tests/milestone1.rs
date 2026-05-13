@@ -308,3 +308,16 @@ fn emit_asm_through_available_native_toolchain() {
     let asm = emit_asm_source("<?php\necho 1 + 2;\n").unwrap();
     assert!(asm.contains("main"), "{asm}");
 }
+
+#[test]
+fn emit_asm_lowers_integer_modulo_through_available_native_toolchain() {
+    let has_backend = ["clang", "llc", "cc"]
+        .iter()
+        .any(|command| Command::new(command).arg("--version").output().is_ok());
+    if !has_backend {
+        return;
+    }
+
+    let asm = emit_asm_source("<?php\necho 10 % 4;\n").unwrap();
+    assert!(asm.contains("main"), "{asm}");
+}

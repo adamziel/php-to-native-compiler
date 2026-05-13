@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Implemented a narrow native modulo lowering slice. LLVM IR now emits `srem`
+  and the C assembly fallback emits C `%` for integer `%` expressions when the
+  divisor is a nonzero integer known at compile time, with focused unit
+  coverage, a `phpc compile --emit-ir` CLI snapshot, fixture coverage, system
+  PHP comparison, and assembly smoke coverage. Native modulo still rejects
+  non-integer operands, dynamic divisors, modulo by zero, interpreter-only PHP
+  coercions, exact native error objects, references/copy-on-write, and broader
+  native lowering.
 - Implemented modulo compound assignment `%=` for the existing direct
   static-variable, direct array-offset, and direct public object-property
   compound-assignment target subset. Statement, expression, and C-style `for`

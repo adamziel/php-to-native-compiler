@@ -299,12 +299,6 @@ impl LlvmGenerator {
                         "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet",
                     ));
                 }
-                if matches!(op, BinaryOp::Mod) {
-                    return Err(self.unsupported(
-                        *span,
-                        "modulo is supported by phpc run for the current int-coercion subset but not LLVM IR emission yet",
-                    ));
-                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -342,10 +336,7 @@ impl LlvmGenerator {
                 self.emit_numeric_binary(left, op, right, span)
             }
             BinaryOp::Div => self.emit_div(left, right, span),
-            BinaryOp::Mod => Err(self.unsupported(
-                span,
-                "modulo is supported by phpc run for the current int-coercion subset but not LLVM IR emission yet",
-            )),
+            BinaryOp::Mod => self.emit_mod(left, right, span),
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -421,6 +412,32 @@ impl LlvmGenerator {
         self.body
             .push(format!("{temp} = fdiv double {left}, {right}"));
         Ok(IrValue::Float(temp))
+    }
+
+    fn emit_mod(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
+        match (left, right) {
+            (IrValue::Int(left), IrValue::Int(right)) => {
+                let divisor = right.parse::<i64>().map_err(|_| {
+                    self.unsupported(
+                        span,
+                        "LLVM modulo lowering requires an integer divisor known at compile time",
+                    )
+                })?;
+                if divisor == 0 {
+                    return Err(self.unsupported(
+                        span,
+                        "LLVM modulo lowering rejects modulo by zero; phpc run reports a runtime diagnostic",
+                    ));
+                }
+                let temp = self.temp();
+                self.body.push(format!("{temp} = srem i64 {left}, {right}"));
+                Ok(IrValue::Int(temp))
+            }
+            _ => Err(self.unsupported(
+                span,
+                "LLVM modulo lowering currently requires integer operands; phpc run handles the broader int-coercion subset",
+            )),
+        }
     }
 
     fn emit_concat(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
@@ -943,12 +960,6 @@ impl CGenerator {
                         "bitwise operators are supported by phpc run for the current int/string subset but not assembly emission yet",
                     ));
                 }
-                if matches!(op, BinaryOp::Mod) {
-                    return Err(self.unsupported(
-                        *span,
-                        "modulo is supported by phpc run for the current int-coercion subset but not assembly emission yet",
-                    ));
-                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -986,10 +997,7 @@ impl CGenerator {
                 self.emit_numeric_binary(left, op, right, span)
             }
             BinaryOp::Div => self.emit_div(left, right, span),
-            BinaryOp::Mod => Err(self.unsupported(
-                span,
-                "modulo is supported by phpc run for the current int-coercion subset but not assembly emission yet",
-            )),
+            BinaryOp::Mod => self.emit_mod(left, right, span),
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -1059,6 +1067,33 @@ impl CGenerator {
         let temp = self.temp();
         self.body.push(format!("double {temp} = {left} / {right};"));
         Ok(CValue::Float(temp))
+    }
+
+    fn emit_mod(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
+        match (left, right) {
+            (CValue::Int(left), CValue::Int(right)) => {
+                let divisor = right.parse::<i64>().map_err(|_| {
+                    self.unsupported(
+                        span,
+                        "assembly modulo lowering requires an integer divisor known at compile time",
+                    )
+                })?;
+                if divisor == 0 {
+                    return Err(self.unsupported(
+                        span,
+                        "assembly modulo lowering rejects modulo by zero; phpc run reports a runtime diagnostic",
+                    ));
+                }
+                let temp = self.temp();
+                self.body
+                    .push(format!("long long {temp} = {left} % {right};"));
+                Ok(CValue::Int(temp))
+            }
+            _ => Err(self.unsupported(
+                span,
+                "assembly modulo lowering currently requires integer operands; phpc run handles the broader int-coercion subset",
+            )),
+        }
     }
 
     fn emit_concat(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
