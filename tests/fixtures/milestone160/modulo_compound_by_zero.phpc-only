@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP throws a native DivisionByZeroError for modulo compound assignment by zero.

@@ -430,6 +430,7 @@ pub enum CompoundAssignOp {
     Sub,
     Mul,
     Div,
+    Mod,
     Concat,
     BitwiseAnd,
     BitwiseOr,

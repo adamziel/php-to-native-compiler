@@ -36,22 +36,25 @@
   expressions, dynamic property names, missing property materialization,
   references/copy-on-write, and native lowering remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
-  `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name .= expr`,
-  `$name &= expr`, `$name |= expr`, `$name ^= expr`, `$name <<= expr`, and
-  `$name >>= expr` over the current scalar/bitwise value model in statement
-  position, expression position, and C-style `for` initializer/increment
-  slots. In expressions, compound assignment returns the updated value.
+  `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name %= expr`,
+  `$name .= expr`, `$name &= expr`, `$name |= expr`, `$name ^= expr`,
+  `$name <<= expr`, and `$name >>= expr` over the current scalar/bitwise value
+  model in statement position, expression position, and C-style `for`
+  initializer/increment slots. In expressions, compound assignment returns the
+  updated value.
 - direct array-offset compound assignment `$array[$key] += expr`,
   `$array[$key] -= expr`, `$array[$key] *= expr`, `$array[$key] /= expr`,
-  `$array[$key] .= expr`, `$array[$key] &= expr`, `$array[$key] |= expr`,
-  `$array[$key] ^= expr`, `$array[$key] <<= expr`, and `$array[$key] >>= expr`
-  over existing integer/string keyed array entries in statement position,
-  expression position, and C-style `for` initializer/increment slots. In
-  expressions, compound assignment returns the updated value.
+  `$array[$key] %= expr`, `$array[$key] .= expr`, `$array[$key] &= expr`,
+  `$array[$key] |= expr`, `$array[$key] ^= expr`, `$array[$key] <<= expr`, and
+  `$array[$key] >>= expr` over existing integer/string keyed array entries in
+  statement position, expression position, and C-style `for`
+  initializer/increment slots. In expressions, compound assignment returns the
+  updated value.
 - direct public object-property compound assignment `$object->property +=
   expr`, `$object->property -= expr`, `$object->property *= expr`,
-  `$object->property /= expr`, and `$object->property .= expr` over existing
-  declared public property slots, plus bitwise/shift compound forms
+  `$object->property /= expr`, `$object->property %= expr`, and
+  `$object->property .= expr` over existing declared public property slots,
+  plus bitwise/shift compound forms
   `$object->property &= expr`, `$object->property |= expr`,
   `$object->property ^= expr`, `$object->property <<= expr`, and
   `$object->property >>= expr`, in statement position, expression position,
@@ -1705,17 +1708,16 @@
 - Compound assignment is limited to direct static variables, direct
   array-variable offsets, and direct public object properties over the current
   scalar/object value model. The
-  read-modify-write operation reuses the existing PHP-shaped scalar arithmetic
-  and string concatenation helpers, so undefined left-hand variables, missing
-  array keys, missing object properties, non-array targets, non-object property
-  targets, non-public properties, division by zero, non-numeric strings,
-  arrays, and objects as operand values fail through existing stable runtime
-  diagnostics.
+  read-modify-write operation reuses the existing PHP-shaped scalar arithmetic,
+  modulo, bitwise/shift, and string concatenation helpers, so undefined
+  left-hand variables, missing array keys, missing object properties, non-array
+  targets, non-object property targets, non-public properties, division by
+  zero, modulo by zero, non-numeric strings, arrays, and objects as operand
+  values fail through existing stable runtime diagnostics.
   Statement forms, expression forms such as `($name += expr)` and
   `($array[$key] += expr)` and `($object->property += expr)`, and single
   C-style `for` initializer/increment actions are supported for those direct
-  targets; expression forms return the updated value. Modulo compound
-  assignment `%=` is not implemented yet. Append offsets, nested
+  targets; expression forms return the updated value. Append offsets, nested
   offsets/properties, dynamic property names, non-public visibility context,
   references/copy-on-write, PHP warning recovery, exact native error objects,
   and native lowering are not implemented.

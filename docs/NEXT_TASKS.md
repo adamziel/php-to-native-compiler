@@ -1523,9 +1523,18 @@ handled.
 
 ## Milestone 160: Modulo Compound Assignment Boundary
 
-- [ ] Add the next honest boundary or executable slice for modulo compound
+- [x] Add the next honest boundary or executable slice for modulo compound
   assignment `%=`, including parser/runtime behavior or stable diagnostics,
   fixture CLI coverage, documentation, native-codegen behavior, and named gaps
   for read-modify-write ordering, array/object targets,
   references/copy-on-write, exact native warning/error behavior, and native
   lowering.
+
+## Milestone 161: Native Modulo Lowering Boundary
+
+- [ ] Add the next honest boundary or executable slice for native modulo
+  lowering, either by lowering a narrow integer `%` subset in LLVM IR/C
+  assembly emission or by tightening explicit codegen diagnostics with fixture
+  coverage, documentation, and named gaps for non-int coercions,
+  modulo-by-zero behavior, references/copy-on-write, exact native error
+  objects, and broader native lowering.

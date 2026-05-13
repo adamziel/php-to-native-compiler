@@ -3128,15 +3128,23 @@ Still fails:
   null/bool/numeric-string coercions, precedence, assignment-expression
   operands, and the modulo-by-zero diagnostic. Non-numeric strings,
   arrays/objects, float-to-int precision warnings, exact native
-  `DivisionByZeroError`/`TypeError` objects, modulo compound assignment,
+  `DivisionByZeroError`/`TypeError` objects, references/copy-on-write side
+  effects, and native lowering remain unsupported.
+- Implemented modulo compound assignment `%=` for the existing direct
+  static-variable, direct array-offset, and direct public object-property
+  compound-assignment target subset. Statement position, expression position,
+  and C-style `for` initializer/increment slots reuse the current
+  read-modify-write ordering and runtime modulo helper. Fixture, CLI snapshot,
+  unit, system PHP comparison, modulo-by-zero diagnostic, and native-codegen
+  rejection coverage exercise supported targets and result values.
+  Append-offset and nested compound targets, arrays/objects as modulo values,
+  float-to-int precision warnings, exact native warning/error objects,
   references/copy-on-write side effects, and native lowering remain
   unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for modulo compound
-  assignment `%=`, including parser/runtime behavior or stable diagnostics,
-  fixture CLI coverage, documentation, native-codegen behavior, and named gaps
-  for read-modify-write ordering, array/object targets,
-  references/copy-on-write, exact native warning/error behavior, and native
-  lowering.
+- Add the next honest boundary or executable slice for native modulo lowering,
+  either by lowering a narrow integer `%` subset in LLVM IR/C assembly emission
+  or by tightening explicit codegen diagnostics with fixture coverage and named
+  gaps.

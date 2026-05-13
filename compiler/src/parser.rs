@@ -2850,6 +2850,7 @@ impl Parser {
                 | TokenKind::Minus
                 | TokenKind::Star
                 | TokenKind::Slash
+                | TokenKind::Percent
                 | TokenKind::Dot
                 | TokenKind::Ampersand
                 | TokenKind::Pipe
@@ -2876,6 +2877,7 @@ impl Parser {
             TokenKind::Minus => CompoundAssignOp::Sub,
             TokenKind::Star => CompoundAssignOp::Mul,
             TokenKind::Slash => CompoundAssignOp::Div,
+            TokenKind::Percent => CompoundAssignOp::Mod,
             TokenKind::Dot => CompoundAssignOp::Concat,
             TokenKind::Ampersand => CompoundAssignOp::BitwiseAnd,
             TokenKind::Pipe => CompoundAssignOp::BitwiseOr,

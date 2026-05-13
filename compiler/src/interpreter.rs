@@ -972,6 +972,7 @@ impl Interpreter {
             CompoundAssignOp::Sub => left.php_sub(right),
             CompoundAssignOp::Mul => left.php_mul(right),
             CompoundAssignOp::Div => left.php_div(right),
+            CompoundAssignOp::Mod => left.php_mod(right),
             CompoundAssignOp::Concat => left.php_concat(right),
             CompoundAssignOp::BitwiseAnd => left.php_bitwise_and(right),
             CompoundAssignOp::BitwiseOr => left.php_bitwise_or(right),

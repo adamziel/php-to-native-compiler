@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone160/modulo_compound_by_zero.php:3:1: invalid arithmetic for %: modulo by zero
+--- stderr end ---

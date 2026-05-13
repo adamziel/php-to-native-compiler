@@ -14,6 +14,7 @@ fn compound_assignment_cli_snapshots_match_committed_outputs() {
         "milestone139",
         "milestone140",
         "milestone158",
+        "milestone160",
     ];
     let mut fixtures = fixture_dirs
         .iter()

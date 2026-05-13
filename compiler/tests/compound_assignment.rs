@@ -264,6 +264,36 @@ echo ($value <<= 2), ":", $value, "\n";
 }
 
 #[test]
+fn modulo_compound_assignments_update_supported_targets() {
+    let execution = run_source(
+        r#"<?php
+$value = 29;
+$value %= 5;
+echo $value, "\n";
+echo ($value %= 3), ":", $value, "\n";
+
+$items = ['count' => 22];
+echo ($items['count'] %= 6), ":", $items['count'], "\n";
+
+class Box {
+    public $value;
+}
+
+$box = new Box();
+$box->value = 17;
+echo ($box->value %= 5), ":", $box->value, "\n";
+
+for ($i = 35; $i > 5; $i %= 8) {
+    echo $i, ":";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "4\n1:1\n4:4\n2:2\n35:");
+}
+
+#[test]
 fn array_offset_compound_assignment_reports_missing_keys() {
     let error = runtime_error("<?php\n$items = [];\n$items['missing'] += 1;\n");
 
@@ -388,6 +418,15 @@ fn shift_compound_assignment_reuses_negative_shift_diagnostics() {
 }
 
 #[test]
+fn modulo_compound_assignment_reuses_modulo_diagnostics() {
+    let error = runtime_error("<?php\n$value = 10;\n$value %= 0;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "invalid arithmetic for %: modulo by zero");
+}
+
+#[test]
 fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$value = 1;\n$value += 2;\n").unwrap_err();
 
@@ -403,6 +442,19 @@ fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
 #[test]
 fn emit_ir_rejects_bitwise_compound_assignment_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$value = 6;\n$value &= 3;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_modulo_compound_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value = 10;\n$value %= 4;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);

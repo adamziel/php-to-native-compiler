@@ -41,8 +41,8 @@ subset:
   assignment expressions as chained right-hand values, direct append-offset
   assignment expressions (`$array[] = expr`) with standalone assignment result
   values,
-  direct static-variable compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`,
-  `&=`, `|=`, `^=`, `<<=`, `>>=`)
+  direct static-variable compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`,
+  `.=`, `&=`, `|=`, `^=`, `<<=`, `>>=`)
   in statements and
   expressions with assignment result values, direct array-offset compound
   assignment (`$array[$key] += expr` and related operators) in statements,

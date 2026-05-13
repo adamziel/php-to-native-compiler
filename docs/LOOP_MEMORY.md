@@ -12527,3 +12527,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:53:34Z
 
 - Post-round 50 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:53:46Z
+
+- Starting round 51 at 20260513T035346Z from HEAD `a65ca99`.
+
+## Loop Event 2026-05-13T03:53:57Z
+
+- Pre-round 51 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:58:36Z
+
+- Task attempted: implemented Milestone 160 modulo compound assignment `%=` for
+  the existing direct static-variable, direct array-offset, and direct public
+  object-property compound-assignment target subset. Statement position,
+  expression position, and C-style `for` initializer/increment slots now reuse
+  the existing read-modify-write path and runtime modulo helper, with stable
+  modulo-by-zero diagnostics and explicit native-codegen rejection while
+  lowering remains unsupported.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/compound_assignment_cli.rs`,
+  `tests/fixtures/milestone160/modulo_compound_assignment.php`,
+  `tests/fixtures/milestone160/modulo_compound_assignment.stdout`,
+  `tests/fixtures/milestone160/modulo_compound_assignment.cli`,
+  `tests/fixtures/milestone160/modulo_compound_by_zero.php`,
+  `tests/fixtures/milestone160/modulo_compound_by_zero.stderr`,
+  `tests/fixtures/milestone160/modulo_compound_by_zero.exit`,
+  `tests/fixtures/milestone160/modulo_compound_by_zero.phpc-only`,
+  `tests/fixtures/milestone160/modulo_compound_by_zero.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test compound_assignment -- --nocapture` passed with 30 tests; `cargo
+  test -p phpc --test compound_assignment_cli -- --nocapture` passed; `cargo
+  run -p phpc -- test tests/fixtures/milestone160` passed with 2 fixtures;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone160` passed
+  with 1 system PHP comparison and 1 `.phpc-only` skip; `cargo run -p phpc --
+  run tests/fixtures/milestone160/modulo_compound_assignment.php` printed the
+  committed CLI exercise output; `cargo run -p phpc -- run
+  tests/fixtures/milestone160/modulo_compound_by_zero.php` exited `1` with the
+  expected stable diagnostic; `cargo run -p phpc -- compile
+  tests/fixtures/milestone160/modulo_compound_assignment.php --emit-ir` exited
+  `1` with the expected explicit compound-assignment codegen rejection;
+  `tools/run-tests.sh` passed with 410 fixtures, 157 system PHP comparisons,
+  and 253 comparison skips.
+- Remaining semantic gaps: append-offset and nested compound-assignment
+  targets, arrays/objects as modulo operand values, float-to-int precision
+  warnings, exact native `DivisionByZeroError`/`TypeError` objects,
+  references/copy-on-write side effects, and native lowering remain
+  unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  native modulo lowering, either by lowering a narrow integer `%` subset in
+  LLVM IR/C assembly emission or by tightening explicit codegen diagnostics
+  with fixture coverage and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "arithmetic: add modulo compound assignment"`.
