@@ -272,6 +272,8 @@
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables and for expression-position compound
   assignment forms before assignment expressions have value semantics
+- explicit parse diagnostics for unsupported pre/post increment and decrement
+  operators such as `++$name`, `$name++`, `--$name`, and `$name--`
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -1579,6 +1581,11 @@
   references/copy-on-write, increment/decrement operators, PHP warning
   recovery, exact native error objects, and native lowering are not
   implemented.
+- Pre/post increment and decrement operators currently fail with stable parse
+  diagnostics before executable `++`/`--` semantics exist. Numeric
+  read-modify-write behavior, string increment behavior, array/object
+  behavior, references, copy-on-write, exact native warning/error behavior,
+  expression result values, and native lowering are not implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus
   direct-variable `$name ??= expr`, direct array-offset `$array[$key] ??=

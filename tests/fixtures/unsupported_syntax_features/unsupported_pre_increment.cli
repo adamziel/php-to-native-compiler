@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_pre_increment.php:3:1: unsupported increment/decrement operator: pre/post increment and decrement are not implemented
+--- stderr end ---

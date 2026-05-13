@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added explicit unsupported pre/post increment and decrement diagnostics for
+  `++$name`, `$name++`, `--$name`, and `$name--` before executable
+  increment/decrement semantics exist, with parser regression coverage,
+  fixture/CLI snapshots, documentation, and native emission rejection at the
+  parse boundary.
 - Implemented direct static-variable compound assignment for `+=`, `-=`, `*=`,
   `/=`, and `.=` over the current scalar value model, including
   read-modify-write behavior in statements and `for` headers, undefined

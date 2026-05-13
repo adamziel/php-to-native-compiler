@@ -1263,9 +1263,19 @@ handled.
 
 ## Milestone 133: Increment/Decrement Boundary
 
-- [ ] Add explicit parse diagnostics for unsupported pre/post increment and
+- [x] Add explicit parse diagnostics for unsupported pre/post increment and
   decrement operators such as `++$name`, `$name++`, `--$name`, and `$name--`
   before executable increment/decrement semantics exist, including parser
   coverage, fixture CLI coverage, documentation, native-codegen parse-boundary
   behavior, and named gaps for strings, arrays, objects, references,
   copy-on-write, and exact native warning/error behavior.
+
+## Milestone 134: Direct Variable Increment/Decrement Slice
+
+- [ ] Implement direct static-variable pre/post increment and decrement for
+  integer and float variables over statement-level forms, including
+  read-modify-write behavior, undefined-variable diagnostics, fixture CLI
+  coverage, documentation, native-codegen rejection while lowering remains
+  unsupported, and explicit gaps for strings, arrays, objects, references,
+  copy-on-write, expression result values, exact native warning/error behavior,
+  and broader PHP coercion recovery.

@@ -2801,8 +2801,19 @@ Still fails:
   execution, assignment result values, references/copy-on-write,
   increment/decrement operators, broader PHP coercion warning recovery, exact
   native error objects, and native lowering remain unsupported.
+- Added explicit parse diagnostics for unsupported pre/post increment and
+  decrement operators before executable `++`/`--` semantics exist. The parser
+  now rejects `++$name`, `$name++`, `--$name`, and `$name--` in statement and
+  expression positions with a stable diagnostic; fixture and CLI snapshot
+  coverage record each operator form, and native emission rejects the same
+  syntax at parse time. Numeric increment/decrement behavior, PHP string
+  increment behavior, arrays, objects, references, copy-on-write, expression
+  result values, exact native warning/error behavior, and native lowering
+  remain unsupported.
 
 Next:
 
-- Add an explicit increment/decrement operator boundary for `++` and `--`
-  before executable pre/post increment semantics exist.
+- Implement a narrow direct static-variable increment/decrement slice for
+  integer and float variables while keeping strings, arrays, objects,
+  references/copy-on-write, expression result values, and native lowering as
+  explicit gaps.

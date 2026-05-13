@@ -173,6 +173,7 @@ subset:
   conditional expressions, unsupported expression-position assignment and
   compound-assignment forms,
   unsupported compound assignment targets outside direct static variables,
+  unsupported pre/post increment and decrement operators,
   unsupported chained coalescing and unsupported append-offset null
   coalescing assignment forms, object
   method calls, dynamic property names, anonymous classes,

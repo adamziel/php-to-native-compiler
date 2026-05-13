@@ -10854,3 +10854,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T00:07:55Z
 
 - Post-round 23 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T00:08:23Z
+
+- Starting round 24 at 20260513T000823Z from HEAD `2d59fcb`.
+
+## Loop Event 2026-05-13T00:08:48Z
+
+- Pre-round 24 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:20:42Z
+
+- Task attempted: added an explicit parse-boundary diagnostic for unsupported
+  pre/post increment and decrement operators before executable `++`/`--`
+  semantics exist. The parser now rejects `++$name`, `$name++`, `--$name`,
+  and `$name--` in statement and expression positions with a stable diagnostic,
+  including native-emission parse-boundary coverage.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_pre_increment.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_post_increment.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_pre_decrement.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_post_decrement.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test syntax_boundaries
+  increment -- --nocapture` passed; `cargo test -p phpc --test
+  unsupported_syntax_features_cli -- --nocapture` passed; `cargo run -p phpc
+  -- test tests/fixtures/unsupported_syntax_features` passed with 26 fixtures;
+  `cargo run -p phpc -- compile
+  tests/fixtures/unsupported_syntax_features/unsupported_pre_increment.php
+  --emit-ir` exited `1` with the expected stable parse diagnostic;
+  `tools/run-tests.sh` passed with 366 fixtures, 129 system PHP comparisons,
+  and 237 comparison skips.
+- Remaining semantic gaps: numeric increment/decrement execution, PHP string
+  increment behavior, arrays, objects, references, copy-on-write, expression
+  result values for pre/post forms, exact native warning/error behavior,
+  broader PHP coercion recovery, and native lowering remain unsupported.
+- Next concrete task: implement a narrow direct static-variable
+  increment/decrement slice for integer and float variables while keeping
+  strings, arrays, objects, references/copy-on-write, expression result values,
+  and native lowering as explicit gaps.
+- Known-good tag: not created; this is a narrow syntax-boundary checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add increment decrement boundary"`
+  after the full suite passes.

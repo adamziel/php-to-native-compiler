@@ -1286,6 +1286,10 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> CompileResult<Expr> {
+        if self.check_increment_decrement_operator() {
+            return Err(self.error_at(self.peek().span, unsupported_increment_decrement_message()));
+        }
+
         if self.match_token(|kind| matches!(kind, TokenKind::Minus)) {
             let span = self.previous().span;
             let expr = self.parse_unary()?;
@@ -1358,6 +1362,12 @@ impl Parser {
                     span,
                 };
                 continue;
+            }
+
+            if self.check_increment_decrement_operator() {
+                return Err(
+                    self.error_at(self.peek().span, unsupported_increment_decrement_message())
+                );
             }
 
             break;
@@ -1957,6 +1967,12 @@ impl Parser {
         ) && matches!(self.peek_next().kind, TokenKind::Equal)
     }
 
+    fn check_increment_decrement_operator(&self) -> bool {
+        matches!(self.peek().kind, TokenKind::Plus | TokenKind::Minus)
+            && std::mem::discriminant(&self.peek().kind)
+                == std::mem::discriminant(&self.peek_next().kind)
+    }
+
     fn match_compound_assignment_operator(&mut self) -> Option<CompoundAssignOp> {
         if !self.check_compound_assignment_operator() {
             return None;
@@ -2221,6 +2237,10 @@ fn unsupported_compound_assignment_expression_message() -> &'static str {
 
 fn unsupported_compound_assignment_target_message() -> &'static str {
     "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
+}
+
+fn unsupported_increment_decrement_message() -> &'static str {
+    "unsupported increment/decrement operator: pre/post increment and decrement are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {
