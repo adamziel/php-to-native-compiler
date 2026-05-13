@@ -2039,10 +2039,20 @@ handled.
 
 ## Milestone 217: Native Assembly Fallback Backend Start-Failure Precedence
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   start-failure precedence when `clang` is unavailable, selected `llc` passes
   discovery but cannot be started for assembly emission while `cc` is also
   available, proving the stable `llc` start diagnostic is reported without
   silently falling through to the `cc -S` fallback, with deterministic test
   doubles, documentation, and named gaps for full backend recovery semantics,
   bundled toolchains, exact native error objects, and broader native lowering.
+
+## Milestone 218: Native Assembly Probe Start-Failure Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for discovery probe
+  start-failure cases where candidate backend command names exist but cannot
+  be started for `--version`, proving those failed starts are treated as
+  unavailable before fallback selection or missing-backend diagnostics, with
+  deterministic test doubles, documentation, and named gaps for bundled
+  toolchains, backend-specific discovery semantics, exact native error
+  objects, and broader native lowering.

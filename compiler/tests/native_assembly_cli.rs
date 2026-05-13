@@ -1709,6 +1709,41 @@ fn native_scalar_echo_emit_asm_reports_selected_clang_start_failure_without_fall
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_reports_llc_start_failure_without_cc_fallback_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone217/native_assembly_fallback_start_failure_precedence.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path =
+        TempPath::with_start_failing_llc_after_successful_probe_and_available_cc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone217/native_assembly_fallback_start_failure_precedence_emit_asm.cli",
+    ))
+    .expect("native assembly fallback-start-failure-precedence CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -3563,6 +3598,66 @@ exit {exit_code}\n"
                 "temporary selected-start-failure-precedence fallback script can be made executable",
             );
         }
+
+        Self { path }
+    }
+
+    fn with_start_failing_llc_after_successful_probe_and_available_cc(
+        workspace_root: &Path,
+    ) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-fallback-start-failure-precedence-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary fallback-start-failure-precedence PATH directory can be created");
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            format!(
+                "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' '#!/nonexistent/phpc-start-failure' > '{}'\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected llc backend invocation after interpreter removal' >&2\n\
+exit 107\n",
+                llc.display()
+            ),
+        )
+        .expect("temporary fallback-start-failure-precedence llc script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect("temporary fallback-start-failure-precedence llc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions).expect(
+            "temporary fallback-start-failure-precedence llc script can be made executable",
+        );
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected cc fallback invocation after selected llc start failure' >&2\n\
+exit 108\n",
+        )
+        .expect("temporary fallback-start-failure-precedence cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary fallback-start-failure-precedence cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary fallback-start-failure-precedence cc script can be made executable");
 
         Self { path }
     }

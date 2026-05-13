@@ -152,6 +152,11 @@ fake `clang`, `llc`, and `cc` commands together, rewrites selected `clang`
 after discovery so it cannot be started for assembly emission, and proves the
 stable selected-backend start diagnostic is reported without falling through
 to fallback tools.
+A fallback start-failure-precedence snapshot hides `clang` while exposing
+deterministic fake `llc` and `cc` commands together, rewrites selected `llc`
+after discovery so it cannot be started for assembly emission, and proves the
+stable `llc` start diagnostic is reported without falling through to the
+`cc -S` C fallback.
 
 ## Current Status
 

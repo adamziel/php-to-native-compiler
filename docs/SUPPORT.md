@@ -1086,7 +1086,11 @@
   `clang`, `llc`, and `cc` commands together, makes selected `clang` pass
   discovery and then fail to start for assembly emission, and proves the
   stable selected-backend start diagnostic is reported without falling through
-  to fallback tools. Bundled toolchains, assembly linking/execution, full
+  to fallback tools. A fallback start-failure-precedence snapshot hides
+  `clang` while exposing deterministic fake `llc` and `cc` commands together,
+  makes selected `llc` pass discovery and then fail to start for assembly
+  emission, and proves the stable `llc` start diagnostic is reported without
+  falling through to the `cc -S` C fallback. Bundled toolchains, assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed

@@ -235,6 +235,11 @@ no-recovery boundary when selected `clang` passes discovery but cannot be
 started while `llc` and `cc` are also available. It pins the stable
 selected-backend start diagnostic as final rather than falling through to
 fallback tools.
+A fallback start-failure-precedence snapshot covers the same no-recovery
+boundary after fallback selection when `clang` is unavailable and selected
+`llc` passes discovery but cannot be started while `cc` is also available. It
+pins the stable `llc` start diagnostic as final rather than falling through to
+the `cc -S` C fallback.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

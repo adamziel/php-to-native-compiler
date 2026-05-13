@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  start-failure precedence when `clang` is unavailable, selected `llc` passes
+  discovery but cannot be started for assembly emission, and `cc` is also
+  available. The Milestone 217 fixture runs as a lowerable scalar echo/print
+  program, while the assembly CLI test exposes deterministic fake `llc` and
+  `cc` tools where selected `llc` becomes unstartable after discovery and
+  fake `cc` would fail loudly if invoked. The committed snapshot proves the
+  stable `failed to start llc for assembly emission` diagnostic is reported
+  without falling through to the `cc -S` C fallback. Bundled toolchains,
+  assembly linking/execution, full backend recovery semantics, exact native
+  error objects, and broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
   failure precedence when selected `clang` exits nonzero without stderr while
   fallback `llc` and `cc` are also available. The Milestone 215 fixture runs
