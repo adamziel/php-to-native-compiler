@@ -1598,9 +1598,18 @@ handled.
 
 ## Milestone 168: Native Conditional Expression Boundary
 
-- [ ] Add the next honest native-codegen boundary for ternary and/or null
+- [x] Add the next honest native-codegen boundary for ternary and/or null
   coalescing expressions, either by lowering a narrow side-effect-safe scalar
   subset or by tightening explicit diagnostics with fixture CLI coverage,
   documentation, and named gaps for PHP truthiness, null-aware lookup,
   side-effect ordering, references/copy-on-write, exact native error objects,
   and broader native lowering.
+
+## Milestone 169: Native Function Call Boundary
+
+- [ ] Add the next honest native-codegen boundary for function calls, including
+  user functions, callable builtins, and dynamic string-valued calls, either by
+  lowering a narrow direct-call subset or by tightening explicit diagnostics
+  with fixture CLI coverage, documentation, and named gaps for runtime call
+  lookup, arity/type diagnostics, stack frames, callbacks, references,
+  exact native error objects, and broader native lowering.

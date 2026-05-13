@@ -100,6 +100,10 @@ evaluation for `xor`.
 Native lowering rejects bitwise and shift operators before operand lowering
 until generated code has PHP bytewise string operations, scalar-to-int
 coercion, negative/large shift diagnostics, and exact native error behavior.
+Native lowering rejects ternary and null coalescing expressions before branch
+or operand lowering until generated code has PHP truthiness conversion,
+null-aware variable/offset/property lookup, branch side-effect ordering, and
+exact native error behavior.
 
 ## Dynamic Features
 

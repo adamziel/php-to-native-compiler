@@ -407,7 +407,7 @@ fn emit_ir_rejects_null_coalescing_until_native_lowering_exists() {
     assert_eq!(error.column, 10);
     assert_eq!(
         error.message,
-        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet"
+        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
     );
 }
 
@@ -420,7 +420,7 @@ fn emit_ir_rejects_object_property_null_coalescing_until_native_lowering_exists(
     assert_eq!(error.column, 10);
     assert_eq!(
         error.message,
-        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet"
+        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
     );
 }
 

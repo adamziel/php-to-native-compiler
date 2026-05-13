@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a native conditional-expression boundary. LLVM IR emission now rejects
+  full ternary, short ternary, and null coalescing expressions before lowering
+  branches or operands, with a specific codegen diagnostic until generated code
+  has PHP truthiness, null-aware lookup, and branch side-effect ordering; the C
+  assembly fallback carries the same boundary for consistency. A runtime
+  fixture still proves the current interpreter conditional-expression subset,
+  and a `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  References/copy-on-write, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added a native bitwise/shift boundary. LLVM IR emission now rejects `&`,
   `|`, `^`, unary `~`, `<<`, and `>>` before lowering operands, with a
   specific codegen diagnostic until generated code has PHP bytewise string

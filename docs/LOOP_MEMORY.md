@@ -13014,3 +13014,56 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:44:14Z
 
 - Post-round 58 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:44:24Z
+
+- Starting round 59 at 20260513T044424Z from HEAD `6827dac`.
+
+## Loop Event 2026-05-13T04:44:34Z
+
+- Pre-round 59 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:49:05Z
+
+- Task attempted: completed Milestone 168 by tightening the native codegen
+  boundary for conditional expressions. LLVM IR emission now rejects full
+  ternary, short ternary, and null coalescing expressions before lowering
+  branches or operands with a specific diagnostic until generated code has PHP
+  truthiness conversion, null-aware variable/offset/property lookup, branch
+  side-effect ordering, and exact native error behavior; the C assembly
+  fallback carries the same boundary for consistency. Runtime fixture coverage
+  still proves the current `phpc run` conditional-expression subset.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_conditional_boundary.rs`,
+  `compiler/tests/null_coalescing.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/ternary_expression.rs`,
+  `tests/fixtures/milestone168/native_conditional_boundary.php`,
+  `tests/fixtures/milestone168/native_conditional_boundary.stdout`,
+  `tests/fixtures/milestone168/native_conditional_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test native_conditional_boundary
+  -- --nocapture` passed with 6 tests; `cargo test -p phpc --test
+  ternary_expression -- --nocapture` passed with 8 tests; `cargo test -p phpc
+  --test null_coalescing -- --nocapture` passed with 17 tests; `cargo test -p
+  phpc --test syntax_boundaries -- --nocapture` passed with 29 tests; `cargo
+  run -p phpc -- test tests/fixtures/milestone168` passed with 1 fixture;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone168` passed
+  with 1 system PHP comparison; `cargo run -p phpc -- run
+  tests/fixtures/milestone168/native_conditional_boundary.php` printed the
+  committed output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone168/native_conditional_boundary.php --emit-ir`
+  exited `1` with the expected explicit native conditional codegen diagnostic;
+  `cargo fmt --check` passed; `tools/run-tests.sh` passed with 418 fixtures,
+  164 system PHP comparisons, and 254 comparison skips.
+- Remaining semantic gaps: generated code still lacks PHP truthiness
+  conversion for conditional expressions, null-aware variable/array-offset/
+  object-property lookup, branch side-effect ordering, references/copy-on-write
+  side effects, exact native error objects, and broader native lowering.
+- Next concrete task: add Milestone 169, the next honest native-codegen
+  boundary for function calls before generated code claims runtime call lookup,
+  stack frames, callable builtins, or dynamic string-call dispatch.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject conditional expressions"`.

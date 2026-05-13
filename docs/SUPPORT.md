@@ -922,7 +922,11 @@
   `|`, `^`, `~`, `<<`, and `>>` are rejected before operand lowering with a
   specific codegen diagnostic until generated code has PHP bytewise string
   behavior, scalar-to-int coercion, negative/large shift diagnostics, and exact
-  native error objects.
+  native error objects. Native ternary and null coalescing expressions are
+  rejected before branch or operand lowering with a specific codegen diagnostic
+  until generated code has PHP truthiness conversion, null-aware variable,
+  array-offset, and object-property lookup, branch side-effect ordering, and
+  exact native error objects.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
@@ -1773,6 +1777,11 @@
   unparenthesized chained coalescing, precedence interactions beyond the
   current single-operator expression slice, references/copy-on-write, exact
   native error objects, and native lowering are not implemented.
+- Native lowering for ternary and null coalescing expressions is not
+  implemented. LLVM IR/assembly emission rejects those expression forms before
+  lowering branch operands, so generated code does not imply partial PHP
+  truthiness, null-aware lookup, side-effect ordering, references/copy-on-write
+  behavior, or exact native error objects.
 - Logical operators are limited to `&&`, `||`, `and`, `xor`, and `or` over the
   current truthiness rules. `&&`, `||`, `and`, and `or` short-circuit, `xor`
   evaluates both operands, all return booleans, and fixture coverage exercises

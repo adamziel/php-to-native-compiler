@@ -5,6 +5,9 @@ use std::process::{Command, Stdio};
 use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
+const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
+const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
+
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
     generator.emit_program(program)
@@ -271,7 +274,7 @@ impl LlvmGenerator {
             )),
             Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => Err(self.unsupported(
                 *span,
-                "ternary conditional expressions are supported by phpc run but not LLVM IR emission yet",
+                LLVM_CONDITIONAL_REJECTION,
             )),
             Expr::Binary {
                 left,
@@ -288,7 +291,7 @@ impl LlvmGenerator {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.unsupported(
                         *span,
-                        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet",
+                        LLVM_CONDITIONAL_REJECTION,
                     ));
                 }
                 if matches!(
@@ -358,7 +361,7 @@ impl LlvmGenerator {
             )),
             BinaryOp::NullCoalesce => Err(self.unsupported(
                 span,
-                "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet",
+                LLVM_CONDITIONAL_REJECTION,
             )),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => Err(self.unsupported(
                 span,
@@ -975,7 +978,7 @@ impl CGenerator {
             )),
             Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => Err(self.unsupported(
                 *span,
-                "ternary conditional expressions are supported by phpc run but not assembly emission yet",
+                ASSEMBLY_CONDITIONAL_REJECTION,
             )),
             Expr::Binary {
                 left,
@@ -992,7 +995,7 @@ impl CGenerator {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.unsupported(
                         *span,
-                        "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not assembly emission yet",
+                        ASSEMBLY_CONDITIONAL_REJECTION,
                     ));
                 }
                 if matches!(
@@ -1062,7 +1065,7 @@ impl CGenerator {
             )),
             BinaryOp::NullCoalesce => Err(self.unsupported(
                 span,
-                "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not assembly emission yet",
+                ASSEMBLY_CONDITIONAL_REJECTION,
             )),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => Err(self.unsupported(
                 span,

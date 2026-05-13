@@ -3204,9 +3204,19 @@ Still fails:
   bitwise/shift subset, and a `phpc compile --emit-ir` CLI snapshot pins the
   native rejection. References/copy-on-write side effects and broader native
   lowering remain unsupported.
+- Added a native conditional-expression boundary. LLVM IR emission now rejects
+  full ternary, short ternary, and null coalescing expressions before lowering
+  branches or operands, with a specific codegen diagnostic until generated code
+  has PHP truthiness conversion, null-aware variable/offset/property lookup,
+  branch side-effect ordering, and exact native error behavior. The C assembly
+  fallback carries the same boundary for consistency, `phpc run` fixture
+  coverage still proves the current conditional-expression subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  References/copy-on-write side effects and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for conditional expressions,
-  starting with ternary or null coalescing diagnostics/coverage before native
-  truthiness and null-aware side-effect ordering exist.
+- Add the next honest native-codegen boundary for function calls, starting with
+  user functions, callable builtins, and dynamic string-valued calls before
+  native runtime call lookup, stack frames, and callback dispatch exist.

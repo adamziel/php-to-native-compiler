@@ -352,8 +352,11 @@ non-scalar comparison diagnostics. Native logical operators are rejected before
 operand lowering until generated code has PHP truthiness and short-circuit
 semantics. Native bitwise and shift operators are rejected before operand
 lowering until generated code has PHP bytewise string behavior,
-scalar-to-int coercion, and shift diagnostics. Unsupported programs and broader
-PHP coercions are rejected with structured codegen errors.
+scalar-to-int coercion, and shift diagnostics. Native ternary and null
+coalescing expressions are rejected before branch/operand lowering until
+generated code has PHP truthiness, null-aware lookup, and branch side-effect
+ordering. Unsupported programs and broader PHP coercions are rejected with
+structured codegen errors.
 
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`
