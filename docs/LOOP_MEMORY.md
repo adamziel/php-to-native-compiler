@@ -11245,3 +11245,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:05:46Z
 
 - Post-round 29 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:06:04Z
+
+- Starting round 30 at 20260513T010604Z from HEAD `fc08347`.
+
+## Loop Event 2026-05-13T01:06:20Z
+
+- Pre-round 30 test exit code: `0`.
+
+## Loop Event 2026-05-13T01:14:42Z
+
+- Task attempted: implemented direct array-offset compound assignment forms
+  (`+=`, `-=`, `*=`, `/=`, and `.=`) over existing integer/string keyed array
+  entries. Statement forms, expression forms, and single C-style `for`
+  initializer/increment actions now read the current offset, evaluate the key
+  once before the RHS, apply existing scalar arithmetic/concatenation helpers,
+  write the updated offset, and expression forms return the updated value.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/compound_assignment_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone139/array_offset_compound_assignment.*`, updated
+  unsupported compound-assignment syntax fixtures, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test compound_assignment --
+  --nocapture` passed with 17 tests; `cargo test -p phpc --test
+  compound_assignment_cli -- --nocapture` passed; `cargo test -p phpc --test
+  syntax_boundaries compound -- --nocapture` passed with 3 filtered tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone139` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone139` passed with 1 system PHP comparison; `cargo
+  run -p phpc -- run tests/fixtures/milestone139/array_offset_compound_assignment.php`
+  printed the committed CLI exercise output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone139/array_offset_compound_assignment.php --emit-ir`
+  exited `1` at the existing array-literal codegen boundary; `cargo test -p
+  phpc --test milestone1 milestone1_fixtures_pass -- --nocapture` passed;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 26 fixtures; `tools/run-tests.sh` passed with 378 fixtures, 135
+  system PHP comparisons, and 243 comparison skips.
+- Remaining semantic gaps: append-offset compound assignment targets, nested
+  offsets, object-property compound assignment targets, references,
+  copy-on-write aliasing, broader PHP warning recovery, exact native error
+  objects, and native lowering remain unsupported.
+- Next concrete task: add the next honest path for object-property compound
+  assignment forms such as `$object->property += expr`, either executable
+  direct public-property read-modify-write semantics over the current object
+  model or a tightened explicit diagnostic boundary with fixture CLI coverage
+  and documentation.
+- Known-good tag: not created; this is a narrow expression/mutation checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add offset compound assignment"`
+  after the full suite passes.

@@ -97,7 +97,7 @@ impl LlvmGenerator {
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
-                "compound assignment is supported by phpc run for direct static variables but not LLVM IR emission yet",
+                "compound assignment is supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet",
             )),
             Stmt::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
@@ -247,7 +247,7 @@ impl LlvmGenerator {
             )),
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
-                "compound assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet",
+                "compound assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet",
             )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
@@ -691,7 +691,7 @@ impl CGenerator {
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
-                "compound assignment is supported by phpc run for direct static variables but not assembly emission yet",
+                "compound assignment is supported by phpc run for direct static variables and direct array offsets but not assembly emission yet",
             )),
             Stmt::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
@@ -835,7 +835,7 @@ impl CGenerator {
             )),
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
-                "compound assignment expressions are supported by phpc run for direct static variables but not assembly emission yet",
+                "compound assignment expressions are supported by phpc run for direct static variables and direct array offsets but not assembly emission yet",
             )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,

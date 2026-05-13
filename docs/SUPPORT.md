@@ -27,6 +27,12 @@
   the current scalar value model in statement position, expression position,
   and C-style `for` initializer/increment slots. In expressions, compound
   assignment returns the updated value.
+- direct array-offset compound assignment `$array[$key] += expr`,
+  `$array[$key] -= expr`, `$array[$key] *= expr`, `$array[$key] /= expr`, and
+  `$array[$key] .= expr` over existing integer/string keyed array entries in
+  statement position, expression position, and C-style `for`
+  initializer/increment slots. In expressions, compound assignment returns the
+  updated value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
@@ -45,8 +51,8 @@
 - `for (initializer; condition; increment)` loops where each header slot is
   optional and each initializer/increment slot contains at most one expression
   or assignment from the current assignment subset, including direct
-  static-variable compound assignment and direct static-variable
-  increment/decrement
+  static-variable compound assignment, direct array-offset compound
+  assignment, and direct static-variable increment/decrement
 - `do ... while` loops with a block or single-statement body and a
   post-condition expression
 - `switch ($value) { case ...: ... default: ... }` statements over the current
@@ -283,7 +289,7 @@
   outside direct static-variable `$name = expr`, including chained
   assignments, array/object targets, and expression-position `??=`
 - explicit parse diagnostics for unsupported compound assignment targets
-  outside direct static variables
+  outside direct static variables and direct array offsets
 - explicit parse diagnostics for unsupported increment/decrement targets
   outside direct static variables and chained increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
@@ -1585,16 +1591,18 @@
   expression-position `??=`, reference assignment, copy-on-write container
   aliasing, exact native error objects, and native lowering are not
   implemented.
-- Compound assignment is limited to direct static variables over the current
-  scalar value model. The read-modify-write operation reuses the existing PHP
-  shaped scalar arithmetic and string concatenation helpers, so undefined
-  left-hand variables, division by zero, non-numeric strings, arrays, and
-  objects fail through the existing stable runtime diagnostics. Statement
-  forms, expression forms such as `($name += expr)`, and single C-style `for`
-  initializer/increment actions are supported for direct static variables; the
-  expression forms return the updated value. Array-offset and object-property
-  compound assignment targets, references/copy-on-write, PHP warning recovery,
-  exact native error objects, and native lowering are not implemented.
+- Compound assignment is limited to direct static variables and direct
+  array-variable offsets over the current scalar value model. The
+  read-modify-write operation reuses the existing PHP-shaped scalar arithmetic
+  and string concatenation helpers, so undefined left-hand variables, missing
+  array keys, non-array targets, division by zero, non-numeric strings,
+  arrays, and objects fail through existing stable runtime diagnostics.
+  Statement forms, expression forms such as `($name += expr)` and
+  `($array[$key] += expr)`, and single C-style `for` initializer/increment
+  actions are supported for those direct targets; expression forms return the
+  updated value. Append offsets, nested offsets, object-property compound
+  assignment targets, references/copy-on-write, PHP warning recovery, exact
+  native error objects, and native lowering are not implemented.
 - Pre/post increment and decrement is limited to direct static variables whose
   current values are integers or floats, either as standalone statements,
   expressions, or single C-style `for` initializer/increment actions.

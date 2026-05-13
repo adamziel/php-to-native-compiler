@@ -8,7 +8,7 @@ fn compound_assignment_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dirs = ["milestone132", "milestone138"];
+    let fixture_dirs = ["milestone132", "milestone138", "milestone139"];
     let mut fixtures = fixture_dirs
         .iter()
         .flat_map(|fixture_dir_name| {

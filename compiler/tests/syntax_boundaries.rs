@@ -363,7 +363,7 @@ fn emit_ir_rejects_assignment_expression_at_codegen_boundary() {
 #[test]
 fn unsupported_compound_assignments_have_stable_parse_errors() {
     let cases = [
-        ("<?php\n$items = [];\n$items['key'] += 2;\n", 3, 1),
+        ("<?php\n$items = [];\n$items[] += 2;\n", 3, 1),
         (
             "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value += 2;\n",
             4,
@@ -377,20 +377,22 @@ fn unsupported_compound_assignments_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
+            "unsupported compound assignment target: only direct static variables and direct array offsets are implemented; append offsets, nested offsets, and object properties are not implemented"
         );
     }
 }
 
 #[test]
 fn compound_assignment_expressions_have_stable_parse_errors() {
-    let error = parse_error("<?php\n$items = ['value' => 1];\necho ($items['value'] += 2);\n");
+    let error = parse_error(
+        "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value += 2);\n",
+    );
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 24);
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 20);
     assert_eq!(
         error.message,
-        "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
+        "unsupported compound assignment target: only direct static variables and direct array offsets are implemented; append offsets, nested offsets, and object properties are not implemented"
     );
 }
 
@@ -401,7 +403,7 @@ fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "compound assignment is supported by phpc run for direct static variables but not LLVM IR emission yet"
+        "compound assignment is supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
     );
 }
 

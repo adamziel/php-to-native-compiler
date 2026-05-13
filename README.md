@@ -36,9 +36,12 @@ subset:
 - static variables, assignment, direct static-variable assignment expressions
   (`$name = expr`) with assignment result values, direct static-variable
   compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`) in statements and
-  expressions with assignment result values, direct static-variable pre/post
-  increment and decrement for integer and float variables in statements,
-  expressions, and C-style `for` initializer/increment slots, and
+  expressions with assignment result values, direct array-offset compound
+  assignment (`$array[$key] += expr` and related operators) in statements,
+  expressions, and C-style `for` initializer/increment slots, direct
+  static-variable pre/post increment and decrement for integer and float
+  variables in statements, expressions, and C-style `for`
+  initializer/increment slots, and
   `unset($name)` through per-scope symbol tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
@@ -177,7 +180,8 @@ subset:
   conditional expressions, unsupported chained assignment expressions,
   unsupported complex assignment-expression targets, unsupported
   expression-position `??=`,
-  unsupported compound assignment targets outside direct static variables,
+  unsupported compound assignment targets outside direct static variables and
+  direct array offsets,
   unsupported increment/decrement targets outside direct static variables and
   chained increment/decrement expressions,
   unsupported chained coalescing and unsupported append-offset null

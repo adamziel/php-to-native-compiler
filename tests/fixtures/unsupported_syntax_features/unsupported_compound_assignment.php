@@ -1,3 +1,4 @@
 <?php
-$items = ["key" => 1];
-$items["key"] += 2;
+class Box { public $value; }
+$box = new Box();
+$box->value += 2;

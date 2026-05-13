@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Implemented direct array-offset compound assignment
+  `$array[$key] += expr`, `-=`, `*=`, `/=`, and `.=` over existing
+  integer/string keyed array entries, including statement, expression, and
+  C-style `for` header forms, updated-value expression results, single key
+  evaluation before RHS evaluation, missing-key and non-array diagnostics,
+  fixture/CLI coverage, system PHP comparison, documentation, and
+  native-codegen rejection while append offsets, nested offsets, object
+  properties, references/copy-on-write, exact native error objects, broader PHP
+  warning recovery, and native lowering remain explicit gaps.
 - Implemented expression-position direct static-variable compound assignment
   `($name += expr)`, `-=`, `*=`, `/=`, and `.=` over the current scalar value
   model, including updated-value expression results, read/write ordering, RHS

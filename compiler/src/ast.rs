@@ -31,7 +31,7 @@ pub enum Stmt {
         span: Span,
     },
     CompoundAssign {
-        name: String,
+        target: AssignTarget,
         op: CompoundAssignOp,
         expr: Expr,
         span: Span,
@@ -165,7 +165,7 @@ pub enum ForAction {
         expr: Expr,
     },
     CompoundAssign {
-        name: String,
+        target: AssignTarget,
         op: CompoundAssignOp,
         expr: Expr,
         span: Span,
@@ -324,7 +324,7 @@ pub enum Expr {
         span: Span,
     },
     CompoundAssign {
-        name: String,
+        target: Box<AssignTarget>,
         op: CompoundAssignOp,
         expr: Box<Expr>,
         span: Span,

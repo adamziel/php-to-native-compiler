@@ -64,6 +64,12 @@ enum ArrayFilterMode {
     Key,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CompoundAssignmentPlace {
+    Variable(String),
+    ArrayIndex { name: String, key: ArrayKey },
+}
+
 #[derive(Debug, Clone, Default)]
 struct SymbolTable {
     // Static variables and future dynamic variable names share the same
@@ -247,12 +253,12 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             Stmt::CompoundAssign {
-                name,
+                target,
                 op,
                 expr,
                 span,
             } => {
-                self.execute_compound_assignment(name, *op, expr, *span, scope)?;
+                self.execute_compound_assignment(target, *op, expr, *span, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::IncrementDecrement { name, op, span } => {
@@ -427,11 +433,11 @@ impl Interpreter {
         match action {
             ForAction::Assign { target, expr } => self.execute_assignment(target, expr, scope),
             ForAction::CompoundAssign {
-                name,
+                target,
                 op,
                 expr,
                 span,
-            } => self.execute_compound_assignment(name, *op, expr, *span, scope),
+            } => self.execute_compound_assignment(target, *op, expr, *span, scope),
             ForAction::IncrementDecrement { name, op, span } => {
                 self.execute_increment_decrement(name, *op, *span, scope)
             }
@@ -608,11 +614,11 @@ impl Interpreter {
                 Ok(value)
             }
             Expr::CompoundAssign {
-                name,
+                target,
                 op,
                 expr,
                 span,
-            } => self.evaluate_compound_assignment(name, *op, expr, *span, scope),
+            } => self.evaluate_compound_assignment(target, *op, expr, *span, scope),
             Expr::IncrementDecrement {
                 name,
                 op,
@@ -743,36 +749,137 @@ impl Interpreter {
 
     fn execute_compound_assignment(
         &mut self,
-        name: &str,
+        target: &AssignTarget,
         op: CompoundAssignOp,
         expr: &Expr,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
-        self.evaluate_compound_assignment(name, op, expr, span, scope)
+        self.evaluate_compound_assignment(target, op, expr, span, scope)
             .map(|_| ())
     }
 
     fn evaluate_compound_assignment(
         &mut self,
-        name: &str,
+        target: &AssignTarget,
         op: CompoundAssignOp,
         expr: &Expr,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let left = scope.read_static(name, span)?;
+        let (place, left) = self.read_compound_assignment_left(target, span, scope)?;
         let right = self.evaluate(expr, scope)?;
-        let value = match op {
-            CompoundAssignOp::Add => left.php_add(&right),
-            CompoundAssignOp::Sub => left.php_sub(&right),
-            CompoundAssignOp::Mul => left.php_mul(&right),
-            CompoundAssignOp::Div => left.php_div(&right),
-            CompoundAssignOp::Concat => left.php_concat(&right),
-        }
-        .map_err(|error| runtime_error(span, error))?;
-        scope.write_static(name, value.clone());
+        let value = Self::apply_compound_assignment_op(left, op, &right, span)?;
+        self.write_compound_assignment_place(place, value.clone(), span, scope)?;
         Ok(value)
+    }
+
+    fn read_compound_assignment_left(
+        &mut self,
+        target: &AssignTarget,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(CompoundAssignmentPlace, Value)> {
+        match target {
+            AssignTarget::Variable { name, .. } => Ok((
+                CompoundAssignmentPlace::Variable(name.clone()),
+                scope.read_static(name, span)?,
+            )),
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } => {
+                let key = self.evaluate_array_key(index, scope)?;
+                match scope.read_named(name) {
+                    Some(Value::Array(array)) => {
+                        let value = array.get(key.clone()).cloned().ok_or_else(|| {
+                            runtime_error(
+                                span,
+                                RuntimeError::undefined_array_key(key.diagnostic_key()),
+                            )
+                        })?;
+                        Ok((
+                            CompoundAssignmentPlace::ArrayIndex {
+                                name: name.clone(),
+                                key,
+                            },
+                            value,
+                        ))
+                    }
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot read offset from {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                }
+            }
+            AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "append-offset targets are not implemented",
+                ),
+            )),
+            AssignTarget::Property { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_property_access(
+                    "compound assignment targets for object properties are not implemented",
+                ),
+            )),
+        }
+    }
+
+    fn write_compound_assignment_place(
+        &mut self,
+        place: CompoundAssignmentPlace,
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        match place {
+            CompoundAssignmentPlace::Variable(name) => {
+                scope.write_static(&name, value);
+                Ok(())
+            }
+            CompoundAssignmentPlace::ArrayIndex { name, key } => {
+                match scope.read_named(&name).cloned() {
+                    Some(Value::Array(mut array)) => {
+                        array.insert(key, value);
+                        scope.write_static(&name, Value::Array(array));
+                        Ok(())
+                    }
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot write offset on {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                }
+            }
+        }
+    }
+
+    fn apply_compound_assignment_op(
+        left: Value,
+        op: CompoundAssignOp,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let value = match op {
+            CompoundAssignOp::Add => left.php_add(right),
+            CompoundAssignOp::Sub => left.php_sub(right),
+            CompoundAssignOp::Mul => left.php_mul(right),
+            CompoundAssignOp::Div => left.php_div(right),
+            CompoundAssignOp::Concat => left.php_concat(right),
+        };
+
+        value.map_err(|error| runtime_error(span, error))
     }
 
     fn execute_increment_decrement(

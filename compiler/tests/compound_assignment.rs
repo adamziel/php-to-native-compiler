@@ -91,30 +91,97 @@ echo ($value -= next_value()), ":", $value, "\n";
 }
 
 #[test]
-fn compound_assignment_expression_rejects_complex_targets() {
-    let cases = [
-        (
-            "<?php\n$items = ['count' => 1];\necho ($items['count'] += 1);\n",
-            3,
-            24,
-        ),
-        (
-            "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value += 2);\n",
-            4,
-            20,
-        ),
-    ];
+fn array_offset_compound_assignments_update_values_and_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+$items = ['count' => 1, 2 => 10, 'text' => 'php'];
+$items['count'] += 4;
+$items[2] *= 3;
+$items['text'] .= '-native';
+echo $items['count'], ":", $items[2], ":", $items['text'], "\n";
+echo ($items['count'] -= 2), ":", $items['count'], "\n";
+$key = 'count';
+echo ($items[$key] /= 3), ":", $items[$key], "\n";
+"#,
+    )
+    .unwrap();
 
-    for (source, line, column) in cases {
-        let error = run_source(source).unwrap_err();
-        assert_eq!(error.phase, Phase::Parse);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
-        );
-    }
+    assert_eq!(execution.stdout, "5:30:php-native\n3:3\n1:1\n");
+}
+
+#[test]
+fn array_offset_compound_assignment_evaluates_key_once_before_rhs() {
+    let execution = run_source(
+        r#"<?php
+$items = ['count' => 1];
+function key_name() {
+    echo "key\n";
+    return 'count';
+}
+function next_value() {
+    echo "rhs\n";
+    return 2;
+}
+$items[key_name()] += next_value();
+echo $items['count'], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "key\nrhs\n3\n");
+}
+
+#[test]
+fn for_headers_accept_direct_array_offset_compound_assignment() {
+    let execution = run_source(
+        r#"<?php
+$items = ['i' => 0, 'sum' => 0];
+for ($items['i'] = 0; $items['i'] < 3; $items['i'] += 1) {
+    $items['sum'] += $items['i'];
+}
+echo $items['sum'], ":", $items['i'], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "3:3\n");
+}
+
+#[test]
+fn array_offset_compound_assignment_reports_missing_keys() {
+    let error = runtime_error("<?php\n$items = [];\n$items['missing'] += 1;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined array key \"missing\"");
+}
+
+#[test]
+fn array_offset_compound_assignment_reports_non_array_targets() {
+    let error = runtime_error("<?php\n$items = 1;\n$items['count'] += 1;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot read offset from int"
+    );
+}
+
+#[test]
+fn compound_assignment_expression_rejects_object_property_targets() {
+    let error = run_source(
+        "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value += 2);\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 20);
+    assert_eq!(
+        error.message,
+        "unsupported compound assignment target: only direct static variables and direct array offsets are implemented; append offsets, nested offsets, and object properties are not implemented"
+    );
 }
 
 #[test]
@@ -168,7 +235,7 @@ fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "compound assignment is supported by phpc run for direct static variables but not LLVM IR emission yet"
+        "compound assignment is supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
     );
 }
 
@@ -181,6 +248,19 @@ fn emit_ir_rejects_compound_assignment_expressions_until_native_lowering_exists(
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "compound assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet"
+        "compound assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_array_offset_compound_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$items = 1;\n$items['count'] += 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "compound assignment is supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
     );
 }

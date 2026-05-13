@@ -642,15 +642,12 @@ impl Parser {
                 return Ok(ForAction::Assign { target, expr });
             }
             if let Some(op) = self.match_compound_assignment_operator() {
-                let AssignTarget::Variable { name, span } = target else {
-                    return Err(self.error_at(
-                        target.span(),
-                        unsupported_compound_assignment_target_message(),
-                    ));
-                };
+                let span = target.span();
+                Self::ensure_supported_compound_assignment_target(&target)
+                    .map_err(|message| self.error_at(target.span(), message))?;
                 let expr = self.parse_expression()?;
                 return Ok(ForAction::CompoundAssign {
-                    name,
+                    target,
                     op,
                     expr,
                     span,
@@ -1045,19 +1042,16 @@ impl Parser {
                 return Ok(Some(Stmt::IncrementDecrement { name, op, span }));
             }
             if let Some(op) = self.match_compound_assignment_operator() {
-                let AssignTarget::Variable { name, span } = target else {
-                    return Err(self.error_at(
-                        target.span(),
-                        unsupported_compound_assignment_target_message(),
-                    ));
-                };
+                let span = target.span();
+                Self::ensure_supported_compound_assignment_target(&target)
+                    .map_err(|message| self.error_at(target.span(), message))?;
                 let expr = self.parse_expression()?;
                 self.consume_keyword(
                     TokenKind::Semicolon,
                     "expected ';' after compound assignment",
                 )?;
                 return Ok(Some(Stmt::CompoundAssign {
-                    name,
+                    target,
                     op,
                     expr,
                     span,
@@ -1135,6 +1129,41 @@ impl Parser {
         }
 
         Ok(AssignTarget::Variable { name, span })
+    }
+
+    fn ensure_supported_compound_assignment_target(
+        target: &AssignTarget,
+    ) -> Result<(), &'static str> {
+        match target {
+            AssignTarget::Variable { .. } | AssignTarget::ArrayIndex { index: Some(_), .. } => {
+                Ok(())
+            }
+            AssignTarget::ArrayIndex { index: None, .. } | AssignTarget::Property { .. } => {
+                Err(unsupported_compound_assignment_target_message())
+            }
+        }
+    }
+
+    fn compound_assignment_target_from_expr(
+        &self,
+        expr: Expr,
+    ) -> Result<AssignTarget, &'static str> {
+        match expr {
+            Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match *target {
+                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: Some(*index),
+                    span,
+                }),
+                _ => Err(unsupported_compound_assignment_target_message()),
+            },
+            _ => Err(unsupported_compound_assignment_target_message()),
+        }
     }
 
     fn parse_expression_statement(&mut self) -> CompileResult<Stmt> {
@@ -1216,12 +1245,10 @@ impl Parser {
         let expr = self.parse_non_assignment_expression()?;
         if let Some(op) = self.match_compound_assignment_operator() {
             let operator_span = self.previous().span;
-            let Expr::Variable(name, span) = expr else {
-                return Err(self.error_at(
-                    operator_span,
-                    unsupported_compound_assignment_target_message(),
-                ));
-            };
+            let target = self
+                .compound_assignment_target_from_expr(expr)
+                .map_err(|message| self.error_at(operator_span, message))?;
+            let span = target.span();
 
             let value = self.parse_non_assignment_expression()?;
             if Self::expr_contains_assignment(&value)
@@ -1237,7 +1264,7 @@ impl Parser {
             }
 
             return Ok(Expr::CompoundAssign {
-                name,
+                target: Box::new(target),
                 op,
                 expr: Box::new(value),
                 span,
@@ -2514,7 +2541,7 @@ fn unsupported_chained_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_compound_assignment_target_message() -> &'static str {
-    "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
+    "unsupported compound assignment target: only direct static variables and direct array offsets are implemented; append offsets, nested offsets, and object properties are not implemented"
 }
 
 fn unsupported_increment_decrement_expression_message() -> &'static str {
