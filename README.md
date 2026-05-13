@@ -55,6 +55,9 @@ assembly text.
 A discovery-exhaustion snapshot exposes fake `clang`, `llc`, and `cc` commands
 whose `--version` probes all fail, proving failed probes are treated the same
 as unavailable tools and the stable missing-backend diagnostic is reported.
+An empty-stderr backend-failure snapshot exposes a deterministic fake `clang`
+that passes discovery and exits nonzero without diagnostic text, proving the
+stable fallback detail for selected backend failures that produce no stderr.
 
 ## Current Status
 

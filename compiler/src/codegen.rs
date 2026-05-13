@@ -403,12 +403,11 @@ fn clang_assembly_from_ir(ir: &str) -> CompileResult<String> {
     })?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Diagnostic::new(
             Phase::Codegen,
             0,
             0,
-            format!("clang failed to emit assembly: {}", stderr.trim()),
+            assembly_backend_failure_message("clang", &output.stderr),
         ));
     }
 
@@ -456,12 +455,11 @@ fn llc_assembly_from_ir(ir: &str) -> CompileResult<String> {
     })?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Diagnostic::new(
             Phase::Codegen,
             0,
             0,
-            format!("llc failed to emit assembly: {}", stderr.trim()),
+            assembly_backend_failure_message("llc", &output.stderr),
         ));
     }
 
@@ -509,16 +507,25 @@ fn cc_assembly_from_c(source: &str) -> CompileResult<String> {
     })?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Diagnostic::new(
             Phase::Codegen,
             0,
             0,
-            format!("cc failed to emit assembly: {}", stderr.trim()),
+            assembly_backend_failure_message("cc", &output.stderr),
         ));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn assembly_backend_failure_message(command: &str, stderr: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    let detail = stderr.trim();
+    if detail.is_empty() {
+        format!("{command} failed to emit assembly: backend exited without stderr")
+    } else {
+        format!("{command} failed to emit assembly: {detail}")
+    }
 }
 
 fn command_available(command: &str) -> bool {

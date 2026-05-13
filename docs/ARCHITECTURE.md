@@ -120,6 +120,10 @@ A discovery-exhaustion snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands whose `--version` probes all fail. That pins the missing-backend
 diagnostic when candidate command names exist on `PATH` but no backend passes
 discovery.
+An empty-stderr backend-failure snapshot exposes a deterministic fake `clang`
+that passes discovery and exits nonzero without stderr after accepting
+generated LLVM IR. That pins the fallback diagnostic detail for selected
+backend failures when a tool provides no error text.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

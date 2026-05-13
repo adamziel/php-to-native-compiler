@@ -1004,10 +1004,13 @@
   unavailable and skipped before fallback selection. A discovery-exhaustion
   snapshot exposes fake `clang`, `llc`, and `cc` commands whose `--version`
   probes all fail, proving the same stable missing-backend diagnostic is
-  reported when command names exist but no candidate passes discovery. Bundled
-  toolchains, assembly linking/execution, backend-specific discovery semantics
-  for every tool, backend-specific stderr guarantees, backend-specific assembly
-  text, PHP zvals, native symbol-table storage,
+  reported when command names exist but no candidate passes discovery. An
+  empty-stderr selected-backend snapshot exposes a deterministic fake `clang`
+  that passes discovery and exits nonzero without stderr after accepting
+  generated LLVM IR, proving the stable `backend exited without stderr`
+  diagnostic detail. Bundled toolchains, assembly linking/execution,
+  backend-specific discovery semantics for every tool, backend-specific stderr
+  guarantees, backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.

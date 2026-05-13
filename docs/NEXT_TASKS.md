@@ -1810,8 +1810,17 @@ handled.
 
 ## Milestone 192: Native Assembly Empty Backend Stderr Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
   failures that exit nonzero without stderr output, including deterministic
   test doubles, stable diagnostics, documentation, and named gaps for
   backend-specific diagnostics, bundled toolchains, exact native error objects,
   and broader native lowering.
+
+## Milestone 193: Native Assembly Empty Backend Output Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  success cases that produce empty assembly stdout, either by rejecting empty
+  output with a stable diagnostic or documenting and testing the current
+  behavior, including deterministic test doubles, documentation, and named gaps
+  for backend-specific diagnostics, bundled toolchains, exact native error
+  objects, and broader native lowering.
