@@ -14400,3 +14400,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T07:01:52Z
 
 - Post-round 81 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T07:02:06Z
+
+- Starting round 82 at 20260513T070206Z from HEAD `5f44d34`.
+
+## Loop Event 2026-05-13T07:02:20Z
+
+- Pre-round 82 test exit code: `0`.
+
+## Loop Event 2026-05-13T07:18:00Z
+
+- Task attempted: completed Milestone 191 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for backend discovery exhaustion. The new
+  Milestone 191 fixture is a lowerable scalar echo/print program, and the
+  assembly CLI test invokes `--emit-asm` with a temporary PATH exposing fake
+  `clang`, `llc`, and `cc` commands whose `--version` probes all fail,
+  proving the stable missing-backend diagnostic when command names exist but
+  no candidate passes discovery.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone191/native_assembly_probe_exhaustion.php`,
+  `tests/fixtures/milestone191/native_assembly_probe_exhaustion.stdout`,
+  `tests/fixtures/milestone191/native_assembly_probe_exhaustion_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli
+  native_scalar_echo_emit_asm_all_backend_probes_fail_cli_snapshot_matches_committed_output
+  -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone191` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone191` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test native_assembly_cli -- --nocapture`
+  passed with 10 tests; `tools/run-tests.sh` passed with 441 fixtures, 185
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: bundled toolchains, assembly linking/execution,
+  backend-specific discovery semantics, exact native error objects, and
+  broader native lowering remain unsupported.
+- Next concrete task: add Milestone 192, explicit `phpc compile --emit-asm`
+  CLI coverage for selected backend failures that exit nonzero without stderr
+  output.
+- Known-good tag: not created; this is narrow native CLI discovery-exhaustion
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly discovery exhaustion CLI coverage"`
+  after the full suite passes.

@@ -3,6 +3,15 @@
 ## Unreleased
 
 - Added explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+  discovery exhaustion. The Milestone 191 fixture runs as a lowerable scalar
+  echo/print program, while the assembly CLI test invokes `--emit-asm` with a
+  temporary PATH exposing fake `clang`, `llc`, and `cc` commands whose
+  `--version` probes all fail. The committed snapshot pins the stable
+  missing-backend diagnostic when command names exist but no candidate passes
+  discovery. Bundled toolchains, assembly linking/execution,
+  backend-specific discovery semantics, exact native error objects, and
+  broader native lowering remain explicit gaps.
+- Added explicit `phpc compile --emit-asm` CLI coverage for assembly backend
   discovery fallback behavior. The Milestone 190 fixture runs as a lowerable
   scalar echo/print program, while the assembly CLI test invokes `--emit-asm`
   with a temporary PATH exposing a fake `clang` whose `--version` probe fails,

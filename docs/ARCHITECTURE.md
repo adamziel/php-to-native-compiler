@@ -116,6 +116,10 @@ A C fallback failure snapshot exposes only a deterministic fake `cc` that passes
 discovery and then exits nonzero after accepting generated C fallback source.
 That pins the CLI diagnostic shape for `cc -S` fallback failure without
 committing real toolchain stderr.
+A discovery-exhaustion snapshot exposes deterministic fake `clang`, `llc`, and
+`cc` commands whose `--version` probes all fail. That pins the missing-backend
+diagnostic when candidate command names exist on `PATH` but no backend passes
+discovery.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

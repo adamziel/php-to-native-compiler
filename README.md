@@ -52,6 +52,9 @@ A discovery-edge snapshot exposes a fake `clang` command whose `--version`
 probe fails while a fake `llc` probe succeeds, proving failed discovery probes
 are skipped before fallback selection without committing backend-specific
 assembly text.
+A discovery-exhaustion snapshot exposes fake `clang`, `llc`, and `cc` commands
+whose `--version` probes all fail, proving failed probes are treated the same
+as unavailable tools and the stable missing-backend diagnostic is reported.
 
 ## Current Status
 

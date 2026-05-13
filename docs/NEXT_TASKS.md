@@ -1801,9 +1801,17 @@ handled.
 
 ## Milestone 191: Native Assembly Backend Discovery Exhaustion Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for assembly backend
   discovery exhaustion where `clang`, `llc`, and `cc` commands exist but all
   fail their `--version` probes, including deterministic test doubles, the
   stable missing-backend diagnostic, documentation, and named gaps for bundled
   toolchains, backend-specific discovery semantics, exact native error objects,
+  and broader native lowering.
+
+## Milestone 192: Native Assembly Empty Backend Stderr Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  failures that exit nonzero without stderr output, including deterministic
+  test doubles, stable diagnostics, documentation, and named gaps for
+  backend-specific diagnostics, bundled toolchains, exact native error objects,
   and broader native lowering.

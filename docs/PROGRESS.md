@@ -3451,9 +3451,19 @@ Still fails:
   backend-specific discovery semantics for every tool, backend-specific
   assembly text, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+  discovery exhaustion. The Milestone 191 fixture runs through `phpc run` and
+  system PHP as a lowerable scalar echo/print program, while the assembly CLI
+  test invokes `--emit-asm` with a temporary PATH exposing fake `clang`, `llc`,
+  and `cc` commands whose `--version` probes all fail. The committed snapshot
+  records the stable missing-backend diagnostic, proving failed probes are
+  treated like unavailable tools when no candidate backend passes discovery.
+  Bundled toolchains, assembly linking/execution, backend-specific discovery
+  semantics for every tool, exact native error objects, and broader native
+  lowering remain unsupported.
 
 Next:
 
-- Add explicit CLI coverage for assembly backend discovery exhaustion where all
-  candidate commands exist but fail their `--version` probes and no backend is
-  selected.
+- Add explicit CLI coverage for native assembly backend failures that produce
+  empty stderr, so selected-backend error messages remain stable even when a
+  tool exits nonzero without diagnostic text.

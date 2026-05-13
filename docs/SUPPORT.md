@@ -1001,10 +1001,13 @@
   without committing real toolchain stderr. A discovery-edge snapshot exposes a
   deterministic fake `clang` whose `--version` probe fails while a fake `llc`
   probe succeeds, proving failed backend discovery probes are treated as
-  unavailable and skipped before fallback selection. Bundled toolchains,
-  assembly linking/execution, backend-specific discovery semantics for every
-  tool, backend-specific stderr guarantees, backend-specific assembly text, PHP
-  zvals, native symbol-table storage,
+  unavailable and skipped before fallback selection. A discovery-exhaustion
+  snapshot exposes fake `clang`, `llc`, and `cc` commands whose `--version`
+  probes all fail, proving the same stable missing-backend diagnostic is
+  reported when command names exist but no candidate passes discovery. Bundled
+  toolchains, assembly linking/execution, backend-specific discovery semantics
+  for every tool, backend-specific stderr guarantees, backend-specific assembly
+  text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
