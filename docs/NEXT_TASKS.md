@@ -1625,9 +1625,19 @@ handled.
 
 ## Milestone 171: Native Magic Constant Boundary
 
-- [ ] Add the next honest native-codegen boundary for executable magic
+- [x] Add the next honest native-codegen boundary for executable magic
   constants `__LINE__`, `__FILE__`, `__DIR__`, and `__FUNCTION__`, either by
   lowering a narrow source-aware subset or by tightening explicit diagnostics
   with fixture CLI coverage, documentation, and named gaps for source mapping,
   path canonicalization, function context, eval/include interactions,
   references, exact native error objects, and broader native lowering.
+
+## Milestone 172: Native Global Constant Boundary
+
+- [ ] Add the next honest native-codegen boundary for built-in,
+  runtime-defined, bare-read, and top-level declared global constants, either
+  by lowering a narrow constant table subset or by tightening explicit
+  diagnostics with fixture CLI coverage, documentation, and named gaps for
+  source-order definitions, runtime `define(...)`, `constant()`/`defined()`,
+  namespaces, class constants, references/copy-on-write, exact native error
+  objects, and broader native lowering.

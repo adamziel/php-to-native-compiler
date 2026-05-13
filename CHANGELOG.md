@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added a native magic-constant boundary. LLVM IR emission now rejects
+  executable magic constants `__LINE__`, `__FILE__`, `__DIR__`, and
+  `__FUNCTION__` before lowering them, with a specific codegen diagnostic
+  until generated code has source mapping, path canonicalization,
+  function-context lowering, eval/include source interaction rules, and exact
+  native error behavior; the C assembly fallback carries the same boundary for
+  consistency. A runtime fixture and CLI snapshot still prove the current
+  interpreter magic-constant subset, and a `phpc compile --emit-ir` CLI
+  snapshot pins the native rejection. References/copy-on-write and broader
+  native lowering remain explicit gaps.
 - Added a native user-function declaration/return boundary. LLVM IR emission
   now rejects function declarations and return statements before traversing
   function bodies, with a specific codegen diagnostic until generated code has

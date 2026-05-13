@@ -11,6 +11,8 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior";
+const ASSEMBLY_MAGIC_CONSTANT_REJECTION: &str = "assembly magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -192,22 +194,12 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
-            Expr::MagicLine { span } => Err(self.unsupported(
-                *span,
-                "__LINE__ is supported by phpc run but not LLVM IR emission yet",
-            )),
-            Expr::MagicFile { span } => Err(self.unsupported(
-                *span,
-                "__FILE__ is supported by phpc run but not LLVM IR emission yet",
-            )),
-            Expr::MagicDir { span } => Err(self.unsupported(
-                *span,
-                "__DIR__ is supported by phpc run but not LLVM IR emission yet",
-            )),
-            Expr::MagicFunction { span } => Err(self.unsupported(
-                *span,
-                "__FUNCTION__ is supported by phpc run but not LLVM IR emission yet",
-            )),
+            Expr::MagicLine { span }
+            | Expr::MagicFile { span }
+            | Expr::MagicDir { span }
+            | Expr::MagicFunction { span } => {
+                Err(self.unsupported(*span, LLVM_MAGIC_CONSTANT_REJECTION))
+            }
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
                 "global constants are supported by phpc run for the current built-in/runtime-defined subset but not LLVM IR emission yet",
@@ -902,22 +894,12 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
-            Expr::MagicLine { span } => Err(self.unsupported(
-                *span,
-                "__LINE__ is supported by phpc run but not assembly emission yet",
-            )),
-            Expr::MagicFile { span } => Err(self.unsupported(
-                *span,
-                "__FILE__ is supported by phpc run but not assembly emission yet",
-            )),
-            Expr::MagicDir { span } => Err(self.unsupported(
-                *span,
-                "__DIR__ is supported by phpc run but not assembly emission yet",
-            )),
-            Expr::MagicFunction { span } => Err(self.unsupported(
-                *span,
-                "__FUNCTION__ is supported by phpc run but not assembly emission yet",
-            )),
+            Expr::MagicLine { span }
+            | Expr::MagicFile { span }
+            | Expr::MagicDir { span }
+            | Expr::MagicFunction { span } => {
+                Err(self.unsupported(*span, ASSEMBLY_MAGIC_CONSTANT_REJECTION))
+            }
             Expr::GlobalConstant { span, .. } => Err(self.unsupported(
                 *span,
                 "global constants are supported by phpc run for the current built-in/runtime-defined subset but not assembly emission yet",

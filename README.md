@@ -358,6 +358,9 @@ generated code has PHP truthiness, null-aware lookup, and branch side-effect
 ordering. Native function calls are rejected before argument/callee lowering
 until generated code has runtime call lookup, stack frames, arity/type
 diagnostics, callable builtin dispatch, and dynamic string-call dispatch.
+Executable magic constants `__LINE__`, `__FILE__`, `__DIR__`, and
+`__FUNCTION__` are rejected by native lowering until generated code has source
+mapping, path canonicalization, and function-context tracking.
 Unsupported programs and broader PHP coercions are rejected with structured
 codegen errors.
 

@@ -444,11 +444,8 @@ fn emit_ir_rejects_magic_line_until_native_source_mapping_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert!(
-        error.message.contains("__LINE__") && error.message.contains("not LLVM IR emission yet"),
-        "{}",
-        error.message
-    );
+    assert!(error.message.contains("LLVM magic-constant lowering"));
+    assert!(error.message.contains("__LINE__"));
 }
 
 #[test]
@@ -482,11 +479,8 @@ fn emit_ir_rejects_magic_file_until_native_source_mapping_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert!(
-        error.message.contains("__FILE__") && error.message.contains("not LLVM IR emission yet"),
-        "{}",
-        error.message
-    );
+    assert!(error.message.contains("LLVM magic-constant lowering"));
+    assert!(error.message.contains("__FILE__"));
 }
 
 #[test]
@@ -526,11 +520,8 @@ fn emit_ir_rejects_magic_dir_until_native_source_mapping_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert!(
-        error.message.contains("__DIR__") && error.message.contains("not LLVM IR emission yet"),
-        "{}",
-        error.message
-    );
+    assert!(error.message.contains("LLVM magic-constant lowering"));
+    assert!(error.message.contains("__DIR__"));
 }
 
 #[test]
@@ -565,12 +556,8 @@ fn emit_ir_rejects_magic_function_until_native_source_mapping_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
-    assert!(
-        error.message.contains("__FUNCTION__")
-            && error.message.contains("not LLVM IR emission yet"),
-        "{}",
-        error.message
-    );
+    assert!(error.message.contains("LLVM magic-constant lowering"));
+    assert!(error.message.contains("__FUNCTION__"));
 }
 
 #[test]

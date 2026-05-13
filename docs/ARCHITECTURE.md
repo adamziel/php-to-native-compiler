@@ -112,6 +112,10 @@ Native lowering also rejects user-function declarations and return statements
 before traversing function bodies until generated code has function symbol
 tables, stack-frame layout, default parameter binding, recursion guards,
 return-value flow, and exact native error behavior.
+Native lowering rejects executable magic constants `__LINE__`, `__FILE__`,
+`__DIR__`, and `__FUNCTION__` until generated code has source mapping, path
+canonicalization, function-context tracking, eval/include source interaction
+rules, and exact native error behavior.
 
 ## Dynamic Features
 

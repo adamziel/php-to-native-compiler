@@ -1665,7 +1665,10 @@
   string behavior; closure context is not implemented. `__FILE__` currently
   reports the `phpc run` input path string, and `__DIR__` derives from that
   same path string; neither is guaranteed to match PHP's canonical absolute
-  filename or directory in all entry paths.
+  filename or directory in all entry paths. Native lowering rejects executable
+  magic constants `__LINE__`, `__FILE__`, `__DIR__`, and `__FUNCTION__` with a
+  specific codegen diagnostic until source mapping, path canonicalization, and
+  function-context lowering exist.
 - array literal spread elements and array literal reference elements
 - `unset(...)` forms outside direct variables and direct array offsets,
   including object property removal, append-offset unset, and nested/complex

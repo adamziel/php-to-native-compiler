@@ -13199,3 +13199,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:02:13Z
 
 - Post-round 61 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:02:27Z
+
+- Starting round 62 at 20260513T050227Z from HEAD `4ebc1a2`.
+
+## Loop Event 2026-05-13T05:02:40Z
+
+- Pre-round 62 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:08:21Z
+
+- Task attempted: completed Milestone 171 by tightening native codegen for
+  executable magic constants. LLVM IR emission now rejects `__LINE__`,
+  `__FILE__`, `__DIR__`, and `__FUNCTION__` with one specific codegen
+  diagnostic until generated code has source mapping, path canonicalization,
+  function-context lowering, eval/include source interaction rules, and exact
+  native error behavior. The C assembly fallback carries the same boundary for
+  consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_magic_constant_boundary.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/magic_constants_cli.rs`,
+  `tests/fixtures/milestone171/native_magic_constant_boundary.*`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test
+  native_magic_constant_boundary` passed; `cargo test -p phpc --test
+  functions_and_scopes magic` passed; `cargo test -p phpc --test
+  magic_constants_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone171` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone171` passed with 1 PHP comparison
+  skipped by `.phpc-only`; `cargo run -p phpc -- compile
+  tests/fixtures/milestone171/native_magic_constant_boundary.php --emit-ir`
+  exited `1` with the expected codegen diagnostic; `cargo run -p phpc -- run
+  tests/fixtures/milestone171/native_magic_constant_boundary.php` printed the
+  committed CLI magic-constant snapshot; `tools/run-tests.sh` passed with 421
+  fixtures, 166 system PHP comparisons, and 255 skips.
+- Remaining semantic gaps: native magic-constant lowering is intentionally not
+  implemented; generated code still lacks source mapping, path
+  canonicalization, function-context tracking, eval/include source interaction
+  rules, references/copy-on-write behavior, and exact native error objects.
+- Next concrete task: add the native global constant boundary for built-in,
+  runtime-defined, bare-read, and top-level declared constants.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native magic constant boundary"`
+  after the full suite passes.

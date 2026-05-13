@@ -1,0 +1,1 @@
+phpc run uses path-less library execution for ordinary fixture stdout; the CLI snapshot records source-file magic values.

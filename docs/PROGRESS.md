@@ -3234,9 +3234,19 @@ Still fails:
   declarations/defaults/returns, and a `phpc compile --emit-ir` CLI snapshot
   pins the native rejection. References/copy-on-write side effects and broader
   native lowering remain unsupported.
+- Added a native magic-constant boundary. LLVM IR emission now rejects
+  executable magic constants `__LINE__`, `__FILE__`, `__DIR__`, and
+  `__FUNCTION__` with a specific codegen diagnostic until generated code has
+  source mapping, path canonicalization, function-context lowering,
+  eval/include source interaction rules, and exact native error behavior. The
+  C assembly fallback carries the same boundary for consistency, `phpc run`
+  fixture and CLI coverage still prove the current interpreter magic-constant
+  subset, and a `phpc compile --emit-ir` CLI snapshot pins the native
+  rejection. References/copy-on-write side effects and broader native lowering
+  remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for executable magic constants
-  before native source mapping, path canonicalization, and function-context
-  lowering exist.
+- Add the next honest native-codegen boundary for global constants before
+  native constant tables, source-order definitions, and runtime-defined
+  constant lookup exist.
