@@ -1214,6 +1214,36 @@ impl Parser {
 
     fn parse_assignment_expression(&mut self) -> CompileResult<Expr> {
         let expr = self.parse_non_assignment_expression()?;
+        if let Some(op) = self.match_compound_assignment_operator() {
+            let operator_span = self.previous().span;
+            let Expr::Variable(name, span) = expr else {
+                return Err(self.error_at(
+                    operator_span,
+                    unsupported_compound_assignment_target_message(),
+                ));
+            };
+
+            let value = self.parse_non_assignment_expression()?;
+            if Self::expr_contains_assignment(&value)
+                || self.check(|kind| matches!(kind, TokenKind::Equal))
+                || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+                    && matches!(self.peek_next().kind, TokenKind::Equal))
+                || self.check_compound_assignment_operator()
+            {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_chained_assignment_expression_message(),
+                ));
+            }
+
+            return Ok(Expr::CompoundAssign {
+                name,
+                op,
+                expr: Box::new(value),
+                span,
+            });
+        }
+
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
             return Ok(expr);
         }
@@ -1235,12 +1265,6 @@ impl Parser {
             return Err(self.error_at(
                 self.peek().span,
                 unsupported_chained_assignment_expression_message(),
-            ));
-        }
-        if self.check_compound_assignment_operator() {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_compound_assignment_expression_message(),
             ));
         }
 
@@ -1294,7 +1318,7 @@ impl Parser {
         if self.check_compound_assignment_operator() {
             return Err(self.error_at(
                 self.peek().span,
-                unsupported_compound_assignment_expression_message(),
+                unsupported_assignment_expression_message(),
             ));
         }
         if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
@@ -1366,10 +1390,7 @@ impl Parser {
         let mut expr = self.parse_additive()?;
         loop {
             if self.check_compound_assignment_operator() {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_compound_assignment_expression_message(),
-                ));
+                break;
             }
             if !self.match_token(|kind| matches!(kind, TokenKind::Dot)) {
                 break;
@@ -1390,10 +1411,7 @@ impl Parser {
         let mut expr = self.parse_multiplicative()?;
         loop {
             if self.check_compound_assignment_operator() {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_compound_assignment_expression_message(),
-                ));
+                break;
             }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Plus)) {
                 BinaryOp::Add
@@ -1418,10 +1436,7 @@ impl Parser {
         let mut expr = self.parse_unary()?;
         loop {
             if self.check_compound_assignment_operator() {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_compound_assignment_expression_message(),
-                ));
+                break;
             }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Star)) {
                 BinaryOp::Mul
@@ -1978,6 +1993,7 @@ impl Parser {
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
+            | Expr::CompoundAssign { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
@@ -2023,6 +2039,7 @@ impl Parser {
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
+            | Expr::CompoundAssign { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
@@ -2033,7 +2050,7 @@ impl Parser {
 
     fn expr_contains_assignment(expr: &Expr) -> bool {
         match expr {
-            Expr::Assign { .. } => true,
+            Expr::Assign { .. } | Expr::CompoundAssign { .. } => true,
             Expr::Array { items, .. } => items.iter().any(|item| {
                 item.key
                     .as_ref()
@@ -2494,10 +2511,6 @@ fn unsupported_assignment_expression_target_message() -> &'static str {
 
 fn unsupported_chained_assignment_expression_message() -> &'static str {
     "unsupported assignment expression: chained assignment expressions are not implemented"
-}
-
-fn unsupported_compound_assignment_expression_message() -> &'static str {
-    "unsupported compound assignment expression: compound assignments are only implemented as direct-variable statements in the current subset"
 }
 
 fn unsupported_compound_assignment_target_message() -> &'static str {

@@ -2795,12 +2795,12 @@ Still fails:
   undefined-variable, division-by-zero, and non-numeric-string diagnostics.
   Fixture and CLI snapshot coverage record the success path and undefined
   left-hand runtime error, system PHP comparison passes for the supported
-  fixture, expression-position compound assignment and array/object compound
-  targets still fail with stable parse diagnostics, and native emission rejects
-  compound assignment explicitly until lowering exists. Array/object target
-  execution, assignment result values, references/copy-on-write,
-  increment/decrement operators, broader PHP coercion warning recovery, exact
-  native error objects, and native lowering remain unsupported.
+  fixture, and native emission rejects compound assignment explicitly until
+  lowering exists. Expression-position direct-variable compound assignment was
+  implemented later. Array/object target execution, assignment result values
+  for unsupported targets, references/copy-on-write, increment/decrement
+  operators, broader PHP coercion warning recovery, exact native error
+  objects, and native lowering remain unsupported.
 - Added explicit parse diagnostics for unsupported pre/post increment and
   decrement operators before executable `++`/`--` semantics existed. After the
   direct-variable statement and expression slices were added, the retained
@@ -2857,10 +2857,25 @@ Still fails:
   emission rejects assignment expressions explicitly until lowering exists.
   References, copy-on-write aliasing, exact native error objects, and native
   lowering remain unsupported.
+- Implemented expression-position direct static-variable compound assignment
+  such as `($name += expr)` over the current scalar value model. Compound
+  assignment expressions read the existing left-hand value, evaluate the
+  right-hand expression, apply the same PHP-shaped arithmetic or concatenation
+  helper as statement-level compound assignment, write the updated variable,
+  and return the updated value. Fixture and CLI snapshot coverage record
+  result values, read/write behavior, and RHS call ordering; system PHP
+  comparison passes for the supported fixture; undefined left-hand variables
+  and invalid arithmetic reuse the existing stable runtime diagnostics;
+  array-offset and object-property compound assignment targets remain stable
+  parse diagnostics; and native emission rejects compound assignment
+  expressions explicitly until lowering exists. References, copy-on-write
+  aliasing, broader PHP warning recovery, exact native error objects, and
+  native lowering remain unsupported.
 
 Next:
 
-- Implement expression-position direct static-variable compound assignment
-  for the current scalar value model, including result values and explicit
-  gaps for array/object targets, references/copy-on-write, exact native error
-  objects, broader PHP coercion recovery, and native lowering.
+- Add the next honest path for array-offset compound assignment forms such as
+  `$array[$key] += expr`, either executable direct array-offset
+  read-modify-write semantics over the current ordered array model or a
+  tightened explicit diagnostic boundary with fixture CLI coverage and
+  documentation.

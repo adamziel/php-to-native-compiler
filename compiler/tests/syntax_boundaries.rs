@@ -384,13 +384,13 @@ fn unsupported_compound_assignments_have_stable_parse_errors() {
 
 #[test]
 fn compound_assignment_expressions_have_stable_parse_errors() {
-    let error = parse_error("<?php\n$value = 1;\necho ($value += 2);\n");
+    let error = parse_error("<?php\n$items = ['value' => 1];\necho ($items['value'] += 2);\n");
 
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 14);
+    assert_eq!(error.column, 24);
     assert_eq!(
         error.message,
-        "unsupported compound assignment expression: compound assignments are only implemented as direct-variable statements in the current subset"
+        "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
     );
 }
 

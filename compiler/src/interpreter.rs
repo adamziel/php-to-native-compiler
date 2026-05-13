@@ -607,6 +607,12 @@ impl Interpreter {
                 scope.write_static(name, value.clone());
                 Ok(value)
             }
+            Expr::CompoundAssign {
+                name,
+                op,
+                expr,
+                span,
+            } => self.evaluate_compound_assignment(name, *op, expr, *span, scope),
             Expr::IncrementDecrement {
                 name,
                 op,
@@ -743,6 +749,18 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        self.evaluate_compound_assignment(name, op, expr, span, scope)
+            .map(|_| ())
+    }
+
+    fn evaluate_compound_assignment(
+        &mut self,
+        name: &str,
+        op: CompoundAssignOp,
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
         let left = scope.read_static(name, span)?;
         let right = self.evaluate(expr, scope)?;
         let value = match op {
@@ -753,8 +771,8 @@ impl Interpreter {
             CompoundAssignOp::Concat => left.php_concat(&right),
         }
         .map_err(|error| runtime_error(span, error))?;
-        scope.write_static(name, value);
-        Ok(())
+        scope.write_static(name, value.clone());
+        Ok(value)
     }
 
     fn execute_increment_decrement(

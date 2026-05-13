@@ -1313,10 +1313,20 @@ handled.
 
 ## Milestone 138: Direct Variable Compound Assignment Expression Slice
 
-- [ ] Implement expression-position direct static-variable compound assignment
+- [x] Implement expression-position direct static-variable compound assignment
   such as `($name += expr)` for the current scalar value model, including
   assignment result values, read/write ordering, fixture CLI coverage,
   documentation, native-codegen rejection while lowering remains unsupported,
   and explicit gaps for array/object targets, references, copy-on-write,
   exact native error objects, broader PHP coercion recovery, and native
   lowering.
+
+## Milestone 139: Array Offset Compound Assignment Boundary
+
+- [ ] Add the next honest path for `$array[$key] += expr` and related
+  array-offset compound assignment forms: either executable direct
+  array-offset read-modify-write semantics over the current ordered array
+  model, or a tightened explicit diagnostic boundary with fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps for append offsets,
+  nested offsets, object properties, references, copy-on-write, exact native
+  error objects, broader PHP coercion recovery, and native lowering.

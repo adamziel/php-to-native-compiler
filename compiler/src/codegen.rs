@@ -245,6 +245,10 @@ impl LlvmGenerator {
                 *span,
                 "assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet",
             )),
+            Expr::CompoundAssign { span, .. } => Err(self.unsupported(
+                *span,
+                "compound assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet",
+            )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
                 "increment/decrement expressions are supported by phpc run for direct static int/float variables but not LLVM IR emission yet",
@@ -828,6 +832,10 @@ impl CGenerator {
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
                 "assignment expressions are supported by phpc run for direct static variables but not assembly emission yet",
+            )),
+            Expr::CompoundAssign { span, .. } => Err(self.unsupported(
+                *span,
+                "compound assignment expressions are supported by phpc run for direct static variables but not assembly emission yet",
             )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,

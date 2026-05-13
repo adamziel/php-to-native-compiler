@@ -8,8 +8,14 @@ fn compound_assignment_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone132");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let fixture_dirs = ["milestone132", "milestone138"];
+    let mut fixtures = fixture_dirs
+        .iter()
+        .flat_map(|fixture_dir_name| {
+            let fixture_dir = workspace_root.join(format!("tests/fixtures/{fixture_dir_name}"));
+            cli_snapshot_fixtures(fixture_dir_name, &fixture_dir)
+        })
+        .collect::<Vec<_>>();
 
     fixtures.sort();
     assert!(
@@ -17,12 +23,12 @@ fn compound_assignment_cli_snapshots_match_committed_outputs() {
         "expected compound-assignment CLI snapshot fixtures"
     );
 
-    for fixture in fixtures {
+    for (fixture_dir_name, fixture) in fixtures {
         let file_name = fixture
             .file_name()
             .and_then(|value| value.to_str())
             .expect("compound-assignment fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone132/{file_name}");
+        let fixture_arg = format!("tests/fixtures/{fixture_dir_name}/{file_name}");
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])
@@ -38,7 +44,7 @@ fn compound_assignment_cli_snapshots_match_committed_outputs() {
     }
 }
 
-fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
+fn cli_snapshot_fixtures(fixture_dir_name: &str, fixture_dir: &Path) -> Vec<(String, PathBuf)> {
     fs::read_dir(fixture_dir)
         .expect("compound-assignment fixture directory is readable")
         .map(|entry| {
@@ -48,6 +54,7 @@ fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
         })
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("php"))
         .filter(|path| path.with_extension("cli").exists())
+        .map(|path| (fixture_dir_name.to_string(), path))
         .collect()
 }
 

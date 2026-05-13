@@ -323,6 +323,12 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    CompoundAssign {
+        name: String,
+        op: CompoundAssignOp,
+        expr: Box<Expr>,
+        span: Span,
+    },
     IncrementDecrement {
         name: String,
         op: IncrementDecrementOp,
@@ -354,6 +360,7 @@ impl Expr {
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
             | Expr::Assign { span, .. }
+            | Expr::CompoundAssign { span, .. }
             | Expr::IncrementDecrement { span, .. } => *span,
         }
     }

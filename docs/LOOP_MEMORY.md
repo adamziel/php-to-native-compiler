@@ -11179,3 +11179,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T00:58:08Z
 
 - Post-round 28 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T00:58:18Z
+
+- Starting round 29 at 20260513T005818Z from HEAD `8329c56`.
+
+## Loop Event 2026-05-13T00:58:28Z
+
+- Pre-round 29 test exit code: `0`.
+
+## Loop Event 2026-05-13T01:04:30Z
+
+- Task attempted: implemented expression-position direct static-variable
+  compound assignment for `+=`, `-=`, `*=`, `/=`, and `.=` over the current
+  scalar value model. Compound assignment expressions now read the existing
+  variable, evaluate the right-hand expression, apply the existing scalar
+  arithmetic or concatenation helper, write the updated value, and return that
+  updated value. Array-offset and object-property compound assignment targets
+  remain explicit parse diagnostics, and native LLVM/assembly emission rejects
+  compound assignment expressions explicitly until lowering exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/compound_assignment_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone138/compound_assignment_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test compound_assignment -- --nocapture`
+  passed with 11 tests; `cargo test -p phpc --test compound_assignment_cli
+  -- --nocapture` passed; `cargo test -p phpc --test syntax_boundaries --
+  --nocapture` passed with 29 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone138` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone138` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone138/compound_assignment_expression.php --emit-ir`
+  exited `1` with the expected compound-assignment-expression codegen
+  rejection; `cargo run -p phpc -- run
+  tests/fixtures/milestone138/compound_assignment_expression.php` printed the
+  committed CLI exercise output; `tools/run-tests.sh` passed with 377
+  fixtures, 134 system PHP comparisons, and 243 comparison skips.
+- Remaining semantic gaps: array-offset compound assignment targets,
+  object-property compound assignment targets, append-offset and nested
+  compound assignment targets, references, copy-on-write aliasing, broader PHP
+  coercion warning recovery, exact native error objects, and native lowering
+  remain unsupported.
+- Next concrete task: add the next honest path for `$array[$key] += expr` and
+  related array-offset compound assignment forms, either executable direct
+  array-offset read-modify-write semantics over the current ordered array
+  model or a tightened explicit diagnostic boundary with fixture CLI coverage
+  and documentation.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add compound assignment expressions"`
+  after the full suite passes.

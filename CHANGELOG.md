@@ -2,13 +2,20 @@
 
 ## Unreleased
 
+- Implemented expression-position direct static-variable compound assignment
+  `($name += expr)`, `-=`, `*=`, `/=`, and `.=` over the current scalar value
+  model, including updated-value expression results, read/write ordering, RHS
+  call ordering, fixture/CLI coverage, system PHP comparison, documentation,
+  and native-codegen rejection while array/object targets,
+  references/copy-on-write, exact native error objects, broader PHP coercion
+  recovery, and native lowering remain explicit gaps.
 - Implemented expression-position direct static-variable assignment
   `$name = expr` over the current value model, including assignment result
   values, read/write ordering, RHS call ordering, fixture/CLI coverage, system
   PHP comparison, documentation, and native-codegen rejection while chained
   assignments, array/object assignment-expression targets, expression-position
-  `??=`, expression-position compound assignment, references, copy-on-write,
-  exact native error objects, and native lowering remain explicit gaps.
+  `??=`, references, copy-on-write, exact native error objects, and native
+  lowering remain explicit gaps.
 - Implemented expression-position direct static-variable pre/post increment
   and decrement for existing integer and float variables, including
   pre-vs-post result values, read-modify-write behavior, undefined-variable
