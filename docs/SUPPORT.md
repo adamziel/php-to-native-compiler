@@ -1081,8 +1081,12 @@
   selected-backend failure-precedence snapshot exposes deterministic fake
   `clang`, `llc`, and `cc` commands together, makes selected `clang` exit
   nonzero without diagnostics, and proves the stable empty-stderr `clang`
-  diagnostic is reported without falling through to fallback tools. Bundled toolchains,
-  assembly linking/execution, full
+  diagnostic is reported without falling through to fallback tools. A
+  selected-backend start-failure-precedence snapshot exposes deterministic fake
+  `clang`, `llc`, and `cc` commands together, makes selected `clang` pass
+  discovery and then fail to start for assembly emission, and proves the
+  stable selected-backend start diagnostic is reported without falling through
+  to fallback tools. Bundled toolchains, assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed

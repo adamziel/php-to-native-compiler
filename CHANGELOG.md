@@ -897,3 +897,11 @@
   without falling through to the `cc -S` C fallback. Bundled toolchains,
   assembly linking/execution, exact native error objects, and broader native
   lowering remain unsupported.
+- Added a Milestone 216 `phpc compile --emit-asm` selected backend
+  start-failure-precedence snapshot with deterministic fake `clang`, `llc`,
+  and `cc` commands available. The selected fake `clang` passes discovery and
+  then cannot be started for emission, while fake fallback tools would fail
+  loudly if invoked, proving the selected `clang` start diagnostic is reported
+  without falling through to fallback tools. Bundled toolchains, assembly
+  linking/execution, exact native error objects, and broader native lowering
+  remain unsupported.

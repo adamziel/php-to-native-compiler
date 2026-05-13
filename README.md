@@ -147,6 +147,11 @@ An empty-stderr selected-backend failure-precedence snapshot exposes
 deterministic fake `clang`, `llc`, and `cc` commands together, proves the
 stable empty-stderr `clang` diagnostic is reported as final, and proves
 fallback tools are not invoked after selected `clang` fails.
+A selected-backend start-failure-precedence snapshot exposes deterministic
+fake `clang`, `llc`, and `cc` commands together, rewrites selected `clang`
+after discovery so it cannot be started for assembly emission, and proves the
+stable selected-backend start diagnostic is reported without falling through
+to fallback tools.
 
 ## Current Status
 

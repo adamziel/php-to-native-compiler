@@ -230,6 +230,11 @@ An empty-stderr selected-backend failure-precedence snapshot covers the same
 no-recovery boundary when selected `clang` exits nonzero without diagnostics
 while `llc` and `cc` are also available. It pins the stable empty-stderr
 `clang` diagnostic as final rather than falling through to fallback tools.
+A selected-backend start-failure-precedence snapshot covers the same
+no-recovery boundary when selected `clang` passes discovery but cannot be
+started while `llc` and `cc` are also available. It pins the stable
+selected-backend start diagnostic as final rather than falling through to
+fallback tools.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

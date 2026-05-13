@@ -3733,11 +3733,22 @@ Still fails:
   tools. Bundled toolchains, assembly linking/execution, full backend recovery
   semantics, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  start-failure precedence when selected `clang` passes discovery but cannot
+  be started for assembly emission while fallback `llc` and `cc` commands are
+  also available. The Milestone 216 fixture runs through `phpc run` and system
+  PHP as a lowerable scalar echo/print program, while the assembly CLI test
+  invokes `--emit-asm` with a temporary PATH exposing deterministic fake
+  `clang`, `llc`, and `cc` tools. The committed snapshot proves the stable
+  `failed to start clang for assembly emission` diagnostic is reported without
+  silently falling through to fallback tools. Bundled toolchains, assembly
+  linking/execution, full backend recovery semantics, exact native error
+  objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add Milestone 216, explicit `phpc compile --emit-asm` CLI coverage for
-  selected backend start-failure precedence when selected `clang` passes
-  discovery but cannot be started while fallback `llc` and `cc` are also
-  available, proving the stable selected-backend start diagnostic is reported
-  without falling through to fallback tools.
+- Add Milestone 217, explicit `phpc compile --emit-asm` CLI coverage for
+  fallback backend start-failure precedence when `clang` is unavailable,
+  selected `llc` passes discovery but cannot be started while `cc` is also
+  available, proving the stable `llc` start diagnostic is reported without
+  falling through to the `cc -S` fallback.
