@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone162/native_division_by_zero.php:2:6: LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic
+--- stderr end ---

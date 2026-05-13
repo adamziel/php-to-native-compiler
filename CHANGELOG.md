@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added a native division safety boundary for `/`: LLVM IR emission and the C
+  assembly fallback now reject statically known zero divisors before emitting
+  native division, with focused unit coverage and a `phpc compile --emit-ir`
+  CLI snapshot. Dynamic zero checks, PHP-shaped native `DivisionByZeroError`
+  objects, warning/recovery behavior, string numeric coercions,
+  references/copy-on-write, and broader numeric lowering remain explicit gaps.
 - Implemented a narrow native modulo lowering slice. LLVM IR now emits `srem`
   and the C assembly fallback emits C `%` for integer `%` expressions when the
   divisor is a nonzero integer known at compile time, with focused unit

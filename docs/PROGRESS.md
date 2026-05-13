@@ -3153,9 +3153,16 @@ Still fails:
   modulo still rejects non-integer operands, dynamic divisors, modulo by zero,
   PHP coercions for null/bool/float/numeric-string operands, exact native error
   objects, references/copy-on-write side effects, and broader native lowering.
+- Added a native division safety boundary for `/`. LLVM IR emission and the C
+  assembly fallback now reject statically known zero divisors before emitting
+  native division, covering lowerable integer zero, float zero, `false`, and
+  `null` values, with focused unit coverage and a `phpc compile --emit-ir` CLI
+  snapshot. Dynamic zero checks, PHP-shaped native `DivisionByZeroError`
+  objects, warning/recovery behavior, references/copy-on-write side effects,
+  string numeric coercions, and broader numeric lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen safety boundary, starting with
-  compile-time division-by-zero diagnostics for `/` before broader runtime
-  checks or PHP-shaped native errors exist.
+- Add the next honest native-codegen safety boundary for dynamic division
+  divisors, either by inserting a narrow runtime zero check or by rejecting
+  dynamic divisors explicitly until PHP-shaped native errors exist.

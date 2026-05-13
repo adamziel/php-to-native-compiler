@@ -1541,9 +1541,19 @@ handled.
 
 ## Milestone 162: Native Division Safety Boundary
 
-- [ ] Add the next honest native-codegen safety boundary for division `/`,
+- [x] Add the next honest native-codegen safety boundary for division `/`,
   starting with compile-time zero-divisor diagnostics for statically known
   zero divisors in LLVM IR/C assembly emission, fixture CLI coverage,
   documentation, and named gaps for dynamic zero checks, PHP-shaped
   `DivisionByZeroError` objects, warnings/recovery, references/copy-on-write,
   and broader numeric lowering.
+
+## Milestone 163: Native Dynamic Division Boundary
+
+- [ ] Add the next honest native-codegen safety boundary for division `/` with
+  dynamic divisors, either by inserting a narrow runtime zero check for the
+  current emitted numeric subset or by rejecting dynamic divisors explicitly
+  until PHP-shaped native `DivisionByZeroError` objects exist; include fixture
+  CLI coverage, documentation, and named gaps for warning/recovery,
+  references/copy-on-write, string numeric coercions, and broader numeric
+  lowering.

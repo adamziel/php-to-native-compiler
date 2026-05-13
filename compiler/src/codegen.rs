@@ -406,6 +406,12 @@ impl LlvmGenerator {
     }
 
     fn emit_div(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
+        if is_known_zero_ir_divisor(&right) {
+            return Err(self.unsupported(
+                span,
+                "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
+            ));
+        }
         let left = self.into_float(left, span)?;
         let right = self.into_float(right, span)?;
         let temp = self.temp();
@@ -1062,6 +1068,12 @@ impl CGenerator {
     }
 
     fn emit_div(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
+        if is_known_zero_c_divisor(&right) {
+            return Err(self.unsupported(
+                span,
+                "assembly division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
+            ));
+        }
         let left = self.into_float(left, span)?;
         let right = self.into_float(right, span)?;
         let temp = self.temp();
@@ -1195,6 +1207,26 @@ fn c_string(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn is_known_zero_ir_divisor(value: &IrValue) -> bool {
+    match value {
+        IrValue::Null => true,
+        IrValue::Bool(value) => !value,
+        IrValue::Int(value) => value.parse::<i64>() == Ok(0),
+        IrValue::Float(value) => value.parse::<f64>().is_ok_and(|value| value == 0.0),
+        IrValue::String(_) => false,
+    }
+}
+
+fn is_known_zero_c_divisor(value: &CValue) -> bool {
+    match value {
+        CValue::Null => true,
+        CValue::Bool(value) => !value,
+        CValue::Int(value) => value.parse::<i64>() == Ok(0),
+        CValue::Float(value) => value.parse::<f64>().is_ok_and(|value| value == 0.0),
+        CValue::String(_) => false,
+    }
 }
 
 fn format_float_literal(value: f64) -> String {

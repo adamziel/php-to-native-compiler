@@ -900,11 +900,15 @@
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
-  with statically lowerable scalar expressions. Integer `%` has a narrow
-  native lowering for integer operands when the divisor is a nonzero integer
-  known at compile time; runtime `%` coercions for nulls, booleans, floats,
-  numeric strings, dynamic divisors, and exact PHP error objects are still
-  outside native lowering. `if`/`elseif`/`else`, `while`, arrays, array
+  with statically lowerable scalar expressions. Native `/` lowering now
+  rejects statically known zero divisors, including lowerable integer, float,
+  `false`, and `null` zero values, before emitting LLVM IR or fallback C;
+  dynamic zero checks and PHP-shaped native `DivisionByZeroError` objects are
+  not implemented. Integer `%` has a narrow native lowering for integer
+  operands when the divisor is a nonzero integer known at compile time; runtime
+  `%` coercions for nulls, booleans, floats, numeric strings, dynamic divisors,
+  and exact PHP error objects are still outside native lowering.
+  `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
