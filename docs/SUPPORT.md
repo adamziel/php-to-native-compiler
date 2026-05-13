@@ -908,7 +908,10 @@
   native lowering for integer
   operands when the divisor is a nonzero integer known at compile time; runtime
   `%` coercions for nulls, booleans, floats, numeric strings, dynamic divisors,
-  and exact PHP error objects are still outside native lowering.
+  and exact PHP error objects are still outside native lowering. Native
+  arithmetic rejects string operands for `+`, `-`, `*`, `/`, and `%` with a
+  specific codegen diagnostic until numeric-string coercion and non-numeric
+  string diagnostics exist in generated code.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
@@ -1528,7 +1531,8 @@
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
-  are not implemented.
+  are not implemented. Native arithmetic does not lower any string operands
+  yet, including well-formed numeric strings that `phpc run` can execute.
 - Scalar comparison gaps: strict identity is implemented only for the current
   scalar values. Strict identity for arrays, objects, resources, references,
   object handle identity, and native lowering is not implemented. Array/object

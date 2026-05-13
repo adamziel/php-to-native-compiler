@@ -3167,10 +3167,18 @@ Still fails:
   codegen diagnostic. PHP-shaped native `DivisionByZeroError` objects,
   warning/recovery behavior, references/copy-on-write side effects, string
   numeric coercions, and broader numeric lowering remain unsupported.
+- Added a native string arithmetic boundary. LLVM IR emission now rejects
+  string operands for `+`, `-`, `*`, `/`, and `%` with a specific codegen
+  diagnostic until generated code has numeric-string coercion and non-numeric
+  string diagnostics. The C assembly fallback carries the same boundary for
+  consistency, `phpc run` fixture coverage still proves the current
+  numeric-string arithmetic subset, and a `phpc compile --emit-ir` CLI
+  snapshot pins the native rejection. PHP warning/recovery behavior,
+  references/copy-on-write side effects, exact native error objects, and
+  broader numeric lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for string operands in arithmetic,
-  either by implementing a narrow compile-time numeric-string coercion slice or
-  by tightening diagnostics and fixture coverage for native string arithmetic
-  rejection.
+- Add the next honest native-codegen boundary for comparisons, either by
+  lowering a narrow scalar comparison subset or by tightening diagnostics and
+  fixture coverage for native comparison rejection.

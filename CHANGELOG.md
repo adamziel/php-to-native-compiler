@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a native string arithmetic boundary. LLVM IR emission now rejects
+  string operands for `+`, `-`, `*`, `/`, and `%` with a specific codegen
+  diagnostic until generated code has numeric-string coercion and non-numeric
+  string diagnostics; the C assembly fallback carries the same boundary for
+  consistency. A runtime fixture still proves the current `phpc run`
+  numeric-string arithmetic subset, and a `phpc compile --emit-ir` CLI
+  snapshot pins the native rejection. PHP warning/recovery behavior,
+  references/copy-on-write, exact native error objects, and broader numeric
+  lowering remain explicit gaps.
 - Added a native dynamic division boundary for `/`: LLVM IR emission and the C
   assembly fallback now reject runtime-computed divisors until generated code
   has an explicit zero-check path. A runtime fixture still exercises the same

@@ -1560,10 +1560,19 @@ handled.
 
 ## Milestone 164: Native String Arithmetic Boundary
 
-- [ ] Add the next honest native-codegen boundary for string operands in
+- [x] Add the next honest native-codegen boundary for string operands in
   arithmetic, either by implementing a narrow compile-time numeric-string
   coercion slice for lowerable arithmetic expressions or by tightening
   diagnostics and fixture CLI coverage for native string arithmetic rejection;
   include documentation and named gaps for PHP warning/recovery,
   non-numeric-string diagnostics, references/copy-on-write, exact native error
   objects, and broader numeric lowering.
+
+## Milestone 165: Native Comparison Boundary
+
+- [ ] Add the next honest native-codegen boundary for comparison operators,
+  either by lowering a narrow scalar comparison subset in LLVM IR/C assembly or
+  by tightening explicit diagnostics with fixture CLI coverage, documentation,
+  and named gaps for PHP comparison coercions, arrays/objects, `NAN`/`INF`,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering.

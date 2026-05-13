@@ -375,6 +375,13 @@ impl LlvmGenerator {
         right: IrValue,
         span: Span,
     ) -> CompileResult<IrValue> {
+        if matches!(left, IrValue::String(_)) || matches!(right, IrValue::String(_)) {
+            return Err(self.unsupported(
+                span,
+                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
+            ));
+        }
+
         match (left, right) {
             (IrValue::Int(left), IrValue::Int(right)) => {
                 let temp = self.temp();
@@ -406,6 +413,13 @@ impl LlvmGenerator {
     }
 
     fn emit_div(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
+        if matches!(left, IrValue::String(_)) || matches!(right, IrValue::String(_)) {
+            return Err(self.unsupported(
+                span,
+                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
+            ));
+        }
+
         match classify_ir_divisor(&right) {
             NativeDivisorStatus::KnownZero => {
                 return Err(self.unsupported(
@@ -430,6 +444,13 @@ impl LlvmGenerator {
     }
 
     fn emit_mod(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
+        if matches!(left, IrValue::String(_)) || matches!(right, IrValue::String(_)) {
+            return Err(self.unsupported(
+                span,
+                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
+            ));
+        }
+
         match (left, right) {
             (IrValue::Int(left), IrValue::Int(right)) => {
                 let divisor = right.parse::<i64>().map_err(|_| {
@@ -516,7 +537,7 @@ impl LlvmGenerator {
             IrValue::Null => Ok("0.0".to_string()),
             IrValue::String(_) => Err(self.unsupported(
                 span,
-                "LLVM numeric lowering for strings is not implemented yet",
+                "LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
             )),
         }
     }
@@ -1051,6 +1072,13 @@ impl CGenerator {
         right: CValue,
         span: Span,
     ) -> CompileResult<CValue> {
+        if matches!(left, CValue::String(_)) || matches!(right, CValue::String(_)) {
+            return Err(self.unsupported(
+                span,
+                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
+            ));
+        }
+
         let operator = match op {
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
@@ -1077,6 +1105,13 @@ impl CGenerator {
     }
 
     fn emit_div(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
+        if matches!(left, CValue::String(_)) || matches!(right, CValue::String(_)) {
+            return Err(self.unsupported(
+                span,
+                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
+            ));
+        }
+
         match classify_c_divisor(&right) {
             NativeDivisorStatus::KnownZero => {
                 return Err(self.unsupported(
@@ -1100,6 +1135,13 @@ impl CGenerator {
     }
 
     fn emit_mod(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
+        if matches!(left, CValue::String(_)) || matches!(right, CValue::String(_)) {
+            return Err(self.unsupported(
+                span,
+                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
+            ));
+        }
+
         match (left, right) {
             (CValue::Int(left), CValue::Int(right)) => {
                 let divisor = right.parse::<i64>().map_err(|_| {
@@ -1166,7 +1208,7 @@ impl CGenerator {
             CValue::Null => Ok("0.0".to_string()),
             CValue::String(_) => Err(self.unsupported(
                 span,
-                "assembly numeric lowering for strings is not implemented yet",
+                "assembly arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics",
             )),
         }
     }

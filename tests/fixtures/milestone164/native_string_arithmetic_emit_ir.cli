@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone164/native_string_arithmetic.php:2:6: LLVM arithmetic lowering rejects string operands until native numeric-string coercion exists; phpc run handles numeric strings and non-numeric string diagnostics
+--- stderr end ---
