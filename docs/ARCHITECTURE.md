@@ -192,6 +192,11 @@ stderr diagnostics before fallback selection or missing-backend reporting.
 That pins the current boundary that failed-probe output is ignored and failed
 probes still behave like unavailable tools, without treating that as full
 backend-specific failed-probe output semantics.
+A selected-backend start-failure snapshot exposes a deterministic fake `clang`
+that passes discovery and then rewrites itself to use a missing interpreter
+before assembly emission. That pins the current diagnostic for a race-like
+case where a discovered command cannot be started later, without treating that
+as full backend race-condition recovery semantics.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

@@ -3644,11 +3644,21 @@ Still fails:
   diagnostic. Bundled toolchains, assembly linking/execution, full
   backend-specific failed-probe output semantics, exact native error objects,
   and broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for a selected backend
+  command that passes discovery but cannot be started for actual assembly
+  emission. The Milestone 208 fixture runs through `phpc run` and system PHP
+  as a lowerable scalar echo/print program, while the assembly CLI test invokes
+  `--emit-asm` with a temporary PATH exposing a deterministic fake `clang` that
+  passes `--version` and then rewrites itself to use a missing interpreter.
+  The committed snapshot proves the stable `failed to start clang for assembly
+  emission` diagnostic. Bundled toolchains, assembly linking/execution, full
+  backend race-condition recovery, exact native error objects, and broader
+  native lowering remain unsupported.
 
 Next:
 
-- Add Milestone 208, explicit `phpc compile --emit-asm` CLI coverage for
-  backend commands that pass discovery but cannot be started for assembly
-  emission, including deterministic test doubles, stable diagnostics,
-  documentation, and named gaps for backend race conditions, bundled
-  toolchains, exact native error objects, and broader native lowering.
+- Add Milestone 209, explicit `phpc compile --emit-asm` CLI coverage for
+  fallback `llc` and `cc` backend commands that pass discovery but cannot be
+  started for assembly emission, including deterministic test doubles, stable
+  diagnostics, documentation, and named gaps for backend race conditions,
+  bundled toolchains, exact native error objects, and broader native lowering.

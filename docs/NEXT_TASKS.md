@@ -1952,9 +1952,18 @@ handled.
 
 ## Milestone 208: Native Assembly Backend Start Failure Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for an assembly
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for an assembly
   backend command that passes discovery but cannot be started for actual
   assembly emission, using a deterministic race-like test double, including
   stable diagnostics, documentation, and named gaps for backend race
+  conditions, bundled toolchains, exact native error objects, and broader
+  native lowering.
+
+## Milestone 209: Native Assembly Fallback Backend Start Failure Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
+  and `cc` backend commands that pass discovery but cannot be started for
+  actual assembly emission, using deterministic race-like test doubles,
+  including stable diagnostics, documentation, and named gaps for backend race
   conditions, bundled toolchains, exact native error objects, and broader
   native lowering.

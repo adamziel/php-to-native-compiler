@@ -1361,6 +1361,40 @@ fn native_scalar_echo_emit_asm_all_failed_probe_output_missing_backend_cli_snaps
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_backend_start_failure_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone208/native_assembly_start_failure.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_start_failing_clang_after_successful_probe(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone208/native_assembly_start_failure_emit_asm.cli"),
+    )
+    .expect("native assembly backend-start-failure CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -2661,6 +2695,44 @@ exit 89\n"
             fs::set_permissions(&script, permissions)
                 .expect("temporary all-failed-probe-output script can be made executable");
         }
+
+        Self { path }
+    }
+
+    fn with_start_failing_clang_after_successful_probe(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-clang-start-failure-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary backend-start-failure PATH directory can be created");
+
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            format!(
+                "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' '#!/nonexistent/phpc-start-failure' > '{}'\n\
+  printf '%s\\n' 'fake clang 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected clang backend invocation after interpreter removal' >&2\n\
+exit 90\n",
+                clang.display()
+            ),
+        )
+        .expect("temporary start-failing clang script can be written");
+        let mut permissions = fs::metadata(&clang)
+            .expect("temporary start-failing clang script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&clang, permissions)
+            .expect("temporary start-failing clang script can be made executable");
 
         Self { path }
     }
