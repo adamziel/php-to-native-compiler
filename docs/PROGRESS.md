@@ -3322,10 +3322,20 @@ Still fails:
   native rejection. Native PHP numeric coercion, dynamic zero checks, modulo
   coercions, references/copy-on-write side effects, exact native error
   objects, and broader native arithmetic lowering remain unsupported.
+- Added a native concatenation boundary. LLVM IR emission now rejects `.`
+  before lowering operands, with a specific codegen diagnostic until generated
+  code has PHP string conversion, dynamic allocation,
+  references/copy-on-write behavior, and exact native error behavior. The C
+  assembly fallback carries the same boundary for consistency, `phpc run`
+  fixture coverage still proves the current interpreter concatenation subset,
+  and a `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  Native PHP string conversion, dynamic allocation,
+  references/copy-on-write side effects, exact native error objects, and
+  broader native string lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for string concatenation before
-  generated code claims PHP echo/string conversion, dynamic allocation,
-  references/copy-on-write side effects, exact native error objects, or broader
-  string lowering.
+- Add the next honest native-codegen boundary for remaining straight-line
+  scalar echo/assignment lowering, either by proving the current literal and
+  static-variable subset with stronger CLI coverage or by tightening explicit
+  diagnostics.

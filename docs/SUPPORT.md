@@ -905,7 +905,10 @@
   are rejected before operand lowering with a specific codegen diagnostic until
   generated code has PHP numeric coercion, dynamic division/modulo zero checks,
   modulo coercions, references/copy-on-write behavior, and exact native error
-  objects. Native comparison operators
+  objects. Native string concatenation `.` is rejected before operand lowering
+  with a specific codegen diagnostic until generated code has PHP string
+  conversion, dynamic allocation, references/copy-on-write behavior, and exact
+  native error objects. Native comparison operators
   `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
   PHP comparison coercions and non-scalar comparison diagnostics. Native
@@ -1821,6 +1824,10 @@
   IR/assembly emission rejects `+`, `-`, `*`, `/`, and `%` before lowering
   operands, so generated code does not imply partial PHP numeric coercion,
   dynamic division/modulo zero checks, modulo coercions,
+  references/copy-on-write behavior, or exact native error objects.
+- Native lowering for string concatenation is not implemented. LLVM
+  IR/assembly emission rejects `.` before lowering operands, so generated code
+  does not imply partial PHP string conversion, dynamic allocation,
   references/copy-on-write behavior, or exact native error objects.
 - Logical operators are limited to `&&`, `||`, `and`, `xor`, and `or` over the
   current truthiness rules. `&&`, `||`, `and`, and `or` short-circuit, `xor`

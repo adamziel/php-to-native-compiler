@@ -100,6 +100,10 @@ Native lowering rejects binary arithmetic operators before operand lowering
 until generated code has PHP numeric coercion, dynamic division/modulo zero
 checks, modulo coercions, references/copy-on-write side-effect behavior, and
 exact native error behavior.
+Native lowering rejects string concatenation before operand lowering until
+generated code has PHP string conversion, dynamic allocation,
+references/copy-on-write side-effect behavior, and exact native error
+behavior.
 Native lowering also rejects logical operators before operand lowering until
 generated code has explicit PHP truthiness conversion, short-circuit
 side-effect ordering for `&&`, `||`, `and`, and `or`, and both-operand

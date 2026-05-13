@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a native concatenation boundary. LLVM IR emission now rejects `.`
+  before lowering operands, with a specific codegen diagnostic until generated
+  code has PHP string conversion, dynamic allocation, references/copy-on-write,
+  and exact native error behavior; the C assembly fallback carries the same
+  boundary for consistency. A runtime fixture still proves the current
+  interpreter concatenation subset, and a `phpc compile --emit-ir` CLI
+  snapshot pins the native rejection. Native string conversion, dynamic
+  allocation, references/copy-on-write, exact native error objects, and broader
+  string lowering remain explicit gaps.
 - Added a native binary-arithmetic boundary. LLVM IR emission now rejects
   `+`, `-`, `*`, `/`, and `%` before lowering operands, with a specific
   codegen diagnostic until generated code has PHP numeric coercion, dynamic

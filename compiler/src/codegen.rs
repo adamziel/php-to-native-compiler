@@ -27,6 +27,8 @@ const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unary minus and 
 const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unary minus and logical not until native PHP numeric coercion, truthiness conversion, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 const ASSEMBLY_ARITHMETIC_REJECTION: &str = "assembly arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const LLVM_CONCAT_REJECTION: &str = "LLVM concatenation lowering rejects string concatenation until native PHP string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
+const ASSEMBLY_CONCAT_REJECTION: &str = "assembly concatenation lowering rejects string concatenation until native PHP string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -250,6 +252,9 @@ impl LlvmGenerator {
                 if is_binary_arithmetic_op(*op) {
                     return Err(self.unsupported(*span, LLVM_ARITHMETIC_REJECTION));
                 }
+                if matches!(op, BinaryOp::Concat) {
+                    return Err(self.unsupported(*span, LLVM_CONCAT_REJECTION));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -275,9 +280,9 @@ impl LlvmGenerator {
 
     fn emit_binary(
         &mut self,
-        left: IrValue,
+        _left: IrValue,
         op: BinaryOp,
-        right: IrValue,
+        _right: IrValue,
         span: Span,
     ) -> CompileResult<IrValue> {
         match op {
@@ -285,7 +290,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION))
             }
             BinaryOp::Div | BinaryOp::Mod => Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION)),
-            BinaryOp::Concat => self.emit_concat(left, right, span),
+            BinaryOp::Concat => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
             | BinaryOp::StrictEq
@@ -316,22 +321,6 @@ impl LlvmGenerator {
         }
     }
 
-    fn emit_concat(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
-        let left = self.const_echo_string(left).ok_or_else(|| {
-            self.unsupported(
-                span,
-                "LLVM concat currently requires compile-time scalar operands",
-            )
-        })?;
-        let right = self.const_echo_string(right).ok_or_else(|| {
-            self.unsupported(
-                span,
-                "LLVM concat currently requires compile-time scalar operands",
-            )
-        })?;
-        Ok(IrValue::String(format!("{left}{right}")))
-    }
-
     fn emit_echo(&mut self, value: IrValue) {
         match value {
             IrValue::Null | IrValue::Bool(false) => {}
@@ -357,18 +346,6 @@ impl LlvmGenerator {
                     "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @{global})"
                 ));
             }
-        }
-    }
-
-    fn const_echo_string(&self, value: IrValue) -> Option<String> {
-        match value {
-            IrValue::Null => Some(String::new()),
-            IrValue::Bool(false) => Some(String::new()),
-            IrValue::Bool(true) => Some("1".to_string()),
-            IrValue::Int(value) if value.parse::<i64>().is_ok() => Some(value),
-            IrValue::Float(value) if value.parse::<f64>().is_ok() => Some(value),
-            IrValue::String(value) => Some(value),
-            IrValue::Int(_) | IrValue::Float(_) => None,
         }
     }
 
@@ -750,6 +727,9 @@ impl CGenerator {
                 if is_binary_arithmetic_op(*op) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
                 }
+                if matches!(op, BinaryOp::Concat) {
+                    return Err(self.unsupported(*span, ASSEMBLY_CONCAT_REJECTION));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -775,9 +755,9 @@ impl CGenerator {
 
     fn emit_binary(
         &mut self,
-        left: CValue,
+        _left: CValue,
         op: BinaryOp,
-        right: CValue,
+        _right: CValue,
         span: Span,
     ) -> CompileResult<CValue> {
         match op {
@@ -787,7 +767,7 @@ impl CGenerator {
             BinaryOp::Div | BinaryOp::Mod => {
                 Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION))
             }
-            BinaryOp::Concat => self.emit_concat(left, right, span),
+            BinaryOp::Concat => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
             | BinaryOp::StrictEq
@@ -818,22 +798,6 @@ impl CGenerator {
         }
     }
 
-    fn emit_concat(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
-        let left = self.const_echo_string(left).ok_or_else(|| {
-            self.unsupported(
-                span,
-                "assembly concat currently requires compile-time scalar operands",
-            )
-        })?;
-        let right = self.const_echo_string(right).ok_or_else(|| {
-            self.unsupported(
-                span,
-                "assembly concat currently requires compile-time scalar operands",
-            )
-        })?;
-        Ok(CValue::String(format!("{left}{right}")))
-    }
-
     fn emit_echo(&mut self, value: CValue) {
         match value {
             CValue::Null | CValue::Bool(false) => {}
@@ -843,18 +807,6 @@ impl CGenerator {
             CValue::String(value) => self
                 .body
                 .push(format!("printf(\"%s\", \"{}\");", c_string(&value))),
-        }
-    }
-
-    fn const_echo_string(&self, value: CValue) -> Option<String> {
-        match value {
-            CValue::Null => Some(String::new()),
-            CValue::Bool(false) => Some(String::new()),
-            CValue::Bool(true) => Some("1".to_string()),
-            CValue::Int(value) if value.parse::<i64>().is_ok() => Some(value),
-            CValue::Float(value) if value.parse::<f64>().is_ok() => Some(value),
-            CValue::String(value) => Some(value),
-            CValue::Int(_) | CValue::Float(_) => None,
         }
     }
 
