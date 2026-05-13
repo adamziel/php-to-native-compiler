@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for the current
+  lowerable straight-line scalar echo/assignment subset. The Milestone 182
+  fixture mirrors the scalar literal/static-variable `echo`/`print` path and
+  the integration test compares a normalized success summary that checks exit
+  status, nonempty assembly output, a `main` symbol, and `printf` references
+  without snapshotting backend-specific assembly text. Assembly
+  linking/execution, PHP zvals, native symbol-table storage,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added a native variable-read boundary. LLVM IR emission now rejects reads of
   variables that were not statically assigned earlier in the same
   straight-line native subset, including reads in `echo`, `print`, and

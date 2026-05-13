@@ -25,6 +25,9 @@ The installed binary name is `phpc`.
 tool exists, it currently falls back to generating equivalent narrow-subset C and
 running `cc -S`; this is a real assembly path, but it is documented as a
 temporary bootstrap fallback rather than the long-term backend.
+The test suite exercises `phpc compile --emit-asm` for the current lowerable
+straight-line scalar echo/assignment subset with a normalized CLI summary rather
+than snapshotting platform-specific assembly text.
 
 ## Current Status
 

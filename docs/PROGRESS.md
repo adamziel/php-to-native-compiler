@@ -2065,8 +2065,8 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 112
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 430 fixtures, 175 system PHP comparisons,
-  and 255 comparison skips.
+- `tools/run-tests.sh` passes with 432 fixtures, 176 system PHP comparisons,
+  and 256 comparison skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-ir`
   emits LLVM IR for the current straight-line literal/static-variable
@@ -2074,6 +2074,16 @@ Tested:
 - `cargo run -p phpc -- compile tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-asm`
   emits native assembly through an available LLVM tool or the documented `cc`
   fallback when one is installed.
+- `cargo test -p phpc --test native_assembly_cli -- --nocapture` passes with
+  a normalized `phpc compile --emit-asm` CLI summary for the Milestone 182
+  scalar echo/assignment fixture.
+- `cargo run -p phpc -- test tests/fixtures/milestone182` passes with 1
+  scalar echo/assignment fixture.
+- `cargo run -p phpc -- test --compare-php tests/fixtures/milestone182` passes
+  with 1 system PHP comparison.
+- `./target/debug/phpc compile tests/fixtures/milestone182/native_scalar_echo_assembly.php --emit-asm`
+  exits 0, emits nonempty assembly containing `main` and `printf`, and emits
+  no stderr.
 
 Still fails:
 
@@ -3358,9 +3368,17 @@ Still fails:
   boundary; native PHP symbol tables, warning/continue behavior, exact
   undefined-variable error objects, references/copy-on-write side effects, and
   broader native variable lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for the current
+  lowerable straight-line scalar echo/assignment subset. The Milestone 182
+  fixture mirrors the scalar literal/static-variable `echo`/`print` path and
+  the integration test compares a normalized CLI summary that checks success,
+  nonempty assembly output, a `main` symbol, and `printf` references without
+  snapshotting platform-specific assembly text. Assembly linking/execution,
+  PHP zvals, native symbol-table storage, references/copy-on-write, exact
+  native error objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI exercise coverage for the current
-  lowerable scalar echo/assignment subset without snapshotting
-  platform-specific assembly text.
+- Add explicit `phpc compile --emit-asm` CLI rejection coverage for a
+  representative unsupported native boundary, proving assembly emission exits
+  before invoking backend tools when LLVM lowering rejects a program.

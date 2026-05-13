@@ -1725,9 +1725,17 @@ handled.
 
 ## Milestone 182: Native Assembly CLI Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI exercise coverage for the
+- [x] Add explicit `phpc compile --emit-asm` CLI exercise coverage for the
   current lowerable scalar echo/assignment subset without snapshotting
   platform-specific assembly text, including tests, documentation, and named
   gaps for linking/execution, PHP zvals, symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering.
+
+## Milestone 183: Native Assembly Rejection CLI Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI rejection coverage for a
+  representative unsupported native boundary, proving assembly emission exits
+  before invoking backend tools when LLVM lowering rejects a program, including
+  tests, documentation, and named gaps for backend-independent native
+  diagnostics, exact native error objects, and broader native lowering.

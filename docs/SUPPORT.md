@@ -975,7 +975,12 @@
   read-modify-write ordering, null-aware mutation, unset symbol-table effects,
   references/copy-on-write, and exact native error objects.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
-  C fallback for the same narrow lowerable subset.
+  C fallback for the same narrow lowerable subset. CLI coverage for
+  `phpc compile --emit-asm` records a normalized success summary for the current
+  scalar echo/assignment fixture instead of exact assembly text, because
+  emitted assembly varies by platform and backend. Assembly linking/execution,
+  PHP zvals, native symbol-table storage, references/copy-on-write, exact
+  native error objects, and broader native lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
