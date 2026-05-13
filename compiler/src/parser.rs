@@ -1135,10 +1135,10 @@ impl Parser {
         target: &AssignTarget,
     ) -> Result<(), &'static str> {
         match target {
-            AssignTarget::Variable { .. } | AssignTarget::ArrayIndex { index: Some(_), .. } => {
-                Ok(())
-            }
-            AssignTarget::ArrayIndex { index: None, .. } | AssignTarget::Property { .. } => {
+            AssignTarget::Variable { .. }
+            | AssignTarget::ArrayIndex { index: Some(_), .. }
+            | AssignTarget::Property { .. } => Ok(()),
+            AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
         }
@@ -1158,6 +1158,18 @@ impl Parser {
                 Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
                     name,
                     index: Some(*index),
+                    span,
+                }),
+                _ => Err(unsupported_compound_assignment_target_message()),
+            },
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => match *target {
+                Expr::Variable(object, _) => Ok(AssignTarget::Property {
+                    object,
+                    property,
                     span,
                 }),
                 _ => Err(unsupported_compound_assignment_target_message()),
@@ -2541,7 +2553,7 @@ fn unsupported_chained_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_compound_assignment_target_message() -> &'static str {
-    "unsupported compound assignment target: only direct static variables and direct array offsets are implemented; append offsets, nested offsets, and object properties are not implemented"
+    "unsupported compound assignment target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented"
 }
 
 fn unsupported_increment_decrement_expression_message() -> &'static str {

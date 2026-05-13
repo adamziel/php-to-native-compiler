@@ -68,6 +68,7 @@ enum ArrayFilterMode {
 enum CompoundAssignmentPlace {
     Variable(String),
     ArrayIndex { name: String, key: ArrayKey },
+    ObjectProperty { object: String, property: String },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -824,12 +825,34 @@ impl Interpreter {
                     "append-offset targets are not implemented",
                 ),
             )),
-            AssignTarget::Property { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_property_access(
-                    "compound assignment targets for object properties are not implemented",
-                ),
-            )),
+            AssignTarget::Property {
+                object, property, ..
+            } => match scope.read_named(object) {
+                Some(Value::Object(value)) => {
+                    let left = value
+                        .read_public_property(property)
+                        .cloned()
+                        .map_err(|error| runtime_error(span, error))?;
+                    Ok((
+                        CompoundAssignmentPlace::ObjectProperty {
+                            object: object.clone(),
+                            property: property.clone(),
+                        },
+                        left,
+                    ))
+                }
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} from {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_variable(object),
+                )),
+            },
         }
     }
 
@@ -860,6 +883,22 @@ impl Interpreter {
                         )),
                     )),
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                }
+            }
+            CompoundAssignmentPlace::ObjectProperty { object, property } => {
+                let slot = scope.object_slot_for_static_write(&object, span)?;
+
+                match slot {
+                    Value::Object(object) => object
+                        .write_public_property(&property, value)
+                        .map_err(|error| runtime_error(span, error)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
                 }
             }
         }

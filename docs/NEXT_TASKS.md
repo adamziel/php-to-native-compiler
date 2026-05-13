@@ -1333,7 +1333,7 @@ handled.
 
 ## Milestone 140: Object Property Compound Assignment Boundary
 
-- [ ] Add the next honest path for `$object->property += expr` and related
+- [x] Add the next honest path for `$object->property += expr` and related
   object-property compound assignment forms: either executable direct
   public-property read-modify-write semantics over the current object value
   model, or a tightened explicit diagnostic boundary with fixture CLI coverage,
@@ -1341,3 +1341,14 @@ handled.
   names, non-public visibility context, missing properties, references,
   copy-on-write, exact native error objects, broader PHP coercion recovery, and
   native lowering.
+
+## Milestone 141: Object Property Increment Boundary
+
+- [ ] Add the next honest path for `++$object->property`, `$object->property++`,
+  `--$object->property`, and `$object->property--`: either executable direct
+  public-property increment/decrement semantics over the current object value
+  model, or a tightened explicit diagnostic boundary with fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps for string increment
+  semantics, dynamic property names, non-public visibility context, missing
+  properties, references, copy-on-write, exact native warning/error behavior,
+  broader PHP coercion recovery, and native lowering.

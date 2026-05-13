@@ -11311,3 +11311,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:15:34Z
 
 - Post-round 30 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:15:44Z
+
+- Starting round 31 at 20260513T011544Z from HEAD `18fd60b`.
+
+## Loop Event 2026-05-13T01:15:55Z
+
+- Pre-round 31 test exit code: `0`.
+
+## Loop Event 2026-05-13T01:19:57Z
+
+- Task attempted: implemented direct public object-property compound
+  assignment forms (`+=`, `-=`, `*=`, `/=`, and `.=`) over existing declared
+  public property slots. Statement forms, expression forms, and single
+  C-style `for` initializer/increment actions now read the current public
+  property, evaluate the RHS, apply existing scalar arithmetic/concatenation
+  helpers, write the updated property slot, and expression forms return the
+  updated value.
+- Files changed: `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/compound_assignment_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone140/object_property_compound_assignment.*`,
+  updated unsupported compound-assignment syntax fixtures, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test compound_assignment`
+  passed with 21 tests; `cargo test -p phpc --test syntax_boundaries
+  compound` passed with 3 filtered tests; `cargo test -p phpc --test
+  compound_assignment_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone140` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone140` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 26 fixtures;
+  `tools/run-tests.sh` passed with 379 fixtures, 136 system PHP comparisons,
+  and 243 comparison skips.
+- Remaining semantic gaps: dynamic property names, missing-property
+  materialization, non-public visibility context, nested properties/offsets,
+  references, copy-on-write aliasing, broader PHP warning recovery, exact
+  native error objects, and native lowering remain unsupported.
+- Next concrete task: add the next honest path for object-property
+  increment/decrement forms such as `++$object->property`, either executable
+  direct public-property semantics over the current object model or a tightened
+  explicit diagnostic boundary with fixture CLI coverage and documentation.
+- Known-good tag: not created; this is a narrow mutation checkpoint, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add property compound assignment"`
+  after the full suite passes.

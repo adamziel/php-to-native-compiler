@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Implemented direct public object-property compound assignment
+  `$object->property += expr`, `-=`, `*=`, `/=`, and `.=` over existing
+  declared public property slots, including statement, expression, and
+  C-style `for` header forms, updated-value expression results, RHS ordering,
+  missing-property, non-public-property, and non-object-target diagnostics,
+  fixture/CLI coverage, system PHP comparison, documentation, and
+  native-codegen rejection while dynamic property names, missing-property
+  materialization, non-public visibility context, nested properties/offsets,
+  references/copy-on-write, exact native error objects, broader PHP warning
+  recovery, and native lowering remain explicit gaps.
 - Implemented direct array-offset compound assignment
   `$array[$key] += expr`, `-=`, `*=`, `/=`, and `.=` over existing
   integer/string keyed array entries, including statement, expression, and

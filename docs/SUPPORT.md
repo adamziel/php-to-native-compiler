@@ -33,6 +33,12 @@
   statement position, expression position, and C-style `for`
   initializer/increment slots. In expressions, compound assignment returns the
   updated value.
+- direct public object-property compound assignment `$object->property +=
+  expr`, `$object->property -= expr`, `$object->property *= expr`,
+  `$object->property /= expr`, and `$object->property .= expr` over existing
+  declared public property slots in statement position, expression position,
+  and C-style `for` initializer/increment slots. In expressions, compound
+  assignment returns the updated value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
@@ -289,7 +295,8 @@
   outside direct static-variable `$name = expr`, including chained
   assignments, array/object targets, and expression-position `??=`
 - explicit parse diagnostics for unsupported compound assignment targets
-  outside direct static variables and direct array offsets
+  outside direct static variables, direct array offsets, and direct object
+  properties
 - explicit parse diagnostics for unsupported increment/decrement targets
   outside direct static variables and chained increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
@@ -1591,18 +1598,22 @@
   expression-position `??=`, reference assignment, copy-on-write container
   aliasing, exact native error objects, and native lowering are not
   implemented.
-- Compound assignment is limited to direct static variables and direct
-  array-variable offsets over the current scalar value model. The
+- Compound assignment is limited to direct static variables, direct
+  array-variable offsets, and direct public object properties over the current
+  scalar/object value model. The
   read-modify-write operation reuses the existing PHP-shaped scalar arithmetic
   and string concatenation helpers, so undefined left-hand variables, missing
-  array keys, non-array targets, division by zero, non-numeric strings,
-  arrays, and objects fail through existing stable runtime diagnostics.
+  array keys, missing object properties, non-array targets, non-object property
+  targets, non-public properties, division by zero, non-numeric strings,
+  arrays, and objects as operand values fail through existing stable runtime
+  diagnostics.
   Statement forms, expression forms such as `($name += expr)` and
-  `($array[$key] += expr)`, and single C-style `for` initializer/increment
-  actions are supported for those direct targets; expression forms return the
-  updated value. Append offsets, nested offsets, object-property compound
-  assignment targets, references/copy-on-write, PHP warning recovery, exact
-  native error objects, and native lowering are not implemented.
+  `($array[$key] += expr)` and `($object->property += expr)`, and single
+  C-style `for` initializer/increment actions are supported for those direct
+  targets; expression forms return the updated value. Append offsets, nested
+  offsets/properties, dynamic property names, non-public visibility context,
+  references/copy-on-write, PHP warning recovery, exact native error objects,
+  and native lowering are not implemented.
 - Pre/post increment and decrement is limited to direct static variables whose
   current values are integers or floats, either as standalone statements,
   expressions, or single C-style `for` initializer/increment actions.

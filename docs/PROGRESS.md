@@ -2866,8 +2866,8 @@ Still fails:
   result values, read/write behavior, and RHS call ordering; system PHP
   comparison passes for the supported fixture; undefined left-hand variables
   and invalid arithmetic reuse the existing stable runtime diagnostics;
-  object-property compound assignment targets remain stable parse diagnostics,
-  array-offset targets were implemented in the following slice, and native
+  array-offset and object-property targets were implemented in following
+  slices, and native
   emission rejects compound assignment expressions explicitly until lowering
   exists. References, copy-on-write
   aliasing, broader PHP warning recovery, exact native error objects, and
@@ -2882,14 +2882,28 @@ Still fails:
   write the updated offset, and expression forms return the updated value.
   Fixture and CLI snapshot coverage include system PHP comparison, key/RHS
   ordering, missing-key and non-array diagnostics, and native emission rejects
-  compound assignment explicitly until lowering exists. Append offsets, nested
-  offsets, object-property targets, references, copy-on-write aliasing,
+  compound assignment explicitly until lowering exists. Object-property targets
+  were implemented in the following slice. Append offsets, nested offsets,
+  references, copy-on-write aliasing,
   broader PHP warning recovery, exact native error objects, and native
   lowering remain unsupported.
+- Implemented direct public object-property compound assignment forms such as
+  `$object->property += expr`, `$object->property -= expr`,
+  `$object->property *= expr`, `$object->property /= expr`, and
+  `$object->property .= expr` over existing declared public property slots.
+  Statement forms, expression forms, and single C-style `for`
+  initializer/increment actions share the current read-modify-write path,
+  reuse existing scalar arithmetic/concatenation diagnostics, write the
+  updated property slot, and expression forms return the updated value.
+  Fixture and CLI snapshot coverage include system PHP comparison,
+  RHS-ordering, missing-property, non-public-property, and non-object-target
+  diagnostics, and native emission rejects compound assignment explicitly until
+  lowering exists. Dynamic property names, missing-property materialization,
+  non-public visibility context, nested properties/offsets,
+  references/copy-on-write aliasing, broader PHP warning recovery, exact native
+  error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest path for object-property compound assignment forms such
-  as `$object->property += expr`, either executable direct public-property
-  read-modify-write semantics over the current object model or a tightened
-  explicit diagnostic boundary with fixture CLI coverage and documentation.
+- Add the next honest mutation/refinement task after direct object-property
+  compound assignment, keeping the current unsupported gaps explicit.

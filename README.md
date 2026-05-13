@@ -39,6 +39,9 @@ subset:
   expressions with assignment result values, direct array-offset compound
   assignment (`$array[$key] += expr` and related operators) in statements,
   expressions, and C-style `for` initializer/increment slots, direct
+  public object-property compound assignment (`$object->property += expr` and
+  related operators) in statements, expressions, and C-style `for`
+  initializer/increment slots, direct
   static-variable pre/post increment and decrement for integer and float
   variables in statements, expressions, and C-style `for`
   initializer/increment slots, and
@@ -180,8 +183,8 @@ subset:
   conditional expressions, unsupported chained assignment expressions,
   unsupported complex assignment-expression targets, unsupported
   expression-position `??=`,
-  unsupported compound assignment targets outside direct static variables and
-  direct array offsets,
+  unsupported compound assignment targets outside direct static variables,
+  direct array offsets, and direct public object properties,
   unsupported increment/decrement targets outside direct static variables and
   chained increment/decrement expressions,
   unsupported chained coalescing and unsupported append-offset null

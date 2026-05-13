@@ -148,6 +148,48 @@ echo $items['sum'], ":", $items['i'], "\n";
 }
 
 #[test]
+fn object_property_compound_assignments_update_values_and_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $value;
+    public $text;
+    public $i;
+    public $sum;
+}
+
+$box = new Box();
+$box->value = 10;
+$box->text = "php";
+$box->value += 5;
+$box->value *= "2";
+$box->text .= "-native";
+echo $box->value, ":", $box->text, "\n";
+echo ($box->value -= 4), ":", $box->value, "\n";
+echo ($box->value /= 2), ":", $box->value, "\n";
+
+function next_value() {
+    echo "rhs\n";
+    return 3;
+}
+echo ($box->value += next_value()), ":", $box->value, "\n";
+
+$box->sum = 0;
+for ($box->i = 0; $box->i < 3; $box->i += 1) {
+    $box->sum += $box->i;
+}
+echo $box->sum, ":", $box->i, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "30:php-native\n26:26\n13:13\nrhs\n16:16\n3:3\n"
+    );
+}
+
+#[test]
 fn array_offset_compound_assignment_reports_missing_keys() {
     let error = runtime_error("<?php\n$items = [];\n$items['missing'] += 1;\n");
 
@@ -169,18 +211,39 @@ fn array_offset_compound_assignment_reports_non_array_targets() {
 }
 
 #[test]
-fn compound_assignment_expression_rejects_object_property_targets() {
-    let error = run_source(
-        "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value += 2);\n",
-    )
-    .unwrap_err();
+fn object_property_compound_assignment_reports_missing_properties() {
+    let error = runtime_error(
+        "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->missing += 2;\n",
+    );
 
-    assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 4);
-    assert_eq!(error.column, 20);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined property Box::$missing");
+}
+
+#[test]
+fn object_property_compound_assignment_reports_non_public_properties() {
+    let error = runtime_error(
+        "<?php\nclass Box { private $secret; }\n$box = new Box();\n$box->secret += 2;\n",
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported compound assignment target: only direct static variables and direct array offsets are implemented; append offsets, nested offsets, and object properties are not implemented"
+        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+    );
+}
+
+#[test]
+fn object_property_compound_assignment_reports_non_object_targets() {
+    let error = runtime_error("<?php\n$box = 1;\n$box->value += 2;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: cannot read property $value from int"
     );
 }
 
@@ -235,7 +298,7 @@ fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "compound assignment is supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 
@@ -248,7 +311,7 @@ fn emit_ir_rejects_compound_assignment_expressions_until_native_lowering_exists(
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "compound assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+        "compound assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 
@@ -261,6 +324,19 @@ fn emit_ir_rejects_array_offset_compound_assignment_until_native_lowering_exists
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "compound assignment is supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_compound_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$box->value += 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
