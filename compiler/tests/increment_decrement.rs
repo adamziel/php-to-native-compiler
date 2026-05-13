@@ -1,6 +1,8 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
+const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
+
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
@@ -373,8 +375,5 @@ fn emit_ir_rejects_for_header_increment_decrement_until_native_lowering_exists()
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "for loops are supported by phpc run but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_CONTROL_FLOW_REJECTION);
 }

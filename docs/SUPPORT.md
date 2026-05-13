@@ -952,8 +952,13 @@
   codegen diagnostic until generated code has native array storage layout, key
   normalization, copy-on-write containers, references, callback dispatch, and
   exact native error objects.
-  `if`/`elseif`/`else`, `while`, variable unset, multiple-operand unset,
-  `for`, `do ... while`, `switch`, `break`, `continue`, assignment
+  Native `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
+  `break`, and `continue` are rejected before condition, body, case, or
+  loop-control lowering with a specific codegen diagnostic until generated
+  code has PHP truthiness, branch layout, loop control flow, switch
+  fallthrough, references/copy-on-write side-effect behavior, and exact native
+  error objects.
+  Variable unset, multiple-operand unset, assignment
   expressions, compound assignment expressions, and increment/decrement
   expressions are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
@@ -1695,6 +1700,9 @@
   only statement-form `break;` for the innermost active `while`, supported
   `for`, supported `do ... while`, supported array `foreach`, or supported
   `switch`, and `continue;` for the innermost active loop are implemented
+- native lowering for `if`/`elseif`/`else`, `while`, `for`, `do ... while`,
+  `switch`, `break`, and `continue`; generated code currently rejects those
+  forms before lowering conditions, bodies, cases, or loop-control flow
 - exception execution; `throw`, throw expressions, `try` blocks, `catch`
   clauses, and `finally` blocks currently fail with stable parse diagnostics
   before `Throwable`, `Exception`, custom exception classes, stack unwinding,

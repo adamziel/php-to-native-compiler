@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a native control-flow boundary. LLVM IR emission now rejects
+  `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`, `break`, and
+  `continue` before lowering conditions, bodies, cases, or loop-control flow,
+  with a specific codegen diagnostic until generated code has PHP truthiness,
+  branch layout, loop control flow, switch fallthrough,
+  references/copy-on-write side effects, and exact native error behavior; the
+  C assembly fallback carries the same boundary for consistency. A runtime
+  fixture still proves the current interpreter control-flow subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection. Native
+  branch layout, loop control, switch fallthrough, references/copy-on-write,
+  exact native error objects, and broader native lowering remain explicit gaps.
 - Added a native array boundary. LLVM IR emission now rejects array literals,
   array offset reads/writes, `foreach` array iteration, array offset `unset`,
   and array builtin function calls before lowering bodies, operands,

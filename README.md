@@ -373,6 +373,11 @@ Array literals, array offset reads/writes, `foreach` array iteration, array
 offset `unset`, and array builtins are rejected by native lowering until
 generated code has native array storage layout, key normalization,
 copy-on-write, references, callback dispatch, and exact native error behavior.
+Control-flow statements including `if`/`elseif`/`else`, `while`, `for`,
+`do ... while`, `switch`, `break`, and `continue` are rejected by native
+lowering until generated code has PHP truthiness, branch layout, loop control,
+switch fallthrough, references/copy-on-write side-effect behavior, and exact
+native error behavior.
 Unsupported programs and broader PHP coercions are rejected with structured
 codegen errors.
 

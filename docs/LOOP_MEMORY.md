@@ -13457,3 +13457,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:32:29Z
 
 - Post-round 65 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:32:45Z
+
+- Starting round 66 at 20260513T053245Z from HEAD `0af187f`.
+
+## Loop Event 2026-05-13T05:32:59Z
+
+- Pre-round 66 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:38:14Z
+
+- Task attempted: completed Milestone 175 by tightening the native codegen
+  boundary for control-flow statements. LLVM IR emission now rejects
+  `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`, `break`, and
+  `continue` with a specific diagnostic before lowering conditions, bodies,
+  cases, or loop-control flow until generated code has PHP truthiness, branch
+  layout, loop control flow, switch fallthrough, references/copy-on-write
+  side-effect behavior, and exact native error behavior; the C assembly
+  fallback carries the same boundary for consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_control_flow_boundary.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `tests/fixtures/milestone175/native_control_flow_boundary.php`,
+  `tests/fixtures/milestone175/native_control_flow_boundary.stdout`,
+  `tests/fixtures/milestone175/native_control_flow_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_control_flow_boundary -- --nocapture` passed with 5 tests;
+  `cargo test -p phpc --test milestone1 emit_ir_rejects -- --nocapture`
+  passed with 22 filtered control/codegen rejection tests; `cargo run -p phpc
+  -- test tests/fixtures/milestone175` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone175` passed with 1
+  system PHP comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone175/native_control_flow_boundary.php --emit-ir`
+  exited `1` with the expected explicit native control-flow diagnostic;
+  `cargo test -p phpc --test increment_decrement
+  emit_ir_rejects_for_header_increment_decrement_until_native_lowering_exists
+  -- --nocapture` passed after updating the stale assertion exposed by the
+  first full-suite run; `tools/run-tests.sh` passed with 425 fixtures, 170
+  system PHP comparisons, and 255 comparison skips.
+- Remaining semantic gaps: generated code still lacks native PHP truthiness
+  for branches, structured branch/block layout, loop backedges and loop-control
+  flow, switch case matching and fallthrough, references/copy-on-write
+  side-effect ordering, exact native error objects, and broader native
+  lowering.
+- Next concrete task: add Milestone 176, the next honest native-codegen
+  mutation boundary for compound assignment, null coalescing assignment,
+  increment/decrement, assignment expressions, direct variable unset, and
+  multiple-operand unset before generated code claims read-modify-write
+  ordering, null-aware mutation, unset symbol-table effects, or exact native
+  error behavior.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native control-flow boundary"`
+  after the full suite passes.

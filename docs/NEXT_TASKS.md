@@ -1663,10 +1663,21 @@ handled.
 
 ## Milestone 175: Native Control-Flow Boundary
 
-- [ ] Add the next honest native-codegen boundary for control-flow statements
+- [x] Add the next honest native-codegen boundary for control-flow statements
   such as `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
   `break`, and `continue`, either by lowering a narrow structured-control
   subset or by tightening explicit diagnostics with fixture CLI coverage,
   documentation, and named gaps for PHP truthiness, branch layout, loop
   control flow, switch fallthrough, references/copy-on-write side effects,
+  exact native error objects, and broader native lowering.
+
+## Milestone 176: Native Mutation Boundary
+
+- [ ] Add the next honest native-codegen boundary for mutation forms that are
+  still only interpreter-backed, including compound assignment, null
+  coalescing assignment, increment/decrement, assignment expressions, direct
+  variable unset, and multiple-operand unset, either by lowering a narrow
+  direct-variable subset or by tightening explicit diagnostics with fixture CLI
+  coverage, documentation, and named gaps for read-modify-write ordering,
+  null-aware mutation, unset symbol-table effects, references/copy-on-write,
   exact native error objects, and broader native lowering.

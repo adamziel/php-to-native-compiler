@@ -3277,11 +3277,23 @@ Still fails:
   storage, key normalization, callback dispatch, references/copy-on-write side
   effects, exact native error objects, and broader native lowering remain
   unsupported.
+- Added a native control-flow boundary. LLVM IR emission now rejects
+  `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`, `break`, and
+  `continue` before lowering conditions, bodies, cases, or loop-control flow,
+  with a specific codegen diagnostic until generated code has PHP truthiness,
+  branch layout, loop control flow, switch fallthrough,
+  references/copy-on-write side-effect behavior, and exact native error
+  behavior. The C assembly fallback carries the same boundary for consistency,
+  `phpc run` fixture coverage still proves the current interpreter
+  control-flow subset, and a `phpc compile --emit-ir` CLI snapshot pins the
+  native rejection. Native branch layout, loop control, switch fallthrough,
+  references/copy-on-write side effects, exact native error objects, and
+  broader native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for control-flow statements
-  (`if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
-  `break`, and `continue`) before generated code claims native PHP truthiness,
-  branch layout, loop control, switch fallthrough, and exact native error
-  behavior.
+- Add the next honest native-codegen mutation boundary for compound
+  assignment, null coalescing assignment, increment/decrement, assignment
+  expressions, and remaining non-array/object unset forms before generated
+  code claims PHP read-modify-write ordering, null-aware mutation, or exact
+  native error behavior.

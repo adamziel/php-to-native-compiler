@@ -19,6 +19,8 @@ const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects cl
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, object instantiation, public property reads/writes, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
+const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -134,26 +136,15 @@ impl LlvmGenerator {
                 class.span,
                 LLVM_OBJECT_CLASS_REJECTION,
             )),
-            Stmt::If { span, .. } => Err(self.unsupported(
-                *span,
-                "if/else and elseif chains are supported by phpc run but not LLVM IR emission yet",
-            )),
-            Stmt::While { span, .. } => Err(self.unsupported(
-                *span,
-                "while is supported by phpc run but not LLVM IR emission yet",
-            )),
-            Stmt::DoWhile { span, .. } => Err(self.unsupported(
-                *span,
-                "do-while loops are supported by phpc run but not LLVM IR emission yet",
-            )),
-            Stmt::For { span, .. } => Err(self.unsupported(
-                *span,
-                "for loops are supported by phpc run but not LLVM IR emission yet",
-            )),
-            Stmt::Switch { span, .. } => Err(self.unsupported(
-                *span,
-                "switch statements are supported by phpc run but not LLVM IR emission yet",
-            )),
+            Stmt::If { span, .. }
+            | Stmt::While { span, .. }
+            | Stmt::DoWhile { span, .. }
+            | Stmt::For { span, .. }
+            | Stmt::Switch { span, .. }
+            | Stmt::Break { span }
+            | Stmt::Continue { span } => {
+                Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION))
+            }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Stmt::UnsetVariable { span, .. } => Err(self.unsupported(
                 *span,
@@ -173,14 +164,6 @@ impl LlvmGenerator {
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 LLVM_FUNCTION_DECLARATION_REJECTION,
-            )),
-            Stmt::Break { span } => Err(self.unsupported(
-                *span,
-                "break is supported by phpc run for innermost loops but not LLVM IR emission yet",
-            )),
-            Stmt::Continue { span } => Err(self.unsupported(
-                *span,
-                "continue is supported by phpc run for innermost loops but not LLVM IR emission yet",
             )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,
@@ -824,26 +807,15 @@ impl CGenerator {
                 class.span,
                 ASSEMBLY_OBJECT_CLASS_REJECTION,
             )),
-            Stmt::If { span, .. } => Err(self.unsupported(
-                *span,
-                "if/else and elseif chains are supported by phpc run but not assembly emission yet",
-            )),
-            Stmt::While { span, .. } => Err(self.unsupported(
-                *span,
-                "while is supported by phpc run but not assembly emission yet",
-            )),
-            Stmt::DoWhile { span, .. } => Err(self.unsupported(
-                *span,
-                "do-while loops are supported by phpc run but not assembly emission yet",
-            )),
-            Stmt::For { span, .. } => Err(self.unsupported(
-                *span,
-                "for loops are supported by phpc run but not assembly emission yet",
-            )),
-            Stmt::Switch { span, .. } => Err(self.unsupported(
-                *span,
-                "switch statements are supported by phpc run but not assembly emission yet",
-            )),
+            Stmt::If { span, .. }
+            | Stmt::While { span, .. }
+            | Stmt::DoWhile { span, .. }
+            | Stmt::For { span, .. }
+            | Stmt::Switch { span, .. }
+            | Stmt::Break { span }
+            | Stmt::Continue { span } => {
+                Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
+            }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
             Stmt::UnsetVariable { span, .. } => Err(self.unsupported(
                 *span,
@@ -863,14 +835,6 @@ impl CGenerator {
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
                 ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
-            )),
-            Stmt::Break { span } => Err(self.unsupported(
-                *span,
-                "break is supported by phpc run for innermost loops but not assembly emission yet",
-            )),
-            Stmt::Continue { span } => Err(self.unsupported(
-                *span,
-                "continue is supported by phpc run for innermost loops but not assembly emission yet",
             )),
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,

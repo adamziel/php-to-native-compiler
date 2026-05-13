@@ -133,6 +133,11 @@ Native lowering rejects array literals, array indexing, array assignment,
 calls before body, operand, argument, or callback lowering until generated code
 has native array storage layout, key normalization, copy-on-write containers,
 references, callback dispatch, and exact native error behavior.
+Native lowering rejects `if`/`elseif`/`else`, `while`, `for`, `do ... while`,
+`switch`, `break`, and `continue` before condition, body, case, or loop-control
+lowering until generated code has PHP truthiness, branch layout, loop control
+flow, switch fallthrough, references/copy-on-write side-effect behavior, and
+exact native error behavior.
 
 ## Dynamic Features
 
