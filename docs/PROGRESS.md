@@ -3376,9 +3376,17 @@ Still fails:
   snapshotting platform-specific assembly text. Assembly linking/execution,
   PHP zvals, native symbol-table storage, references/copy-on-write, exact
   native error objects, and broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI rejection coverage for a
+  representative unsupported native boundary. The Milestone 183 fixture runs
+  through `phpc run` and system PHP as a small array/count program, while the
+  assembly CLI snapshot invokes `--emit-asm` with backend tools removed from
+  `PATH` and records the stable LLVM array-lowering diagnostic. This proves the
+  assembly path exits before backend discovery when LLVM lowering rejects the
+  program. Backend-independent native diagnostics, exact native error objects,
+  and broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI rejection coverage for a
-  representative unsupported native boundary, proving assembly emission exits
-  before invoking backend tools when LLVM lowering rejects a program.
+- Add explicit `phpc compile --emit-asm` CLI coverage for the lowerable scalar
+  subset when no assembly backend tools are available, documenting the stable
+  missing-backend diagnostic separately from LLVM lowering rejections.

@@ -92,6 +92,9 @@ Assembly CLI coverage intentionally checks a normalized success summary for the
 current straight-line scalar echo/assignment subset instead of committing exact
 assembly text, because `clang`, `llc`, and the `cc -S` fallback produce
 platform- and toolchain-specific output.
+Assembly rejection CLI coverage also runs a representative unsupported array
+program with backend tools removed from `PATH`; this pins that LLVM lowering
+diagnostics are returned before backend discovery or invocation.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

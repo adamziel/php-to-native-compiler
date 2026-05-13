@@ -1734,8 +1734,16 @@ handled.
 
 ## Milestone 183: Native Assembly Rejection CLI Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI rejection coverage for a
+- [x] Add explicit `phpc compile --emit-asm` CLI rejection coverage for a
   representative unsupported native boundary, proving assembly emission exits
   before invoking backend tools when LLVM lowering rejects a program, including
   tests, documentation, and named gaps for backend-independent native
   diagnostics, exact native error objects, and broader native lowering.
+
+## Milestone 184: Native Assembly Backend Absence CLI Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for the lowerable
+  scalar subset when no assembly backend tools are available, including a
+  stable missing-backend diagnostic snapshot, documentation, and named gaps for
+  bundled toolchains, linking/execution, exact native error objects, and
+  broader native lowering.

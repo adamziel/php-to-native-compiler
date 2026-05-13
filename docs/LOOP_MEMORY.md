@@ -13963,3 +13963,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:26:29Z
 
 - Post-round 73 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:26:42Z
+
+- Starting round 74 at 20260513T062641Z from HEAD `4b842d7`.
+
+## Loop Event 2026-05-13T06:26:56Z
+
+- Pre-round 74 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:30:00Z
+
+- Task attempted: completed Milestone 183 by adding explicit `phpc compile
+  --emit-asm` CLI rejection coverage for a representative unsupported native
+  array boundary. The new CLI snapshot runs with `PATH=/nonexistent`, proving
+  LLVM array lowering rejects before assembly backend discovery or invocation.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone183/native_assembly_rejection.php`,
+  `tests/fixtures/milestone183/native_assembly_rejection.stdout`,
+  `tests/fixtures/milestone183/native_assembly_rejection_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli -- --nocapture` passed with 2 tests; `cargo run
+  -p phpc -- test tests/fixtures/milestone183` passed with 1 fixture; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/milestone183` passed with 1
+  system PHP comparison; `PATH=/nonexistent ./target/debug/phpc compile
+  tests/fixtures/milestone183/native_assembly_rejection.php --emit-asm` exited
+  `1` with the expected stable LLVM array-lowering diagnostic;
+  `tools/run-tests.sh` passed with 433 fixtures, 177 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: backend-independent native diagnostics are still
+  limited to explicit lowering boundaries; assembly linking/execution, exact
+  native error objects, native PHP arrays, references/copy-on-write, and
+  broader native lowering remain unsupported.
+- Next concrete task: add Milestone 184, explicit `phpc compile --emit-asm`
+  CLI coverage for the lowerable scalar subset when no assembly backend tools
+  are available, documenting the stable missing-backend diagnostic separately
+  from LLVM lowering rejections.
+- Known-good tag: not created; this is a narrow native CLI rejection coverage
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly rejection CLI coverage"`
+  after the full suite passes.

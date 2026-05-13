@@ -978,9 +978,12 @@
   C fallback for the same narrow lowerable subset. CLI coverage for
   `phpc compile --emit-asm` records a normalized success summary for the current
   scalar echo/assignment fixture instead of exact assembly text, because
-  emitted assembly varies by platform and backend. Assembly linking/execution,
-  PHP zvals, native symbol-table storage, references/copy-on-write, exact
-  native error objects, and broader native lowering remain unsupported.
+  emitted assembly varies by platform and backend. A separate CLI snapshot runs
+  an unsupported array program with backend tools removed from `PATH`, proving
+  array lowering rejects before assembly backend discovery. Assembly
+  linking/execution, PHP zvals, native symbol-table storage,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to

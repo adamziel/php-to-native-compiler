@@ -28,6 +28,9 @@ temporary bootstrap fallback rather than the long-term backend.
 The test suite exercises `phpc compile --emit-asm` for the current lowerable
 straight-line scalar echo/assignment subset with a normalized CLI summary rather
 than snapshotting platform-specific assembly text.
+It also snapshots a representative unsupported array program with backend tools
+removed from `PATH`, proving `--emit-asm` reports the LLVM lowering rejection
+before attempting assembly backend discovery.
 
 ## Current Status
 
