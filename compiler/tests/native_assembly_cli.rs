@@ -265,6 +265,40 @@ fn native_scalar_echo_emit_asm_cc_fallback_failure_cli_snapshot_matches_committe
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_skips_failed_clang_probe_cli_summary_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone190/native_assembly_probe_fallback.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_failing_clang_probe_then_fake_llc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone190/native_assembly_probe_fallback_emit_asm.cli"),
+    )
+    .expect("native assembly discovery-fallback CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -436,6 +470,79 @@ exit 44\n",
         std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
         fs::set_permissions(&cc, permissions)
             .expect("temporary failing cc script can be made executable");
+        Self { path }
+    }
+
+    fn with_failing_clang_probe_then_fake_llc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-probe-fallback-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary discovery-fallback PATH directory can be created");
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake clang version probe failed' >&2\n\
+  exit 45\n\
+fi\n\
+printf '%s\\n' 'unexpected clang backend invocation' >&2\n\
+exit 46\n",
+        )
+        .expect("temporary failing clang probe script can be written");
+        let mut clang_permissions = fs::metadata(&clang)
+            .expect("temporary failing clang probe script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut clang_permissions, 0o755);
+        fs::set_permissions(&clang, clang_permissions)
+            .expect("temporary failing clang probe script can be made executable");
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary fallback llc script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect("temporary fallback llc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions)
+            .expect("temporary fallback llc script can be made executable");
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+printf '%s\\n' 'unexpected cc fallback invocation' >&2\n\
+exit 47\n",
+        )
+        .expect("temporary unused cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary unused cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary unused cc script can be made executable");
+
         Self { path }
     }
 

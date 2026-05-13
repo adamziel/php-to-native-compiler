@@ -14342,3 +14342,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:56:42Z
 
 - Post-round 80 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:56:54Z
+
+- Starting round 81 at 20260513T065654Z from HEAD `108dfc4`.
+
+## Loop Event 2026-05-13T06:57:05Z
+
+- Pre-round 81 test exit code: `0`.
+
+## Loop Event 2026-05-13T07:08:37Z
+
+- Task attempted: completed Milestone 190 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for backend discovery fallback behavior. The new
+  Milestone 190 fixture is a lowerable scalar echo/print program, and the
+  assembly CLI test invokes `--emit-asm` with a temporary PATH exposing a fake
+  `clang` whose `--version` probe fails, a fake `llc` whose probe succeeds,
+  and a fake `cc` that would fail if reached, proving failed discovery probes
+  are skipped before fallback selection.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone190/native_assembly_probe_fallback.php`,
+  `tests/fixtures/milestone190/native_assembly_probe_fallback.stdout`,
+  `tests/fixtures/milestone190/native_assembly_probe_fallback_emit_asm.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  native_assembly_cli
+  native_scalar_echo_emit_asm_skips_failed_clang_probe_cli_summary_matches_committed_output
+  -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone190` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone190` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test native_assembly_cli -- --nocapture`
+  passed with 9 tests; `tools/run-tests.sh` passed with 440 fixtures, 184
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: all-candidate discovery probe failure still needs
+  explicit CLI coverage; backend-specific discovery semantics for every tool
+  are not normalized; phpc does not bundle an assembly toolchain; assembly
+  output is not linked or executed; generated code still lacks exact native PHP
+  error objects and broader native lowering.
+- Next concrete task: add Milestone 191, explicit `phpc compile --emit-asm`
+  CLI coverage for backend discovery exhaustion where `clang`, `llc`, and
+  `cc` commands exist but all fail their `--version` probes and no backend is
+  selected.
+- Known-good tag: not created; this is narrow native CLI discovery-fallback
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly discovery fallback CLI coverage"`
+  after the full suite passes.

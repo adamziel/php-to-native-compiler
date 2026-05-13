@@ -1792,9 +1792,18 @@ handled.
 
 ## Milestone 190: Native Assembly Backend Discovery Edge Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for assembly backend
   discovery edge cases where a candidate backend command exists but fails its
   `--version` probe before fallback selection, including deterministic test
   doubles, stable diagnostics or fallback behavior, documentation, and named
   gaps for bundled toolchains, backend-specific discovery semantics, exact
   native error objects, and broader native lowering.
+
+## Milestone 191: Native Assembly Backend Discovery Exhaustion Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+  discovery exhaustion where `clang`, `llc`, and `cc` commands exist but all
+  fail their `--version` probes, including deterministic test doubles, the
+  stable missing-backend diagnostic, documentation, and named gaps for bundled
+  toolchains, backend-specific discovery semantics, exact native error objects,
+  and broader native lowering.

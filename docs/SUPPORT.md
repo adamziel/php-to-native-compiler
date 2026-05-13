@@ -998,9 +998,13 @@
   C fallback failure snapshot exposes only a deterministic fake `cc` that
   passes discovery and exits nonzero after accepting generated C fallback
   source, proving the stable `cc failed to emit assembly` diagnostic shape
-  without committing real toolchain stderr. Bundled toolchains, assembly
-  linking/execution, backend-specific stderr guarantees, backend-specific
-  assembly text, PHP zvals, native symbol-table storage,
+  without committing real toolchain stderr. A discovery-edge snapshot exposes a
+  deterministic fake `clang` whose `--version` probe fails while a fake `llc`
+  probe succeeds, proving failed backend discovery probes are treated as
+  unavailable and skipped before fallback selection. Bundled toolchains,
+  assembly linking/execution, backend-specific discovery semantics for every
+  tool, backend-specific stderr guarantees, backend-specific assembly text, PHP
+  zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.

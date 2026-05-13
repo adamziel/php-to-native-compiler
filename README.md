@@ -48,6 +48,10 @@ diagnostic when `clang` is unavailable.
 A failing fake-`cc` snapshot records the stable C fallback failure diagnostic
 when both LLVM assembly backends are unavailable and the fallback compiler
 exits nonzero.
+A discovery-edge snapshot exposes a fake `clang` command whose `--version`
+probe fails while a fake `llc` probe succeeds, proving failed discovery probes
+are skipped before fallback selection without committing backend-specific
+assembly text.
 
 ## Current Status
 

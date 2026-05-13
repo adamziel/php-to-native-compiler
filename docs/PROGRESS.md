@@ -2065,7 +2065,7 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 112
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 432 fixtures, 176 system PHP comparisons,
+- `tools/run-tests.sh` passes with 440 fixtures, 184 system PHP comparisons,
   and 256 comparison skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-ir`
@@ -2075,8 +2075,9 @@ Tested:
   emits native assembly through an available LLVM tool or the documented `cc`
   fallback when one is installed.
 - `cargo test -p phpc --test native_assembly_cli -- --nocapture` passes with
-  a normalized `phpc compile --emit-asm` CLI summary for the Milestone 182
-  scalar echo/assignment fixture.
+  9 assembly CLI tests covering the Milestone 182 scalar echo/assignment
+  summary plus the current deterministic backend selection, fallback, failure,
+  and discovery-fallback snapshots.
 - `cargo run -p phpc -- test tests/fixtures/milestone182` passes with 1
   scalar echo/assignment fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone182` passes
@@ -3439,9 +3440,20 @@ Still fails:
   Bundled toolchains, assembly linking/execution, backend-specific stderr
   guarantees, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+  discovery fallback behavior. The Milestone 190 fixture runs through `phpc
+  run` and system PHP as a lowerable scalar echo/print program, while the
+  assembly CLI test invokes `--emit-asm` with a temporary PATH exposing a fake
+  `clang` whose `--version` probe fails, a fake `llc` whose probe succeeds,
+  and a fake `cc` that would fail if reached. The committed snapshot compares
+  a normalized success summary, proving failed discovery probes are skipped
+  before fallback selection. Bundled toolchains, assembly linking/execution,
+  backend-specific discovery semantics for every tool, backend-specific
+  assembly text, exact native error objects, and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add explicit CLI coverage for assembly backend discovery edge cases where a
-  candidate backend command exists but fails its `--version` probe before
-  fallback selection.
+- Add explicit CLI coverage for assembly backend discovery exhaustion where all
+  candidate commands exist but fail their `--version` probes and no backend is
+  selected.

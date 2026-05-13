@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+  discovery fallback behavior. The Milestone 190 fixture runs as a lowerable
+  scalar echo/print program, while the assembly CLI test invokes `--emit-asm`
+  with a temporary PATH exposing a fake `clang` whose `--version` probe fails,
+  a fake `llc` whose probe succeeds, and a fake `cc` that would fail if
+  reached. The committed snapshot checks a normalized success summary, proving
+  failed discovery probes are treated as unavailable before fallback
+  selection. Bundled toolchains, assembly linking/execution, backend-specific
+  discovery semantics for every tool, exact native error objects, and broader
+  native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for `cc -S` fallback
   failure diagnostics. The Milestone 189 fixture runs as a lowerable scalar
   echo/print program, while the assembly CLI test invokes `--emit-asm` with a
