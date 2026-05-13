@@ -3244,9 +3244,21 @@ Still fails:
   subset, and a `phpc compile --emit-ir` CLI snapshot pins the native
   rejection. References/copy-on-write side effects and broader native lowering
   remain unsupported.
+- Added a native global-constant boundary. LLVM IR emission now rejects
+  built-in constants, runtime-defined constants, bare constant reads,
+  top-level `const` declarations, and `define()`/`constant()`/`defined()`
+  before lowering values or arguments, with a specific codegen diagnostic
+  until generated code has native constant tables, source-order definitions,
+  namespace-aware lookup, and exact native error behavior. The C assembly
+  fallback carries the same boundary for consistency, `phpc run` fixture
+  coverage still proves the current interpreter global-constant subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection. Namespaces,
+  class constants, references/copy-on-write side effects, and broader native
+  lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for global constants before
-  native constant tables, source-order definitions, and runtime-defined
-  constant lookup exist.
+- Add the next honest native-codegen boundary for class declarations, object
+  instantiation, public property reads/writes, and object metadata builtins
+  before native object layout, handles, visibility, methods, and exact native
+  error behavior exist.

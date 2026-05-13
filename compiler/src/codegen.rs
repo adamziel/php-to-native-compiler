@@ -7,12 +7,14 @@ use crate::error::{CompileResult, Diagnostic, Phase};
 
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior";
 const ASSEMBLY_MAGIC_CONSTANT_REJECTION: &str = "assembly magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior";
+const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constants, runtime-defined constants, bare constant reads, top-level const declarations, and define()/constant()/defined() until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
+const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constants, runtime-defined constants, bare constant reads, top-level const declarations, and define()/constant()/defined() until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -166,7 +168,7 @@ impl LlvmGenerator {
             )),
             Stmt::ConstDeclaration { span, .. } => Err(self.unsupported(
                 *span,
-                "top-level const declarations are supported by phpc run but not LLVM IR emission yet",
+                LLVM_GLOBAL_CONSTANT_REJECTION,
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
@@ -200,10 +202,9 @@ impl LlvmGenerator {
             | Expr::MagicFunction { span } => {
                 Err(self.unsupported(*span, LLVM_MAGIC_CONSTANT_REJECTION))
             }
-            Expr::GlobalConstant { span, .. } => Err(self.unsupported(
-                *span,
-                "global constants are supported by phpc run for the current built-in/runtime-defined subset but not LLVM IR emission yet",
-            )),
+            Expr::GlobalConstant { span, .. } => {
+                Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
+            }
             Expr::Array { span, .. } => Err(self.unsupported(
                 *span,
                 "arrays are supported by phpc run but not LLVM IR emission yet",
@@ -226,10 +227,10 @@ impl LlvmGenerator {
                     format!("variable '${name}' is not known in LLVM lowering"),
                 )
             }),
-            Expr::Call { name, span, .. } if name.eq_ignore_ascii_case("define") => {
+            Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
                 Err(self.unsupported(
                     *span,
-                    "define() runtime-defined constants are supported by phpc run but not LLVM IR emission yet",
+                    LLVM_GLOBAL_CONSTANT_REJECTION,
                 ))
             }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
@@ -866,7 +867,7 @@ impl CGenerator {
             )),
             Stmt::ConstDeclaration { span, .. } => Err(self.unsupported(
                 *span,
-                "top-level const declarations are supported by phpc run but not assembly emission yet",
+                ASSEMBLY_GLOBAL_CONSTANT_REJECTION,
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
@@ -900,10 +901,9 @@ impl CGenerator {
             | Expr::MagicFunction { span } => {
                 Err(self.unsupported(*span, ASSEMBLY_MAGIC_CONSTANT_REJECTION))
             }
-            Expr::GlobalConstant { span, .. } => Err(self.unsupported(
-                *span,
-                "global constants are supported by phpc run for the current built-in/runtime-defined subset but not assembly emission yet",
-            )),
+            Expr::GlobalConstant { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            }
             Expr::Array { span, .. } => Err(self.unsupported(
                 *span,
                 "arrays are supported by phpc run but not assembly emission yet",
@@ -926,6 +926,9 @@ impl CGenerator {
                     format!("variable '${name}' is not known in assembly lowering"),
                 )
             }),
+            Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
+                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 ASSEMBLY_FUNCTION_CALL_REJECTION,
@@ -1350,6 +1353,12 @@ fn is_bitwise_or_shift_op(op: BinaryOp) -> bool {
             | BinaryOp::ShiftLeft
             | BinaryOp::ShiftRight
     )
+}
+
+fn is_global_constant_builtin(name: &str) -> bool {
+    name.eq_ignore_ascii_case("define")
+        || name.eq_ignore_ascii_case("constant")
+        || name.eq_ignore_ascii_case("defined")
 }
 
 fn format_float_literal(value: f64) -> String {

@@ -1634,10 +1634,20 @@ handled.
 
 ## Milestone 172: Native Global Constant Boundary
 
-- [ ] Add the next honest native-codegen boundary for built-in,
+- [x] Add the next honest native-codegen boundary for built-in,
   runtime-defined, bare-read, and top-level declared global constants, either
   by lowering a narrow constant table subset or by tightening explicit
   diagnostics with fixture CLI coverage, documentation, and named gaps for
   source-order definitions, runtime `define(...)`, `constant()`/`defined()`,
   namespaces, class constants, references/copy-on-write, exact native error
   objects, and broader native lowering.
+
+## Milestone 173: Native Object/Class Boundary
+
+- [ ] Add the next honest native-codegen boundary for class declarations,
+  object instantiation, public property reads/writes, and object metadata
+  builtins, either by lowering a narrow object metadata subset or by tightening
+  explicit diagnostics with fixture CLI coverage, documentation, and named
+  gaps for object handles, constructors, `$this`, method dispatch, visibility,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering.

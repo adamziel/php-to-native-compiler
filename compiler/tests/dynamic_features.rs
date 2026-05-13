@@ -790,7 +790,7 @@ fn emit_ir_rejects_constant_lookup_until_native_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("global-constant lowering"),
         "{}",
         error.message
     );
@@ -801,7 +801,11 @@ fn emit_ir_rejects_define_until_user_constant_lowering_exists() {
     let error = emit_ir_source("<?php\ndefine(\"APP_NAME\", \"compiler\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert!(error.message.contains("define()"), "{}", error.message);
+    assert!(
+        error.message.contains("global-constant lowering"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -810,7 +814,7 @@ fn emit_ir_rejects_defined_until_constant_introspection_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("global-constant lowering"),
         "{}",
         error.message
     );
@@ -824,7 +828,7 @@ fn emit_ir_rejects_const_declarations_until_native_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("top-level const declarations"),
+        error.message.contains("global-constant lowering"),
         "{}",
         error.message
     );

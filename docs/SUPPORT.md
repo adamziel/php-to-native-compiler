@@ -929,19 +929,24 @@
   exact native error objects. Native direct and dynamic function calls are
   rejected before argument or callee lowering with a specific codegen
   diagnostic until generated code has runtime call lookup, stack-frame layout,
-  arity/type diagnostics, callable builtin dispatch, dynamic string-call
-  dispatch, and exact native error objects. Native user-function declarations
+  arity/type diagnostics, callable builtin dispatch outside
+  `define()`/`constant()`/`defined()`, dynamic string-call dispatch, and exact
+  native error objects. Native user-function declarations
   and return statements are rejected before function-body lowering with a
   specific codegen diagnostic until generated code has function symbol tables,
   stack-frame layout, default parameter binding, recursion guards,
   return-value flow, and exact native error behavior.
+  Native built-in constants, runtime-defined constants, bare constant reads,
+  top-level `const` declarations, and `define()`/`constant()`/`defined()` are
+  rejected before operand or argument lowering with a specific codegen
+  diagnostic until generated code has native constant tables, source-order
+  definitions, namespace-aware lookup, and exact native error objects.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, assignment expressions, compound assignment
-  expressions, increment/decrement expressions, global constants, top-level
-  `const` declarations,
+  expressions, increment/decrement expressions,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `interface_exists(...)`, `trait_exists(...)`,
   `enum_exists(...)`, `property_exists(...)`,
@@ -951,9 +956,8 @@
   `is_subclass_of(...)`, `get_parent_class(...)`,
   `get_declared_classes(...)`, `get_declared_interfaces(...)`,
   `get_declared_traits(...)`, `get_called_class(...)`,
-  `spl_object_id(...)`, `spl_object_hash(...)`,
-  `constant(...)`, `defined(...)`, and `define(...)` constant definitions are
-  rejected with explicit codegen errors.
+  `spl_object_id(...)`, and `spl_object_hash(...)` are rejected with explicit
+  codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.

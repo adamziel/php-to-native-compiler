@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a native global-constant boundary. LLVM IR emission now rejects
+  built-in constants, runtime-defined constants, bare constant reads,
+  top-level `const` declarations, and `define()`/`constant()`/`defined()`
+  before lowering values or arguments, with a specific codegen diagnostic
+  until generated code has native constant tables, source-order definitions,
+  namespace-aware lookup, and exact native error behavior; the C assembly
+  fallback carries the same boundary for consistency. A runtime fixture still
+  proves the current interpreter global-constant subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection. Namespaces,
+  class constants, references/copy-on-write, exact native error objects, and
+  broader native lowering remain explicit gaps.
 - Added a native magic-constant boundary. LLVM IR emission now rejects
   executable magic constants `__LINE__`, `__FILE__`, `__DIR__`, and
   `__FUNCTION__` before lowering them, with a specific codegen diagnostic
@@ -23,7 +34,8 @@
   rejection. References/copy-on-write and broader native lowering remain
   explicit gaps.
 - Added a native function-call boundary. LLVM IR emission now rejects function
-  calls, including direct callable builtins, user functions, and dynamic
+  calls, including direct callable builtins outside
+  `define()`/`constant()`/`defined()`, user functions, and dynamic
   string-valued calls, before lowering arguments or callees, with a specific
   codegen diagnostic until generated code has runtime call lookup, stack
   frames, arity/type diagnostics, callback dispatch, and dynamic string-call

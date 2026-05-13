@@ -13256,3 +13256,61 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:09:36Z
 
 - Post-round 62 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:09:46Z
+
+- Starting round 63 at 20260513T050946Z from HEAD `7c83ea2`.
+
+## Loop Event 2026-05-13T05:09:58Z
+
+- Pre-round 63 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:17:00Z
+
+- Task attempted: completed Milestone 172 by tightening native codegen for
+  global constants. LLVM IR emission now rejects built-in constants,
+  runtime-defined constants, bare constant reads, top-level `const`
+  declarations, and `define()`/`constant()`/`defined()` before lowering values
+  or arguments with a specific diagnostic until generated code has native
+  constant tables, source-order definitions, namespace-aware lookup, and exact
+  native error behavior. The C assembly fallback carries the same boundary for
+  consistency, and the function-call boundary now explicitly excludes the
+  constant-table builtins covered by this boundary.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `compiler/tests/native_function_call_boundary.rs`,
+  `compiler/tests/array_filter.rs`, `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/milestone172/native_global_constant_boundary.php`,
+  `tests/fixtures/milestone172/native_global_constant_boundary.stdout`,
+  `tests/fixtures/milestone172/native_global_constant_boundary_emit_ir.cli`,
+  `tests/fixtures/milestone169/native_function_call_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_global_constant_boundary -- --nocapture` passed with 6 tests;
+  `cargo test -p phpc --test native_function_call_boundary -- --nocapture`
+  passed with 6 tests; `cargo test -p phpc --test array_filter
+  emit_ir_rejects_array_filter_until_native_call_lowering_exists --
+  --nocapture` passed; `cargo test -p phpc --test dynamic_features --
+  --nocapture` passed with 31 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone172` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone172` passed with 1 system PHP
+  comparison; `./target/debug/phpc compile
+  tests/fixtures/milestone172/native_global_constant_boundary.php --emit-ir`
+  exited `1` with the expected explicit native global-constant diagnostic;
+  `tools/run-tests.sh` passed with 422 fixtures, 167 system PHP comparisons,
+  and 255 comparison skips.
+- Remaining semantic gaps: generated code still lacks native constant tables,
+  source-order definition handling, runtime `define(...)` mutation,
+  `constant()`/`defined()` lookup, namespace-aware constant resolution, class
+  constants, references/copy-on-write behavior for constant values, exact
+  native error objects, and broader native lowering.
+- Next concrete task: add Milestone 173, the next honest native-codegen
+  boundary for class declarations, object instantiation, public property
+  reads/writes, and object metadata builtins before generated code claims
+  native object layout, handles, visibility, methods, or exact object errors.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native global constant boundary"`
+  after the full suite passes.

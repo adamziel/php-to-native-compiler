@@ -361,6 +361,10 @@ diagnostics, callable builtin dispatch, and dynamic string-call dispatch.
 Executable magic constants `__LINE__`, `__FILE__`, `__DIR__`, and
 `__FUNCTION__` are rejected by native lowering until generated code has source
 mapping, path canonicalization, and function-context tracking.
+Built-in constants, runtime-defined constants, bare constant reads, top-level
+`const` declarations, and `define()`/`constant()`/`defined()` are rejected by
+native lowering until generated code has native constant tables, source-order
+definitions, namespace-aware lookup, and exact native error behavior.
 Unsupported programs and broader PHP coercions are rejected with structured
 codegen errors.
 

@@ -107,7 +107,9 @@ exact native error behavior.
 Native lowering rejects direct and dynamic function calls before argument,
 callee, or callback lowering until generated code has runtime call lookup,
 stack-frame layout, arity/type diagnostics, callable builtin dispatch, dynamic
-string-call dispatch, and exact native error behavior.
+string-call dispatch, and exact native error behavior. The
+`define()`/`constant()`/`defined()` constant-table builtins have a separate
+global-constant rejection boundary.
 Native lowering also rejects user-function declarations and return statements
 before traversing function bodies until generated code has function symbol
 tables, stack-frame layout, default parameter binding, recursion guards,
@@ -116,6 +118,11 @@ Native lowering rejects executable magic constants `__LINE__`, `__FILE__`,
 `__DIR__`, and `__FUNCTION__` until generated code has source mapping, path
 canonicalization, function-context tracking, eval/include source interaction
 rules, and exact native error behavior.
+Native lowering rejects built-in constants, runtime-defined constants, bare
+constant reads, top-level `const` declarations, and
+`define()`/`constant()`/`defined()` before operand/argument lowering until
+generated code has native constant tables, source-order definitions,
+namespace-aware lookup, and exact native error behavior.
 
 ## Dynamic Features
 
@@ -153,7 +160,9 @@ literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
 declarations, dynamic `const` values, class constants through
 `constant(...)`/`defined(...)`, references/copy-on-write for constant values,
-and constant lowering are still outside the implemented constant subset.
+and constant lowering are still outside the implemented constant subset. Native
+lowering currently rejects the entire global-constant slice explicitly rather
+than emitting partial constant-table code.
 
 ## Namespace/Import Boundary
 

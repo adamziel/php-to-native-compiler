@@ -438,7 +438,7 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
     let constant_error = emit_ir_source("<?php\necho ARRAY_FILTER_USE_KEY;\n").unwrap_err();
     assert_eq!(constant_error.phase, Phase::Codegen);
     assert!(
-        constant_error.message.contains("global constants"),
+        constant_error.message.contains("global-constant lowering"),
         "{}",
         constant_error.message
     );
