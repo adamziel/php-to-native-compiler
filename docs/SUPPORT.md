@@ -1080,7 +1080,10 @@
   before actual assembly emission, proving the same stable fallback backend
   start diagnostics for permission-denied starts after discovery and proving a
   selected `llc` permission-denied start is reported without falling through
-  to the `cc -S` C fallback. A
+  to the `cc -S` C fallback. A mixed scalar output snapshot uses a lowerable
+  fixture with both `echo` and `print`, plus a deterministic fake `clang`, to
+  prove the current static scalar `printf` assembly path accepts mixed output
+  statements without claiming runtime-backed output conversion. A
   backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
   `cc` commands together and proves successful `clang` emission is selected
   before fallback tools when all candidates are available. A

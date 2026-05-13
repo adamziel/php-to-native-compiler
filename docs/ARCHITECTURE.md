@@ -274,6 +274,9 @@ previously assigned static variables, and `echo`/`print` through static
 `printf` calls. It does not model PHP zvals, symbol-table storage,
 references/copy-on-write, dynamic string allocation, locale/version-specific
 float formatting, assembly linking/execution, or native PHP error objects.
+A dedicated mixed `echo`/`print` assembly CLI snapshot pins that boundary with
+a deterministic fake backend and a lowerable scalar fixture; it is coverage of
+the existing static output path, not broader native runtime output support.
 Native reads of variables that have not been statically assigned earlier in
 that same straight-line lowerer are rejected with a specific codegen
 diagnostic until native symbol-table storage, undefined-variable diagnostics,

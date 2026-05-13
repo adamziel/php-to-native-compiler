@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for a lowerable mixed
+  scalar `echo`/`print` program. The Milestone 222 fixture runs under `phpc`
+  and system PHP, while the assembly CLI test uses a deterministic fake
+  `clang` that validates representative LLVM IR markers before emitting
+  normalized assembly. Control-flow output, runtime-backed output conversion,
+  exact native PHP errors, linking/execution, and broader native lowering
+  remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   permission-denied emission starts. The Milestone 221 fixture runs as a
   lowerable scalar echo/print program, while assembly CLI tests expose

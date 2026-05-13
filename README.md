@@ -141,6 +141,9 @@ and `cc` tools that pass discovery and then remove their own execute
 permission before assembly emission, proving the same stable fallback backend
 start diagnostics for permission-denied starts after discovery and that `llc`
 permission-denied starts do not fall through to the `cc -S` C fallback.
+A mixed scalar output snapshot uses a lowerable straight-line program with
+both `echo` and `print`, proving the current native assembly CLI path accepts
+that static scalar output subset without claiming runtime-backed conversion.
 A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands together, proving successful `clang` assembly emission is
 selected before fallback tools when all candidates are available.

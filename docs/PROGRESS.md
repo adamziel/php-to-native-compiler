@@ -3804,9 +3804,17 @@ Still fails:
   through to the `cc -S` C fallback. Bundled toolchains, assembly
   linking/execution, full backend recovery semantics, exact native error
   objects, and broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for a lowerable mixed
+  scalar `echo`/`print` program. The Milestone 222 fixture runs through
+  `phpc run` and system PHP, and the assembly CLI test invokes `--emit-asm`
+  with a deterministic fake `clang` that validates representative LLVM IR
+  markers before emitting normalized assembly. This pins the current static
+  scalar `printf` output path without claiming runtime-backed output
+  conversion, control-flow output, exact native PHP errors, or broader native
+  lowering.
 
 Next:
 
-- Add Milestone 222, a native-codegen CLI snapshot for lowerable scalar `print`
-  and mixed `echo`/`print` programs, documenting the current straight-line
-  scalar output boundary before adding broader runtime-backed native lowering.
+- Add Milestone 223, a C fallback CLI snapshot for a lowerable mixed
+  `echo`/`print` scalar program, documenting the current fallback output
+  boundary before adding broader runtime-backed native lowering.
