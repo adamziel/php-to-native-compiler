@@ -12953,3 +12953,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:39:29Z
 
 - Post-round 57 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:39:44Z
+
+- Starting round 58 at 20260513T043944Z from HEAD `ec1afc8`.
+
+## Loop Event 2026-05-13T04:39:57Z
+
+- Pre-round 58 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:43:25Z
+
+- Task attempted: completed Milestone 167 by tightening the native codegen
+  boundary for bitwise and shift operators. LLVM IR emission now rejects `&`,
+  `|`, `^`, unary `~`, `<<`, and `>>` before lowering operands with a
+  specific diagnostic until generated code has PHP bytewise string behavior,
+  scalar-to-int coercion, shift diagnostics, and exact native error behavior;
+  the C assembly fallback carries the same boundary for consistency. Runtime
+  fixture coverage still proves the current `phpc run` bitwise/shift subset.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_bitwise_boundary.rs`,
+  `compiler/tests/bitwise_operators.rs`, `compiler/tests/shift_operators.rs`,
+  `compiler/tests/bitwise_not.rs`,
+  `tests/fixtures/milestone167/native_bitwise_boundary.php`,
+  `tests/fixtures/milestone167/native_bitwise_boundary.stdout`,
+  `tests/fixtures/milestone167/native_bitwise_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_bitwise_boundary -- --nocapture` passed with 6 tests;
+  `cargo test -p phpc --test bitwise_operators --test shift_operators --test
+  bitwise_not -- --nocapture` passed with 14 tests; `cargo run -p phpc --
+  test tests/fixtures/milestone167` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone167` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone167/native_bitwise_boundary.php --emit-ir` exited
+  `1` with the expected explicit native bitwise/shift codegen diagnostic;
+  `tools/run-tests.sh` passed with 417 fixtures, 163 system PHP comparisons,
+  and 254 comparison skips.
+- Remaining semantic gaps: generated code still lacks PHP bytewise string
+  bitwise behavior, scalar-to-int coercion for bitwise/shift operands,
+  negative/large shift diagnostics, references/copy-on-write side effects,
+  exact native error objects, and broader native lowering.
+- Next concrete task: add Milestone 168, the next honest native-codegen
+  boundary for ternary and/or null coalescing expressions before generated code
+  claims PHP truthiness, null-aware lookup, or side-effect ordering.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject bitwise and shift operators"`.

@@ -3195,9 +3195,18 @@ Still fails:
   the native rejection. Truthiness over arrays/objects in generated code,
   side-effect ordering, references/copy-on-write side effects, exact native
   error objects, and broader native lowering remain unsupported.
+- Added a native bitwise/shift boundary. LLVM IR emission now rejects `&`,
+  `|`, `^`, unary `~`, `<<`, and `>>` before lowering operands, with a
+  specific codegen diagnostic until generated code has PHP bytewise string
+  behavior, scalar-to-int coercion, negative/large shift diagnostics, and exact
+  native error behavior. The C assembly fallback carries the same boundary for
+  consistency, `phpc run` fixture coverage still proves the current
+  bitwise/shift subset, and a `phpc compile --emit-ir` CLI snapshot pins the
+  native rejection. References/copy-on-write side effects and broader native
+  lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for bitwise and shift operators,
-  either by lowering a narrow integer-only subset or by tightening diagnostics
-  and fixture coverage for native bitwise/shift rejection.
+- Add the next honest native-codegen boundary for conditional expressions,
+  starting with ternary or null coalescing diagnostics/coverage before native
+  truthiness and null-aware side-effect ordering exist.

@@ -81,6 +81,6 @@ fn emit_ir_rejects_bitwise_operators_until_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet"
+        "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior"
     );
 }

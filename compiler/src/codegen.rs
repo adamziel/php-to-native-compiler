@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt};
+use crate::ast::{AssignTarget, BinaryOp, Expr, Program, Span, Stmt, UnaryOp};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
@@ -241,10 +241,18 @@ impl LlvmGenerator {
                 *span,
                 "object instantiation is supported by phpc run but not LLVM IR emission yet",
             )),
-            Expr::Unary { span, .. } => Err(self.unsupported(
-                *span,
-                "unary expressions are supported by phpc run but not LLVM IR emission yet",
-            )),
+            Expr::Unary { op, span, .. } => {
+                if matches!(op, UnaryOp::BitwiseNot) {
+                    return Err(self.unsupported(
+                        *span,
+                        "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
+                    ));
+                }
+                Err(self.unsupported(
+                    *span,
+                    "unary expressions are supported by phpc run but not LLVM IR emission yet",
+                ))
+            }
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
                 "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet",
@@ -292,17 +300,10 @@ impl LlvmGenerator {
                         "LLVM logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior",
                     ));
                 }
-                if matches!(
-                    op,
-                    BinaryOp::BitwiseAnd
-                        | BinaryOp::BitwiseOr
-                        | BinaryOp::BitwiseXor
-                        | BinaryOp::ShiftLeft
-                        | BinaryOp::ShiftRight
-                ) {
+                if is_bitwise_or_shift_op(*op) {
                     return Err(self.unsupported(
                         *span,
-                        "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet",
+                        "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
                     ));
                 }
                 let left = self.emit_expr(left)?;
@@ -369,7 +370,7 @@ impl LlvmGenerator {
             | BinaryOp::ShiftLeft
             | BinaryOp::ShiftRight => Err(self.unsupported(
                 span,
-                "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet",
+                "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
             )),
         }
     }
@@ -944,10 +945,18 @@ impl CGenerator {
                 *span,
                 "object instantiation is supported by phpc run but not assembly emission yet",
             )),
-            Expr::Unary { span, .. } => Err(self.unsupported(
-                *span,
-                "unary expressions are supported by phpc run but not assembly emission yet",
-            )),
+            Expr::Unary { op, span, .. } => {
+                if matches!(op, UnaryOp::BitwiseNot) {
+                    return Err(self.unsupported(
+                        *span,
+                        "assembly bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
+                    ));
+                }
+                Err(self.unsupported(
+                    *span,
+                    "unary expressions are supported by phpc run but not assembly emission yet",
+                ))
+            }
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
                 "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not assembly emission yet",
@@ -995,17 +1004,10 @@ impl CGenerator {
                         "assembly logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior",
                     ));
                 }
-                if matches!(
-                    op,
-                    BinaryOp::BitwiseAnd
-                        | BinaryOp::BitwiseOr
-                        | BinaryOp::BitwiseXor
-                        | BinaryOp::ShiftLeft
-                        | BinaryOp::ShiftRight
-                ) {
+                if is_bitwise_or_shift_op(*op) {
                     return Err(self.unsupported(
                         *span,
-                        "bitwise operators are supported by phpc run for the current int/string subset but not assembly emission yet",
+                        "assembly bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
                     ));
                 }
                 let left = self.emit_expr(left)?;
@@ -1072,7 +1074,7 @@ impl CGenerator {
             | BinaryOp::ShiftLeft
             | BinaryOp::ShiftRight => Err(self.unsupported(
                 span,
-                "bitwise operators are supported by phpc run for the current int/string subset but not assembly emission yet",
+                "assembly bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
             )),
         }
     }
@@ -1347,6 +1349,17 @@ fn is_comparison_op(op: BinaryOp) -> bool {
             | BinaryOp::Le
             | BinaryOp::Gt
             | BinaryOp::Ge
+    )
+}
+
+fn is_bitwise_or_shift_op(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::BitwiseAnd
+            | BinaryOp::BitwiseOr
+            | BinaryOp::BitwiseXor
+            | BinaryOp::ShiftLeft
+            | BinaryOp::ShiftRight
     )
 }
 

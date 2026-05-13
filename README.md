@@ -350,8 +350,10 @@ generated code. Native comparison operators are rejected with a specific
 codegen diagnostic until generated code has PHP comparison coercions and
 non-scalar comparison diagnostics. Native logical operators are rejected before
 operand lowering until generated code has PHP truthiness and short-circuit
-semantics. Unsupported programs and broader PHP coercions are rejected with
-structured codegen errors.
+semantics. Native bitwise and shift operators are rejected before operand
+lowering until generated code has PHP bytewise string behavior,
+scalar-to-int coercion, and shift diagnostics. Unsupported programs and broader
+PHP coercions are rejected with structured codegen errors.
 
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`

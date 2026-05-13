@@ -97,6 +97,9 @@ Native lowering also rejects logical operators before operand lowering until
 generated code has explicit PHP truthiness conversion, short-circuit
 side-effect ordering for `&&`, `||`, `and`, and `or`, and both-operand
 evaluation for `xor`.
+Native lowering rejects bitwise and shift operators before operand lowering
+until generated code has PHP bytewise string operations, scalar-to-int
+coercion, negative/large shift diagnostics, and exact native error behavior.
 
 ## Dynamic Features
 

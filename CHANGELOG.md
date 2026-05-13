@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a native bitwise/shift boundary. LLVM IR emission now rejects `&`,
+  `|`, `^`, unary `~`, `<<`, and `>>` before lowering operands, with a
+  specific codegen diagnostic until generated code has PHP bytewise string
+  behavior, scalar-to-int coercion, negative/large shift diagnostics, and exact
+  native error behavior; the C assembly fallback carries the same boundary for
+  consistency. A runtime fixture still proves the current bitwise/shift subset,
+  and a `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  References/copy-on-write, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added a native logical-operator boundary. LLVM IR emission now rejects
   `&&`, `||`, `and`, `xor`, and `or` before lowering operands, with a specific
   codegen diagnostic until generated code has PHP truthiness conversion and

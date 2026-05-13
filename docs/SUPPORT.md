@@ -918,7 +918,11 @@
   logical operators `&&`, `||`, `and`, `xor`, and `or` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
   PHP truthiness conversion, short-circuit side-effect ordering, and broader
-  array/object truthiness coverage.
+  array/object truthiness coverage. Native bitwise and shift operators `&`,
+  `|`, `^`, `~`, `<<`, and `>>` are rejected before operand lowering with a
+  specific codegen diagnostic until generated code has PHP bytewise string
+  behavior, scalar-to-int coercion, negative/large shift diagnostics, and exact
+  native error objects.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
@@ -1795,7 +1799,9 @@
   operators, append-offset/nested bitwise compound-assignment targets, PHP
   warning/deprecation recovery for float-to-int precision loss,
   references/copy-on-write side effects, and native lowering are not
-  implemented.
+  implemented. LLVM IR/assembly emission rejects bitwise and shift operators
+  before operand lowering so generated code does not imply partial PHP
+  bytewise string, scalar-to-int coercion, or shift-count semantics.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

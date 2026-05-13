@@ -1589,9 +1589,18 @@ handled.
 
 ## Milestone 167: Native Bitwise Operator Boundary
 
-- [ ] Add the next honest native-codegen boundary for bitwise and shift
+- [x] Add the next honest native-codegen boundary for bitwise and shift
   operators `&`, `|`, `^`, `~`, `<<`, and `>>`, either by lowering a narrow
   integer-only subset or by tightening explicit diagnostics with fixture CLI
   coverage, documentation, and named gaps for string bytewise operations,
   scalar-to-int coercion, negative/large shifts, references/copy-on-write,
   exact native error objects, and broader native lowering.
+
+## Milestone 168: Native Conditional Expression Boundary
+
+- [ ] Add the next honest native-codegen boundary for ternary and/or null
+  coalescing expressions, either by lowering a narrow side-effect-safe scalar
+  subset or by tightening explicit diagnostics with fixture CLI coverage,
+  documentation, and named gaps for PHP truthiness, null-aware lookup,
+  side-effect ordering, references/copy-on-write, exact native error objects,
+  and broader native lowering.
