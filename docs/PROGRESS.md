@@ -3289,11 +3289,21 @@ Still fails:
   native rejection. Native branch layout, loop control, switch fallthrough,
   references/copy-on-write side effects, exact native error objects, and
   broader native lowering remain unsupported.
+- Added a native mutation boundary. LLVM IR emission now rejects compound
+  assignment, null coalescing assignment, increment/decrement, assignment
+  expressions, direct variable unset, and multiple-operand unset before
+  lowering operands or mutation targets, with a specific codegen diagnostic
+  until generated code has read-modify-write ordering, null-aware mutation,
+  unset symbol-table effects, references/copy-on-write behavior, and exact
+  native error behavior. The C assembly fallback carries the same boundary for
+  consistency, `phpc run` fixture coverage still proves the current
+  interpreter mutation subset, and a `phpc compile --emit-ir` CLI snapshot
+  pins the native rejection. Native read-modify-write ordering, null-aware
+  mutation, unset symbol-table effects, references/copy-on-write side effects,
+  exact native error objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen mutation boundary for compound
-  assignment, null coalescing assignment, increment/decrement, assignment
-  expressions, and remaining non-array/object unset forms before generated
-  code claims PHP read-modify-write ordering, null-aware mutation, or exact
-  native error behavior.
+- Add the next honest native-codegen boundary for unary minus and logical not
+  before generated code claims PHP numeric coercion, truthiness conversion, or
+  exact native error behavior for those operators.

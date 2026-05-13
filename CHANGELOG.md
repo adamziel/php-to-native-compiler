@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added a native mutation boundary. LLVM IR emission now rejects compound
+  assignment, null coalescing assignment, increment/decrement, assignment
+  expressions, direct variable `unset`, and multiple-operand `unset` before
+  lowering operands or mutation targets, with a specific codegen diagnostic
+  until generated code has read-modify-write ordering, null-aware mutation,
+  unset symbol-table effects, references/copy-on-write, and exact native error
+  behavior; the C assembly fallback carries the same boundary for consistency.
+  A runtime fixture still proves the current interpreter mutation subset, and
+  a `phpc compile --emit-ir` CLI snapshot pins the native rejection. Native
+  read-modify-write ordering, null-aware mutation, unset symbol-table effects,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added a native control-flow boundary. LLVM IR emission now rejects
   `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`, `break`, and
   `continue` before lowering conditions, bodies, cases, or loop-control flow,

@@ -1673,7 +1673,7 @@ handled.
 
 ## Milestone 176: Native Mutation Boundary
 
-- [ ] Add the next honest native-codegen boundary for mutation forms that are
+- [x] Add the next honest native-codegen boundary for mutation forms that are
   still only interpreter-backed, including compound assignment, null
   coalescing assignment, increment/decrement, assignment expressions, direct
   variable unset, and multiple-operand unset, either by lowering a narrow
@@ -1681,3 +1681,11 @@ handled.
   coverage, documentation, and named gaps for read-modify-write ordering,
   null-aware mutation, unset symbol-table effects, references/copy-on-write,
   exact native error objects, and broader native lowering.
+
+## Milestone 177: Native Unary Boundary
+
+- [ ] Add the next honest native-codegen boundary for unary minus and logical
+  not, either by lowering a narrow scalar subset or by tightening explicit
+  diagnostics with fixture CLI coverage, documentation, and named gaps for PHP
+  numeric coercion, truthiness conversion, references/copy-on-write, exact
+  native error objects, and broader native lowering.

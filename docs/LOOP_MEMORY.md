@@ -13526,3 +13526,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:39:28Z
 
 - Post-round 66 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:39:53Z
+
+- Starting round 67 at 20260513T053953Z from HEAD `8dd97f8`.
+
+## Loop Event 2026-05-13T05:40:11Z
+
+- Pre-round 67 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:47:02Z
+
+- Task attempted: completed Milestone 176 by tightening the native codegen
+  boundary for mutation forms that remain interpreter-backed. LLVM IR emission
+  now rejects compound assignment, null coalescing assignment,
+  increment/decrement, assignment expressions, direct variable unset, and
+  multiple-operand unset with a specific diagnostic before lowering operands
+  or mutation targets until generated code has read-modify-write ordering,
+  null-aware mutation, unset symbol-table effects, references/copy-on-write,
+  and exact native error behavior; the C assembly fallback carries the same
+  boundary for consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_mutation_boundary.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/null_coalescing.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone176/native_mutation_boundary.php`,
+  `tests/fixtures/milestone176/native_mutation_boundary.stdout`,
+  `tests/fixtures/milestone176/native_mutation_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test native_mutation_boundary
+  -- --nocapture` passed with 5 tests; `cargo test -p phpc --test
+  compound_assignment -- --nocapture` passed with 30 tests; `cargo test -p
+  phpc --test assignment_expression -- --nocapture` passed with 20 tests;
+  `cargo test -p phpc --test null_coalescing -- --nocapture` passed with 17
+  tests; `cargo test -p phpc --test increment_decrement -- --nocapture`
+  passed with 23 tests; `cargo test -p phpc --test syntax_boundaries --
+  --nocapture` passed with 29 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone176` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone176` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test milestone1 emit_ir_rejects --
+  --nocapture` passed with 22 filtered codegen rejection tests; `cargo fmt
+  --check` passed; `tools/run-tests.sh` passed with 426 fixtures, 171 system
+  PHP comparisons, and 255 comparison skips.
+- Remaining semantic gaps: generated code still lacks native read-modify-write
+  ordering, null-aware mutation, unset symbol-table effects,
+  references/copy-on-write side effects, exact native error objects, and
+  broader native lowering for mutation forms.
+- Next concrete task: add Milestone 177, the next honest native-codegen
+  boundary for unary minus and logical not before generated code claims PHP
+  numeric coercion, truthiness conversion, or exact native error behavior.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native mutation boundary"`
+  after the full suite passes.

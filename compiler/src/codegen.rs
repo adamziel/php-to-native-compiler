@@ -21,6 +21,8 @@ const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array li
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -112,59 +114,40 @@ impl LlvmGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
-            Stmt::CompoundAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
-            )),
-            Stmt::IncrementDecrement { span, .. } => Err(self.unsupported(
-                *span,
-                "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet",
-            )),
-            Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
-            )),
+            Stmt::CompoundAssign { span, .. }
+            | Stmt::IncrementDecrement { span, .. }
+            | Stmt::NullCoalesceAssign { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
             Stmt::Expr { expr, .. } => {
                 self.emit_expr(expr)?;
                 Ok(())
             }
-            Stmt::Function(function) => Err(self.unsupported(
-                function.span,
-                LLVM_FUNCTION_DECLARATION_REJECTION,
-            )),
-            Stmt::Class(class) => Err(self.unsupported(
-                class.span,
-                LLVM_OBJECT_CLASS_REJECTION,
-            )),
+            Stmt::Function(function) => {
+                Err(self.unsupported(function.span, LLVM_FUNCTION_DECLARATION_REJECTION))
+            }
+            Stmt::Class(class) => Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION)),
             Stmt::If { span, .. }
             | Stmt::While { span, .. }
             | Stmt::DoWhile { span, .. }
             | Stmt::For { span, .. }
             | Stmt::Switch { span, .. }
             | Stmt::Break { span }
-            | Stmt::Continue { span } => {
-                Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION))
-            }
+            | Stmt::Continue { span } => Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION)),
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
-            Stmt::UnsetVariable { span, .. } => Err(self.unsupported(
-                *span,
-                "variable unset is supported by phpc run but not LLVM IR emission yet",
-            )),
+            Stmt::UnsetVariable { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
             Stmt::UnsetArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Stmt::UnsetMany { span, .. } => Err(self.unsupported(
-                *span,
-                "multiple-operand unset is supported by phpc run but not LLVM IR emission yet",
-            )),
-            Stmt::ConstDeclaration { span, .. } => Err(self.unsupported(
-                *span,
-                LLVM_GLOBAL_CONSTANT_REJECTION,
-            )),
-            Stmt::Return { span, .. } => Err(self.unsupported(
-                *span,
-                LLVM_FUNCTION_DECLARATION_REJECTION,
-            )),
+            Stmt::UnsetMany { span, .. } => Err(self.unsupported(*span, LLVM_MUTATION_REJECTION)),
+            Stmt::ConstDeclaration { span, .. } => {
+                Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
+            }
+            Stmt::Return { span, .. } => {
+                Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
+            }
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,
                 "global declarations are not supported by LLVM IR emission yet",
@@ -191,10 +174,9 @@ impl LlvmGenerator {
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Index { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::AppendIndex { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
-            Expr::Property { span, .. } => Err(self.unsupported(
-                *span,
-                LLVM_OBJECT_CLASS_REJECTION,
-            )),
+            Expr::Property { span, .. } => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -202,10 +184,7 @@ impl LlvmGenerator {
                 )
             }),
             Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
-                Err(self.unsupported(
-                    *span,
-                    LLVM_GLOBAL_CONSTANT_REJECTION,
-                ))
+                Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
             Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
@@ -213,14 +192,10 @@ impl LlvmGenerator {
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
-                *span,
-                LLVM_FUNCTION_CALL_REJECTION,
-            )),
-            Expr::New { span, .. } => Err(self.unsupported(
-                *span,
-                LLVM_OBJECT_CLASS_REJECTION,
-            )),
+            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => {
+                Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION))
+            }
+            Expr::New { span, .. } => Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION)),
             Expr::Unary { op, span, .. } => {
                 if matches!(op, UnaryOp::BitwiseNot) {
                     return Err(self.unsupported(
@@ -233,26 +208,15 @@ impl LlvmGenerator {
                     "unary expressions are supported by phpc run but not LLVM IR emission yet",
                 ))
             }
-            Expr::Assign { span, .. } => Err(self.unsupported(
-                *span,
-                "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet",
-            )),
-            Expr::CompoundAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "compound assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
-            )),
-            Expr::NullCoalesceAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "null coalescing assignment expressions are supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
-            )),
-            Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
-                *span,
-                "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet",
-            )),
-            Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => Err(self.unsupported(
-                *span,
-                LLVM_CONDITIONAL_REJECTION,
-            )),
+            Expr::Assign { span, .. }
+            | Expr::CompoundAssign { span, .. }
+            | Expr::NullCoalesceAssign { span, .. }
+            | Expr::IncrementDecrement { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => {
+                Err(self.unsupported(*span, LLVM_CONDITIONAL_REJECTION))
+            }
             Expr::Binary {
                 left,
                 op,
@@ -266,10 +230,7 @@ impl LlvmGenerator {
                     ));
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
-                    return Err(self.unsupported(
-                        *span,
-                        LLVM_CONDITIONAL_REJECTION,
-                    ));
+                    return Err(self.unsupported(*span, LLVM_CONDITIONAL_REJECTION));
                 }
                 if matches!(
                     op,
@@ -783,30 +744,21 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
-            Stmt::CompoundAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not assembly emission yet",
-            )),
-            Stmt::IncrementDecrement { span, .. } => Err(self.unsupported(
-                *span,
-                "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not assembly emission yet",
-            )),
-            Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not assembly emission yet",
-            )),
+            Stmt::CompoundAssign { span, .. }
+            | Stmt::IncrementDecrement { span, .. }
+            | Stmt::NullCoalesceAssign { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
             Stmt::Expr { expr, .. } => {
                 self.emit_expr(expr)?;
                 Ok(())
             }
-            Stmt::Function(function) => Err(self.unsupported(
-                function.span,
-                ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
-            )),
-            Stmt::Class(class) => Err(self.unsupported(
-                class.span,
-                ASSEMBLY_OBJECT_CLASS_REJECTION,
-            )),
+            Stmt::Function(function) => {
+                Err(self.unsupported(function.span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
+            }
+            Stmt::Class(class) => {
+                Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
             Stmt::If { span, .. }
             | Stmt::While { span, .. }
             | Stmt::DoWhile { span, .. }
@@ -817,25 +769,21 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
-            Stmt::UnsetVariable { span, .. } => Err(self.unsupported(
-                *span,
-                "variable unset is supported by phpc run but not assembly emission yet",
-            )),
+            Stmt::UnsetVariable { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
             Stmt::UnsetArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Stmt::UnsetMany { span, .. } => Err(self.unsupported(
-                *span,
-                "multiple-operand unset is supported by phpc run but not assembly emission yet",
-            )),
-            Stmt::ConstDeclaration { span, .. } => Err(self.unsupported(
-                *span,
-                ASSEMBLY_GLOBAL_CONSTANT_REJECTION,
-            )),
-            Stmt::Return { span, .. } => Err(self.unsupported(
-                *span,
-                ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
-            )),
+            Stmt::UnsetMany { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Stmt::ConstDeclaration { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            }
+            Stmt::Return { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
+            }
             Stmt::Global { span, .. } => Err(self.unsupported(
                 *span,
                 "global declarations are not supported by assembly emission yet",
@@ -864,10 +812,9 @@ impl CGenerator {
             Expr::AppendIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::Property { span, .. } => Err(self.unsupported(
-                *span,
-                ASSEMBLY_OBJECT_CLASS_REJECTION,
-            )),
+            Expr::Property { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
                     *span,
@@ -883,14 +830,10 @@ impl CGenerator {
             Expr::Call { name, span, .. } if is_array_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
-                *span,
-                ASSEMBLY_FUNCTION_CALL_REJECTION,
-            )),
-            Expr::New { span, .. } => Err(self.unsupported(
-                *span,
-                ASSEMBLY_OBJECT_CLASS_REJECTION,
-            )),
+            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+            }
+            Expr::New { span, .. } => Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION)),
             Expr::Unary { op, span, .. } => {
                 if matches!(op, UnaryOp::BitwiseNot) {
                     return Err(self.unsupported(
@@ -903,26 +846,15 @@ impl CGenerator {
                     "unary expressions are supported by phpc run but not assembly emission yet",
                 ))
             }
-            Expr::Assign { span, .. } => Err(self.unsupported(
-                *span,
-                "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not assembly emission yet",
-            )),
-            Expr::CompoundAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "compound assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not assembly emission yet",
-            )),
-            Expr::NullCoalesceAssign { span, .. } => Err(self.unsupported(
-                *span,
-                "null coalescing assignment expressions are supported by phpc run for direct variables, direct array offsets, and direct object properties but not assembly emission yet",
-            )),
-            Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
-                *span,
-                "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not assembly emission yet",
-            )),
-            Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => Err(self.unsupported(
-                *span,
-                ASSEMBLY_CONDITIONAL_REJECTION,
-            )),
+            Expr::Assign { span, .. }
+            | Expr::CompoundAssign { span, .. }
+            | Expr::NullCoalesceAssign { span, .. }
+            | Expr::IncrementDecrement { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_CONDITIONAL_REJECTION))
+            }
             Expr::Binary {
                 left,
                 op,
@@ -936,10 +868,7 @@ impl CGenerator {
                     ));
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
-                    return Err(self.unsupported(
-                        *span,
-                        ASSEMBLY_CONDITIONAL_REJECTION,
-                    ));
+                    return Err(self.unsupported(*span, ASSEMBLY_CONDITIONAL_REJECTION));
                 }
                 if matches!(
                     op,

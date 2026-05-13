@@ -1,6 +1,8 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
@@ -433,10 +435,7 @@ fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -446,10 +445,7 @@ fn emit_ir_rejects_bitwise_compound_assignment_until_native_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -459,10 +455,7 @@ fn emit_ir_rejects_modulo_compound_assignment_until_native_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -472,10 +465,7 @@ fn emit_ir_rejects_compound_assignment_expressions_until_native_lowering_exists(
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "compound assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -485,10 +475,7 @@ fn emit_ir_rejects_array_offset_compound_assignment_until_native_lowering_exists
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -498,8 +485,5 @@ fn emit_ir_rejects_object_property_compound_assignment_until_native_lowering_exi
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }

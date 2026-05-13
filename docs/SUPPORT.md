@@ -958,9 +958,12 @@
   code has PHP truthiness, branch layout, loop control flow, switch
   fallthrough, references/copy-on-write side-effect behavior, and exact native
   error objects.
-  Variable unset, multiple-operand unset, assignment
-  expressions, compound assignment expressions, and increment/decrement
-  expressions are rejected with explicit codegen errors.
+  Native compound assignment, null coalescing assignment,
+  increment/decrement, assignment expressions, direct variable unset, and
+  multiple-operand unset are rejected before operand or mutation-target
+  lowering with a specific codegen diagnostic until generated code has
+  read-modify-write ordering, null-aware mutation, unset symbol-table effects,
+  references/copy-on-write, and exact native error objects.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.

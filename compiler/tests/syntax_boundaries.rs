@@ -1,6 +1,8 @@
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Parse);
@@ -346,10 +348,7 @@ fn emit_ir_rejects_assignment_expression_at_codegen_boundary() {
         php_compiler::emit_ir_source("<?php\n$value = 1;\necho ($value = 2);\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -386,10 +385,7 @@ fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$value += 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -466,10 +462,7 @@ fn emit_ir_rejects_increment_decrement_expressions_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$value = 1;\necho $value++;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]

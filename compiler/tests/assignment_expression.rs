@@ -1,6 +1,8 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+
 #[test]
 fn direct_variable_assignment_expressions_return_assigned_values() {
     let execution = run_source(
@@ -397,10 +399,7 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -410,10 +409,7 @@ fn emit_ir_rejects_chained_assignment_expressions_until_native_lowering_exists()
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 9);
-    assert_eq!(
-        error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -424,10 +420,7 @@ fn emit_ir_rejects_array_offset_assignment_expressions_until_native_lowering_exi
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -437,10 +430,7 @@ fn emit_ir_rejects_append_offset_assignment_expressions_until_native_lowering_ex
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]
@@ -450,8 +440,5 @@ fn emit_ir_rejects_object_property_assignment_expressions_until_native_lowering_
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
-    );
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }

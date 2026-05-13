@@ -138,6 +138,12 @@ Native lowering rejects `if`/`elseif`/`else`, `while`, `for`, `do ... while`,
 lowering until generated code has PHP truthiness, branch layout, loop control
 flow, switch fallthrough, references/copy-on-write side-effect behavior, and
 exact native error behavior.
+Native lowering rejects compound assignment, null coalescing assignment,
+increment/decrement, assignment expressions, direct variable `unset`, and
+multiple-operand `unset` before operands or mutation targets are lowered until
+generated code has read-modify-write ordering, null-aware mutation, unset
+symbol-table effects, references/copy-on-write behavior, and exact native error
+behavior.
 
 ## Dynamic Features
 

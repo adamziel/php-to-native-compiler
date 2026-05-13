@@ -378,6 +378,11 @@ Control-flow statements including `if`/`elseif`/`else`, `while`, `for`,
 lowering until generated code has PHP truthiness, branch layout, loop control,
 switch fallthrough, references/copy-on-write side-effect behavior, and exact
 native error behavior.
+Mutation forms that are still interpreter-only, including compound assignment,
+null coalescing assignment, increment/decrement, assignment expressions, direct
+variable `unset`, and multiple-operand `unset`, are rejected by native lowering
+until generated code has read-modify-write ordering, null-aware mutation, unset
+symbol-table effects, references/copy-on-write, and exact native error behavior.
 Unsupported programs and broader PHP coercions are rejected with structured
 codegen errors.
 
