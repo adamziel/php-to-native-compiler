@@ -926,7 +926,11 @@
   rejected before branch or operand lowering with a specific codegen diagnostic
   until generated code has PHP truthiness conversion, null-aware variable,
   array-offset, and object-property lookup, branch side-effect ordering, and
-  exact native error objects.
+  exact native error objects. Native direct and dynamic function calls are
+  rejected before argument or callee lowering with a specific codegen
+  diagnostic until generated code has runtime call lookup, stack-frame layout,
+  arity/type diagnostics, callable builtin dispatch, dynamic string-call
+  dispatch, and exact native error objects.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,

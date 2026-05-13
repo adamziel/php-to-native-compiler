@@ -3214,9 +3214,19 @@ Still fails:
   `phpc compile --emit-ir` CLI snapshot pins the native rejection.
   References/copy-on-write side effects and broader native lowering remain
   unsupported.
+- Added a native function-call boundary. LLVM IR emission now rejects direct
+  builtin calls, user-function calls, and dynamic string-valued calls before
+  lowering arguments or callees, with a specific codegen diagnostic until
+  generated code has runtime call lookup, stack-frame layout, arity/type
+  diagnostics, callable builtin dispatch, dynamic string-call dispatch, and
+  exact native error behavior. The C assembly fallback carries the same
+  boundary for consistency, `phpc run` fixture coverage still proves the
+  current function-call subset, and a `phpc compile --emit-ir` CLI snapshot
+  pins the native rejection. References/copy-on-write side effects and broader
+  native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for function calls, starting with
-  user functions, callable builtins, and dynamic string-valued calls before
-  native runtime call lookup, stack frames, and callback dispatch exist.
+- Add the next honest native-codegen boundary for user-function declarations
+  and returns before native function symbol tables, stack-frame layout, and
+  return-value flow exist.

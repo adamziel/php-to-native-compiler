@@ -104,6 +104,10 @@ Native lowering rejects ternary and null coalescing expressions before branch
 or operand lowering until generated code has PHP truthiness conversion,
 null-aware variable/offset/property lookup, branch side-effect ordering, and
 exact native error behavior.
+Native lowering rejects direct and dynamic function calls before argument,
+callee, or callback lowering until generated code has runtime call lookup,
+stack-frame layout, arity/type diagnostics, callable builtin dispatch, dynamic
+string-call dispatch, and exact native error behavior.
 
 ## Dynamic Features
 

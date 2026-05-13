@@ -355,8 +355,11 @@ lowering until generated code has PHP bytewise string behavior,
 scalar-to-int coercion, and shift diagnostics. Native ternary and null
 coalescing expressions are rejected before branch/operand lowering until
 generated code has PHP truthiness, null-aware lookup, and branch side-effect
-ordering. Unsupported programs and broader PHP coercions are rejected with
-structured codegen errors.
+ordering. Native function calls are rejected before argument/callee lowering
+until generated code has runtime call lookup, stack frames, arity/type
+diagnostics, callable builtin dispatch, and dynamic string-call dispatch.
+Unsupported programs and broader PHP coercions are rejected with structured
+codegen errors.
 
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`

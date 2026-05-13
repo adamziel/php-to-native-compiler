@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added a native function-call boundary. LLVM IR emission now rejects function
+  calls, including direct callable builtins, user functions, and dynamic
+  string-valued calls, before lowering arguments or callees, with a specific
+  codegen diagnostic until generated code has runtime call lookup, stack
+  frames, arity/type diagnostics, callback dispatch, and dynamic string-call
+  dispatch; the C assembly fallback carries the same boundary for consistency.
+  A runtime fixture still proves the current interpreter function-call subset,
+  and a `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  References/copy-on-write, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added a native conditional-expression boundary. LLVM IR emission now rejects
   full ternary, short ternary, and null coalescing expressions before lowering
   branches or operands, with a specific codegen diagnostic until generated code

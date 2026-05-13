@@ -13079,3 +13079,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:50:12Z
 
 - Post-round 59 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:50:25Z
+
+- Starting round 60 at 20260513T045025Z from HEAD `dff9cbc`.
+
+## Loop Event 2026-05-13T04:50:35Z
+
+- Pre-round 60 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:54:04Z
+
+- Task attempted: completed Milestone 169 by tightening the native codegen
+  boundary for function calls. LLVM IR emission now rejects direct builtin
+  calls, user-function calls, and dynamic string-valued calls before lowering
+  arguments or callees with a specific diagnostic until generated code has
+  runtime call lookup, stack-frame layout, arity/type diagnostics, callable
+  builtin dispatch, dynamic string-call dispatch, and exact native error
+  behavior; the C assembly fallback carries the same boundary for consistency.
+  Runtime fixture coverage still proves the current `phpc run` function-call
+  subset.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_function_call_boundary.rs`,
+  `tests/fixtures/milestone169/native_function_call_boundary.php`,
+  `tests/fixtures/milestone169/native_function_call_boundary.stdout`,
+  `tests/fixtures/milestone169/native_function_call_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed after formatting;
+  `cargo test -p phpc --test native_function_call_boundary -- --nocapture`
+  passed with 6 tests; `cargo run -p phpc -- test tests/fixtures/milestone169`
+  passed with 1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone169` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- run tests/fixtures/milestone169/native_function_call_boundary.php`
+  printed the committed output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone169/native_function_call_boundary.php --emit-ir`
+  exited `1` with the expected explicit native function-call codegen
+  diagnostic; `tools/run-tests.sh` passed with 419 fixtures, 165 system PHP
+  comparisons, and 254 comparison skips.
+- Remaining semantic gaps: generated code still lacks runtime call lookup,
+  stack-frame layout, callable builtin dispatch, dynamic string-call dispatch,
+  user-function call/return lowering, callbacks, references/copy-on-write side
+  effects, exact native error objects, and broader native lowering.
+- Next concrete task: add Milestone 170, the next honest native-codegen
+  boundary for user-function declarations and returns before native function
+  symbol tables, stack-frame layout, defaults/recursion guards, and return-value
+  flow exist.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject function calls"`.

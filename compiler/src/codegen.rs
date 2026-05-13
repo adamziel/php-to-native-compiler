@@ -7,6 +7,8 @@ use crate::error::{CompileResult, Diagnostic, Phase};
 
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -238,7 +240,7 @@ impl LlvmGenerator {
             }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
-                "function calls are supported by phpc run but not LLVM IR emission yet",
+                LLVM_FUNCTION_CALL_REJECTION,
             )),
             Expr::New { span, .. } => Err(self.unsupported(
                 *span,
@@ -942,7 +944,7 @@ impl CGenerator {
             }),
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
-                "function calls are supported by phpc run but not assembly emission yet",
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
             )),
             Expr::New { span, .. } => Err(self.unsupported(
                 *span,

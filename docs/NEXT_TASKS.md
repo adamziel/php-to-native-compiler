@@ -1607,9 +1607,18 @@ handled.
 
 ## Milestone 169: Native Function Call Boundary
 
-- [ ] Add the next honest native-codegen boundary for function calls, including
+- [x] Add the next honest native-codegen boundary for function calls, including
   user functions, callable builtins, and dynamic string-valued calls, either by
   lowering a narrow direct-call subset or by tightening explicit diagnostics
   with fixture CLI coverage, documentation, and named gaps for runtime call
   lookup, arity/type diagnostics, stack frames, callbacks, references,
+  exact native error objects, and broader native lowering.
+
+## Milestone 170: Native Function Declaration Boundary
+
+- [ ] Add the next honest native-codegen boundary for user-function
+  declarations and returns, either by lowering a narrow no-capture direct-call
+  subset or by tightening explicit diagnostics with fixture CLI coverage,
+  documentation, and named gaps for function symbol tables, stack-frame layout,
+  default parameters, recursion guards, return-value flow, references,
   exact native error objects, and broader native lowering.
