@@ -53,6 +53,24 @@ fn emit_ir_still_lowers_nonzero_division() {
 }
 
 #[test]
+fn emit_ir_still_lowers_nonzero_literal_variable_divisor() {
+    let ir = emit_ir_source("<?php\n$divisor = 2;\necho 10 / $divisor;\n").unwrap();
+
+    assert!(ir.contains("fdiv double"), "{ir}");
+}
+
+#[test]
+fn emit_ir_rejects_dynamic_divisors_until_runtime_checks_exist() {
+    let error = emit_ir_source("<?php\n$divisor = 4 - 2;\necho 10 / $divisor;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(
+        error.message,
+        "LLVM division lowering rejects dynamic divisors until native runtime zero checks exist; phpc run handles runtime division diagnostics"
+    );
+}
+
+#[test]
 fn emit_asm_rejects_static_zero_divisor_before_backend_execution() {
     let error = emit_asm_source("<?php\necho 10 / 0;\n").unwrap_err();
 
@@ -87,6 +105,35 @@ fn native_division_zero_emit_ir_cli_snapshot_matches_committed_output() {
         workspace_root.join("tests/fixtures/milestone162/native_division_by_zero_emit_ir.cli"),
     )
     .expect("native division safety CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_dynamic_division_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join("tests/fixtures/milestone163/native_dynamic_division.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone163/native_dynamic_division_emit_ir.cli"),
+    )
+    .expect("native dynamic division CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

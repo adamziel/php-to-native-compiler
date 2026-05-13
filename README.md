@@ -342,10 +342,10 @@ supported yet.
 LLVM IR emission currently supports a smaller straight-line subset, including
 integer `+`, `-`, `*`, `/`, and a narrow integer `%` lowering when the divisor
 is a nonzero integer known at compile time. Native `/` lowering rejects
-statically known zero divisors before emitting LLVM IR or fallback C; dynamic
-zero checks and PHP-shaped native `DivisionByZeroError` objects are not
-implemented. Unsupported programs and broader PHP coercions are rejected with
-structured codegen errors.
+statically known zero divisors and runtime-computed divisors before emitting
+LLVM IR or fallback C; dynamic zero checks and PHP-shaped native
+`DivisionByZeroError` objects are not implemented. Unsupported programs and
+broader PHP coercions are rejected with structured codegen errors.
 
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`

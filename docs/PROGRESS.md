@@ -3160,9 +3160,17 @@ Still fails:
   snapshot. Dynamic zero checks, PHP-shaped native `DivisionByZeroError`
   objects, warning/recovery behavior, references/copy-on-write side effects,
   string numeric coercions, and broader numeric lowering remain unsupported.
+- Added a native dynamic division boundary for `/`. LLVM IR emission and the C
+  assembly fallback now reject runtime-computed divisors until generated code
+  has explicit zero checks. A runtime fixture covers the same program through
+  `phpc run`, and a `phpc compile --emit-ir` CLI snapshot pins the structured
+  codegen diagnostic. PHP-shaped native `DivisionByZeroError` objects,
+  warning/recovery behavior, references/copy-on-write side effects, string
+  numeric coercions, and broader numeric lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen safety boundary for dynamic division
-  divisors, either by inserting a narrow runtime zero check or by rejecting
-  dynamic divisors explicitly until PHP-shaped native errors exist.
+- Add the next honest native-codegen boundary for string operands in arithmetic,
+  either by implementing a narrow compile-time numeric-string coercion slice or
+  by tightening diagnostics and fixture coverage for native string arithmetic
+  rejection.

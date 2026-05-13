@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added a native dynamic division boundary for `/`: LLVM IR emission and the C
+  assembly fallback now reject runtime-computed divisors until generated code
+  has an explicit zero-check path. A runtime fixture still exercises the same
+  program through `phpc run`, and a `phpc compile --emit-ir` CLI snapshot pins
+  the codegen diagnostic. PHP-shaped native `DivisionByZeroError` objects,
+  warning/recovery behavior, string numeric coercions, references/copy-on-write,
+  and broader numeric lowering remain explicit gaps.
 - Added a native division safety boundary for `/`: LLVM IR emission and the C
   assembly fallback now reject statically known zero divisors before emitting
   native division, with focused unit coverage and a `phpc compile --emit-ir`

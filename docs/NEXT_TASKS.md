@@ -1550,10 +1550,20 @@ handled.
 
 ## Milestone 163: Native Dynamic Division Boundary
 
-- [ ] Add the next honest native-codegen safety boundary for division `/` with
+- [x] Add the next honest native-codegen safety boundary for division `/` with
   dynamic divisors, either by inserting a narrow runtime zero check for the
   current emitted numeric subset or by rejecting dynamic divisors explicitly
   until PHP-shaped native `DivisionByZeroError` objects exist; include fixture
   CLI coverage, documentation, and named gaps for warning/recovery,
   references/copy-on-write, string numeric coercions, and broader numeric
   lowering.
+
+## Milestone 164: Native String Arithmetic Boundary
+
+- [ ] Add the next honest native-codegen boundary for string operands in
+  arithmetic, either by implementing a narrow compile-time numeric-string
+  coercion slice for lowerable arithmetic expressions or by tightening
+  diagnostics and fixture CLI coverage for native string arithmetic rejection;
+  include documentation and named gaps for PHP warning/recovery,
+  non-numeric-string diagnostics, references/copy-on-write, exact native error
+  objects, and broader numeric lowering.

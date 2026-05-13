@@ -902,9 +902,10 @@
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   with statically lowerable scalar expressions. Native `/` lowering now
   rejects statically known zero divisors, including lowerable integer, float,
-  `false`, and `null` zero values, before emitting LLVM IR or fallback C;
-  dynamic zero checks and PHP-shaped native `DivisionByZeroError` objects are
-  not implemented. Integer `%` has a narrow native lowering for integer
+  `false`, and `null` zero values, and runtime-computed divisors before
+  emitting LLVM IR or fallback C; dynamic zero checks and PHP-shaped native
+  `DivisionByZeroError` objects are not implemented. Integer `%` has a narrow
+  native lowering for integer
   operands when the divisor is a nonzero integer known at compile time; runtime
   `%` coercions for nulls, booleans, floats, numeric strings, dynamic divisors,
   and exact PHP error objects are still outside native lowering.

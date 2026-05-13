@@ -406,11 +406,20 @@ impl LlvmGenerator {
     }
 
     fn emit_div(&mut self, left: IrValue, right: IrValue, span: Span) -> CompileResult<IrValue> {
-        if is_known_zero_ir_divisor(&right) {
-            return Err(self.unsupported(
-                span,
-                "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
-            ));
+        match classify_ir_divisor(&right) {
+            NativeDivisorStatus::KnownZero => {
+                return Err(self.unsupported(
+                    span,
+                    "LLVM division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
+                ));
+            }
+            NativeDivisorStatus::Dynamic => {
+                return Err(self.unsupported(
+                    span,
+                    "LLVM division lowering rejects dynamic divisors until native runtime zero checks exist; phpc run handles runtime division diagnostics",
+                ));
+            }
+            NativeDivisorStatus::KnownNonZero | NativeDivisorStatus::UnsupportedCoercion => {}
         }
         let left = self.into_float(left, span)?;
         let right = self.into_float(right, span)?;
@@ -1068,11 +1077,20 @@ impl CGenerator {
     }
 
     fn emit_div(&mut self, left: CValue, right: CValue, span: Span) -> CompileResult<CValue> {
-        if is_known_zero_c_divisor(&right) {
-            return Err(self.unsupported(
-                span,
-                "assembly division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
-            ));
+        match classify_c_divisor(&right) {
+            NativeDivisorStatus::KnownZero => {
+                return Err(self.unsupported(
+                    span,
+                    "assembly division lowering rejects statically known division by zero; phpc run reports a runtime diagnostic",
+                ));
+            }
+            NativeDivisorStatus::Dynamic => {
+                return Err(self.unsupported(
+                    span,
+                    "assembly division lowering rejects dynamic divisors until native runtime zero checks exist; phpc run handles runtime division diagnostics",
+                ));
+            }
+            NativeDivisorStatus::KnownNonZero | NativeDivisorStatus::UnsupportedCoercion => {}
         }
         let left = self.into_float(left, span)?;
         let right = self.into_float(right, span)?;
@@ -1209,23 +1227,58 @@ fn c_string(value: &str) -> String {
     escaped
 }
 
-fn is_known_zero_ir_divisor(value: &IrValue) -> bool {
+enum NativeDivisorStatus {
+    KnownZero,
+    KnownNonZero,
+    Dynamic,
+    UnsupportedCoercion,
+}
+
+fn classify_ir_divisor(value: &IrValue) -> NativeDivisorStatus {
     match value {
-        IrValue::Null => true,
-        IrValue::Bool(value) => !value,
-        IrValue::Int(value) => value.parse::<i64>() == Ok(0),
-        IrValue::Float(value) => value.parse::<f64>().is_ok_and(|value| value == 0.0),
-        IrValue::String(_) => false,
+        IrValue::Null => NativeDivisorStatus::KnownZero,
+        IrValue::Bool(value) => {
+            if *value {
+                NativeDivisorStatus::KnownNonZero
+            } else {
+                NativeDivisorStatus::KnownZero
+            }
+        }
+        IrValue::Int(value) => match value.parse::<i64>() {
+            Ok(0) => NativeDivisorStatus::KnownZero,
+            Ok(_) => NativeDivisorStatus::KnownNonZero,
+            Err(_) => NativeDivisorStatus::Dynamic,
+        },
+        IrValue::Float(value) => match value.parse::<f64>() {
+            Ok(value) if value == 0.0 => NativeDivisorStatus::KnownZero,
+            Ok(_) => NativeDivisorStatus::KnownNonZero,
+            Err(_) => NativeDivisorStatus::Dynamic,
+        },
+        IrValue::String(_) => NativeDivisorStatus::UnsupportedCoercion,
     }
 }
 
-fn is_known_zero_c_divisor(value: &CValue) -> bool {
+fn classify_c_divisor(value: &CValue) -> NativeDivisorStatus {
     match value {
-        CValue::Null => true,
-        CValue::Bool(value) => !value,
-        CValue::Int(value) => value.parse::<i64>() == Ok(0),
-        CValue::Float(value) => value.parse::<f64>().is_ok_and(|value| value == 0.0),
-        CValue::String(_) => false,
+        CValue::Null => NativeDivisorStatus::KnownZero,
+        CValue::Bool(value) => {
+            if *value {
+                NativeDivisorStatus::KnownNonZero
+            } else {
+                NativeDivisorStatus::KnownZero
+            }
+        }
+        CValue::Int(value) => match value.parse::<i64>() {
+            Ok(0) => NativeDivisorStatus::KnownZero,
+            Ok(_) => NativeDivisorStatus::KnownNonZero,
+            Err(_) => NativeDivisorStatus::Dynamic,
+        },
+        CValue::Float(value) => match value.parse::<f64>() {
+            Ok(value) if value == 0.0 => NativeDivisorStatus::KnownZero,
+            Ok(_) => NativeDivisorStatus::KnownNonZero,
+            Err(_) => NativeDivisorStatus::Dynamic,
+        },
+        CValue::String(_) => NativeDivisorStatus::UnsupportedCoercion,
     }
 }
 
