@@ -1456,9 +1456,17 @@ handled.
 
 ## Milestone 152: Ternary Precedence Coverage
 
-- [ ] Add explicit executable coverage for ternary expressions mixed with
+- [x] Add explicit executable coverage for ternary expressions mixed with
   null-coalescing expressions and assignment-expression branches, including
   precedence/lazy-evaluation assertions, fixture CLI coverage, documentation,
   native-codegen rejection while lowering remains unsupported, and explicit
   gaps for unparenthesized nested ternaries, throw expressions inside arms,
+  references/copy-on-write, exact native error objects, and native lowering.
+
+## Milestone 153: Logical Operator Boundary
+
+- [ ] Add the next honest boundary or executable slice for logical operators
+  `&&`, `||`, `and`, and `or`, including parser/runtime behavior, fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps for
+  precedence, short-circuiting, assignment-expression interaction,
   references/copy-on-write, exact native error objects, and native lowering.

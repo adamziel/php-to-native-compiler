@@ -100,6 +100,41 @@ echo trace("falsey-condition", "") ?: trace("falsey-fallback", "fallback"), "\n"
 }
 
 #[test]
+fn ternary_mixes_with_null_coalescing_and_assignment_branches() {
+    let execution = run_source(
+        r#"<?php
+function trace($name, $value) {
+    echo "call:", $name, "\n";
+    return $value;
+}
+
+echo (($missing ?? false) ? trace("bad-condition-true", "bad") : trace("condition-false", "F")), "\n";
+echo (false ? trace("bad-true", "bad") : $missing ?? trace("false-branch-coalesce", "C")), "\n";
+echo (true ? $missing ?? trace("true-branch-coalesce", "T") : trace("bad-false", "bad")), "\n";
+
+$left = "left-start";
+$right = "right-start";
+$picked = true ? ($left = trace("assign-left", "L")) : ($right = trace("assign-right", "R"));
+echo $picked, ":", $left, ":", $right, "\n";
+
+$count = 1;
+$fallback = null;
+$picked = false ? ($count += trace("bad-compound", 10)) : ($fallback ??= trace("coalesce-assign", "ready"));
+echo $picked, ":", $count, ":", $fallback, "\n";
+
+echo (($missing ?? "kept") ?: trace("bad-short-fallback", "bad")), "\n";
+echo (($empty ?? "") ?: trace("short-fallback", "short"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "call:condition-false\nF\ncall:false-branch-coalesce\nC\ncall:true-branch-coalesce\nT\ncall:assign-left\nL:L:right-start\ncall:coalesce-assign\nready:1:ready\nkept\ncall:short-fallback\nshort"
+    );
+}
+
+#[test]
 fn unparenthesized_nested_ternary_remains_an_explicit_unsupported_boundary() {
     let error =
         run_source("<?php\n$flag = true;\necho $flag ? false ? 'bad' : 'inner' : 'outer';\n")

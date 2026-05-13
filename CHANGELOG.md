@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added Milestone 152 executable coverage for ternary expressions mixed with
+  null-coalescing expressions and assignment-expression branches. The covered
+  slice pins `??` precedence in ternary conditions and branches, lazy selected
+  branch/fallback behavior, short-ternary condition-value behavior after
+  coalescing, and branch-local direct assignment/compound assignment/`??=`
+  result semantics with fixture/CLI coverage and system PHP comparison while
+  keeping unparenthesized nested ternaries, throw expressions inside arms,
+  references/copy-on-write, exact native error objects, and native lowering as
+  explicit gaps.
 - Implemented short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including condition-value reuse, lazy fallback
   evaluation, scalar truthiness coverage, value-context fixture/CLI coverage,

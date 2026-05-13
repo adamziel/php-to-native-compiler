@@ -12038,3 +12038,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:53:57Z
 
 - Post-round 42 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:54:08Z
+
+- Starting round 43 at 20260513T025408Z from HEAD `fbdbcd4`.
+
+## Loop Event 2026-05-13T02:54:19Z
+
+- Pre-round 43 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:57:43Z
+
+- Task attempted: added Milestone 152 executable coverage for ternary
+  expressions mixed with null-coalescing expressions and assignment-expression
+  branches. The new fixture and unit test assert `??` binding in ternary
+  conditions and branches, lazy selected-branch/fallback behavior, short
+  ternary condition-value behavior after coalescing, and branch-local direct
+  assignment, compound assignment, and null coalescing assignment expression
+  result semantics.
+- Files changed: `compiler/tests/ternary_expression.rs`,
+  `compiler/tests/ternary_expression_cli.rs`,
+  `tests/fixtures/milestone152/ternary_precedence_assignment_branches.php`,
+  `tests/fixtures/milestone152/ternary_precedence_assignment_branches.stdout`,
+  `tests/fixtures/milestone152/ternary_precedence_assignment_branches.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  ternary_expression` passed; `cargo test -p phpc --test
+  ternary_expression_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone152` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone152` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 396 fixtures, 148 system PHP
+  comparisons, and 248 comparison skips.
+- Remaining semantic gaps: unparenthesized nested ternaries, throw expressions
+  inside arms, references, copy-on-write aliasing, exact native error objects,
+  and native lowering remain unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  logical operators `&&`, `||`, `and`, and `or`, including precedence,
+  short-circuiting, assignment-expression interaction, fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps.
+- Known-good tag: not created; this is a narrow expression-coverage checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "ternary expressions: cover precedence mixes"`.

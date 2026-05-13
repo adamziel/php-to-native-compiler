@@ -67,7 +67,9 @@ subset:
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, with truthiness-based condition selection,
-  condition-value reuse for short ternary, and lazy branch/fallback evaluation
+  condition-value reuse for short ternary, lazy branch/fallback evaluation,
+  and executable coverage for mixes with `??` and assignment-expression
+  branches over the documented direct-target subset
 - `if` / `elseif` / `else`
 - `while`, C-style `for` loops over the documented header subset,
   `do ... while` post-condition loops, `switch`/`case`/`default` statements

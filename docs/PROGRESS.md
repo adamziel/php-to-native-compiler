@@ -3039,9 +3039,20 @@ Still fails:
   Unparenthesized nested ternaries, thrown expressions inside arms, references,
   copy-on-write aliasing, exact native error objects, and native lowering
   remain unsupported.
+- Added explicit executable coverage for ternary expressions mixed with
+  null-coalescing expressions and assignment-expression branches. The covered
+  slice asserts PHP-compatible `??` binding in ternary conditions and branches,
+  lazy branch/fallback evaluation, short-ternary condition-value behavior after
+  coalescing, and selected-branch execution for direct assignment, direct
+  compound assignment, and direct null coalescing assignment expressions.
+  Fixture, CLI snapshot, unit, and system PHP comparison coverage all exercise
+  the documented subset, and native emission remains on the existing explicit
+  ternary rejection path. Unparenthesized nested ternaries, throw expressions
+  inside arms, references, copy-on-write aliasing, exact native error objects,
+  and native lowering remain unsupported.
 
 Next:
 
-- Add explicit executable coverage for ternary expressions mixed with
-  null-coalescing expressions and assignment-expression branches so precedence
-  and lazy evaluation stay documented.
+- Add an explicit logical operator boundary or executable slice for `&&`,
+  `||`, `and`, and `or`, including parser/runtime behavior, fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps.

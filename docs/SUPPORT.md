@@ -82,7 +82,8 @@
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including truthiness-based condition selection,
   lazy branch/fallback evaluation, condition-value reuse for short ternary,
-  and parenthesized nested ternaries
+  parenthesized nested ternaries, mixes with `??`, and assignment-expression
+  branches over the documented direct-target subset
 - `if` / `elseif` / `else`
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
@@ -1626,9 +1627,12 @@
   `$value ?: $fallback` evaluate the condition once, return that original
   condition value when truthy, and lazily evaluate the fallback only for falsey
   condition values. Parenthesized nested ternary expressions are supported.
-  Unparenthesized nested ternaries, thrown expressions inside arms, references,
-  copy-on-write aliasing, exact native error objects, and native lowering are
-  not implemented.
+  Current executable coverage also pins `??` precedence in ternary conditions
+  and branches, and lazy selected-branch behavior when full and short ternaries
+  contain direct assignment, compound-assignment, and null coalescing
+  assignment expressions. Unparenthesized nested ternaries, thrown expressions
+  inside arms, references, copy-on-write aliasing, exact native error objects,
+  and native lowering are not implemented.
 - Assignment expressions are limited to direct static variables as
   `$name = expr`, direct array offsets as `$array[$key] = expr`, direct public
   object properties as `$object->property = expr`, direct append offsets as
