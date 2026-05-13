@@ -12757,4 +12757,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   fixture coverage for native string arithmetic rejection.
 - Known-good tag: not created; this is a narrow native-codegen safety
   checkpoint, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject dynamic division divisors"`.
+- Checkpoint: `2c911de native codegen: reject dynamic division divisors`.
