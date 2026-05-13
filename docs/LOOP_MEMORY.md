@@ -15889,5 +15889,6 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: add Milestone 216 selected backend start-failure
   precedence coverage for a discovered `clang` command that cannot be started
   while fallback `llc` and `cc` are also available.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot empty-stderr selected failure precedence"`
-  after the full suite passes.
+- Checkpoint: `dbc8e73` (`codegen: snapshot empty-stderr selected failure
+  precedence`). A follow-up docs checkpoint records this commit hash in durable
+  loop memory.
