@@ -1236,6 +1236,41 @@ impl Parser {
         }
     }
 
+    fn null_coalescing_assignment_expression_target_from_expr(
+        &self,
+        expr: Expr,
+    ) -> Result<AssignTarget, &'static str> {
+        match expr {
+            Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match *target {
+                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: Some(*index),
+                    span,
+                }),
+                _ => Err(unsupported_null_coalescing_assignment_message()),
+            },
+            Expr::AppendIndex { .. } => Err(unsupported_null_coalescing_assignment_message()),
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => match *target {
+                Expr::Variable(object, _) => Ok(AssignTarget::Property {
+                    object,
+                    property,
+                    span,
+                }),
+                _ => Err(unsupported_null_coalescing_assignment_message()),
+            },
+            _ => Err(unsupported_null_coalescing_assignment_message()),
+        }
+    }
+
     fn parse_expression_statement(&mut self) -> CompileResult<Stmt> {
         let expr = self.parse_expression()?;
         let span = expr.span();
@@ -1347,6 +1382,42 @@ impl Parser {
             });
         }
 
+        if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+            && matches!(self.peek_next().kind, TokenKind::Equal)
+        {
+            let operator_span = self.advance().span;
+            self.advance();
+            let target = self
+                .null_coalescing_assignment_expression_target_from_expr(expr)
+                .map_err(|message| self.error_at(operator_span, message))?;
+            let span = target.span();
+
+            let value = self.parse_non_assignment_expression()?;
+            if let Some(span) = Self::find_append_index_span(&value) {
+                return Err(self.error_at(
+                    span,
+                    "cannot use [] for reading; append syntax is only supported in assignments",
+                ));
+            }
+            if Self::expr_contains_assignment(&value)
+                || self.check(|kind| matches!(kind, TokenKind::Equal))
+                || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+                    && matches!(self.peek_next().kind, TokenKind::Equal))
+                || self.check_compound_assignment_operator()
+            {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_chained_assignment_expression_message(),
+                ));
+            }
+
+            return Ok(Expr::NullCoalesceAssign {
+                target: Box::new(target),
+                expr: Box::new(value),
+                span,
+            });
+        }
+
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
             if let Some(span) = Self::find_append_index_span(&expr) {
                 return Err(self.error_at(
@@ -1390,6 +1461,11 @@ impl Parser {
 
     fn parse_non_assignment_expression(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_equality()?;
+        if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+            && matches!(self.peek_next().kind, TokenKind::Equal)
+        {
+            return Ok(expr);
+        }
         if self.match_token(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
             let operator_span = self.previous().span;
             if self.check(|kind| matches!(kind, TokenKind::Equal)) {
@@ -2146,6 +2222,7 @@ impl Parser {
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
             | Expr::CompoundAssign { .. }
+            | Expr::NullCoalesceAssign { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
@@ -2193,6 +2270,7 @@ impl Parser {
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
             | Expr::CompoundAssign { .. }
+            | Expr::NullCoalesceAssign { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
@@ -2203,7 +2281,9 @@ impl Parser {
 
     fn expr_contains_assignment(expr: &Expr) -> bool {
         match expr {
-            Expr::Assign { .. } | Expr::CompoundAssign { .. } => true,
+            Expr::Assign { .. } | Expr::CompoundAssign { .. } | Expr::NullCoalesceAssign { .. } => {
+                true
+            }
             Expr::Array { items, .. } => items.iter().any(|item| {
                 item.key
                     .as_ref()
@@ -2263,9 +2343,9 @@ impl Parser {
                 Self::find_append_index_span(left).or_else(|| Self::find_append_index_span(right))
             }
             Expr::Unary { expr, .. } => Self::find_append_index_span(expr),
-            Expr::Assign { expr, .. } | Expr::CompoundAssign { expr, .. } => {
-                Self::find_append_index_span(expr)
-            }
+            Expr::Assign { expr, .. }
+            | Expr::CompoundAssign { expr, .. }
+            | Expr::NullCoalesceAssign { expr, .. } => Self::find_append_index_span(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -2696,7 +2776,7 @@ fn unsupported_null_coalescing_assignment_message() -> &'static str {
 }
 
 fn unsupported_assignment_expression_message() -> &'static str {
-    "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset"
+    "unsupported assignment expression: this assignment form is not implemented in the current expression context"
 }
 
 fn unsupported_assignment_expression_target_message() -> &'static str {

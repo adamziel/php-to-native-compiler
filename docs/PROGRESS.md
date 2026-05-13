@@ -2852,11 +2852,11 @@ Still fails:
   supported by the interpreter. Fixture and CLI snapshot coverage record
   returned assignment values, read/write behavior, RHS call ordering, system
   PHP comparison passes for the supported fixture, chained assignment
-  expressions fail with stable parse diagnostics, expression-position `??=`
-  remains unsupported, and native emission rejects assignment expressions
-  explicitly until lowering exists. Direct array-offset assignment expressions
-  and object-property assignment expressions were implemented in later slices;
-  append-offset assignment expressions were implemented in a later slice;
+  expressions fail with stable parse diagnostics, and native emission rejects
+  assignment expressions explicitly until lowering exists. Direct array-offset
+  assignment expressions, object-property assignment expressions, append-offset
+  assignment expressions, and expression-position `??=` were implemented in
+  later slices;
   nested-offset assignment-expression targets remain unsupported. References,
   copy-on-write aliasing, exact native error objects, and native lowering
   remain unsupported.
@@ -2972,9 +2972,23 @@ Still fails:
   lowering exists. Append offsets, nested offsets, PHP string increment
   semantics, references/copy-on-write aliasing, broader PHP warning recovery,
   exact native error objects, and native lowering remain unsupported.
+- Implemented expression-position null coalescing assignment forms
+  `($name ??= expr)`, `($array[$key] ??= expr)`, and
+  `($object->property ??= expr)` over the same direct-variable,
+  direct-array-offset, and direct public-property value model as the existing
+  statement-level `??=` support. Expression forms preserve lazy right-hand
+  evaluation, return the assigned fallback or existing non-null value,
+  materialize undefined/null array targets for direct offsets, and keep
+  object-property writes limited to existing declared public property slots.
+  Fixture and CLI snapshot coverage include result values and system PHP
+  comparison for the supported fixture; unit coverage checks falsey non-null
+  preservation and native emission rejects `??=` expressions explicitly until
+  lowering exists. Append-offset `??=`, nested lvalues, dynamic property
+  names, non-public visibility context, magic methods, references/copy-on-write
+  aliasing, exact native error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest assignment-expression path for direct array offsets such
-  as `($array[$key] = expr)`, either executable assignment result semantics or
-  a tightened diagnostic boundary with fixture CLI coverage and documentation.
+- Add the next honest path for chained assignment expressions such as
+  `$left = $right = expr`, either executable right-to-left assignment result
+  semantics for direct variables or a tighter documented diagnostic boundary.

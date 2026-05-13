@@ -253,6 +253,10 @@ impl LlvmGenerator {
                 *span,
                 "compound assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
             )),
+            Expr::NullCoalesceAssign { span, .. } => Err(self.unsupported(
+                *span,
+                "null coalescing assignment expressions are supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
+            )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
                 "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet",
@@ -844,6 +848,10 @@ impl CGenerator {
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
                 "compound assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not assembly emission yet",
+            )),
+            Expr::NullCoalesceAssign { span, .. } => Err(self.unsupported(
+                *span,
+                "null coalescing assignment expressions are supported by phpc run for direct variables, direct array offsets, and direct object properties but not assembly emission yet",
             )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,

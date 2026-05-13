@@ -264,6 +264,58 @@ if ($box->empty === "") {
 }
 
 #[test]
+fn null_coalescing_assignment_expressions_return_assigned_or_existing_values() {
+    let source = r#"<?php
+function fallback($label, $value) {
+    echo $label, "\n";
+    return $value;
+}
+
+echo ($missing ??= fallback("missing-called", "missing-value")), ":", $missing, "\n";
+
+$nullable = null;
+echo ($nullable ??= fallback("null-called", "null-value")), ":", $nullable, "\n";
+
+$kept = "kept-value";
+echo ($kept ??= fallback("kept-called", "replacement")), ":", $kept, "\n";
+
+$false = false;
+if (($false ??= fallback("false-called", true)) === false) {
+    echo "false-result-kept\n";
+}
+
+$items = [];
+echo ($items["missing"] ??= fallback("array-missing-called", "array-missing")), ":", $items["missing"], "\n";
+$items["null"] = null;
+echo ($items["null"] ??= fallback("array-null-called", "array-null")), ":", $items["null"], "\n";
+$items["kept"] = "array-kept";
+echo ($items["kept"] ??= fallback("array-kept-called", "replacement")), ":", $items["kept"], "\n";
+
+class Box {
+    public $value;
+    public $kept;
+    public $flag;
+}
+
+$box = new Box();
+echo ($box->value ??= fallback("object-null-called", "object-value")), ":", $box->value, "\n";
+$box->kept = "object-kept";
+echo ($box->kept ??= fallback("object-kept-called", "replacement")), ":", $box->kept, "\n";
+$box->flag = false;
+if (($box->flag ??= fallback("object-false-called", true)) === false) {
+    echo "object-false-result-kept";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "missing-called\nmissing-value:missing-value\nnull-called\nnull-value:null-value\nkept-value:kept-value\nfalse-result-kept\narray-missing-called\narray-missing:array-missing\narray-null-called\narray-null:array-null\narray-kept:array-kept\nobject-null-called\nobject-value:object-value\nobject-kept:object-kept\nobject-false-result-kept"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn null_coalescing_assignment_rejects_missing_object_properties_after_lazy_fallback() {
     let error = runtime_error(
         r#"<?php
@@ -408,5 +460,18 @@ fn emit_ir_rejects_object_property_null_coalescing_assignment_until_native_lower
     assert_eq!(
         error.message,
         "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_null_coalescing_assignment_expressions_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\necho ($value ??= 'fallback');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "null coalescing assignment expressions are supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }

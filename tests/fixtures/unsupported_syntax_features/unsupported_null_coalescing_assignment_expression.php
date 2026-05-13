@@ -1,3 +1,3 @@
 <?php
-$value = null;
-echo ($value ??= "fallback");
+$items = [];
+echo ($items["outer"]["inner"] ??= "fallback");

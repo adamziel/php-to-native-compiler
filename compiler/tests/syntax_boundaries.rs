@@ -315,10 +315,10 @@ fn emit_ir_rejects_null_coalescing_expression_at_codegen_boundary() {
 fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$value = null;\necho ($value ??= 'fallback');\n",
+            "<?php\n$items = [];\necho ($items['outer']['inner'] ??= 'value');\n",
             3,
-            14,
-            "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset",
+            32,
+            "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented",
         ),
         (
             "<?php\n$items = [];\necho ($items['outer']['inner'] = 'value');\n",
@@ -327,10 +327,10 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented",
         ),
         (
-            "<?php\n$items = [];\necho ($items['key'] ??= 'value');\n",
+            "<?php\n$items = [];\necho ($items[] ??= 'value');\n",
             3,
-            21,
-            "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset",
+            16,
+            "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented",
         ),
         (
             "<?php\n$value = $other = 1;\n",

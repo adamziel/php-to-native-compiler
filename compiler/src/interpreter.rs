@@ -267,7 +267,7 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             Stmt::NullCoalesceAssign { target, expr, .. } => {
-                self.execute_null_coalesce_assignment(target, expr, scope)?;
+                self.evaluate_null_coalesce_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::Expr { expr, .. } => {
@@ -620,6 +620,9 @@ impl Interpreter {
                 expr,
                 span,
             } => self.evaluate_compound_assignment(target, *op, expr, *span, scope),
+            Expr::NullCoalesceAssign { target, expr, .. } => {
+                self.evaluate_null_coalesce_assignment(target, expr, scope)
+            }
             Expr::IncrementDecrement {
                 target,
                 op,
@@ -1073,19 +1076,22 @@ impl Interpreter {
         })
     }
 
-    fn execute_null_coalesce_assignment(
+    fn evaluate_null_coalesce_assignment(
         &mut self,
         target: &AssignTarget,
         expr: &Expr,
         scope: &mut SymbolTable,
-    ) -> CompileResult<()> {
+    ) -> CompileResult<Value> {
         match target {
             AssignTarget::Variable { name, .. } => {
-                if !matches!(scope.read_named(name), Some(value) if !matches!(value, Value::Null)) {
-                    let value = self.evaluate(expr, scope)?;
-                    scope.write_static(name, value);
+                if let Some(value) = scope.read_named(name) {
+                    if !matches!(value, Value::Null) {
+                        return Ok(value.clone());
+                    }
                 }
-                Ok(())
+                let value = self.evaluate(expr, scope)?;
+                scope.write_static(name, value.clone());
+                Ok(value)
             }
             AssignTarget::ArrayIndex {
                 name,
@@ -1094,9 +1100,12 @@ impl Interpreter {
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
                 let should_assign = match scope.read_named(name) {
-                    Some(Value::Array(array)) => {
-                        !matches!(array.get(key.clone()), Some(value) if !matches!(value, Value::Null))
-                    }
+                    Some(Value::Array(array)) => match array.get(key.clone()) {
+                        Some(value) if !matches!(value, Value::Null) => {
+                            return Ok(value.clone());
+                        }
+                        _ => true,
+                    },
                     Some(Value::Null) | None => true,
                     Some(other) => {
                         return Err(runtime_error(
@@ -1119,21 +1128,20 @@ impl Interpreter {
 
                     match slot {
                         Value::Array(array) => {
-                            array.insert(key, value);
+                            array.insert(key, value.clone());
+                            Ok(value)
                         }
-                        other => {
-                            return Err(runtime_error(
-                                *span,
-                                RuntimeError::invalid_array_access(format!(
-                                    "cannot write offset on {}",
-                                    other.type_name()
-                                )),
-                            ));
-                        }
+                        other => Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_array_access(format!(
+                                "cannot write offset on {}",
+                                other.type_name()
+                            )),
+                        )),
                     }
+                } else {
+                    unreachable!("non-null array entries return before assignment")
                 }
-
-                Ok(())
             }
             AssignTarget::ArrayIndex {
                 index: None, span, ..
@@ -1147,13 +1155,17 @@ impl Interpreter {
                 span,
             } => {
                 let should_assign = match scope.read_named(object) {
-                    Some(Value::Object(object)) => object
-                        .read_public_property_for_isset(property)
-                        .map(|value| match value {
-                            Some(value) => matches!(value, Value::Null),
-                            None => true,
-                        })
-                        .map_err(|error| runtime_error(*span, error))?,
+                    Some(Value::Object(object)) => {
+                        match object
+                            .read_public_property_for_isset(property)
+                            .map_err(|error| runtime_error(*span, error))?
+                        {
+                            Some(value) if !matches!(value, Value::Null) => {
+                                return Ok(value.clone());
+                            }
+                            Some(_) | None => true,
+                        }
+                    }
                     Some(_) | None => true,
                 };
 
@@ -1163,7 +1175,8 @@ impl Interpreter {
 
                     match slot {
                         Value::Object(object) => object
-                            .write_public_property(property, value)
+                            .write_public_property(property, value.clone())
+                            .map(|()| value)
                             .map_err(|error| runtime_error(*span, error)),
                         other => Err(runtime_error(
                             *span,
@@ -1172,10 +1185,10 @@ impl Interpreter {
                                 other.type_name()
                             )),
                         )),
-                    }?;
+                    }
+                } else {
+                    unreachable!("non-null object properties return before assignment")
                 }
-
-                Ok(())
             }
         }
     }

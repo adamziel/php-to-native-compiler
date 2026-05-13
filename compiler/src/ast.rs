@@ -333,6 +333,11 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    NullCoalesceAssign {
+        target: Box<AssignTarget>,
+        expr: Box<Expr>,
+        span: Span,
+    },
     IncrementDecrement {
         target: Box<AssignTarget>,
         op: IncrementDecrementOp,
@@ -366,6 +371,7 @@ impl Expr {
             | Expr::Unary { span, .. }
             | Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
+            | Expr::NullCoalesceAssign { span, .. }
             | Expr::IncrementDecrement { span, .. } => *span,
         }
     }

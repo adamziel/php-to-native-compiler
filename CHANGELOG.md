@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Implemented expression-position null coalescing assignment
+  `($name ??= expr)`, `($array[$key] ??= expr)`, and
+  `($object->property ??= expr)` over the current direct-variable,
+  direct-array-offset, and direct public-property value model, including lazy
+  right-hand evaluation, assigned/existing value results, fixture/CLI
+  coverage, system PHP comparison, documentation, and native-codegen rejection
+  while append-offset `??=`, nested lvalues, dynamic property names,
+  non-public visibility context, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering remain explicit gaps.
 - Implemented expression-position direct append-offset assignment
   `($array[] = expr)` over the current ordered array value model, including
   appended-value expression results, undefined/null target materialization,
@@ -77,10 +86,10 @@
   `$name = expr` over the current value model, including assignment result
   values, read/write ordering, RHS call ordering, fixture/CLI coverage, system
   PHP comparison, documentation, and native-codegen rejection while chained
-  assignments, nested/append assignment-expression targets,
-  expression-position `??=`, references, copy-on-write, exact native error
-  objects, and native lowering remain explicit gaps. Direct array-offset and
-  object-property assignment expressions were implemented in later slices.
+  assignments, nested assignment-expression targets, references,
+  copy-on-write, exact native error objects, and native lowering remain
+  explicit gaps. Direct array-offset, object-property, append-offset, and
+  null coalescing assignment expressions were implemented in later slices.
 - Implemented expression-position direct static-variable pre/post increment
   and decrement for existing integer and float variables, including
   pre-vs-post result values, read-modify-write behavior, undefined-variable
@@ -116,9 +125,9 @@
   native emission rejection at the parse boundary.
 - Added explicit unsupported expression-position assignment diagnostics before
   direct static-variable assignment expressions existed. After the executable
-  direct-variable, direct array-offset, and direct object-property slices, the
-  retained diagnostics cover chained assignments, nested/append
-  assignment-expression targets, and expression-position `??=`.
+  direct-variable, direct array-offset, direct object-property, append-offset,
+  and null coalescing assignment slices, the retained diagnostics cover
+  chained assignments and nested assignment-expression targets.
 - Implemented direct public object-property `??=` for
   `$object->property ??= expr`, including lazy initialization of existing
   declared public null slots, preservation of falsey non-null values, stable

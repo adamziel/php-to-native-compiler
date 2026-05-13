@@ -157,12 +157,14 @@
 - null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`, and
   `$object->publicProperty ??= expr` for direct static variables, direct
   array-variable offset operands, and direct object-variable public-property
-  operands; undefined and `null` variables, undefined/null arrays, missing
-  array keys, null array values, and null public property values evaluate and
-  store the right-hand expression, while existing non-null values are preserved
-  without evaluating the right-hand expression. Undefined object targets,
-  non-object property targets, and missing property names fail with stable
-  runtime diagnostics instead of materializing objects or dynamic properties
+  operands, in statement position and parenthesized expression position;
+  undefined and `null` variables, undefined/null arrays, missing array keys,
+  null array values, and null public property values evaluate and store the
+  right-hand expression, while existing non-null values are preserved without
+  evaluating the right-hand expression. Expression forms return the assigned
+  or existing value. Undefined object targets, non-object property targets,
+  and missing property names fail with stable runtime diagnostics instead of
+  materializing objects or dynamic properties
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -317,7 +319,7 @@
 - explicit parse diagnostics for unsupported ternary conditional expressions
 - explicit parse diagnostics for unsupported assignment-expression forms
   outside direct static-variable `$name = expr`, including chained
-  assignments, array/object targets, and expression-position `??=`
+  assignments and complex/nested targets
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables, direct array offsets, and direct object
   properties
@@ -1618,10 +1620,13 @@
   objects, and native lowering are not implemented.
 - Assignment expressions are limited to direct static variables as
   `$name = expr`, direct array offsets as `$array[$key] = expr`, direct append
-  offsets as `$array[] = expr`, and direct public object properties as
-  `$object->property = expr`. They write the active scope's static variable,
-  current ordered array offset, appended array slot, or existing declared
-  public property slot and return the assigned value. Direct
+  offsets as `$array[] = expr`, direct public object properties as
+  `$object->property = expr`, and null coalescing assignment expressions
+  `($name ??= expr)`, `($array[$key] ??= expr)`, and
+  `($object->property ??= expr)`. They write the active scope's static
+  variable, current ordered array offset, appended array slot, or existing
+  declared public property slot and return the assigned or existing value.
+  Direct
   array-offset assignment expressions evaluate the key before the right-hand
   expression, materialize undefined or `null` target variables as arrays, and
   reject existing non-array targets with a stable runtime diagnostic. Direct
@@ -1632,9 +1637,11 @@
   object-property assignment expressions evaluate the right-hand expression
   before validating/writing the direct object-variable target, reject
   undefined or non-object targets and missing/non-public properties with stable
-  runtime diagnostics, and do not materialize missing properties. Chained
+  runtime diagnostics, and do not materialize missing properties. Direct
+  null coalescing assignment expressions use the same lazy evaluation and
+  materialization behavior as the supported statement forms. Chained
   assignment expressions, nested append/offset assignment expressions, dynamic
-  property names, expression-position `??=`, reference assignment,
+  property names, append-offset `??=` targets, reference assignment,
   copy-on-write container aliasing, exact native error objects, and native
   lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
@@ -1669,9 +1676,11 @@
   offsets, and direct object-variable public properties on the left side, plus
   direct-variable `$name ??= expr`, direct array-offset `$array[$key] ??=
   expr`, and direct public object-property `$object->property ??= expr`
-  statements. Object-property `??=` writes only existing declared public
-  properties on existing object values; missing properties, undefined target
-  variables, and non-object target variables fail with stable diagnostics.
+  statements and parenthesized expression forms. `??=` expression forms return
+  the assigned fallback or existing non-null value. Object-property `??=`
+  writes only existing declared public properties on existing object values;
+  missing properties, undefined target variables, and non-object target
+  variables fail with stable diagnostics.
   Complex or nested `??` left operands, append-offset `??=` targets, dynamic
   property names, non-public visibility context, magic methods,
   unparenthesized chained coalescing, precedence interactions beyond the

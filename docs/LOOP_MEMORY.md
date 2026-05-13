@@ -11693,3 +11693,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:07:07Z
 
 - Post-round 36 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:07:27Z
+
+- Starting round 37 at 20260513T020727Z from HEAD `715bba7`.
+
+## Loop Event 2026-05-13T02:07:44Z
+
+- Pre-round 37 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:16:11Z
+
+- Task attempted: implemented expression-position null coalescing assignment
+  for `($name ??= expr)`, `($array[$key] ??= expr)`, and
+  `($object->property ??= expr)` over the current direct-variable,
+  direct-array-offset, and direct public-property value model. The expression
+  forms preserve lazy RHS evaluation, return the assigned fallback or existing
+  non-null value, reuse direct array materialization behavior, and keep object
+  property writes limited to existing declared public property slots.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/null_coalescing.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `tests/fixtures/milestone146/null_coalescing_assignment_expression.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_null_coalescing_assignment_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test null_coalescing --test
+  syntax_boundaries --test assignment_expression_cli` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone146` passed; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone146` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 26 fixtures; `cargo run -p phpc -- compile
+  /tmp/null_coalescing_assignment_expression_codegen.php --emit-ir` rejected
+  `??=` expressions with the expected codegen diagnostic; `tools/run-tests.sh`
+  passed with 390 fixtures, 142 system PHP comparisons, and 248 skips.
+- Remaining semantic gaps: append-offset `??=`, nested lvalues, dynamic
+  property names, non-public visibility context, magic methods,
+  references/copy-on-write aliasing, exact native error objects, and native
+  lowering remain unsupported.
+- Next concrete task: add the next honest path for chained assignment
+  expressions such as `$left = $right = expr`, either direct-target execution
+  or a tighter documented diagnostic boundary.
+- Checkpoint: pending `tools/checkpoint.sh "assignment expressions: add null coalescing results"`
+  after the full suite passes.

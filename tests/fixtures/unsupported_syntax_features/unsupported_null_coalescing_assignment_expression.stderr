@@ -1,2 +1,2 @@
-parse error at 3:14: unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset
+parse error at 3:32: unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented
 

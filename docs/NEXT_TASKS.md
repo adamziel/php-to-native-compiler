@@ -1397,7 +1397,7 @@ handled.
 
 ## Milestone 146: Null Coalescing Assignment Expression Boundary
 
-- [ ] Add the next honest path for expression-position null coalescing
+- [x] Add the next honest path for expression-position null coalescing
   assignment such as `($name ??= expr)`, `($array[$key] ??= expr)`, and
   `($object->property ??= expr)`: either executable assignment result
   semantics over the current direct-variable/direct-offset/direct-property
@@ -1405,3 +1405,13 @@ handled.
   coverage, documentation, native-codegen behavior, and named gaps for nested
   lvalues, append offsets, dynamic property names, references/copy-on-write,
   lazy evaluation order, exact native error objects, and native lowering.
+
+## Milestone 147: Chained Assignment Expression Boundary
+
+- [ ] Add the next honest path for chained assignment expressions such as
+  `$left = $right = expr`: either executable right-to-left assignment result
+  semantics for the current direct-variable/direct-offset/direct-property
+  assignment-expression subset, or a tighter documented diagnostic boundary
+  with fixture CLI coverage, native-codegen behavior, and named gaps for
+  nested lvalues, append offsets, references/copy-on-write, exact native error
+  objects, and native lowering.

@@ -1,0 +1,15 @@
+exit: 0
+stdout:
+missing-called
+missing-value:missing-value
+null-called
+null-value:null-value
+kept-value:kept-value
+array-missing-called
+array-missing:array-missing
+array-kept:array-kept
+object-null-called
+object-value:object-value
+object-kept:object-kept--- stdout end ---
+stderr:
+--- stderr end ---

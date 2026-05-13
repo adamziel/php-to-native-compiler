@@ -103,7 +103,9 @@ subset:
   direct public object properties over the current value model
 - null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`, and
   `$object->publicProperty ??= expr` for direct static variables, direct array
-  offsets, and direct public object properties over the current value model
+  offsets, and direct public object properties over the current value model,
+  including parenthesized expression forms that return the assigned or
+  existing value
 - builtins for the documented scalar/array/object subset: `strlen`, `isset`,
   `empty`, `count`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, including loose and strict
@@ -191,7 +193,7 @@ subset:
   `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
   conditional expressions, unsupported chained assignment expressions,
   unsupported complex assignment-expression targets, unsupported
-  expression-position `??=`,
+  append-offset `??=`,
   unsupported compound assignment targets outside direct static variables,
   direct array offsets, and direct public object properties,
   unsupported increment/decrement targets outside direct static variables,
