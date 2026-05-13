@@ -15793,3 +15793,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T09:23:53Z
 
 - Post-round 104 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T09:24:08Z
+
+- Starting round 105 at 20260513T092408Z from HEAD `afcc5e1`.
+
+## Loop Event 2026-05-13T09:24:22Z
+
+- Pre-round 105 test exit code: `0`.
+
+## Loop Event 2026-05-13T09:28:47Z
+
+- Task attempted: completed Milestone 214 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for fallback backend failure precedence when
+  `clang` is unavailable, selected `llc` passes discovery but exits nonzero
+  without stderr, and `cc` is also available. The new Milestone 214 fixture is
+  a lowerable scalar echo/print program, and the assembly CLI test invokes
+  `--emit-asm` with a temporary PATH exposing deterministic fake `llc` and
+  `cc` tools where selected `llc` fails silently and `cc` would fail loudly if
+  invoked.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone214/native_assembly_empty_stderr_fallback_failure_precedence.php`,
+  `tests/fixtures/milestone214/native_assembly_empty_stderr_fallback_failure_precedence.stdout`,
+  `tests/fixtures/milestone214/native_assembly_empty_stderr_fallback_failure_precedence_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test native_assembly_cli
+  reports_empty_stderr_llc_failure -- --nocapture` passed with 1 focused test;
+  `cargo run -p phpc -- test tests/fixtures/milestone214` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone214` passed with 1 system PHP comparison;
+  `cargo fmt --check` passed; `cargo test -p phpc --test
+  native_assembly_cli -- --nocapture` passed with 48 tests;
+  `tools/run-tests.sh` passed with 464 fixtures, 208 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; empty-stderr fallback failure
+  precedence is a narrow test-double contract rather than full backend
+  recovery semantics; generated code still lacks exact native PHP error
+  objects and broader native lowering.
+- Next concrete task: add Milestone 215, explicit `phpc compile --emit-asm`
+  CLI coverage for selected backend failure precedence when selected `clang`
+  exits nonzero without stderr while fallback `llc` and `cc` are also
+  available, proving the stable empty-stderr `clang` diagnostic is reported
+  without falling through to fallback tools.
+- Known-good tag: not created; this is narrow fallback backend failure
+  precedence coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot empty-stderr fallback failure precedence"`
+  after the full suite passes.

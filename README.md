@@ -139,6 +139,10 @@ A fallback failure-precedence snapshot hides `clang` while exposing
 deterministic fake `llc` and `cc` commands together, makes selected `llc`
 fail emission, and proves the `llc` diagnostic is reported without silently
 falling through to the `cc -S` C fallback.
+An empty-stderr fallback failure-precedence snapshot covers the same
+`clang`-unavailable boundary when selected `llc` exits nonzero without
+diagnostics, proving the stable empty-stderr `llc` diagnostic also blocks
+`cc -S` fallback recovery.
 
 ## Current Status
 

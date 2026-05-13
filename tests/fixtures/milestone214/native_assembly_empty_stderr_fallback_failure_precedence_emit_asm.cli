@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone214/native_assembly_empty_stderr_fallback_failure_precedence.php:0:0: llc failed to emit assembly: backend exited without stderr
+--- stderr end ---

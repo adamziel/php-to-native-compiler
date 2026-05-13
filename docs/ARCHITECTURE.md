@@ -222,6 +222,10 @@ no-recovery boundary after fallback selection by proving a selected `llc`
 emission failure is reported directly instead of silently falling through to
 the `cc -S` C fallback, without treating that as full backend recovery
 semantics.
+An empty-stderr fallback failure-precedence snapshot covers the same boundary
+when selected `llc` exits nonzero without diagnostics while `cc` is also
+available. It pins the stable empty-stderr `llc` diagnostic as final rather
+than falling through to the `cc -S` C fallback.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,
