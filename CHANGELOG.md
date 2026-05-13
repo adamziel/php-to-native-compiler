@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Implemented expression-position direct static-variable assignment
+  `$name = expr` over the current value model, including assignment result
+  values, read/write ordering, RHS call ordering, fixture/CLI coverage, system
+  PHP comparison, documentation, and native-codegen rejection while chained
+  assignments, array/object assignment-expression targets, expression-position
+  `??=`, expression-position compound assignment, references, copy-on-write,
+  exact native error objects, and native lowering remain explicit gaps.
 - Implemented expression-position direct static-variable pre/post increment
   and decrement for existing integer and float variables, including
   pre-vs-post result values, read-modify-write behavior, undefined-variable
@@ -35,11 +42,10 @@
   `*=`, `/=`, and `.=` forms before read-modify-write semantics exist, with
   parser regression coverage, fixture/CLI snapshots, documentation, and
   native emission rejection at the parse boundary.
-- Added explicit unsupported expression-position assignment diagnostics for
-  `($name = expr)` and `($name ??= expr)` style forms before assignment
-  expressions have value semantics, with parser regression coverage,
-  fixture/CLI snapshots, documentation, and native emission rejection at the
-  parse boundary.
+- Added explicit unsupported expression-position assignment diagnostics before
+  direct static-variable assignment expressions existed. After the executable
+  direct-variable slice, the retained diagnostics cover chained assignments,
+  array/object assignment-expression targets, and expression-position `??=`.
 - Implemented direct public object-property `??=` for
   `$object->property ??= expr`, including lazy initialization of existing
   declared public null slots, preservation of falsey non-null values, stable

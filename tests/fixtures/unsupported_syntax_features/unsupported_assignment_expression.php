@@ -1,3 +1,3 @@
 <?php
-$value = 1;
-echo ($value = 2);
+$items = [];
+echo ($items['key'] = 'value');

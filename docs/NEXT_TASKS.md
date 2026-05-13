@@ -1304,9 +1304,19 @@ handled.
 
 ## Milestone 137: Direct Variable Assignment Expression Slice
 
-- [ ] Implement expression-position direct static-variable assignment
+- [x] Implement expression-position direct static-variable assignment
   `$name = expr` for the current value model, including assignment result
   values, read/write ordering, fixture CLI coverage, documentation,
   native-codegen rejection while lowering remains unsupported, and explicit
   gaps for chained assignments, array/object targets, references,
   copy-on-write, exact native error objects, and native lowering.
+
+## Milestone 138: Direct Variable Compound Assignment Expression Slice
+
+- [ ] Implement expression-position direct static-variable compound assignment
+  such as `($name += expr)` for the current scalar value model, including
+  assignment result values, read/write ordering, fixture CLI coverage,
+  documentation, native-codegen rejection while lowering remains unsupported,
+  and explicit gaps for array/object targets, references, copy-on-write,
+  exact native error objects, broader PHP coercion recovery, and native
+  lowering.

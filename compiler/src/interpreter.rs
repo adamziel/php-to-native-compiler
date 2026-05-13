@@ -602,6 +602,11 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
             }
+            Expr::Assign { name, expr, .. } => {
+                let value = self.evaluate(expr, scope)?;
+                scope.write_static(name, value.clone());
+                Ok(value)
+            }
             Expr::IncrementDecrement {
                 name,
                 op,

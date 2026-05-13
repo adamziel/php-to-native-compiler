@@ -312,31 +312,31 @@ fn emit_ir_rejects_null_coalescing_expression_at_codegen_boundary() {
 }
 
 #[test]
-fn unsupported_expression_position_assignments_have_stable_parse_errors() {
+fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
     let cases = [
-        (
-            "<?php\n$value = 1;\necho ($value = 2);\n",
-            3,
-            14,
-            "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset",
-        ),
         (
             "<?php\n$value = null;\necho ($value ??= 'fallback');\n",
             3,
             14,
-            "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset",
+            "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset",
         ),
         (
             "<?php\n$items = [];\necho ($items['key'] = 'value');\n",
             3,
             21,
-            "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset",
+            "unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented",
         ),
         (
             "<?php\n$items = [];\necho ($items['key'] ??= 'value');\n",
             3,
             21,
-            "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset",
+            "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset",
+        ),
+        (
+            "<?php\n$value = $other = 1;\n",
+            2,
+            10,
+            "unsupported assignment expression: chained assignment expressions are not implemented",
         ),
     ];
 
@@ -349,13 +349,14 @@ fn unsupported_expression_position_assignments_have_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_assignment_expression_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\n$result = ($value = 2);\n").unwrap_err();
+fn emit_ir_rejects_assignment_expression_at_codegen_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n$value = 1;\necho ($value = 2);\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset"
+        "assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet"
     );
 }
 

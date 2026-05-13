@@ -11112,3 +11112,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T00:48:05Z
 
 - Post-round 27 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T00:48:22Z
+
+- Starting round 28 at 20260513T004822Z from HEAD `4561c99`.
+
+## Loop Event 2026-05-13T00:48:33Z
+
+- Pre-round 28 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:57:11Z
+
+- Task attempted: implemented expression-position direct static-variable
+  assignment `$name = expr` over the current interpreter value model. Assignment
+  expressions now evaluate the right-hand expression, write the active scope's
+  static variable, and return the assigned value. Chained assignment
+  expressions, array-offset assignment-expression targets, object-property
+  assignment-expression targets, and expression-position `??=` retain stable
+  parse diagnostics; LLVM IR emission rejects assignment expressions explicitly
+  until native lowering exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone137/assignment_expression.*`, updated assignment
+  expression unsupported-syntax fixtures, `README.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test assignment_expression`
+  passed with 5 tests; `cargo test -p phpc --test assignment_expression_cli`
+  passed; `cargo test -p phpc --test syntax_boundaries assignment -- --nocapture`
+  passed with 6 filtered tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone137` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone137` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 26 fixtures; `cargo
+  run -p phpc -- compile tests/fixtures/milestone137/assignment_expression.php
+  --emit-ir` exited `1` with the expected assignment-expression codegen
+  rejection; `cargo run -p phpc -- run
+  tests/fixtures/milestone137/assignment_expression.php` printed the committed
+  CLI exercise output; `tools/run-tests.sh` passed with 376 fixtures, 133
+  system PHP comparisons, and 243 comparison skips.
+- Remaining semantic gaps: chained assignment expressions, array-offset and
+  object-property assignment-expression targets, expression-position `??=`,
+  expression-position compound assignment, references, copy-on-write aliasing,
+  exact native error objects, and native lowering remain unsupported.
+- Next concrete task: implement expression-position direct static-variable
+  compound assignment for the current scalar value model, including result
+  values and explicit gaps for array/object targets, references/copy-on-write,
+  exact native error objects, broader PHP coercion recovery, and native
+  lowering.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add assignment expressions"`
+  after the full suite passes.

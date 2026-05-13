@@ -2845,10 +2845,22 @@ Still fails:
   explicitly until lowering exists. PHP string increment behavior, arrays,
   objects, references, copy-on-write, exact native warning/error behavior,
   broader coercion recovery, and native lowering remain unsupported.
+- Implemented expression-position direct static-variable assignment
+  `$name = expr` over the current value model. Assignment expressions evaluate
+  the right-hand expression, write the active scope's static variable, and
+  return the assigned value, including scalar, array, and object values already
+  supported by the interpreter. Fixture and CLI snapshot coverage record
+  returned assignment values, read/write behavior, RHS call ordering, system
+  PHP comparison passes for the supported fixture, chained assignment
+  expressions and array/object assignment-expression targets fail with stable
+  parse diagnostics, expression-position `??=` remains unsupported, and native
+  emission rejects assignment expressions explicitly until lowering exists.
+  References, copy-on-write aliasing, exact native error objects, and native
+  lowering remain unsupported.
 
 Next:
 
-- Implement direct static-variable assignment expressions for the current
-  scalar/array/object value model, including assignment result values and
-  explicit gaps for chained assignments, complex lvalues, references,
-  copy-on-write, exact native error objects, and native lowering.
+- Implement expression-position direct static-variable compound assignment
+  for the current scalar value model, including result values and explicit
+  gaps for array/object targets, references/copy-on-write, exact native error
+  objects, broader PHP coercion recovery, and native lowering.

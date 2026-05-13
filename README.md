@@ -33,11 +33,12 @@ subset:
 
 - `echo`
 - integer, float, and string literals
-- static variables, assignment, direct static-variable compound assignment
-  (`+=`, `-=`, `*=`, `/=`, `.=`), direct static-variable pre/post increment
-  and decrement for integer and float variables in statements, expressions,
-  and C-style `for` initializer/increment slots, and `unset($name)` through
-  per-scope symbol tables
+- static variables, assignment, direct static-variable assignment expressions
+  (`$name = expr`) with assignment result values, direct static-variable
+  compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`), direct static-variable
+  pre/post increment and decrement for integer and float variables in
+  statements, expressions, and C-style `for` initializer/increment slots, and
+  `unset($name)` through per-scope symbol tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow
@@ -172,8 +173,9 @@ subset:
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
   `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
-  conditional expressions, unsupported expression-position assignment and
-  compound-assignment forms,
+  conditional expressions, unsupported chained assignment expressions,
+  unsupported complex assignment-expression targets, unsupported
+  expression-position `??=` and compound-assignment forms,
   unsupported compound assignment targets outside direct static variables,
   unsupported increment/decrement targets outside direct static variables and
   chained increment/decrement expressions,

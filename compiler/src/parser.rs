@@ -1093,6 +1093,12 @@ impl Parser {
 
         let span = target.span();
         let expr = self.parse_expression()?;
+        if Self::expr_contains_assignment(&expr) {
+            return Err(self.error_at(
+                expr.span(),
+                unsupported_chained_assignment_expression_message(),
+            ));
+        }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
         Ok(Some(Stmt::Assign { target, expr, span }))
     }
@@ -1201,8 +1207,52 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_equality()?;
+        let expr = self.parse_assignment_expression()?;
         self.reject_assignment_expression_operator()?;
+        Ok(expr)
+    }
+
+    fn parse_assignment_expression(&mut self) -> CompileResult<Expr> {
+        let expr = self.parse_non_assignment_expression()?;
+        if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            return Ok(expr);
+        }
+
+        let operator_span = self.previous().span;
+        let Expr::Variable(name, span) = expr else {
+            return Err(self.error_at(
+                operator_span,
+                unsupported_assignment_expression_target_message(),
+            ));
+        };
+
+        let value = self.parse_non_assignment_expression()?;
+        if Self::expr_contains_assignment(&value)
+            || self.check(|kind| matches!(kind, TokenKind::Equal))
+            || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+                && matches!(self.peek_next().kind, TokenKind::Equal))
+        {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_chained_assignment_expression_message(),
+            ));
+        }
+        if self.check_compound_assignment_operator() {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_compound_assignment_expression_message(),
+            ));
+        }
+
+        Ok(Expr::Assign {
+            name,
+            expr: Box::new(value),
+            span,
+        })
+    }
+
+    fn parse_non_assignment_expression(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_equality()?;
         if self.match_token(|kind| matches!(kind, TokenKind::QuestionQuestion)) {
             let operator_span = self.previous().span;
             if self.check(|kind| matches!(kind, TokenKind::Equal)) {
@@ -1231,7 +1281,6 @@ impl Parser {
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
             return Err(self.error_at(self.previous().span, unsupported_ternary_message()));
         }
-        self.reject_assignment_expression_operator()?;
         Ok(expr)
     }
 
@@ -1928,6 +1977,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
+            | Expr::Assign { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
@@ -1972,11 +2022,51 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
+            | Expr::Assign { .. }
             | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
             )),
+        }
+    }
+
+    fn expr_contains_assignment(expr: &Expr) -> bool {
+        match expr {
+            Expr::Assign { .. } => true,
+            Expr::Array { items, .. } => items.iter().any(|item| {
+                item.key
+                    .as_ref()
+                    .is_some_and(Self::expr_contains_assignment)
+                    || Self::expr_contains_assignment(&item.value)
+            }),
+            Expr::Index { target, index, .. } => {
+                Self::expr_contains_assignment(target) || Self::expr_contains_assignment(index)
+            }
+            Expr::Property { target, .. } => Self::expr_contains_assignment(target),
+            Expr::Call { args, .. } | Expr::New { args, .. } => {
+                args.iter().any(Self::expr_contains_assignment)
+            }
+            Expr::DynamicCall { callee, args, .. } => {
+                Self::expr_contains_assignment(callee)
+                    || args.iter().any(Self::expr_contains_assignment)
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::expr_contains_assignment(left) || Self::expr_contains_assignment(right)
+            }
+            Expr::Unary { expr, .. } => Self::expr_contains_assignment(expr),
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _)
+            | Expr::Variable(_, _)
+            | Expr::MagicLine { .. }
+            | Expr::MagicFile { .. }
+            | Expr::MagicDir { .. }
+            | Expr::MagicFunction { .. }
+            | Expr::GlobalConstant { .. }
+            | Expr::IncrementDecrement { .. } => false,
         }
     }
 
@@ -2395,7 +2485,15 @@ fn unsupported_null_coalescing_assignment_message() -> &'static str {
 }
 
 fn unsupported_assignment_expression_message() -> &'static str {
-    "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset"
+    "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset"
+}
+
+fn unsupported_assignment_expression_target_message() -> &'static str {
+    "unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented"
+}
+
+fn unsupported_chained_assignment_expression_message() -> &'static str {
+    "unsupported assignment expression: chained assignment expressions are not implemented"
 }
 
 fn unsupported_compound_assignment_expression_message() -> &'static str {

@@ -18,9 +18,13 @@
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
-- assignment statements, including direct static-variable compound assignment
-  `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
-  `$name .= expr` over the current scalar value model
+- assignment statements, plus expression-position direct static-variable
+  assignment `$name = expr` with assignment result values over the current
+  value model. Chained assignment expressions and array/object assignment
+  expression targets remain unsupported.
+- direct static-variable compound assignment `$name += expr`,
+  `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
+  the current scalar value model
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
@@ -273,11 +277,12 @@
   `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
 - explicit parse diagnostics for unsupported ternary conditional expressions
-- explicit parse diagnostics for unsupported expression-position assignment
-  forms such as `($name = expr)` and `($name ??= expr)`
+- explicit parse diagnostics for unsupported assignment-expression forms
+  outside direct static-variable `$name = expr`, including chained
+  assignments, array/object targets, and expression-position `??=`
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables and for expression-position compound
-  assignment forms before assignment expressions have value semantics
+  assignment forms before compound-assignment expressions have value semantics
 - explicit parse diagnostics for unsupported increment/decrement targets
   outside direct static variables and chained increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
@@ -817,7 +822,8 @@
   arrays, array indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
-  object property writes, global constants, top-level `const` declarations,
+  object property writes, assignment expressions, global constants,
+  top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `interface_exists(...)`, `trait_exists(...)`,
   `enum_exists(...)`, `property_exists(...)`,
@@ -1570,14 +1576,13 @@
   forms are rejected. Condition truthiness, short-ternary value reuse,
   nesting/precedence, thrown expressions inside arms, exact native error
   objects, and native lowering are not implemented.
-- Assignment expressions currently fail with a stable parse diagnostic.
-  Statement-level `=`, direct variable `??=`, direct array-offset `??=`, and
-  direct public object-property `??=`, plus statement-level direct
-  static-variable compound assignments, are the only executable assignment
-  forms. Assignment result values, chained assignments, expression-position
-  `??=` and expression-position compound assignment, lvalue evaluation order,
-  references/copy-on-write, exact native error objects, and native lowering
-  are not implemented.
+- Assignment expressions are limited to direct static variables as
+  `$name = expr`. They evaluate the right-hand expression, write the active
+  scope's static variable, and return the assigned value. Chained assignment
+  expressions, array-offset and object-property assignment expression targets,
+  expression-position `??=`, expression-position compound assignment,
+  reference assignment, copy-on-write container aliasing, exact native error
+  objects, and native lowering are not implemented.
 - Compound assignment is limited to direct static variables over the current
   scalar value model. The read-modify-write operation reuses the existing PHP
   shaped scalar arithmetic and string concatenation helpers, so undefined

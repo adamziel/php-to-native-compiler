@@ -1,2 +1,2 @@
-parse error at 3:14: unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset
+parse error at 3:21: unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented
 
