@@ -1490,8 +1490,16 @@ handled.
 
 ## Milestone 156: Bitwise Not Boundary
 
-- [ ] Add the next honest boundary or executable slice for unary bitwise not
+- [x] Add the next honest boundary or executable slice for unary bitwise not
   `~`, including parser/runtime behavior, fixture CLI coverage,
   documentation, native-codegen behavior, and named gaps for integer/string
   operand semantics, references/copy-on-write, exact native warning/error
   behavior, and native lowering.
+
+## Milestone 157: Shift Operator Boundary
+
+- [ ] Add the next honest boundary or executable slice for shift operators
+  `<<` and `>>`, including parser/runtime behavior, fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps for integer operand
+  coercion, negative shift counts, overflow behavior, references/copy-on-write,
+  exact native warning/error behavior, and native lowering.

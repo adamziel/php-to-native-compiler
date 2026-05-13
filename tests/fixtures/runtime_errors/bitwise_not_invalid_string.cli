@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/bitwise_not_invalid_string.php:2:6: invalid arithmetic for ~: binary string results outside UTF-8 are not supported
+--- stderr end ---

@@ -1885,6 +1885,16 @@ impl Parser {
             });
         }
 
+        if self.match_token(|kind| matches!(kind, TokenKind::Tilde)) {
+            let span = self.previous().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op: UnaryOp::BitwiseNot,
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
         self.parse_postfix()
     }
 
@@ -2968,6 +2978,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Pipe => "|",
         TokenKind::PipePipe => "||",
         TokenKind::Caret => "^",
+        TokenKind::Tilde => "~",
         TokenKind::Colon => ":",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",

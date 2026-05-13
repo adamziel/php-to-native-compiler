@@ -286,6 +286,7 @@ pub enum ArithmeticOp {
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
+    BitwiseNot,
 }
 
 impl fmt::Display for ArithmeticOp {
@@ -299,6 +300,7 @@ impl fmt::Display for ArithmeticOp {
             ArithmeticOp::BitwiseAnd => write!(f, "&"),
             ArithmeticOp::BitwiseOr => write!(f, "|"),
             ArithmeticOp::BitwiseXor => write!(f, "^"),
+            ArithmeticOp::BitwiseNot => write!(f, "~"),
         }
     }
 }
@@ -1860,6 +1862,33 @@ impl Value {
         )
     }
 
+    pub fn php_bitwise_not(&self) -> RuntimeResult<Value> {
+        match self {
+            Value::Int(value) => Ok(Value::Int(!value)),
+            Value::String(value) => bitwise_not_string(value).map(Value::String),
+            Value::Null => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "null cannot be used with unary bitwise not",
+            )),
+            Value::Bool(_) => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "booleans cannot be used with unary bitwise not",
+            )),
+            Value::Float(_) => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "floats cannot be used with unary bitwise not",
+            )),
+            Value::Array(_) => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "arrays cannot be used with unary bitwise not",
+            )),
+            Value::Object(_) => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "objects cannot be used with unary bitwise not",
+            )),
+        }
+    }
+
     pub fn php_eq(&self, other: &Value) -> bool {
         self.php_cmp(other, Comparison::Eq)
     }
@@ -2049,6 +2078,16 @@ fn bitwise_strings(
     String::from_utf8(output).map_err(|_| {
         RuntimeError::invalid_arithmetic(
             operation,
+            "binary string results outside UTF-8 are not supported",
+        )
+    })
+}
+
+fn bitwise_not_string(value: &str) -> RuntimeResult<String> {
+    let output: Vec<u8> = value.as_bytes().iter().map(|byte| !byte).collect();
+    String::from_utf8(output).map_err(|_| {
+        RuntimeError::invalid_arithmetic(
+            ArithmeticOp::BitwiseNot,
             "binary string results outside UTF-8 are not supported",
         )
     })
@@ -2325,6 +2364,50 @@ mod tests {
         assert_eq!(
             error.message(),
             "invalid arithmetic for unary -: string is not numeric"
+        );
+    }
+
+    #[test]
+    fn bitwise_not_handles_current_int_and_string_subset() {
+        assert_eq!(Value::Int(0).php_bitwise_not().unwrap(), Value::Int(-1));
+        assert_eq!(Value::Int(5).php_bitwise_not().unwrap(), Value::Int(-6));
+        assert_eq!(Value::Int(-1).php_bitwise_not().unwrap(), Value::Int(0));
+        assert_eq!(
+            Value::String(String::new()).php_bitwise_not().unwrap(),
+            Value::String(String::new())
+        );
+    }
+
+    #[test]
+    fn bitwise_not_reports_unsupported_operands_with_stable_errors() {
+        let error = Value::Bool(true).php_bitwise_not().unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::BitwiseNot,
+                reason: "booleans cannot be used with unary bitwise not".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for ~: booleans cannot be used with unary bitwise not"
+        );
+
+        let error = Value::String("A".to_string())
+            .php_bitwise_not()
+            .unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::BitwiseNot,
+                reason: "binary string results outside UTF-8 are not supported".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for ~: binary string results outside UTF-8 are not supported"
         );
     }
 

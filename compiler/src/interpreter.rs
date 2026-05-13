@@ -3806,6 +3806,7 @@ impl Interpreter {
         let result: RuntimeResult<Value> = match op {
             UnaryOp::Negate => value.php_negate(),
             UnaryOp::Not => Ok(Value::Bool(!value.is_truthy())),
+            UnaryOp::BitwiseNot => value.php_bitwise_not(),
         };
 
         result.map_err(|error| runtime_error(span, error))

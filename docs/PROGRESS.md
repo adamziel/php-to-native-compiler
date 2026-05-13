@@ -3081,9 +3081,21 @@ Still fails:
   operands, and explicit native-codegen rejection. Operator-overloaded
   extension values, references/copy-on-write side effects, exact native error
   objects, and native lowering remain unsupported.
+- Implemented unary bitwise not `~` as the next small bitwise slice. The lexer
+  and parser now accept unary `~`, the interpreter returns integer bitwise-not
+  results for integer operands and bytewise string results only when the
+  runtime `String` result remains valid UTF-8, and stable diagnostics cover
+  non-UTF-8 string results and unsupported boolean/null/float/array/object
+  operands. Fixture, CLI snapshot, unit, runtime-error fixture, system PHP
+  comparison, and native-codegen rejection coverage exercise integer results,
+  empty-string behavior, precedence with binary bitwise operators, and
+  assignment-expression operands. Arbitrary binary string output,
+  non-int/non-string operand execution matching exact PHP `TypeError` objects,
+  bitwise compound assignment, shifts, references/copy-on-write side effects,
+  and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for unary bitwise not `~`,
-  including parser/runtime behavior, fixture CLI coverage, documentation,
-  native-codegen behavior, and named gaps.
+- Add the next honest boundary or executable slice for shift operators `<<`
+  and `>>`, including parser/runtime behavior, fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps.

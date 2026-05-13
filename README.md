@@ -69,10 +69,11 @@ subset:
   `and`, and `or`, PHP-style `&&`/`||` precedence, and lower-than-assignment
   word-operator precedence in the current expression and statement parser
   subset
-- bitwise `&`, `|`, and `^` over the current integer/string subset, including
-  PHP-style precedence, integer results for non-string-string operands after
-  current scalar-to-int coercion, and bytewise string results for string-string
-  operands when the resulting runtime string remains valid UTF-8
+- bitwise `&`, `|`, `^`, and unary `~` over the current integer/string subset,
+  including PHP-style precedence for binary bitwise operators, integer unary
+  bitwise-not results for integer operands, integer binary results for
+  non-string-string operands after current scalar-to-int coercion, and bytewise
+  string results when the resulting runtime string remains valid UTF-8
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, with truthiness-based condition selection,

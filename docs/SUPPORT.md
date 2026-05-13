@@ -84,12 +84,13 @@
   operands, `&&` binds tighter than `||`, and word operators bind lower than
   assignment with `and` tighter than `xor` and `xor` tighter than `or` in the
   current expression and statement parser subset
-- bitwise operators `&`, `|`, and `^` over the current integer/string subset:
-  integer-like operands produce integer results after current scalar-to-int
-  coercion, string-string operands use bytewise PHP behavior for `&`, `|`, and
-  `^` when the resulting runtime string remains valid UTF-8, and precedence is
-  `==`/`!=`/identity comparisons before `&`, then `^`, then `|`, then `&&`
-  and `||`
+- bitwise operators `&`, `|`, `^`, and unary `~` over the current
+  integer/string subset: binary integer-like operands produce integer results
+  after current scalar-to-int coercion, unary `~` accepts integer operands,
+  string operands use bytewise PHP behavior for `&`, `|`, `^`, and `~` when
+  the resulting runtime string remains valid UTF-8, and binary bitwise
+  precedence is `==`/`!=`/identity comparisons before `&`, then `^`, then
+  `|`, then `&&` and `||`
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including truthiness-based condition selection,
@@ -283,8 +284,9 @@
   non-bool `in_array`/`array_search` strict-mode flag values, unsupported
   non-scalar `array_keys` search-value comparisons, non-bool `array_keys`
   strict-mode flag values, unsupported non-scalar `in_array`/`array_search`
-  comparisons, bitwise non-numeric mixed string operands, bitwise array/object
-  operands, duplicate constants, undefined constants, unsupported
+  comparisons, bitwise non-numeric mixed string operands, bitwise
+  non-UTF-8 string results, unsupported unary bitwise-not operands, bitwise
+  array/object operands, duplicate constants, undefined constants, unsupported
   `global` declarations, duplicate class/member metadata, undefined classes,
   unsupported object instantiation, undefined object properties, invalid
   property targets, unsupported non-public property access, non-object
@@ -1735,14 +1737,18 @@
   expressions. Operator-overloaded extension values, references/copy-on-write
   side effects, exact native error objects, and native lowering are not
   implemented.
-- Bitwise operators are limited to `&`, `|`, and `^` over the current
-  integer/string subset. Mixed operands use the current scalar-to-int coercion
-  path; string-string operands use bytewise operations but still store results
-  in the runtime's UTF-8 `String` value, so arbitrary binary outputs that are
-  not valid UTF-8 fail with a stable runtime diagnostic. Non-numeric mixed
-  strings fail instead of modeling PHP's exact native `TypeError` object,
-  arrays/objects are rejected, `&=`, `|=`, `^=`, unary bitwise not `~`, shift
-  operators, PHP warning/deprecation recovery for float-to-int precision loss,
+- Bitwise operators are limited to `&`, `|`, `^`, and unary `~` over the
+  current integer/string subset. Mixed binary operands use the current
+  scalar-to-int coercion path; string operands use bytewise operations but
+  still store results in the runtime's UTF-8 `String` value, so arbitrary
+  binary outputs that are not valid UTF-8 fail with a stable runtime
+  diagnostic. Unary `~` currently accepts integers and string operands whose
+  bytewise-not result remains valid UTF-8; boolean, null, float, array, and
+  object operands are rejected with stable runtime diagnostics instead of exact
+  native `TypeError` objects. Non-numeric mixed strings fail instead of
+  modeling PHP's exact native `TypeError` object, arrays/objects are rejected
+  for binary bitwise operators, `&=`, `|=`, `^=`, shift operators, PHP
+  warning/deprecation recovery for float-to-int precision loss,
   references/copy-on-write side effects, and native lowering are not
   implemented.
 - dynamic callables outside the string function-name subset, including array

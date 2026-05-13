@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Implemented unary bitwise not `~` over the current integer/string slice,
+  with integer result behavior, UTF-8-preserving string byte behavior,
+  precedence/assignment-expression coverage, fixture/CLI coverage, system PHP
+  comparison for the supported fixture, stable diagnostics for non-UTF-8
+  string results and unsupported non-int/non-string operands, and explicit
+  native-codegen rejection. Arbitrary binary string output, exact native
+  `TypeError` objects, references/copy-on-write, shifts, bitwise compound
+  assignment, and native lowering remain explicit gaps.
 - Added Milestone 152 executable coverage for ternary expressions mixed with
   null-coalescing expressions and assignment-expression branches. The covered
   slice pins `??` precedence in ternary conditions and branches, lazy selected

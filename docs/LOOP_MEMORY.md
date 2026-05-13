@@ -12266,3 +12266,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:22:39Z
 
 - Post-round 46 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:22:56Z
+
+- Starting round 47 at 20260513T032256Z from HEAD `b095dbb`.
+
+## Loop Event 2026-05-13T03:23:08Z
+
+- Pre-round 47 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:29:52Z
+
+- Task attempted: implemented Milestone 156 unary bitwise not `~` over the
+  current integer/string slice. The lexer and parser now accept unary `~`; the
+  interpreter returns integer bitwise-not results for integer operands and
+  bytewise string results only when the runtime `String` result remains valid
+  UTF-8. Stable diagnostics cover non-UTF-8 string results and unsupported
+  boolean/null/float/array/object operands. Native codegen rejects unary `~`
+  through the existing unary-expression rejection until lowering exists.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/bitwise_not.rs`,
+  `compiler/tests/bitwise_not_cli.rs`,
+  `tests/fixtures/milestone156/bitwise_not.php`,
+  `tests/fixtures/milestone156/bitwise_not.stdout`,
+  `tests/fixtures/milestone156/bitwise_not.cli`,
+  `tests/fixtures/runtime_errors/bitwise_not_invalid_string.php`,
+  `tests/fixtures/runtime_errors/bitwise_not_invalid_string.stderr`,
+  `tests/fixtures/runtime_errors/bitwise_not_invalid_string.exit`,
+  `tests/fixtures/runtime_errors/bitwise_not_invalid_string.phpc-only`,
+  `tests/fixtures/runtime_errors/bitwise_not_invalid_string.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p php_runtime
+  bitwise_not -- --nocapture` passed; `cargo test -p phpc --test bitwise_not
+  -- --nocapture` passed; `cargo test -p phpc --test bitwise_not_cli --
+  --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone156` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone156` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed
+  with 159 fixtures; `cargo test -p phpc --test runtime_error_cli --
+  --nocapture` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone156/bitwise_not.php` printed the committed CLI
+  exercise output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/bitwise_not_invalid_string.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 402
+  fixtures, 152 system PHP comparisons, and 250 comparison skips.
+- Remaining semantic gaps: arbitrary binary string output for unary `~`,
+  non-int/non-string operand execution matching exact PHP `TypeError` objects,
+  bitwise compound assignment, shift operators, references/copy-on-write side
+  effects, exact native warning/error behavior, and native lowering remain
+  unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  shift operators `<<` and `>>`, including parser/runtime behavior, fixture
+  CLI coverage, documentation, native-codegen behavior, and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "bitwise operators: add unary not execution"`.
