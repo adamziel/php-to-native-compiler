@@ -3,6 +3,17 @@
 ## Unreleased
 
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  success cases that produce only whitespace assembly stdout. The Milestone
+  198 fixture runs as a lowerable scalar echo/print program, while assembly CLI
+  tests invoke `--emit-asm` with temporary PATHs exposing deterministic fake
+  `llc` and `cc` tools that pass discovery, accept generated input, emit only
+  whitespace on stdout, and exit successfully. `phpc` now rejects that case
+  with stable `llc emitted whitespace-only assembly output` and `cc emitted
+  whitespace-only assembly output` diagnostics after LLVM backend fallback
+  selection and after `cc -S` C fallback selection. Bundled toolchains,
+  assembly linking/execution, backend-specific assembly validation, exact
+  native error objects, and broader native lowering remain explicit gaps.
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   success cases that produce empty assembly stdout. The Milestone 197 fixture
   runs as a lowerable scalar echo/print program, while assembly CLI tests
   invoke `--emit-asm` with temporary PATHs exposing deterministic fake `llc`

@@ -1024,11 +1024,15 @@
   after fallback selection. Additional empty-stdout fallback success snapshots
   expose deterministic fake `llc` and `cc` tools that exit successfully without
   assembly text, proving the same stable empty-output diagnostic after fallback
-  selection. Bundled toolchains, assembly linking/execution, backend-specific
-  discovery semantics for every tool, backend-specific stdout/stderr
-  guarantees, backend-specific assembly text, PHP zvals, native symbol-table
-  storage, references/copy-on-write, exact native error objects, and broader
-  native lowering remain unsupported.
+  selection. Additional whitespace-only fallback success snapshots expose
+  deterministic fake `llc` and `cc` tools that exit successfully with only
+  whitespace assembly stdout, proving the same stable
+  whitespace-only-output diagnostic after fallback selection. Bundled
+  toolchains, assembly linking/execution, backend-specific discovery semantics
+  for every tool, backend-specific stdout/stderr guarantees,
+  backend-specific assembly text, PHP zvals, native symbol-table storage,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to

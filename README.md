@@ -76,6 +76,10 @@ Additional empty-stdout fallback success snapshots expose deterministic fake
 `llc` and `cc` tools that exit successfully without assembly text, proving the
 stable empty-output diagnostic after LLVM backend fallback selection and after
 the `cc -S` C fallback selection.
+Additional whitespace-only fallback success snapshots expose deterministic fake
+`llc` and `cc` tools that exit successfully with only whitespace on stdout,
+proving the stable whitespace-only-output diagnostic after LLVM backend
+fallback selection and after the `cc -S` C fallback selection.
 
 ## Current Status
 

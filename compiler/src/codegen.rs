@@ -541,6 +541,15 @@ fn assembly_backend_success_output(
         ));
     }
 
+    if String::from_utf8_lossy(&output.stdout).trim().is_empty() {
+        return Err(Diagnostic::new(
+            Phase::Codegen,
+            0,
+            0,
+            format!("{command} emitted whitespace-only assembly output"),
+        ));
+    }
+
     // Successful backends may emit warnings or notes to stderr; assembly is
     // taken only from stdout and process stderr is not surfaced by phpc.
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
