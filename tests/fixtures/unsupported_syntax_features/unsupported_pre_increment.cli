@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_pre_increment.php:3:1: unsupported increment/decrement operator: pre/post increment and decrement are not implemented
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_pre_increment.php:3:6: unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset
 --- stderr end ---

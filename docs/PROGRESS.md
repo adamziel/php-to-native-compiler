@@ -2802,18 +2802,26 @@ Still fails:
   increment/decrement operators, broader PHP coercion warning recovery, exact
   native error objects, and native lowering remain unsupported.
 - Added explicit parse diagnostics for unsupported pre/post increment and
-  decrement operators before executable `++`/`--` semantics exist. The parser
-  now rejects `++$name`, `$name++`, `--$name`, and `$name--` in statement and
-  expression positions with a stable diagnostic; fixture and CLI snapshot
-  coverage record each operator form, and native emission rejects the same
-  syntax at parse time. Numeric increment/decrement behavior, PHP string
-  increment behavior, arrays, objects, references, copy-on-write, expression
-  result values, exact native warning/error behavior, and native lowering
-  remain unsupported.
+  decrement operators before executable `++`/`--` semantics existed. After the
+  direct-variable statement slice was added, the retained parse diagnostics
+  cover expression-position increment/decrement and array/object targets.
+- Implemented statement-level direct static-variable pre/post increment and
+  decrement for existing integer and float variables. `++$name`, `$name++`,
+  `--$name`, and `$name--` now update the variable in place for the current
+  int/float subset, undefined variables fail with the existing stable
+  undefined-variable diagnostic, strings fail with a stable unsupported
+  increment/decrement diagnostic, and array/object targets plus
+  expression-position forms still fail at parse time. Fixture and CLI snapshot
+  coverage record the success and runtime-error paths, system PHP comparison
+  passes for the supported int/float fixture, and native emission rejects
+  increment/decrement explicitly until lowering exists. PHP string increment
+  behavior, arrays, objects, references, copy-on-write, expression result
+  values for pre/post forms, exact native warning/error behavior, broader
+  coercion recovery, and native lowering remain unsupported.
 
 Next:
 
-- Implement a narrow direct static-variable increment/decrement slice for
-  integer and float variables while keeping strings, arrays, objects,
-  references/copy-on-write, expression result values, and native lowering as
-  explicit gaps.
+- Implement direct static-variable increment/decrement in C-style `for`
+  initializer/increment slots for the same integer/float value subset, while
+  keeping strings, array/object targets, expression result values,
+  references/copy-on-write, and native lowering explicit gaps.

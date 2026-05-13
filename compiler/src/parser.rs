@@ -1,7 +1,7 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
     ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl,
-    FunctionParam, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    FunctionParam, IncrementDecrementOp, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -921,11 +921,60 @@ impl Parser {
     }
 
     fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {
+        if let Some(stmt) = self.try_parse_prefix_increment_decrement_statement()? {
+            return Ok(stmt);
+        }
+
         if let Some(stmt) = self.try_parse_assignment_statement()? {
             return Ok(stmt);
         }
 
         self.parse_expression_statement()
+    }
+
+    fn try_parse_prefix_increment_decrement_statement(&mut self) -> CompileResult<Option<Stmt>> {
+        let operator_span = self.peek().span;
+        let Some(op) = self.match_increment_decrement_operator() else {
+            return Ok(None);
+        };
+
+        if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            return Err(self.error_at(
+                operator_span,
+                unsupported_increment_decrement_target_message(),
+            ));
+        }
+
+        let target = self.parse_assignment_target()?;
+        if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+            if matches!(target, AssignTarget::Variable { .. }) {
+                return Err(self.error_at(
+                    operator_span,
+                    unsupported_increment_decrement_expression_message(),
+                ));
+            }
+            return Err(self.error_at(
+                target.span(),
+                unsupported_increment_decrement_target_message(),
+            ));
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after increment/decrement",
+        )?;
+
+        let AssignTarget::Variable { name, .. } = target else {
+            return Err(self.error_at(
+                target.span(),
+                unsupported_increment_decrement_target_message(),
+            ));
+        };
+
+        Ok(Some(Stmt::IncrementDecrement {
+            name,
+            op,
+            span: operator_span,
+        }))
     }
 
     fn try_parse_assignment_statement(&mut self) -> CompileResult<Option<Stmt>> {
@@ -936,6 +985,33 @@ impl Parser {
         let saved = self.current;
         let target = self.parse_assignment_target()?;
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            if let Some(op) = self.match_increment_decrement_operator() {
+                if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                    if matches!(target, AssignTarget::Variable { .. }) {
+                        return Err(self.error_at(
+                            target.span(),
+                            unsupported_increment_decrement_expression_message(),
+                        ));
+                    }
+                    return Err(self.error_at(
+                        target.span(),
+                        unsupported_increment_decrement_target_message(),
+                    ));
+                }
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after increment/decrement",
+                )?;
+
+                let AssignTarget::Variable { name, span } = target else {
+                    return Err(self.error_at(
+                        target.span(),
+                        unsupported_increment_decrement_target_message(),
+                    ));
+                };
+
+                return Ok(Some(Stmt::IncrementDecrement { name, op, span }));
+            }
             if let Some(op) = self.match_compound_assignment_operator() {
                 let AssignTarget::Variable { name, span } = target else {
                     return Err(self.error_at(
@@ -1287,7 +1363,10 @@ impl Parser {
 
     fn parse_unary(&mut self) -> CompileResult<Expr> {
         if self.check_increment_decrement_operator() {
-            return Err(self.error_at(self.peek().span, unsupported_increment_decrement_message()));
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_increment_decrement_expression_message(),
+            ));
         }
 
         if self.match_token(|kind| matches!(kind, TokenKind::Minus)) {
@@ -1365,9 +1444,10 @@ impl Parser {
             }
 
             if self.check_increment_decrement_operator() {
-                return Err(
-                    self.error_at(self.peek().span, unsupported_increment_decrement_message())
-                );
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_increment_decrement_expression_message(),
+                ));
             }
 
             break;
@@ -1968,9 +2048,10 @@ impl Parser {
     }
 
     fn check_increment_decrement_operator(&self) -> bool {
-        matches!(self.peek().kind, TokenKind::Plus | TokenKind::Minus)
-            && std::mem::discriminant(&self.peek().kind)
-                == std::mem::discriminant(&self.peek_next().kind)
+        matches!(
+            (&self.peek().kind, &self.peek_next().kind),
+            (TokenKind::Plus, TokenKind::Plus) | (TokenKind::Minus, TokenKind::Minus)
+        )
     }
 
     fn match_compound_assignment_operator(&mut self) -> Option<CompoundAssignOp> {
@@ -1985,6 +2066,21 @@ impl Parser {
             TokenKind::Slash => CompoundAssignOp::Div,
             TokenKind::Dot => CompoundAssignOp::Concat,
             _ => unreachable!("caller checked compound assignment operator"),
+        };
+        self.advance();
+        self.advance();
+        Some(op)
+    }
+
+    fn match_increment_decrement_operator(&mut self) -> Option<IncrementDecrementOp> {
+        if !self.check_increment_decrement_operator() {
+            return None;
+        }
+
+        let op = match self.peek().kind {
+            TokenKind::Plus => IncrementDecrementOp::Increment,
+            TokenKind::Minus => IncrementDecrementOp::Decrement,
+            _ => unreachable!("caller checked increment/decrement operator"),
         };
         self.advance();
         self.advance();
@@ -2239,8 +2335,12 @@ fn unsupported_compound_assignment_target_message() -> &'static str {
     "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
 }
 
-fn unsupported_increment_decrement_message() -> &'static str {
-    "unsupported increment/decrement operator: pre/post increment and decrement are not implemented"
+fn unsupported_increment_decrement_expression_message() -> &'static str {
+    "unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset"
+}
+
+fn unsupported_increment_decrement_target_message() -> &'static str {
+    "unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

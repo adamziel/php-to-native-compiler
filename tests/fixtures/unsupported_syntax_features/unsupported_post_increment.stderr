@@ -1,2 +1,2 @@
-parse error at 3:7: unsupported increment/decrement operator: pre/post increment and decrement are not implemented
+parse error at 3:12: unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset
 

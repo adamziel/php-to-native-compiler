@@ -1272,10 +1272,21 @@ handled.
 
 ## Milestone 134: Direct Variable Increment/Decrement Slice
 
-- [ ] Implement direct static-variable pre/post increment and decrement for
+- [x] Implement direct static-variable pre/post increment and decrement for
   integer and float variables over statement-level forms, including
   read-modify-write behavior, undefined-variable diagnostics, fixture CLI
   coverage, documentation, native-codegen rejection while lowering remains
   unsupported, and explicit gaps for strings, arrays, objects, references,
   copy-on-write, expression result values, exact native warning/error behavior,
   and broader PHP coercion recovery.
+
+## Milestone 135: For Header Increment/Decrement Slice
+
+- [ ] Implement direct static-variable pre/post increment and decrement in
+  C-style `for` initializer/increment slots for integer and float variables,
+  including loop execution behavior, undefined-variable and unsupported-type
+  diagnostics, fixture CLI coverage, documentation, native-codegen rejection
+  while lowering remains unsupported, and explicit gaps for strings,
+  array/object targets, expression result values, references/copy-on-write,
+  exact native warning/error behavior, broader coercion recovery, and native
+  lowering.

@@ -34,8 +34,9 @@ subset:
 - `echo`
 - integer, float, and string literals
 - static variables, assignment, direct static-variable compound assignment
-  (`+=`, `-=`, `*=`, `/=`, `.=`), and `unset($name)` through per-scope symbol
-  tables
+  (`+=`, `-=`, `*=`, `/=`, `.=`), statement-level direct static-variable
+  pre/post increment and decrement for integer and float variables, and
+  `unset($name)` through per-scope symbol tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow
@@ -173,7 +174,8 @@ subset:
   conditional expressions, unsupported expression-position assignment and
   compound-assignment forms,
   unsupported compound assignment targets outside direct static variables,
-  unsupported pre/post increment and decrement operators,
+  unsupported increment/decrement expression forms and targets outside direct
+  static variables,
   unsupported chained coalescing and unsupported append-offset null
   coalescing assignment forms, object
   method calls, dynamic property names, anonymous classes,

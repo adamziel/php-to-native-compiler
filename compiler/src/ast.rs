@@ -36,6 +36,11 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    IncrementDecrement {
+        name: String,
+        op: IncrementDecrementOp,
+        span: Span,
+    },
     NullCoalesceAssign {
         target: AssignTarget,
         expr: Expr,
@@ -367,4 +372,10 @@ pub enum CompoundAssignOp {
     Mul,
     Div,
     Concat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncrementDecrementOp {
+    Increment,
+    Decrement,
 }

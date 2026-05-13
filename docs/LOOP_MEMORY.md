@@ -10911,3 +10911,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T00:14:54Z
 
 - Post-round 24 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T00:15:17Z
+
+- Starting round 25 at 20260513T001516Z from HEAD `fee25e1`.
+
+## Loop Event 2026-05-13T00:15:38Z
+
+- Pre-round 25 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:24:15Z
+
+- Task attempted: implemented statement-level direct static-variable pre/post
+  increment and decrement for existing integer and float variables. `++$name`,
+  `$name++`, `--$name`, and `$name--` now update the variable in place in
+  `phpc run`; undefined variables keep the stable undefined-variable runtime
+  diagnostic, string operands fail with a stable unsupported
+  increment/decrement diagnostic, expression-position forms and array/object
+  targets remain explicit parse-boundary gaps, and native emission rejects the
+  new statement node until lowering exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/increment_decrement_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone134/increment_decrement.*`,
+  `tests/fixtures/runtime_errors/undefined_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/unsupported_string_increment.*`,
+  updated increment/decrement fixtures under
+  `tests/fixtures/unsupported_syntax_features/`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test increment_decrement`
+  passed; `cargo test -p phpc --test increment_decrement_cli` passed;
+  `cargo test -p phpc --test syntax_boundaries increment -- --nocapture`
+  passed; `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone134` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone134`
+  passed with 1 system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 148 fixtures; `cargo run -p phpc
+  -- test tests/fixtures/unsupported_syntax_features` passed with 26
+  fixtures; `cargo run -p phpc -- compile
+  tests/fixtures/milestone134/increment_decrement.php --emit-ir` exited `1`
+  with the expected codegen rejection; `tools/run-tests.sh` passed with 369
+  fixtures, 130 system PHP comparisons, and 239 comparison skips.
+- Remaining semantic gaps: `++`/`--` in `for` initializer/increment slots are
+  not executable yet; string increment/decrement behavior, array/object
+  targets, expression result values for pre/post forms, references,
+  copy-on-write, exact native warning/error behavior, broader coercion
+  recovery, and native lowering remain unsupported.
+- Next concrete task: implement direct static-variable increment/decrement in
+  C-style `for` initializer/increment slots for the same integer/float subset.
+- Known-good tag: not created; this is a narrow syntax/runtime checkpoint, not
+  a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add direct variable increment decrement"`
+  after the full suite passes.

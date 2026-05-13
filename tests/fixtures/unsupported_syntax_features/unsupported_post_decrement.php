@@ -1,3 +1,3 @@
 <?php
-$value = 1;
-$value--;
+$values = [1];
+$values[0]--;

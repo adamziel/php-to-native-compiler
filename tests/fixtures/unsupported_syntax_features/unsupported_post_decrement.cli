@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_post_decrement.php:3:7: unsupported increment/decrement operator: pre/post increment and decrement are not implemented
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_post_decrement.php:3:1: unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented
 --- stderr end ---

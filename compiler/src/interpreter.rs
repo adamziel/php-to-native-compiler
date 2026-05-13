@@ -10,7 +10,8 @@ use php_runtime::{
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, CompoundAssignOp,
-    Expr, ForAction, FunctionDecl, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    Expr, ForAction, FunctionDecl, IncrementDecrementOp, Program, Span, Stmt, SwitchCase, UnaryOp,
+    UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -252,6 +253,10 @@ impl Interpreter {
                 span,
             } => {
                 self.execute_compound_assignment(name, *op, expr, *span, scope)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::IncrementDecrement { name, op, span } => {
+                self.execute_increment_decrement(name, *op, *span, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::NullCoalesceAssign { target, expr, .. } => {
@@ -735,6 +740,40 @@ impl Interpreter {
         }
         .map_err(|error| runtime_error(span, error))?;
         scope.write_static(name, value);
+        Ok(())
+    }
+
+    fn execute_increment_decrement(
+        &mut self,
+        name: &str,
+        op: IncrementDecrementOp,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let value = scope.read_static(name, span)?;
+        let updated = match (value, op) {
+            (Value::Int(value), IncrementDecrementOp::Increment) => {
+                Value::Int(value.wrapping_add(1))
+            }
+            (Value::Int(value), IncrementDecrementOp::Decrement) => {
+                Value::Int(value.wrapping_sub(1))
+            }
+            (Value::Float(value), IncrementDecrementOp::Increment) => Value::Float(value + 1.0),
+            (Value::Float(value), IncrementDecrementOp::Decrement) => Value::Float(value - 1.0),
+            (other, _) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "increment/decrement",
+                        format!(
+                            "only int and float variables are implemented, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+        scope.write_static(name, updated);
         Ok(())
     }
 

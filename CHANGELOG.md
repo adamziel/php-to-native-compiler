@@ -2,11 +2,16 @@
 
 ## Unreleased
 
-- Added explicit unsupported pre/post increment and decrement diagnostics for
-  `++$name`, `$name++`, `--$name`, and `$name--` before executable
-  increment/decrement semantics exist, with parser regression coverage,
-  fixture/CLI snapshots, documentation, and native emission rejection at the
-  parse boundary.
+- Implemented statement-level direct static-variable pre/post increment and
+  decrement for existing integer and float variables, including
+  read-modify-write behavior, undefined-variable and unsupported-string
+  diagnostics, fixture/CLI coverage, system PHP comparison, documentation, and
+  native-codegen rejection while expression-position forms and array/object
+  targets remain explicit parse boundaries.
+- Added explicit unsupported pre/post increment and decrement diagnostics
+  before executable statement-level semantics existed. After the executable
+  direct-variable int/float slice, the retained diagnostics cover
+  expression-position increment/decrement and unsupported array/object targets.
 - Implemented direct static-variable compound assignment for `+=`, `-=`, `*=`,
   `/=`, and `.=` over the current scalar value model, including
   read-modify-write behavior in statements and `for` headers, undefined
