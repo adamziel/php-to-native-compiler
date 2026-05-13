@@ -235,14 +235,8 @@ fn emit_ir_rejects_match_expression_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_short_and_unparenthesized_nested_ternary_have_stable_parse_errors() {
+fn unparenthesized_nested_ternary_has_stable_parse_error() {
     let cases = [
-        (
-            "<?php\n$value = '';\n$result = $value ?: 'fallback';\n",
-            3,
-            18,
-            "unsupported short ternary expression: short ternary value reuse is not implemented",
-        ),
         (
             "<?php\n$flag = true;\n$result = $flag ? false ? 'bad' : 'inner' : 'outer';\n",
             3,

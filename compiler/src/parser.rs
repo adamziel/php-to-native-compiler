@@ -1520,7 +1520,16 @@ impl Parser {
                 return Err(self.error_at(question_span, unsupported_nested_ternary_message()));
             }
             if self.check(|kind| matches!(kind, TokenKind::Colon)) {
-                return Err(self.error_at(question_span, unsupported_short_ternary_message()));
+                self.advance();
+                let if_false =
+                    self.parse_assignment_expression_without_unparenthesized_ternary()?;
+                let span = expr.span();
+                expr = Expr::ShortTernary {
+                    condition: Box::new(expr),
+                    if_false: Box::new(if_false),
+                    span,
+                };
+                return Ok(expr);
             }
 
             let if_true = self.parse_assignment_expression_without_unparenthesized_ternary()?;
@@ -2252,7 +2261,7 @@ impl Parser {
                 self.ensure_supported_default_expr(left)?;
                 self.ensure_supported_default_expr(right)
             }
-            Expr::Ternary { .. } => Err(self.error_at(
+            Expr::Ternary { .. } | Expr::ShortTernary { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
             )),
@@ -2304,7 +2313,7 @@ impl Parser {
                 self.ensure_supported_const_declaration_expr(left)?;
                 self.ensure_supported_const_declaration_expr(right)
             }
-            Expr::Ternary { .. } => Err(self.error_at(
+            Expr::Ternary { .. } | Expr::ShortTernary { .. } => Err(self.error_at(
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
             )),
@@ -2364,6 +2373,14 @@ impl Parser {
             } => {
                 Self::expr_contains_assignment(condition)
                     || Self::expr_contains_assignment(if_true)
+                    || Self::expr_contains_assignment(if_false)
+            }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => {
+                Self::expr_contains_assignment(condition)
                     || Self::expr_contains_assignment(if_false)
             }
             Expr::Unary { expr, .. } => Self::expr_contains_assignment(expr),
@@ -2430,6 +2447,14 @@ impl Parser {
                     || Self::expr_contains_unsupported_assignment_rhs(if_true)
                     || Self::expr_contains_unsupported_assignment_rhs(if_false)
             }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => {
+                Self::expr_contains_unsupported_assignment_rhs(condition)
+                    || Self::expr_contains_unsupported_assignment_rhs(if_false)
+            }
             Expr::Unary { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
@@ -2474,6 +2499,12 @@ impl Parser {
                 ..
             } => Self::find_append_index_span(condition)
                 .or_else(|| Self::find_append_index_span(if_true))
+                .or_else(|| Self::find_append_index_span(if_false)),
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => Self::find_append_index_span(condition)
                 .or_else(|| Self::find_append_index_span(if_false)),
             Expr::Unary { expr, .. } => Self::find_append_index_span(expr),
             Expr::Assign { expr, .. }
@@ -2894,10 +2925,6 @@ fn unsupported_try_catch_finally_message() -> &'static str {
 
 fn unsupported_match_expression_message() -> &'static str {
     "unsupported match expression: expression-form branching is not implemented"
-}
-
-fn unsupported_short_ternary_message() -> &'static str {
-    "unsupported short ternary expression: short ternary value reuse is not implemented"
 }
 
 fn unsupported_nested_ternary_message() -> &'static str {

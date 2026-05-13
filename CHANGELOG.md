@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Implemented short ternary expressions `$value ?: $fallback` over the current
+  expression/value subset, including condition-value reuse, lazy fallback
+  evaluation, scalar truthiness coverage, value-context fixture/CLI coverage,
+  system PHP comparison, and explicit native-codegen rejection while
+  unparenthesized nested ternaries, throw expressions inside arms,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit gaps.
 - Implemented full ternary conditional expressions
   `$condition ? $if_true : $if_false` over the current expression/value subset,
   including truthiness-based condition selection, lazy branch evaluation,

@@ -625,6 +625,18 @@ impl Interpreter {
                     self.evaluate(if_false, scope)
                 }
             }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => {
+                let condition_value = self.evaluate(condition, scope)?;
+                if condition_value.is_truthy() {
+                    Ok(condition_value)
+                } else {
+                    self.evaluate(if_false, scope)
+                }
+            }
             Expr::Assign { target, expr, .. } => self.evaluate_assignment(target, expr, scope),
             Expr::CompoundAssign {
                 target,

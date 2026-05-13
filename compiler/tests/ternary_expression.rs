@@ -62,15 +62,40 @@ echo strlen(false ? "no" : "four"), "\n";
 }
 
 #[test]
-fn short_ternary_remains_an_explicit_unsupported_boundary() {
-    let error = run_source("<?php\n$value = '';\necho $value ?: 'fallback';\n").unwrap_err();
+fn short_ternary_reuses_truthy_condition_values_and_fallbacks_for_falsey_values() {
+    let execution = run_source(
+        r#"<?php
+foreach ([null, false, true, 0, 1, 0.0, 0.5, "", "0", "php"] as $value) {
+    var_dump($value ?: "fallback");
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 13);
     assert_eq!(
-        error.message,
-        "unsupported short ternary expression: short ternary value reuse is not implemented"
+        execution.stdout,
+        "string(8) \"fallback\"\nstring(8) \"fallback\"\nbool(true)\nstring(8) \"fallback\"\nint(1)\nstring(8) \"fallback\"\nfloat(0.5)\nstring(8) \"fallback\"\nstring(8) \"fallback\"\nstring(3) \"php\"\n"
+    );
+}
+
+#[test]
+fn short_ternary_evaluates_condition_once_and_fallback_lazily() {
+    let execution = run_source(
+        r#"<?php
+function trace($name, $value) {
+    echo $name, "\n";
+    return $value;
+}
+
+echo trace("truthy-condition", "kept") ?: trace("truthy-fallback", "fallback"), "\n";
+echo trace("falsey-condition", "") ?: trace("falsey-fallback", "fallback"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "truthy-condition\nkept\nfalsey-condition\nfalsey-fallback\nfallback\n"
     );
 }
 

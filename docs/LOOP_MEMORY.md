@@ -11979,3 +11979,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:47:43Z
 
 - Post-round 41 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:47:54Z
+
+- Starting round 42 at 20260513T024754Z from HEAD `2dd0fec`.
+
+## Loop Event 2026-05-13T02:48:06Z
+
+- Pre-round 42 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:00:00Z
+
+- Task attempted: implemented short ternary expressions
+  `$value ?: $fallback` over the current expression/value subset. The parser
+  now builds a distinct short-ternary node, the interpreter evaluates the
+  condition once, returns that original condition value when truthy, and lazily
+  evaluates the fallback only for falsey condition values. Native emission
+  keeps ternary expressions on the explicit unsupported-lowering path.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/ternary_expression.rs`,
+  `compiler/tests/ternary_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone151/short_ternary_expression.*`,
+  removed `tests/fixtures/unsupported_syntax_features/unsupported_short_ternary.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  ternary_expression --test syntax_boundaries` passed; `cargo test -p phpc
+  --test ternary_expression --test syntax_boundaries --test
+  ternary_expression_cli --test unsupported_syntax_features_cli` passed;
+  `cargo run -p phpc -- run
+  tests/fixtures/milestone151/short_ternary_expression.php` printed the
+  committed CLI exercise output; `cargo run -p phpc -- test
+  tests/fixtures/milestone151` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone151` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 26 fixtures; `tools/run-tests.sh` passed with 395 fixtures, 147
+  system PHP comparisons, and 248 comparison skips.
+- Remaining semantic gaps: unparenthesized nested ternaries, throw expressions
+  inside arms, references, copy-on-write aliasing, exact native error objects,
+  and native lowering remain unsupported.
+- Next concrete task: add explicit executable coverage for ternary expressions
+  mixed with null-coalescing expressions and assignment-expression branches so
+  precedence and lazy evaluation stay documented.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "ternary expressions: add short form"`.

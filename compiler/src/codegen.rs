@@ -261,7 +261,7 @@ impl LlvmGenerator {
                 *span,
                 "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet",
             )),
-            Expr::Ternary { span, .. } => Err(self.unsupported(
+            Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => Err(self.unsupported(
                 *span,
                 "ternary conditional expressions are supported by phpc run but not LLVM IR emission yet",
             )),
@@ -861,7 +861,7 @@ impl CGenerator {
                 *span,
                 "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not assembly emission yet",
             )),
-            Expr::Ternary { span, .. } => Err(self.unsupported(
+            Expr::Ternary { span, .. } | Expr::ShortTernary { span, .. } => Err(self.unsupported(
                 *span,
                 "ternary conditional expressions are supported by phpc run but not assembly emission yet",
             )),

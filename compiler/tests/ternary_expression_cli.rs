@@ -8,8 +8,12 @@ fn ternary_expression_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone150");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let mut fixtures = Vec::new();
+    for fixture_dir in ["milestone150", "milestone151"] {
+        fixtures.extend(cli_snapshot_fixtures(
+            &workspace_root.join("tests/fixtures").join(fixture_dir),
+        ));
+    }
 
     fixtures.sort();
     assert!(

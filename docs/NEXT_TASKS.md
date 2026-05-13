@@ -1446,10 +1446,19 @@ handled.
 
 ## Milestone 151: Short Ternary Conditional Expression Slice
 
-- [ ] Implement short ternary expressions `$value ?: $fallback` over the
+- [x] Implement short ternary expressions `$value ?: $fallback` over the
   current expression/value subset, including condition value reuse, lazy
   fallback evaluation, truthiness coverage, fixture CLI coverage,
   documentation, native-codegen rejection while lowering remains unsupported,
   and explicit gaps for unparenthesized nested ternaries, throw expressions
   inside arms, references/copy-on-write, exact native error objects, and native
   lowering.
+
+## Milestone 152: Ternary Precedence Coverage
+
+- [ ] Add explicit executable coverage for ternary expressions mixed with
+  null-coalescing expressions and assignment-expression branches, including
+  precedence/lazy-evaluation assertions, fixture CLI coverage, documentation,
+  native-codegen rejection while lowering remains unsupported, and explicit
+  gaps for unparenthesized nested ternaries, throw expressions inside arms,
+  references/copy-on-write, exact native error objects, and native lowering.

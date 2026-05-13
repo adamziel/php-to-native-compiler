@@ -1,0 +1,22 @@
+truthiness
+string(8) "fallback"
+string(8) "fallback"
+bool(true)
+string(8) "fallback"
+int(1)
+string(8) "fallback"
+float(0.5)
+string(8) "fallback"
+string(8) "fallback"
+string(3) "php"
+lazy
+call:truthy
+kept
+call:falsey
+call:falsey-fallback
+fallback
+contexts
+20
+4
+assigned:assigned
+filled:filled

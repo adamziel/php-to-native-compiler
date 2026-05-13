@@ -3027,13 +3027,21 @@ Still fails:
   branch, and fixture/CLI coverage exercises truthiness, lazy branch behavior,
   parenthesized nested ternaries, function-call/builtin/index contexts, and
   assignment-expression branch values with system PHP comparison. Native
-  emission rejects ternary expressions explicitly until lowering exists. Short
-  ternary `$value ?: $fallback`, unparenthesized nested ternaries, thrown
-  expressions inside arms, references, copy-on-write aliasing, exact native
-  error objects, and native lowering remain unsupported.
+  emission rejects ternary expressions explicitly until lowering exists.
+- Implemented short ternary expressions `$value ?: $fallback` over the current
+  expression/value subset. The parser now builds a short-ternary expression
+  node, the interpreter evaluates the condition once, returns the original
+  condition value when it is truthy, and lazily evaluates the fallback only for
+  falsey condition values. Fixture and CLI snapshot coverage exercise current
+  scalar truthiness, condition-value reuse, lazy fallback behavior, index,
+  builtin, and assignment-expression contexts with system PHP comparison.
+  Native emission rejects ternary expressions explicitly until lowering exists.
+  Unparenthesized nested ternaries, thrown expressions inside arms, references,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
 
 Next:
 
-- Implement short ternary expressions `$value ?: $fallback` over the current
-  expression/value subset, including value reuse, lazy fallback evaluation,
-  fixture CLI coverage, documentation, and explicit native-codegen rejection.
+- Add explicit executable coverage for ternary expressions mixed with
+  null-coalescing expressions and assignment-expression branches so precedence
+  and lazy evaluation stay documented.
