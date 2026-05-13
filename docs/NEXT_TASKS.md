@@ -1934,9 +1934,18 @@ handled.
 
 ## Milestone 206: Native Assembly Backend Probe Output Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for successful
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for successful
   assembly backend discovery probes that write stdout/stderr diagnostics while
   still passing discovery, using deterministic selected and fallback backend
   test doubles, including normalized CLI output, documentation, and named gaps
   for backend-specific discovery output semantics, bundled toolchains, exact
+  native error objects, and broader native lowering.
+
+## Milestone 207: Native Assembly Failed Probe Output Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for failed assembly
+  backend discovery probes that write stdout/stderr diagnostics before
+  fallback selection or missing-backend reporting, using deterministic backend
+  test doubles, including normalized CLI output, documentation, and named gaps
+  for backend-specific failed-probe output semantics, bundled toolchains, exact
   native error objects, and broader native lowering.

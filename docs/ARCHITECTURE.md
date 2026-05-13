@@ -181,6 +181,11 @@ Backend discovery probe argument-validation snapshots expose deterministic fake
 `--version` probe before selected or fallback assembly emission. That pins the
 current discovery probe contract without treating it as full backend-specific
 discovery semantics.
+Backend discovery probe output snapshots expose deterministic fake `clang`,
+`llc`, and `cc` tools whose successful `--version` probes write stdout and
+stderr diagnostics before selected or fallback assembly emission. That pins
+the current boundary that probe output is ignored after a successful probe,
+without treating that as full backend-specific discovery output semantics.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

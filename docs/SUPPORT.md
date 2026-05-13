@@ -1046,7 +1046,10 @@
   `cc` tools. Backend discovery probe argument vectors are covered with
   deterministic fake `clang`, `llc`, and `cc` tools that require an exact
   single-argument `--version` probe before selected or fallback assembly
-  emission proceeds. Bundled toolchains, assembly linking/execution, full
+  emission proceeds. Successful discovery probes that write stdout and stderr
+  diagnostics are covered with deterministic fake `clang`, `llc`, and `cc`
+  tools, proving probe output is ignored when selected or fallback assembly
+  emission later succeeds. Bundled toolchains, assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific
