@@ -201,6 +201,11 @@ Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
 tools with the same race-like behavior. Those pin the current diagnostics for
 previously discovered fallback commands that cannot be started later, without
 treating that as full backend race-condition recovery semantics.
+A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
+`cc` commands together. It pins the current selection order by proving
+successful `clang` assembly emission is used before LLVM or C fallback tools
+when all candidates are available, without treating that as full
+backend-specific discovery semantics.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

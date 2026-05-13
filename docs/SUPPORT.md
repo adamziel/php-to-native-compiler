@@ -1060,8 +1060,11 @@
   race-like command-start boundary. Fallback start-failure snapshots use
   deterministic fake `llc` and `cc` tools with the same behavior, proving the
   stable `failed to start llc for assembly emission` and `failed to start cc
-  for assembly emission` diagnostics after fallback selection. Bundled
-  toolchains, assembly linking/execution, full
+  for assembly emission` diagnostics after fallback selection. A
+  backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
+  `cc` commands together and proves successful `clang` emission is selected
+  before fallback tools when all candidates are available. Bundled toolchains,
+  assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed

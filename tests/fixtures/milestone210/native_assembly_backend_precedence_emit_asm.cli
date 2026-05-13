@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+.text
+.globl main
+main:
+  call printf
+# selected clang backend
+--- stdout end ---
+stderr:
+--- stderr end ---

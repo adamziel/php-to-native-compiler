@@ -124,6 +124,9 @@ Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
 tools with the same race-like behavior, proving the stable fallback backend
 start diagnostics after LLVM fallback selection and after the `cc -S` C
 fallback selection.
+A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
+`cc` commands together, proving successful `clang` assembly emission is
+selected before fallback tools when all candidates are available.
 
 ## Current Status
 

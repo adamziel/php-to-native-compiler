@@ -855,3 +855,6 @@
   behavior and the native rejection. Native PHP numeric coercion, truthiness
   conversion, references/copy-on-write side effects, exact native error
   objects, and broader native unary lowering remain explicit gaps.
+- Added a Milestone 210 `phpc compile --emit-asm` backend-precedence snapshot
+  with deterministic fake `clang`, `llc`, and `cc` commands all available,
+  proving selected `clang` output is returned before fallback tools are used.

@@ -15562,3 +15562,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T08:45:40Z
 
 - Post-round 100 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T08:45:52Z
+
+- Starting round 101 at 20260513T084552Z from HEAD `4c69259`.
+
+## Loop Event 2026-05-13T08:46:04Z
+
+- Pre-round 101 test exit code: `0`.
+
+## Loop Event 2026-05-13T08:51:37Z
+
+- Task attempted: completed Milestone 210 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for backend selection precedence when `clang`,
+  `llc`, and `cc` are all available. The new Milestone 210 fixture is a
+  lowerable scalar echo/print program, and the assembly CLI test invokes
+  `--emit-asm` with a temporary PATH exposing deterministic fake `clang`,
+  `llc`, and `cc` tools where selected `clang` emits a committed marker and
+  fallback tools would fail if selected.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone210/native_assembly_backend_precedence.php`,
+  `tests/fixtures/milestone210/native_assembly_backend_precedence.stdout`,
+  `tests/fixtures/milestone210/native_assembly_backend_precedence_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo run -p phpc --
+  test tests/fixtures/milestone210` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone210` passed with 1
+  system PHP comparison; `cargo test -p phpc --test native_assembly_cli
+  prefers_clang -- --nocapture` passed with 1 focused test; `cargo test -p
+  phpc --test native_assembly_cli -- --nocapture` passed with 44 tests;
+  `tools/run-tests.sh` passed with 460 fixtures, 204 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; backend-precedence coverage is a
+  narrow test-double contract rather than full backend-specific discovery
+  semantics; generated code still lacks exact native PHP error objects and
+  broader native lowering.
+- Next concrete task: add Milestone 211, explicit `phpc compile --emit-asm`
+  CLI coverage for fallback backend selection precedence when `clang` is
+  unavailable and both `llc` and `cc` are available.
+- Known-good tag: not created; this is narrow assembly backend selection
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot backend precedence"`
+  after the full suite passes.

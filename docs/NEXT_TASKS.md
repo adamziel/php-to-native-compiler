@@ -1970,9 +1970,18 @@ handled.
 
 ## Milestone 210: Native Assembly Backend Selection Precedence
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for backend
   selection precedence when `clang`, `llc`, and `cc` are all available,
   proving selected `clang` is used before fallback tools with deterministic
   test doubles, documentation, and named gaps for full backend-specific
   discovery semantics, bundled toolchains, exact native error objects, and
   broader native lowering.
+
+## Milestone 211: Native Assembly Fallback Selection Precedence
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  selection precedence when `clang` is unavailable and both `llc` and `cc` are
+  available, proving selected `llc` is used before the C fallback with
+  deterministic test doubles, documentation, and named gaps for full
+  backend-specific discovery semantics, bundled toolchains, exact native error
+  objects, and broader native lowering.

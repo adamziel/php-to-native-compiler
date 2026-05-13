@@ -3666,12 +3666,21 @@ Still fails:
   `cc -S` C fallback selection. Bundled toolchains, assembly linking/execution,
   broader backend race-condition recovery, exact native error objects, and
   broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for backend selection
+  precedence when `clang`, `llc`, and `cc` are all available. The Milestone
+  210 fixture runs through `phpc run` and system PHP as a lowerable scalar
+  echo/print program, while the assembly CLI test invokes `--emit-asm` with a
+  temporary PATH exposing deterministic fake `clang`, `llc`, and `cc` tools.
+  The committed snapshot proves selected `clang` output is returned before
+  fallback tools are used. Bundled toolchains, assembly linking/execution,
+  full backend-specific discovery semantics, exact native error objects, and
+  broader native lowering remain unsupported.
 
 Next:
 
-- Add Milestone 210, explicit `phpc compile --emit-asm` CLI coverage for
-  backend selection precedence when `clang`, `llc`, and `cc` are all available,
-  proving selected `clang` is used before fallback tools with deterministic
-  test doubles, documentation, and named gaps for full backend-specific
-  discovery semantics, bundled toolchains, exact native error objects, and
-  broader native lowering.
+- Add Milestone 211, explicit `phpc compile --emit-asm` CLI coverage for
+  fallback backend selection precedence when `clang` is unavailable and both
+  `llc` and `cc` are available, proving selected `llc` is used before the C
+  fallback with deterministic test doubles, documentation, and named gaps for
+  full backend-specific discovery semantics, bundled toolchains, exact native
+  error objects, and broader native lowering.
