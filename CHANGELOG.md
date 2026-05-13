@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback `llc` and
+  `cc` backend input validation. The Milestone 203 fixture runs as a lowerable
+  scalar echo/print program, while assembly CLI tests invoke `--emit-asm` with
+  temporary PATHs exposing deterministic fake `llc` and `cc` tools that pass
+  discovery, validate generated LLVM IR or generated C fallback source arrives
+  on stdin with representative markers, then emit normalized assembly. The
+  committed snapshots prove fallback-backend stdin handoff after LLVM backend
+  fallback selection and after `cc -S` C fallback selection. Bundled
+  toolchains, assembly linking/execution, backend-specific IR/C validation
+  across real tools and broader lowered constructs, exact native error
+  objects, and broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for selected `clang`
   backend input validation. The Milestone 202 fixture runs as a lowerable
   scalar echo/print program, while the assembly CLI test invokes `--emit-asm`

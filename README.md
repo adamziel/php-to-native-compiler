@@ -95,6 +95,11 @@ A selected-backend input-validation snapshot exposes a deterministic fake
 `clang` that validates representative generated LLVM IR markers arrive on
 stdin before emitting normalized assembly, proving `phpc` feeds the selected
 backend through stdin for the current lowerable scalar subset.
+Fallback input-validation snapshots expose deterministic fake `llc` and `cc`
+tools that validate representative generated LLVM IR or generated C fallback
+markers arrive on stdin before emitting normalized assembly, proving the same
+stdin handoff after LLVM backend fallback selection and after `cc -S` C
+fallback selection.
 
 ## Current Status
 

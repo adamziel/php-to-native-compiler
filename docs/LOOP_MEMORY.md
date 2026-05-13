@@ -15142,3 +15142,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T07:58:42Z
 
 - Post-round 93 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T07:58:57Z
+
+- Starting round 94 at 20260513T075857Z from HEAD `006db69`.
+
+## Loop Event 2026-05-13T07:59:10Z
+
+- Pre-round 94 test exit code: `0`.
+
+## Loop Event 2026-05-13T08:02:12Z
+
+- Task attempted: completed Milestone 203 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for fallback `llc` and `cc` backend input
+  validation. The new Milestone 203 fixture is a lowerable scalar echo/print
+  program, and the assembly CLI tests invoke `--emit-asm` with temporary PATHs
+  exposing deterministic fake `llc` and `cc` tools that pass discovery,
+  validate generated LLVM IR or generated C fallback source arrives on stdin
+  with representative `printf`, `main`, and generated-source markers, then
+  emit normalized assembly.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone203/native_assembly_validating_fallback.php`,
+  `tests/fixtures/milestone203/native_assembly_validating_fallback.stdout`,
+  `tests/fixtures/milestone203/native_assembly_validating_llc_emit_asm.cli`,
+  `tests/fixtures/milestone203/native_assembly_validating_cc_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo fmt --check` passed;
+  `cargo test -p phpc --test native_assembly_cli
+  native_scalar_echo_emit_asm_llc_validates_ir_stdin_cli_summary_matches_committed_output
+  -- --nocapture` passed; `cargo test -p phpc --test native_assembly_cli
+  native_scalar_echo_emit_asm_cc_validates_c_stdin_cli_summary_matches_committed_output
+  -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone203` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone203` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test native_assembly_cli -- --nocapture`
+  passed with 28 tests; `tools/run-tests.sh` passed with 453 fixtures, 197
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; backend-specific IR/C validation
+  remains narrow test-double coverage for representative markers only;
+  generated code still lacks exact native PHP error objects and broader native
+  lowering.
+- Next concrete task: add Milestone 204, explicit `phpc compile --emit-asm`
+  CLI coverage for selected and fallback backend invocation arguments using
+  deterministic `clang`, `llc`, and `cc` test doubles.
+- Known-good tag: not created; this is narrow fallback-backend stdin handoff
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: validate fallback backend stdin"`
+  after the full suite passes.

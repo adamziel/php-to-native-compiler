@@ -3587,10 +3587,23 @@ Still fails:
   subset. Bundled toolchains, assembly linking/execution, backend-specific IR
   validation across real tools and broader lowered constructs, exact native
   error objects, and broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback `llc` and
+  `cc` backend input validation. The Milestone 203 fixture runs through
+  `phpc run` and system PHP as a lowerable scalar echo/print program, while
+  assembly CLI tests invoke `--emit-asm` with temporary PATHs exposing
+  deterministic fake `llc` and `cc` tools that pass discovery, validate
+  generated LLVM IR or generated C fallback source arrives on stdin with
+  representative `printf`, `main`, and generated-source markers, then emit
+  normalized assembly. The committed snapshots prove fallback backends receive
+  generated input through stdin after LLVM backend fallback selection and after
+  `cc -S` C fallback selection. Bundled toolchains, assembly linking/execution,
+  backend-specific IR/C validation across real tools and broader lowered
+  constructs, exact native error objects, and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc` and
-  `cc` backend input validation, using deterministic test doubles that inspect
-  stdin for representative LLVM IR or generated C markers before emitting
+- Add explicit `phpc compile --emit-asm` CLI coverage for selected and fallback
+  backend invocation arguments, using deterministic test doubles that validate
+  the expected `clang`, `llc`, and `cc` argument vectors before emitting
   assembly.

@@ -165,6 +165,12 @@ A selected-backend input-validation snapshot exposes a deterministic fake
 emitting normalized assembly. That pins the selected-backend stdin handoff for
 the current lowerable scalar subset without treating the test double as
 backend-specific IR validation.
+Fallback input-validation snapshots expose deterministic fake `llc` and `cc`
+tools that validate representative generated LLVM IR or generated C fallback
+markers on stdin before emitting normalized assembly. That pins the same stdin
+handoff after LLVM backend fallback selection and after the `cc -S` C fallback
+selection without treating the test doubles as backend-specific IR/C
+validation.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

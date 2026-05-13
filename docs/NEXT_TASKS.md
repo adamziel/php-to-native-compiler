@@ -1907,9 +1907,18 @@ handled.
 
 ## Milestone 203: Native Assembly Fallback Input Validation
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
   and `cc` backend test doubles that validate generated input arrives on stdin
   with representative LLVM IR or generated C markers before emitting assembly,
   including deterministic test doubles, normalized CLI output, documentation,
   and named gaps for backend-specific IR/C validation, bundled toolchains,
   exact native error objects, and broader native lowering.
+
+## Milestone 204: Native Assembly Backend Argument Validation
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected and
+  fallback backend invocation arguments, using deterministic `clang`, `llc`,
+  and `cc` test doubles that validate expected argument vectors before
+  accepting stdin and emitting assembly, including normalized CLI output,
+  documentation, and named gaps for backend-specific command-line compatibility,
+  bundled toolchains, exact native error objects, and broader native lowering.

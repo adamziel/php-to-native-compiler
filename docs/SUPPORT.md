@@ -1040,7 +1040,9 @@
   backend stderr is not surfaced after fallback selection too. Bundled
   toolchains, assembly linking/execution,
   selected-backend stdin handoff for representative generated LLVM IR markers
-  is covered with a deterministic fake `clang`, but full backend-specific IR
+  is covered with a deterministic fake `clang`, and fallback stdin handoff for
+  representative generated LLVM IR and generated C markers is covered with
+  deterministic fake `llc` and `cc` tools, but full backend-specific IR/C
   validation for every backend and every lowered construct,
   backend-specific discovery semantics for every tool, backend-specific
   stdout/stderr guarantees, backend-specific assembly text, PHP zvals, native
