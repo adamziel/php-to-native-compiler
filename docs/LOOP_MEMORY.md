@@ -16134,5 +16134,5 @@ injects this file into every prompt. Each Codex pass should update it with:
   selected-backend start diagnostic is reported.
 - Known-good tag: not created; this is narrow backend discovery boundary
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot permission-denied probes"`
-  after the full suite passes.
+- Checkpoint: `4b54179` (`codegen: snapshot permission-denied probes`). A
+  follow-up docs checkpoint records this commit hash in durable loop memory.
