@@ -124,6 +124,10 @@ An empty-stderr backend-failure snapshot exposes a deterministic fake `clang`
 that passes discovery and exits nonzero without stderr after accepting
 generated LLVM IR. That pins the fallback diagnostic detail for selected
 backend failures when a tool provides no error text.
+An empty-stdout backend-success snapshot exposes a deterministic fake `clang`
+that passes discovery and exits successfully after accepting generated LLVM IR
+without producing assembly text. That pins the selected-backend diagnostic for
+empty stdout instead of treating an empty assembly artifact as success.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

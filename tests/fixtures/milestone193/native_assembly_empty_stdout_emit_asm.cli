@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone193/native_assembly_empty_stdout.php:0:0: clang emitted empty assembly output
+--- stderr end ---

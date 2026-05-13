@@ -58,6 +58,9 @@ as unavailable tools and the stable missing-backend diagnostic is reported.
 An empty-stderr backend-failure snapshot exposes a deterministic fake `clang`
 that passes discovery and exits nonzero without diagnostic text, proving the
 stable fallback detail for selected backend failures that produce no stderr.
+An empty-stdout backend-success snapshot exposes a deterministic fake `clang`
+that passes discovery and exits successfully without assembly text, proving the
+stable rejection for selected backends that produce no stdout.
 
 ## Current Status
 

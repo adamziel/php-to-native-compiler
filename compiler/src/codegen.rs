@@ -411,7 +411,7 @@ fn clang_assembly_from_ir(ir: &str) -> CompileResult<String> {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    assembly_backend_success_output("clang", &output.stdout)
 }
 
 fn llc_assembly_from_ir(ir: &str) -> CompileResult<String> {
@@ -463,7 +463,7 @@ fn llc_assembly_from_ir(ir: &str) -> CompileResult<String> {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    assembly_backend_success_output("llc", &output.stdout)
 }
 
 fn cc_assembly_from_c(source: &str) -> CompileResult<String> {
@@ -515,7 +515,7 @@ fn cc_assembly_from_c(source: &str) -> CompileResult<String> {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    assembly_backend_success_output("cc", &output.stdout)
 }
 
 fn assembly_backend_failure_message(command: &str, stderr: &[u8]) -> String {
@@ -526,6 +526,19 @@ fn assembly_backend_failure_message(command: &str, stderr: &[u8]) -> String {
     } else {
         format!("{command} failed to emit assembly: {detail}")
     }
+}
+
+fn assembly_backend_success_output(command: &str, stdout: &[u8]) -> CompileResult<String> {
+    if stdout.is_empty() {
+        return Err(Diagnostic::new(
+            Phase::Codegen,
+            0,
+            0,
+            format!("{command} emitted empty assembly output"),
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(stdout).into_owned())
 }
 
 fn command_available(command: &str) -> bool {

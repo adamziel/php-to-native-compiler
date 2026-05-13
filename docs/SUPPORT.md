@@ -1008,11 +1008,14 @@
   empty-stderr selected-backend snapshot exposes a deterministic fake `clang`
   that passes discovery and exits nonzero without stderr after accepting
   generated LLVM IR, proving the stable `backend exited without stderr`
-  diagnostic detail. Bundled toolchains, assembly linking/execution,
-  backend-specific discovery semantics for every tool, backend-specific stderr
-  guarantees, backend-specific assembly text, PHP zvals, native symbol-table storage,
-  references/copy-on-write, exact native error objects, and broader native
-  lowering remain unsupported.
+  diagnostic detail. An empty-stdout selected-backend snapshot exposes a
+  deterministic fake `clang` that passes discovery and exits successfully
+  without assembly stdout, proving the stable `clang emitted empty assembly
+  output` diagnostic instead of accepting an empty assembly artifact. Bundled
+  toolchains, assembly linking/execution, backend-specific discovery semantics
+  for every tool, backend-specific stderr guarantees, backend-specific assembly
+  text, PHP zvals, native symbol-table storage, references/copy-on-write,
+  exact native error objects, and broader native lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
