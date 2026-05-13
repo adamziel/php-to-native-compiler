@@ -16012,5 +16012,6 @@ injects this file into every prompt. Each Codex pass should update it with:
   fallback selection or missing-backend diagnostics.
 - Known-good tag: not created; this is narrow backend start-failure precedence
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot fallback backend start-failure precedence"`
-  after the full suite passes.
+- Checkpoint: `1b9c0a6` (`codegen: snapshot fallback backend start-failure
+  precedence`). A follow-up docs checkpoint records this commit hash in durable
+  loop memory.
