@@ -16368,4 +16368,5 @@ injects this file into every prompt. Each Codex pass should update it with:
   symbol-table-backed native lowering.
 - Known-good tag: not created; this is narrow C fallback CLI coverage, not a
   major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot mixed scalar C fallback"`.
+- Checkpoint: `181437b` (`codegen: snapshot mixed scalar C fallback`). A
+  follow-up docs checkpoint records this commit hash in durable loop memory.
