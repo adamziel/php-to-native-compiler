@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for the selected
+  `clang` backend success case that produces only whitespace assembly stdout.
+  The Milestone 199 fixture runs as a lowerable scalar echo/print program,
+  while the assembly CLI test invokes `--emit-asm` with a temporary PATH
+  exposing deterministic fake `clang` that passes discovery, accepts generated
+  LLVM IR, emits only whitespace on stdout, and exits successfully. The
+  committed snapshot proves the stable `clang emitted whitespace-only assembly
+  output` diagnostic before LLVM backend fallback selection. Bundled
+  toolchains, assembly linking/execution, backend-specific assembly
+  validation, exact native error objects, and broader native lowering remain
+  explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   success cases that produce only whitespace assembly stdout. The Milestone
   198 fixture runs as a lowerable scalar echo/print program, while assembly CLI

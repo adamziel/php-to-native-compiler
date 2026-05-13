@@ -80,6 +80,9 @@ Additional whitespace-only fallback success snapshots expose deterministic fake
 `llc` and `cc` tools that exit successfully with only whitespace on stdout,
 proving the stable whitespace-only-output diagnostic after LLVM backend
 fallback selection and after the `cc -S` C fallback selection.
+A selected-backend whitespace-only success snapshot exposes a deterministic
+fake `clang` that exits successfully with only whitespace on stdout, proving
+the same stable diagnostic before fallback selection.
 
 ## Current Status
 

@@ -1869,9 +1869,19 @@ handled.
 
 ## Milestone 199: Native Assembly Whitespace Selected-Backend Output Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for the selected
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for the selected
   `clang` backend success case that produces only whitespace assembly stdout,
   proving the shared whitespace-only-output diagnostic applies before fallback
   selection too, including deterministic test doubles, documentation, and
   named gaps for backend-specific assembly validation, bundled toolchains,
   exact native error objects, and broader native lowering.
+
+## Milestone 200: Native Assembly Invalid Success Output Stderr Precedence
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
+  `clang` backend success case that writes stderr diagnostics while producing
+  whitespace-only assembly stdout, proving stdout validation wins and backend
+  stderr remains unsurfaced on invalid successful output, including
+  deterministic test doubles, documentation, and named gaps for
+  backend-specific assembly validation, bundled toolchains, exact native error
+  objects, and broader native lowering.

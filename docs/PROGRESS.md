@@ -3538,10 +3538,21 @@ Still fails:
   `cc -S` C fallback selection. Bundled toolchains, assembly linking/execution,
   backend-specific assembly validation, exact native error objects, and broader
   native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for the selected
+  `clang` backend success case that produces only whitespace assembly stdout.
+  The Milestone 199 fixture runs through `phpc run` and system PHP as a
+  lowerable scalar echo/print program, while the assembly CLI test invokes
+  `--emit-asm` with a temporary PATH exposing deterministic fake `clang` that
+  passes discovery, accepts generated LLVM IR, emits only whitespace on stdout,
+  and exits successfully. The committed snapshot proves the stable `clang
+  emitted whitespace-only assembly output` diagnostic before LLVM backend
+  fallback selection. Bundled toolchains, assembly linking/execution,
+  backend-specific assembly validation, exact native error objects, and broader
+  native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for the selected
-  `clang` backend success case that produces only whitespace assembly stdout,
-  proving the shared whitespace-only-output diagnostic applies before fallback
-  selection too.
+- Add explicit `phpc compile --emit-asm` CLI coverage for a selected
+  `clang` backend success case that produces whitespace-only stdout and stderr
+  diagnostics, proving stdout validation wins and backend stderr remains
+  unsurfaced on invalid successful output.

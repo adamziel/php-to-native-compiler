@@ -148,6 +148,9 @@ Whitespace-only fallback success snapshots expose deterministic fake `llc` and
 `cc` tools that exit successfully with only whitespace on stdout. That pins the
 shared whitespace-only-output diagnostic after LLVM fallback selection and
 after the `cc -S` C fallback selection.
+A selected-backend whitespace-only success snapshot exposes a deterministic
+fake `clang` that exits successfully with only whitespace on stdout. That pins
+the same shared whitespace-only-output diagnostic before fallback selection.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,
