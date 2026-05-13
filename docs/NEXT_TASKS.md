@@ -2069,10 +2069,20 @@ handled.
 
 ## Milestone 220: Native Assembly Selected Backend Permission-Denied Emission Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
   backend command that passes discovery but becomes non-executable before
   actual assembly emission, proving the stable selected-backend start
   diagnostic is reported for permission-denied emission starts, with
   deterministic test doubles, documentation, and named gaps for backend race
   conditions, bundled toolchains, exact native error objects, and broader
   native lowering.
+
+## Milestone 221: Native Assembly Fallback Backend Permission-Denied Emission Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a fallback
+  backend command that passes discovery but becomes non-executable before
+  actual assembly emission, proving the stable fallback-backend start
+  diagnostic is reported for permission-denied emission starts without
+  silently falling through to later fallbacks, with deterministic test
+  doubles, documentation, and named gaps for backend race conditions, bundled
+  toolchains, exact native error objects, and broader native lowering.

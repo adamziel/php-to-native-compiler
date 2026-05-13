@@ -2073,7 +2073,7 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 112
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 440 fixtures, 184 system PHP comparisons,
+- `tools/run-tests.sh` passes with 470 fixtures, 214 system PHP comparisons,
   and 256 comparison skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone180/native_scalar_echo_assignment.php --emit-ir`
@@ -2083,7 +2083,7 @@ Tested:
   emits native assembly through an available LLVM tool or the documented `cc`
   fallback when one is installed.
 - `cargo test -p phpc --test native_assembly_cli -- --nocapture` passes with
-  9 assembly CLI tests covering the Milestone 182 scalar echo/assignment
+  58 assembly CLI tests covering the Milestone 182 scalar echo/assignment
   summary plus the current deterministic backend selection, fallback, failure,
   and discovery-fallback snapshots.
 - `cargo run -p phpc -- test tests/fixtures/milestone182` passes with 1
@@ -3779,10 +3779,24 @@ Still fails:
   the stable missing-backend diagnostic. Bundled toolchains, assembly
   linking/execution, backend-specific discovery semantics, exact native error
   objects, and broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  permission-denied emission starts when selected `clang` passes discovery but
+  becomes non-executable before actual assembly emission while fallback `llc`
+  and `cc` commands are also available. The Milestone 220 fixture runs through
+  `phpc run` and system PHP as a lowerable scalar echo/print program, while
+  the assembly CLI test invokes `--emit-asm` with a temporary PATH exposing a
+  deterministic fake `clang` that removes its own execute permission after a
+  successful `--version` probe. The committed snapshot proves the stable
+  `failed to start clang for assembly emission` diagnostic is reported for
+  permission-denied emission starts without falling through to fallback tools.
+  Bundled toolchains, assembly linking/execution, full backend recovery
+  semantics, exact native error objects, and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add Milestone 220, explicit `phpc compile --emit-asm` CLI coverage for a
-  selected backend command that passes discovery but becomes non-executable
-  before actual assembly emission, proving the stable selected-backend start
-  diagnostic is reported for permission-denied emission starts.
+- Add Milestone 221, explicit `phpc compile --emit-asm` CLI coverage for a
+  fallback backend command that passes discovery but becomes non-executable
+  before actual assembly emission, proving the stable fallback-backend start
+  diagnostic is reported for permission-denied emission starts without
+  silently falling through to later fallbacks.

@@ -128,6 +128,10 @@ A selected-backend start-failure snapshot exposes a deterministic fake
 interpreter before assembly emission, proving `phpc` reports the stable
 selected-backend start diagnostic when a previously discovered command cannot
 be started.
+A selected-backend permission-denied emission snapshot exposes a
+deterministic fake `clang` that passes discovery and then removes its own
+execute permission before assembly emission, proving the same stable
+selected-backend start diagnostic is reported for permission-denied starts.
 Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
 tools with the same race-like behavior, proving the stable fallback backend
 start diagnostics after LLVM fallback selection and after the `cc -S` C

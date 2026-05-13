@@ -1948,6 +1948,44 @@ fn native_scalar_echo_emit_asm_all_permission_denied_probes_missing_backend_cli_
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_selected_backend_permission_denied_after_probe_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join(
+        "tests/fixtures/milestone220/native_assembly_selected_permission_denied_emission.php",
+    );
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path =
+        TempPath::with_permission_denied_clang_after_successful_probe_and_available_fallbacks(
+            workspace_root,
+        );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone220/native_assembly_selected_permission_denied_emission_emit_asm.cli",
+    ))
+    .expect("native assembly selected permission-denied emission CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -3800,6 +3838,80 @@ exit {exit_code}\n"
             std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
             fs::set_permissions(&script, permissions).expect(
                 "temporary selected-start-failure-precedence fallback script can be made executable",
+            );
+        }
+
+        Self { path }
+    }
+
+    fn with_permission_denied_clang_after_successful_probe_and_available_fallbacks(
+        workspace_root: &Path,
+    ) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-selected-permission-denied-emission-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary selected-permission-denied-emission PATH directory can be created");
+        let chmod = find_command_on_path("chmod")
+            .expect("host chmod command is available for permission-denied emission test");
+
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            format!(
+                "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  '{}' 0644 '{}'\n\
+  printf '%s\\n' 'fake clang 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected clang backend invocation after permission removal' >&2\n\
+exit 109\n",
+                chmod.display(),
+                clang.display()
+            ),
+        )
+        .expect("temporary selected-permission-denied-emission clang script can be written");
+        let mut clang_permissions = fs::metadata(&clang)
+            .expect(
+                "temporary selected-permission-denied-emission clang script metadata is readable",
+            )
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut clang_permissions, 0o755);
+        fs::set_permissions(&clang, clang_permissions).expect(
+            "temporary selected-permission-denied-emission clang script can be made executable",
+        );
+
+        for (command, exit_code) in [("llc", 110), ("cc", 111)] {
+            let script = path.join(command);
+            fs::write(
+                &script,
+                format!(
+                    "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake {command} 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected {command} fallback invocation after selected clang permission-denied start' >&2\n\
+exit {exit_code}\n"
+                ),
+            )
+            .expect(
+                "temporary selected-permission-denied-emission fallback script can be written",
+            );
+            let mut permissions = fs::metadata(&script)
+                .expect(
+                    "temporary selected-permission-denied-emission fallback script metadata is readable",
+                )
+                .permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+            fs::set_permissions(&script, permissions).expect(
+                "temporary selected-permission-denied-emission fallback script can be made executable",
             );
         }
 

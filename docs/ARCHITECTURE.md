@@ -209,6 +209,11 @@ that passes discovery and then rewrites itself to use a missing interpreter
 before assembly emission. That pins the current diagnostic for a race-like
 case where a discovered command cannot be started later, without treating that
 as full backend race-condition recovery semantics.
+A selected-backend permission-denied emission snapshot exposes a deterministic
+fake `clang` that passes discovery and then removes its own execute permission
+before assembly emission. That pins the same selected-backend start diagnostic
+for permission-denied starts after discovery, without treating that as full
+backend race-condition recovery semantics.
 Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
 tools with the same race-like behavior. Those pin the current diagnostics for
 previously discovered fallback commands that cannot be started later, without

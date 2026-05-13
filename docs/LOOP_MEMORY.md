@@ -16148,3 +16148,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T10:10:58Z
 
 - Post-round 110 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T10:11:35Z
+
+- Starting round 111 at 20260513T101135Z from HEAD `a5dbdd8`.
+
+## Loop Event 2026-05-13T10:12:05Z
+
+- Pre-round 111 test exit code: `0`.
+
+## Loop Event 2026-05-13T10:25:12Z
+
+- Task attempted: completed Milestone 220 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for selected backend permission-denied emission
+  starts. The new Milestone 220 fixture is a lowerable scalar echo/print
+  program, and the assembly CLI test invokes `--emit-asm` with a temporary
+  PATH exposing deterministic fake `clang`, `llc`, and `cc` tools where
+  selected `clang` passes discovery and then removes its own execute
+  permission before assembly emission.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone220/native_assembly_selected_permission_denied_emission.php`,
+  `tests/fixtures/milestone220/native_assembly_selected_permission_denied_emission.stdout`,
+  `tests/fixtures/milestone220/native_assembly_selected_permission_denied_emission_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p phpc --test
+  native_assembly_cli selected_backend_permission_denied -- --nocapture`
+  passed with 1 focused test; `cargo run -p phpc -- test
+  tests/fixtures/milestone220` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone220` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 470 fixtures, 214 system PHP
+  comparisons, and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; selected-backend
+  permission-denied emission coverage is a deterministic race-style
+  test-double contract rather than full backend recovery semantics; fallback
+  backend permission-denied emission starts remain uncovered; generated code
+  still lacks exact native PHP error objects and broader native lowering.
+- Next concrete task: add Milestone 221 fallback backend permission-denied
+  emission coverage for a backend command that passes discovery but becomes
+  non-executable before actual assembly emission, proving the stable
+  fallback-backend start diagnostic is reported without falling through to
+  later fallbacks.
+- Known-good tag: not created; this is narrow backend start-diagnostic
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot selected permission-denied emission"`.

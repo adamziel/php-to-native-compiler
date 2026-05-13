@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  permission-denied emission starts where `clang` passes discovery but becomes
+  non-executable before actual assembly emission. The Milestone 220 fixture
+  runs as a lowerable scalar echo/print program, while the assembly CLI test
+  exposes deterministic fake `clang`, `llc`, and `cc` tools. The committed
+  snapshot proves `phpc` reports the stable `failed to start clang for
+  assembly emission` diagnostic for permission-denied starts without falling
+  through to fallback tools. Bundled toolchains, assembly linking/execution,
+  full backend recovery semantics, exact native error objects, and broader
+  native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for discovery probe
   permission-denied cases where candidate backend command names exist on
   `PATH` but are not executable for `--version`. The Milestone 219 fixture
