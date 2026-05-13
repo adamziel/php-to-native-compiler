@@ -190,6 +190,80 @@ echo $box->sum, ":", $box->i, "\n";
 }
 
 #[test]
+fn bitwise_and_shift_compound_assignments_update_supported_targets() {
+    let execution = run_source(
+        r#"<?php
+$value = 14;
+$value &= 11;
+echo $value, "\n";
+$value |= 1;
+echo $value, "\n";
+$value ^= 3;
+echo $value, "\n";
+$value <<= 2;
+echo $value, "\n";
+$value >>= 3;
+echo $value, "\n";
+
+$text = "ab";
+$text &= "AB";
+echo $text, "\n";
+$text |= " !";
+echo $text, "\n";
+
+$items = ['bits' => 6, 'shift' => 2];
+echo ($items['bits'] &= 3), ":", $items['bits'], "\n";
+echo ($items['bits'] |= 8), ":", $items['bits'], "\n";
+echo ($items['shift'] <<= 3), ":", $items['shift'], "\n";
+
+class Box {
+    public $mask;
+}
+
+$box = new Box();
+$box->mask = 5;
+echo ($box->mask ^= 3), ":", $box->mask, "\n";
+echo ($box->mask >>= 1), ":", $box->mask, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "10\n11\n8\n32\n4\nAB\nac\n2:2\n10:10\n16:16\n6:6\n3:3\n"
+    );
+}
+
+#[test]
+fn for_headers_accept_direct_bitwise_and_shift_compound_assignment() {
+    let execution = run_source(
+        r#"<?php
+for ($i = 1; $i < 16; $i <<= 1) {
+    echo $i;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1248");
+}
+
+#[test]
+fn bitwise_compound_assignment_expressions_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+$value = 14;
+echo ($value &= 11), ":", $value, "\n";
+echo (($value ^= 3) + 1), ":", $value, "\n";
+echo ($value <<= 2), ":", $value, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "10:10\n10:9\n36:36\n");
+}
+
+#[test]
 fn array_offset_compound_assignment_reports_missing_keys() {
     let error = runtime_error("<?php\n$items = [];\n$items['missing'] += 1;\n");
 
@@ -290,8 +364,45 @@ fn compound_assignment_expression_reuses_arithmetic_diagnostics() {
 }
 
 #[test]
+fn bitwise_compound_assignment_reuses_bitwise_diagnostics() {
+    let error = runtime_error("<?php\n$value = 'abc';\n$value &= 1;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid arithmetic for &: string is not numeric"
+    );
+}
+
+#[test]
+fn shift_compound_assignment_reuses_negative_shift_diagnostics() {
+    let error = runtime_error("<?php\n$value = 8;\n$value <<= -1;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid arithmetic for <<: bit shift by negative number"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$value = 1;\n$value += 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "compound assignment is supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_bitwise_compound_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value = 6;\n$value &= 3;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);

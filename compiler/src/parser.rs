@@ -1638,7 +1638,9 @@ impl Parser {
 
     fn parse_bitwise_or(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_bitwise_xor()?;
-        while self.match_token(|kind| matches!(kind, TokenKind::Pipe)) {
+        while !self.check_compound_assignment_operator()
+            && self.match_token(|kind| matches!(kind, TokenKind::Pipe))
+        {
             let right = self.parse_bitwise_xor()?;
             let span = expr.span();
             expr = Expr::Binary {
@@ -1653,7 +1655,9 @@ impl Parser {
 
     fn parse_bitwise_xor(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_bitwise_and()?;
-        while self.match_token(|kind| matches!(kind, TokenKind::Caret)) {
+        while !self.check_compound_assignment_operator()
+            && self.match_token(|kind| matches!(kind, TokenKind::Caret))
+        {
             let right = self.parse_bitwise_and()?;
             let span = expr.span();
             expr = Expr::Binary {
@@ -1668,7 +1672,9 @@ impl Parser {
 
     fn parse_bitwise_and(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_equality()?;
-        while self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+        while !self.check_compound_assignment_operator()
+            && self.match_token(|kind| matches!(kind, TokenKind::Ampersand))
+        {
             let right = self.parse_equality()?;
             let span = expr.span();
             expr = Expr::Binary {
@@ -1783,6 +1789,9 @@ impl Parser {
     fn parse_shift(&mut self) -> CompileResult<Expr> {
         let mut expr = self.parse_additive()?;
         loop {
+            if self.check_compound_assignment_operator() {
+                break;
+            }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::LeftShift)) {
                 BinaryOp::ShiftLeft
             } else if self.match_token(|kind| matches!(kind, TokenKind::RightShift)) {
@@ -2840,6 +2849,11 @@ impl Parser {
                 | TokenKind::Star
                 | TokenKind::Slash
                 | TokenKind::Dot
+                | TokenKind::Ampersand
+                | TokenKind::Pipe
+                | TokenKind::Caret
+                | TokenKind::LeftShift
+                | TokenKind::RightShift
         ) && matches!(self.peek_next().kind, TokenKind::Equal)
     }
 
@@ -2861,6 +2875,11 @@ impl Parser {
             TokenKind::Star => CompoundAssignOp::Mul,
             TokenKind::Slash => CompoundAssignOp::Div,
             TokenKind::Dot => CompoundAssignOp::Concat,
+            TokenKind::Ampersand => CompoundAssignOp::BitwiseAnd,
+            TokenKind::Pipe => CompoundAssignOp::BitwiseOr,
+            TokenKind::Caret => CompoundAssignOp::BitwiseXor,
+            TokenKind::LeftShift => CompoundAssignOp::ShiftLeft,
+            TokenKind::RightShift => CompoundAssignOp::ShiftRight,
             _ => unreachable!("caller checked compound assignment operator"),
         };
         self.advance();

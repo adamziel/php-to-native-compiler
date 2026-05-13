@@ -3107,10 +3107,23 @@ Still fails:
   warning/deprecation recovery for float-to-int precision loss, bitwise/shift
   compound assignment, references/copy-on-write side effects, and native
   lowering remain unsupported.
+- Implemented bitwise and shift compound assignment operators `&=`, `|=`,
+  `^=`, `<<=`, and `>>=` for the existing direct static-variable, direct
+  array-offset, and direct public object-property compound-assignment target
+  subset. Statement position, expression position, and C-style `for`
+  initializer/increment slots reuse the current read-modify-write ordering and
+  runtime bitwise/shift helpers, including stable diagnostics for non-numeric
+  mixed strings and negative shift counts. Fixture, CLI snapshot, unit, system
+  PHP comparison, and native-codegen rejection coverage exercise supported
+  targets and result values. Append-offset and nested compound targets,
+  arrays/objects as bitwise values, exact native warning/error objects,
+  references/copy-on-write side effects, and native lowering remain
+  unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for bitwise and shift
-  compound assignment operators such as `&=`, `|=`, `^=`, `<<=`, and `>>=`,
-  including parser/runtime behavior or stable diagnostics, fixture CLI
-  coverage, documentation, native-codegen behavior, and named gaps.
+- Add the next honest boundary or executable slice for the modulo operator
+  `%`, including parser/runtime behavior or stable diagnostics, fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps for
+  division-by-zero behavior, integer coercion, references/copy-on-write, exact
+  native warning/error behavior, and native lowering.

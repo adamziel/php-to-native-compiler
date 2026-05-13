@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Implemented bitwise and shift compound assignment operators `&=`, `|=`,
+  `^=`, `<<=`, and `>>=` for the existing direct static-variable, direct
+  array-offset, and direct public object-property compound-assignment target
+  subset. Statement, expression, and C-style `for` header contexts reuse the
+  current read-modify-write path and bitwise/shift runtime helpers, with
+  fixture/CLI coverage, system PHP comparison, stable diagnostics, and
+  explicit native-codegen rejection. Append-offset/nested targets,
+  arrays/objects as bitwise values, exact native warning/error objects,
+  references/copy-on-write, and native lowering remain explicit gaps.
 - Implemented shift operators `<<` and `>>` over the current scalar-to-int
   coercion subset, with PHP-compatible precedence between additive expressions
   and concatenation, integer result behavior, large-count handling, fixture/CLI

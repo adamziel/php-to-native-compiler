@@ -430,6 +430,11 @@ pub enum CompoundAssignOp {
     Mul,
     Div,
     Concat,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+    ShiftLeft,
+    ShiftRight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

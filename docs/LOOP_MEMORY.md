@@ -12401,3 +12401,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:37:48Z
 
 - Post-round 48 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:38:03Z
+
+- Starting round 49 at 20260513T033803Z from HEAD `cf8b60f`.
+
+## Loop Event 2026-05-13T03:38:16Z
+
+- Pre-round 49 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:48:36Z
+
+- Task attempted: implemented Milestone 158 bitwise and shift compound
+  assignment operators `&=`, `|=`, `^=`, `<<=`, and `>>=` for the existing
+  direct static-variable, direct array-offset, and direct public
+  object-property compound-assignment target subset. Statement position,
+  expression position, and C-style `for` initializer/increment slots now reuse
+  the current read-modify-write path and runtime bitwise/shift helpers, with
+  stable diagnostics for non-numeric mixed strings and negative shift counts.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/compound_assignment_cli.rs`,
+  `tests/fixtures/milestone158/bitwise_compound_assignment.php`,
+  `tests/fixtures/milestone158/bitwise_compound_assignment.stdout`,
+  `tests/fixtures/milestone158/bitwise_compound_assignment.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  compound_assignment -- --nocapture` passed with 27 tests; `cargo test -p
+  phpc --test compound_assignment_cli -- --nocapture` passed; `cargo run -p
+  phpc -- test tests/fixtures/milestone158` passed with 1 fixture; `cargo run
+  -p phpc -- test --compare-php tests/fixtures/milestone158` passed with 1
+  system PHP comparison; `cargo run -p phpc -- run
+  tests/fixtures/milestone158/bitwise_compound_assignment.php` printed the
+  committed CLI exercise output; `tools/run-tests.sh` passed with 405
+  fixtures, 154 system PHP comparisons, and 251 comparison skips.
+- Remaining semantic gaps: append-offset and nested compound-assignment
+  targets, arrays/objects as bitwise values, exact native warning/error
+  objects, references/copy-on-write side effects, and native lowering remain
+  unsupported for bitwise/shift compound assignment.
+- Next concrete task: add the next honest boundary or executable slice for the
+  modulo operator `%`, including parser/runtime behavior or stable diagnostics,
+  fixture CLI coverage, documentation, native-codegen behavior, and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "bitwise operators: add compound assignment"`.

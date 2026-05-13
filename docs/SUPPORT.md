@@ -36,20 +36,25 @@
   expressions, dynamic property names, missing property materialization,
   references/copy-on-write, and native lowering remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
-  `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
-  the current scalar value model in statement position, expression position,
-  and C-style `for` initializer/increment slots. In expressions, compound
-  assignment returns the updated value.
+  `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name .= expr`,
+  `$name &= expr`, `$name |= expr`, `$name ^= expr`, `$name <<= expr`, and
+  `$name >>= expr` over the current scalar/bitwise value model in statement
+  position, expression position, and C-style `for` initializer/increment
+  slots. In expressions, compound assignment returns the updated value.
 - direct array-offset compound assignment `$array[$key] += expr`,
-  `$array[$key] -= expr`, `$array[$key] *= expr`, `$array[$key] /= expr`, and
-  `$array[$key] .= expr` over existing integer/string keyed array entries in
-  statement position, expression position, and C-style `for`
-  initializer/increment slots. In expressions, compound assignment returns the
-  updated value.
+  `$array[$key] -= expr`, `$array[$key] *= expr`, `$array[$key] /= expr`,
+  `$array[$key] .= expr`, `$array[$key] &= expr`, `$array[$key] |= expr`,
+  `$array[$key] ^= expr`, `$array[$key] <<= expr`, and `$array[$key] >>= expr`
+  over existing integer/string keyed array entries in statement position,
+  expression position, and C-style `for` initializer/increment slots. In
+  expressions, compound assignment returns the updated value.
 - direct public object-property compound assignment `$object->property +=
   expr`, `$object->property -= expr`, `$object->property *= expr`,
   `$object->property /= expr`, and `$object->property .= expr` over existing
-  declared public property slots in statement position, expression position,
+  declared public property slots, plus bitwise/shift compound forms
+  `$object->property &= expr`, `$object->property |= expr`,
+  `$object->property ^= expr`, `$object->property <<= expr`, and
+  `$object->property >>= expr`, in statement position, expression position,
   and C-style `for` initializer/increment slots. In expressions, compound
   assignment returns the updated value.
 - direct array-offset pre/post increment and decrement in statement position,
@@ -92,7 +97,9 @@
   bytewise PHP behavior for `&`, `|`, `^`, and `~` when the resulting runtime
   string remains valid UTF-8, and bitwise precedence is additive before
   shifts, then concatenation, comparisons/equality before `&`, then `^`, then
-  `|`, then `&&` and `||`
+  `|`, then `&&` and `||`. Direct static-variable, direct array-offset, and
+  direct public object-property compound assignments support `&=`, `|=`,
+  `^=`, `<<=`, and `>>=` through the same runtime helper semantics.
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including truthiness-based condition selection,
@@ -1754,7 +1761,7 @@
   large counts; negative shift counts fail with a stable project diagnostic.
   Non-numeric mixed strings fail instead of modeling PHP's exact native
   `TypeError` object, arrays/objects are rejected for binary bitwise and shift
-  operators, `&=`, `|=`, `^=`, `<<=`, `>>=`, PHP
+  operators, append-offset/nested bitwise compound-assignment targets, PHP
   warning/deprecation recovery for float-to-int precision loss,
   references/copy-on-write side effects, and native lowering are not
   implemented.

@@ -973,6 +973,11 @@ impl Interpreter {
             CompoundAssignOp::Mul => left.php_mul(right),
             CompoundAssignOp::Div => left.php_div(right),
             CompoundAssignOp::Concat => left.php_concat(right),
+            CompoundAssignOp::BitwiseAnd => left.php_bitwise_and(right),
+            CompoundAssignOp::BitwiseOr => left.php_bitwise_or(right),
+            CompoundAssignOp::BitwiseXor => left.php_bitwise_xor(right),
+            CompoundAssignOp::ShiftLeft => left.php_shift_left(right),
+            CompoundAssignOp::ShiftRight => left.php_shift_right(right),
         };
 
         value.map_err(|error| runtime_error(span, error))

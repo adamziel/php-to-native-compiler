@@ -41,7 +41,8 @@ subset:
   assignment expressions as chained right-hand values, direct append-offset
   assignment expressions (`$array[] = expr`) with standalone assignment result
   values,
-  direct static-variable compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`)
+  direct static-variable compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`,
+  `&=`, `|=`, `^=`, `<<=`, `>>=`)
   in statements and
   expressions with assignment result values, direct array-offset compound
   assignment (`$array[$key] += expr` and related operators) in statements,
@@ -74,7 +75,10 @@ subset:
   bitwise-not results for integer operands, integer binary results for
   non-string-string operands after current scalar-to-int coercion, bytewise
   string results when the resulting runtime string remains valid UTF-8, and
-  PHP-shaped large-count shift behavior for the current integer result model
+  PHP-shaped large-count shift behavior for the current integer result model;
+  direct static-variable, direct array-offset, and direct public
+  object-property compound assignments also support `&=`, `|=`, `^=`, `<<=`,
+  and `>>=` through the interpreter path
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, with truthiness-based condition selection,
