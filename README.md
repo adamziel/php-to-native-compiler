@@ -369,6 +369,10 @@ Class declarations, object instantiation, public property reads/writes, and
 object metadata builtins are rejected by native lowering until generated code
 has native object layout, handles, visibility, method dispatch, and exact
 native error behavior.
+Array literals, array offset reads/writes, `foreach` array iteration, array
+offset `unset`, and array builtins are rejected by native lowering until
+generated code has native array storage layout, key normalization,
+copy-on-write, references, callback dispatch, and exact native error behavior.
 Unsupported programs and broader PHP coercions are rejected with structured
 codegen errors.
 

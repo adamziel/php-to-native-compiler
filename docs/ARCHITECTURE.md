@@ -128,6 +128,11 @@ property reads/writes, and object metadata builtins before body, operand, or
 argument lowering until generated code has native object layout, object
 handles, visibility checks, method dispatch, class metadata access, and exact
 native error behavior.
+Native lowering rejects array literals, array indexing, array assignment,
+`foreach` array iteration, array offset `unset`, and array builtin function
+calls before body, operand, argument, or callback lowering until generated code
+has native array storage layout, key normalization, copy-on-write containers,
+references, callback dispatch, and exact native error behavior.
 
 ## Dynamic Features
 

@@ -1654,9 +1654,19 @@ handled.
 
 ## Milestone 174: Native Array Boundary
 
-- [ ] Add the next honest native-codegen boundary for array literals, array
+- [x] Add the next honest native-codegen boundary for array literals, array
   offset reads/writes, `foreach`/`unset` array operations, and array builtins,
   either by lowering a narrow ordered-array subset or by tightening explicit
   diagnostics with fixture CLI coverage, documentation, and named gaps for
   array storage layout, key normalization, copy-on-write, references,
   callbacks, exact native error objects, and broader native lowering.
+
+## Milestone 175: Native Control-Flow Boundary
+
+- [ ] Add the next honest native-codegen boundary for control-flow statements
+  such as `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
+  `break`, and `continue`, either by lowering a narrow structured-control
+  subset or by tightening explicit diagnostics with fixture CLI coverage,
+  documentation, and named gaps for PHP truthiness, branch layout, loop
+  control flow, switch fallthrough, references/copy-on-write side effects,
+  exact native error objects, and broader native lowering.

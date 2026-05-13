@@ -3265,10 +3265,23 @@ Still fails:
   and a `phpc compile --emit-ir` CLI snapshot pins the native rejection.
   Constructors, `$this`, methods, object handles, references/copy-on-write
   side effects, and broader native lowering remain unsupported.
+- Added a native array boundary. LLVM IR emission now rejects array literals,
+  array offset reads/writes, `foreach` array iteration, array offset `unset`,
+  and array builtin function calls before lowering bodies, operands, arguments,
+  or callbacks, with a specific codegen diagnostic until generated code has
+  native array storage layout, key normalization, copy-on-write containers,
+  references, callback dispatch, and exact native error behavior. The C
+  assembly fallback carries the same boundary for consistency, `phpc run`
+  fixture coverage still proves the current interpreter array subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection. Native array
+  storage, key normalization, callback dispatch, references/copy-on-write side
+  effects, exact native error objects, and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for array literals, array
-  offset reads/writes, `foreach`/`unset` array operations, and array builtins
-  before native array storage layout, key normalization, copy-on-write,
-  references, callbacks, and exact native error behavior exist.
+- Add the next honest native-codegen boundary for control-flow statements
+  (`if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
+  `break`, and `continue`) before generated code claims native PHP truthiness,
+  branch layout, loop control, switch fallthrough, and exact native error
+  behavior.

@@ -946,11 +946,16 @@
   lowering with a specific codegen diagnostic until generated code has native
   object layout, handles, visibility, method dispatch, class metadata access,
   and exact native error objects.
-  `if`/`elseif`/`else`, `while`, arrays, array
-  indexing, array assignment, variable unset, array offset unset,
-  multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
-  `continue`, assignment expressions, compound assignment expressions, and
-  increment/decrement expressions are rejected with explicit codegen errors.
+  Native arrays, array literals, array indexing, array assignment, `foreach`
+  array iteration, array offset unset, and array builtin function calls are
+  rejected before body, operand, argument, or callback lowering with a specific
+  codegen diagnostic until generated code has native array storage layout, key
+  normalization, copy-on-write containers, references, callback dispatch, and
+  exact native error objects.
+  `if`/`elseif`/`else`, `while`, variable unset, multiple-operand unset,
+  `for`, `do ... while`, `switch`, `break`, `continue`, assignment
+  expressions, compound assignment expressions, and increment/decrement
+  expressions are rejected with explicit codegen errors.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset.
 - Function calls: user-defined positional calls are supported in `phpc run`.
@@ -1585,6 +1590,11 @@
   Writes to existing non-array scalar variables other than `null` are rejected
   instead of following PHP's full automatic conversion behavior. Negative-key
   auto-index behavior is not claimed beyond the current non-negative allocator.
+  Native array lowering is not implemented; `phpc compile --emit-ir` and
+  `--emit-asm` reject array literals, offset reads/writes, `foreach`, array
+  offset `unset`, and array builtins before claiming any generated array
+  storage, key normalization, callback dispatch, references, copy-on-write, or
+  exact native error behavior.
 
 ## Test Support
 

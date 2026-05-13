@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added a native array boundary. LLVM IR emission now rejects array literals,
+  array offset reads/writes, `foreach` array iteration, array offset `unset`,
+  and array builtin function calls before lowering bodies, operands,
+  arguments, or callbacks, with a specific codegen diagnostic until generated
+  code has native array storage layout, key normalization, copy-on-write,
+  references, callback dispatch, and exact native error behavior; the C
+  assembly fallback carries the same boundary for consistency. A runtime
+  fixture still proves the current interpreter array subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection. Native
+  array storage, key normalization, callback dispatch, references/copy-on-write,
+  exact native error objects, and broader native lowering remain explicit gaps.
 - Added a native object/class boundary. LLVM IR emission now rejects class
   declarations, object instantiation, public property reads/writes, and object
   metadata builtins before lowering bodies, operands, or arguments, with a

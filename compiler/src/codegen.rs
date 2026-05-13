@@ -17,6 +17,8 @@ const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering reje
 const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constants, runtime-defined constants, bare constant reads, top-level const declarations, and define()/constant()/defined() until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, object instantiation, public property reads/writes, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, object instantiation, public property reads/writes, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
+const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -152,18 +154,14 @@ impl LlvmGenerator {
                 *span,
                 "switch statements are supported by phpc run but not LLVM IR emission yet",
             )),
-            Stmt::Foreach { span, .. } => Err(self.unsupported(
-                *span,
-                "foreach array iteration is supported by phpc run but not LLVM IR emission yet",
-            )),
+            Stmt::Foreach { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Stmt::UnsetVariable { span, .. } => Err(self.unsupported(
                 *span,
                 "variable unset is supported by phpc run but not LLVM IR emission yet",
             )),
-            Stmt::UnsetArrayIndex { span, .. } => Err(self.unsupported(
-                *span,
-                "array offset unset is supported by phpc run but not LLVM IR emission yet",
-            )),
+            Stmt::UnsetArrayIndex { span, .. } => {
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
             Stmt::UnsetMany { span, .. } => Err(self.unsupported(
                 *span,
                 "multiple-operand unset is supported by phpc run but not LLVM IR emission yet",
@@ -207,18 +205,9 @@ impl LlvmGenerator {
             Expr::GlobalConstant { span, .. } => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
-            Expr::Array { span, .. } => Err(self.unsupported(
-                *span,
-                "arrays are supported by phpc run but not LLVM IR emission yet",
-            )),
-            Expr::Index { span, .. } => Err(self.unsupported(
-                *span,
-                "array indexing is supported by phpc run but not LLVM IR emission yet",
-            )),
-            Expr::AppendIndex { span, .. } => Err(self.unsupported(
-                *span,
-                "append-offset assignment expressions are supported by phpc run but not LLVM IR emission yet",
-            )),
+            Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
+            Expr::Index { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
+            Expr::AppendIndex { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Property { span, .. } => Err(self.unsupported(
                 *span,
                 LLVM_OBJECT_CLASS_REJECTION,
@@ -237,6 +226,9 @@ impl LlvmGenerator {
             }
             Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
+            Expr::Call { name, span, .. } if is_array_builtin(name) => {
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
@@ -325,10 +317,9 @@ impl LlvmGenerator {
                 self.variables.insert(name.clone(), value);
                 Ok(())
             }
-            AssignTarget::ArrayIndex { span, .. } => Err(self.unsupported(
-                *span,
-                "array assignment is supported by phpc run but not LLVM IR emission yet",
-            )),
+            AssignTarget::ArrayIndex { span, .. } => {
+                Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
+            }
             AssignTarget::Property { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
@@ -853,18 +844,14 @@ impl CGenerator {
                 *span,
                 "switch statements are supported by phpc run but not assembly emission yet",
             )),
-            Stmt::Foreach { span, .. } => Err(self.unsupported(
-                *span,
-                "foreach array iteration is supported by phpc run but not assembly emission yet",
-            )),
+            Stmt::Foreach { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
             Stmt::UnsetVariable { span, .. } => Err(self.unsupported(
                 *span,
                 "variable unset is supported by phpc run but not assembly emission yet",
             )),
-            Stmt::UnsetArrayIndex { span, .. } => Err(self.unsupported(
-                *span,
-                "array offset unset is supported by phpc run but not assembly emission yet",
-            )),
+            Stmt::UnsetArrayIndex { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
             Stmt::UnsetMany { span, .. } => Err(self.unsupported(
                 *span,
                 "multiple-operand unset is supported by phpc run but not assembly emission yet",
@@ -908,18 +895,11 @@ impl CGenerator {
             Expr::GlobalConstant { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }
-            Expr::Array { span, .. } => Err(self.unsupported(
-                *span,
-                "arrays are supported by phpc run but not assembly emission yet",
-            )),
-            Expr::Index { span, .. } => Err(self.unsupported(
-                *span,
-                "array indexing is supported by phpc run but not assembly emission yet",
-            )),
-            Expr::AppendIndex { span, .. } => Err(self.unsupported(
-                *span,
-                "append-offset assignment expressions are supported by phpc run but not assembly emission yet",
-            )),
+            Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
+            Expr::Index { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
+            Expr::AppendIndex { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
             Expr::Property { span, .. } => Err(self.unsupported(
                 *span,
                 ASSEMBLY_OBJECT_CLASS_REJECTION,
@@ -935,6 +915,9 @@ impl CGenerator {
             }
             Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
+            Expr::Call { name, span, .. } if is_array_builtin(name) => {
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
@@ -1023,10 +1006,9 @@ impl CGenerator {
                 self.variables.insert(name.clone(), value);
                 Ok(())
             }
-            AssignTarget::ArrayIndex { span, .. } => Err(self.unsupported(
-                *span,
-                "array assignment is supported by phpc run but not assembly emission yet",
-            )),
+            AssignTarget::ArrayIndex { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
             AssignTarget::Property { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
@@ -1392,6 +1374,41 @@ fn is_object_metadata_builtin(name: &str) -> bool {
             | "is_a"
             | "is_subclass_of"
             | "get_parent_class"
+    )
+}
+
+fn is_array_builtin(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "count"
+            | "array_key_exists"
+            | "array_values"
+            | "array_key_first"
+            | "array_key_last"
+            | "array_is_list"
+            | "array_keys"
+            | "array_reverse"
+            | "array_slice"
+            | "array_chunk"
+            | "array_pad"
+            | "array_merge"
+            | "array_replace"
+            | "array_flip"
+            | "array_fill_keys"
+            | "array_combine"
+            | "array_intersect_key"
+            | "array_diff_key"
+            | "array_diff"
+            | "array_intersect"
+            | "array_unique"
+            | "array_count_values"
+            | "array_sum"
+            | "array_product"
+            | "array_reduce"
+            | "array_filter"
+            | "array_map"
+            | "in_array"
+            | "array_search"
     )
 }
 

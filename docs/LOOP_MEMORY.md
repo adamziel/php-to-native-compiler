@@ -13393,3 +13393,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:26:58Z
 
 - Post-round 64 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:27:10Z
+
+- Starting round 65 at 20260513T052710Z from HEAD `cfc747c`.
+
+## Loop Event 2026-05-13T05:27:23Z
+
+- Pre-round 65 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:30:02Z
+
+- Task attempted: completed Milestone 174 by tightening the native codegen
+  boundary for arrays. LLVM IR emission now rejects array literals, array
+  offset reads/writes, `foreach` array iteration, array offset `unset`, and
+  array builtin function calls with a specific diagnostic before lowering
+  bodies, operands, arguments, or callbacks until generated code has native
+  array storage layout, key normalization, copy-on-write containers,
+  references, callback dispatch, and exact native error behavior; the C
+  assembly fallback carries the same boundary for consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_array_boundary.rs`,
+  `tests/fixtures/milestone174/native_array_boundary.php`,
+  `tests/fixtures/milestone174/native_array_boundary.stdout`,
+  `tests/fixtures/milestone174/native_array_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check` passed; `cargo test -p phpc --test
+  native_array_boundary -- --nocapture` passed with 4 tests; `cargo run -p phpc
+  -- test tests/fixtures/milestone174` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone174` passed with 1 system
+  PHP comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone174/native_array_boundary.php --emit-ir` exited `1`
+  with the expected explicit native array diagnostic; `cargo test -p phpc
+  --test milestone1 emit_ir_rejects_array -- --nocapture` passed with 4 tests.
+- Remaining semantic gaps: generated code still lacks native array storage
+  layout, PHP key normalization, array copy-on-write/reference behavior,
+  callback dispatch for array builtins, array mutation aliasing,
+  exact native error objects, and broader native lowering.
+- Next concrete task: add Milestone 175, the next honest native-codegen
+  boundary for control-flow statements before generated code claims native PHP
+  truthiness, branch layout, loop control, switch fallthrough, or exact native
+  error behavior.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native array boundary"`
+  after the full suite passes.
+
+## Loop Event 2026-05-13T05:31:42Z
+
+- Full suite result: `tools/run-tests.sh` passed with 424 fixtures, 169 system
+  PHP comparisons, and 255 comparison skips.
