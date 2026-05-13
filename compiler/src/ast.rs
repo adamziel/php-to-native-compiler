@@ -322,6 +322,12 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    Ternary {
+        condition: Box<Expr>,
+        if_true: Box<Expr>,
+        if_false: Box<Expr>,
+        span: Span,
+    },
     Assign {
         target: Box<AssignTarget>,
         expr: Box<Expr>,
@@ -369,6 +375,7 @@ impl Expr {
             | Expr::New { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
+            | Expr::Ternary { span, .. }
             | Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
             | Expr::NullCoalesceAssign { span, .. }

@@ -1436,10 +1436,20 @@ handled.
 
 ## Milestone 150: Ternary Conditional Expression Slice
 
-- [ ] Implement full ternary conditional expressions
+- [x] Implement full ternary conditional expressions
   `$condition ? $if_true : $if_false` over the current expression/value subset,
   including truthiness, lazy branch evaluation, nesting/precedence coverage,
   fixture CLI coverage, documentation, native-codegen rejection while lowering
   remains unsupported, and explicit gaps for short ternary `$value ?: $fallback`,
   throw expressions inside arms, references/copy-on-write, exact native error
   objects, and native lowering.
+
+## Milestone 151: Short Ternary Conditional Expression Slice
+
+- [ ] Implement short ternary expressions `$value ?: $fallback` over the
+  current expression/value subset, including condition value reuse, lazy
+  fallback evaluation, truthiness coverage, fixture CLI coverage,
+  documentation, native-codegen rejection while lowering remains unsupported,
+  and explicit gaps for unparenthesized nested ternaries, throw expressions
+  inside arms, references/copy-on-write, exact native error objects, and native
+  lowering.

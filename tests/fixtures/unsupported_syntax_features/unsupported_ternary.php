@@ -1,4 +1,4 @@
 <?php
-$condition = true;
-$result = $condition ? "yes" : "no";
+$flag = true;
+$result = $flag ? false ? "bad" : "inner" : "outer";
 echo $result;

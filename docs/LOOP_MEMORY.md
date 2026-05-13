@@ -11916,3 +11916,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:39:04Z
 
 - Post-round 40 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:39:17Z
+
+- Starting round 41 at 20260513T023916Z from HEAD `a3c5fb4`.
+
+## Loop Event 2026-05-13T02:39:29Z
+
+- Pre-round 41 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:46:37Z
+
+- Task attempted: implemented full ternary conditional expressions
+  `$condition ? $if_true : $if_false` over the current expression/value subset.
+  The parser now builds a ternary expression node, the interpreter evaluates
+  the condition with current truthiness rules and evaluates only the selected
+  branch, and native emission rejects ternary expressions explicitly until
+  lowering exists. Short ternary and unparenthesized nested ternaries remain
+  explicit parse boundaries.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/ternary_expression.rs`,
+  `compiler/tests/ternary_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone150/ternary_conditional_expression.php`,
+  `tests/fixtures/milestone150/ternary_conditional_expression.stdout`,
+  `tests/fixtures/milestone150/ternary_conditional_expression.cli`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_short_ternary.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_ternary.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  ternary_expression --test syntax_boundaries` passed; `cargo test -p phpc
+  --test ternary_expression_cli --test unsupported_syntax_features_cli`
+  passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone150/ternary_conditional_expression.php` printed the
+  committed CLI exercise output; `cargo run -p phpc -- test
+  tests/fixtures/milestone150` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone150` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 27 fixtures;
+  `tools/run-tests.sh` passed with 395 fixtures, 146 system PHP comparisons,
+  and 249 comparison skips.
+- Remaining semantic gaps: short ternary `$value ?: $fallback`,
+  unparenthesized nested ternaries, throw expressions inside arms, references,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
+- Next concrete task: implement short ternary expressions
+  `$value ?: $fallback` over the current expression/value subset.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "ternary expressions: add full conditional"`.

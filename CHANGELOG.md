@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Implemented full ternary conditional expressions
+  `$condition ? $if_true : $if_false` over the current expression/value subset,
+  including truthiness-based condition selection, lazy branch evaluation,
+  parenthesized nested ternaries, value-context fixture/CLI coverage, system
+  PHP comparison, and explicit native-codegen rejection while short ternary,
+  unparenthesized nested ternaries, throw expressions inside arms,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit gaps.
 - Added Milestone 149 executable coverage for assignment-expression values in
   non-echo expression contexts: function-call arguments, array literal
   keys/values, `if`/`while`/`for` conditions, and builtin arguments. The

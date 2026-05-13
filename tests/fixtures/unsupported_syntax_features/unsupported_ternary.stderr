@@ -1,2 +1,2 @@
-parse error at 3:22: unsupported ternary expression: expression-form branching is not implemented
+parse error at 3:25: unsupported nested ternary expression: parenthesize nested ternary expressions in the current subset
 

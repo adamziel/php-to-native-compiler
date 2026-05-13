@@ -235,41 +235,39 @@ fn emit_ir_rejects_match_expression_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_ternary_expressions_have_stable_parse_errors() {
+fn unsupported_short_and_unparenthesized_nested_ternary_have_stable_parse_errors() {
     let cases = [
-        (
-            "<?php\n$condition = true;\n$result = $condition ? 'yes' : 'no';\n",
-            3,
-            22,
-        ),
         (
             "<?php\n$value = '';\n$result = $value ?: 'fallback';\n",
             3,
             18,
+            "unsupported short ternary expression: short ternary value reuse is not implemented",
         ),
-        ("<?php\necho $ok ? 'yes' : 'no';\n", 2, 10),
+        (
+            "<?php\n$flag = true;\n$result = $flag ? false ? 'bad' : 'inner' : 'outer';\n",
+            3,
+            25,
+            "unsupported nested ternary expression: parenthesize nested ternary expressions in the current subset",
+        ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported ternary expression: expression-form branching is not implemented"
-        );
+        assert_eq!(error.message, message);
     }
 }
 
 #[test]
-fn emit_ir_rejects_ternary_expression_at_parse_boundary() {
+fn emit_ir_rejects_ternary_expression_after_parse() {
     let error =
         php_compiler::emit_ir_source("<?php\n$result = $condition ? 'yes' : 'no';\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "unsupported ternary expression: expression-form branching is not implemented"
+        "ternary conditional expressions are supported by phpc run but not LLVM IR emission yet"
     );
 }
 

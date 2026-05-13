@@ -3020,9 +3020,20 @@ Still fails:
   than widening the supported lvalue set. Nested lvalues, append-offset chained
   assignment, append-offset `??=`, references, copy-on-write aliasing, exact
   native error objects, and native lowering remain unsupported.
+- Implemented full ternary conditional expressions
+  `$condition ? $if_true : $if_false` over the current expression/value subset.
+  The parser now builds a ternary expression node, the interpreter evaluates
+  the condition with current truthiness rules and evaluates only the selected
+  branch, and fixture/CLI coverage exercises truthiness, lazy branch behavior,
+  parenthesized nested ternaries, function-call/builtin/index contexts, and
+  assignment-expression branch values with system PHP comparison. Native
+  emission rejects ternary expressions explicitly until lowering exists. Short
+  ternary `$value ?: $fallback`, unparenthesized nested ternaries, thrown
+  expressions inside arms, references, copy-on-write aliasing, exact native
+  error objects, and native lowering remain unsupported.
 
 Next:
 
-- Implement full ternary conditional expressions
-  `$condition ? $if_true : $if_false` over the current expression/value subset,
-  while keeping short ternary and throw-expression arms outside the slice.
+- Implement short ternary expressions `$value ?: $fallback` over the current
+  expression/value subset, including value reuse, lazy fallback evaluation,
+  fixture CLI coverage, documentation, and explicit native-codegen rejection.

@@ -1347,7 +1347,20 @@ impl Parser {
     }
 
     fn parse_assignment_expression(&mut self) -> CompileResult<Expr> {
-        let expr = self.parse_non_assignment_expression()?;
+        self.parse_assignment_expression_with_ternary(true)
+    }
+
+    fn parse_assignment_expression_without_unparenthesized_ternary(
+        &mut self,
+    ) -> CompileResult<Expr> {
+        self.parse_assignment_expression_with_ternary(false)
+    }
+
+    fn parse_assignment_expression_with_ternary(
+        &mut self,
+        allow_ternary: bool,
+    ) -> CompileResult<Expr> {
+        let expr = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
         if let Some(op) = self.match_compound_assignment_operator() {
             let operator_span = self.previous().span;
             let target = self
@@ -1355,7 +1368,7 @@ impl Parser {
                 .map_err(|message| self.error_at(operator_span, message))?;
             let span = target.span();
 
-            let value = self.parse_non_assignment_expression()?;
+            let value = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
             if let Some(span) = Self::find_append_index_span(&value) {
                 return Err(self.error_at(
                     span,
@@ -1392,7 +1405,7 @@ impl Parser {
                 .map_err(|message| self.error_at(operator_span, message))?;
             let span = target.span();
 
-            let value = self.parse_non_assignment_expression()?;
+            let value = self.parse_non_assignment_expression_with_ternary(allow_ternary)?;
             if let Some(span) = Self::find_append_index_span(&value) {
                 return Err(self.error_at(
                     span,
@@ -1434,7 +1447,7 @@ impl Parser {
             .map_err(|message| self.error_at(operator_span, message))?;
         let span = target.span();
 
-        let value = self.parse_assignment_expression()?;
+        let value = self.parse_assignment_expression_with_ternary(allow_ternary)?;
         if let Some(span) = Self::find_append_index_span(&value) {
             return Err(self.error_at(
                 span,
@@ -1466,7 +1479,10 @@ impl Parser {
         })
     }
 
-    fn parse_non_assignment_expression(&mut self) -> CompileResult<Expr> {
+    fn parse_non_assignment_expression_with_ternary(
+        &mut self,
+        allow_ternary: bool,
+    ) -> CompileResult<Expr> {
         let mut expr = self.parse_equality()?;
         if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
             && matches!(self.peek_next().kind, TokenKind::Equal)
@@ -1499,7 +1515,27 @@ impl Parser {
             }
         }
         if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
-            return Err(self.error_at(self.previous().span, unsupported_ternary_message()));
+            let question_span = self.previous().span;
+            if !allow_ternary {
+                return Err(self.error_at(question_span, unsupported_nested_ternary_message()));
+            }
+            if self.check(|kind| matches!(kind, TokenKind::Colon)) {
+                return Err(self.error_at(question_span, unsupported_short_ternary_message()));
+            }
+
+            let if_true = self.parse_assignment_expression_without_unparenthesized_ternary()?;
+            self.consume_keyword(
+                TokenKind::Colon,
+                "expected ':' after ternary true expression",
+            )?;
+            let if_false = self.parse_assignment_expression_without_unparenthesized_ternary()?;
+            let span = expr.span();
+            expr = Expr::Ternary {
+                condition: Box::new(expr),
+                if_true: Box::new(if_true),
+                if_false: Box::new(if_false),
+                span,
+            };
         }
         Ok(expr)
     }
@@ -2216,6 +2252,10 @@ impl Parser {
                 self.ensure_supported_default_expr(left)?;
                 self.ensure_supported_default_expr(right)
             }
+            Expr::Ternary { .. } => Err(self.error_at(
+                expr.span(),
+                "default parameter values only support constant expressions in the current subset",
+            )),
             Expr::GlobalConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
             Expr::MagicFile { .. } => Ok(()),
@@ -2264,6 +2304,10 @@ impl Parser {
                 self.ensure_supported_const_declaration_expr(left)?;
                 self.ensure_supported_const_declaration_expr(right)
             }
+            Expr::Ternary { .. } => Err(self.error_at(
+                expr.span(),
+                "const declaration values only support constant expressions in the current subset",
+            )),
             Expr::GlobalConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
             Expr::MagicFile { .. } => Ok(()),
@@ -2311,6 +2355,16 @@ impl Parser {
             }
             Expr::Binary { left, right, .. } => {
                 Self::expr_contains_assignment(left) || Self::expr_contains_assignment(right)
+            }
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => {
+                Self::expr_contains_assignment(condition)
+                    || Self::expr_contains_assignment(if_true)
+                    || Self::expr_contains_assignment(if_false)
             }
             Expr::Unary { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Null(_)
@@ -2366,6 +2420,16 @@ impl Parser {
                 Self::expr_contains_unsupported_assignment_rhs(left)
                     || Self::expr_contains_unsupported_assignment_rhs(right)
             }
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => {
+                Self::expr_contains_unsupported_assignment_rhs(condition)
+                    || Self::expr_contains_unsupported_assignment_rhs(if_true)
+                    || Self::expr_contains_unsupported_assignment_rhs(if_false)
+            }
             Expr::Unary { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
@@ -2403,6 +2467,14 @@ impl Parser {
             Expr::Binary { left, right, .. } => {
                 Self::find_append_index_span(left).or_else(|| Self::find_append_index_span(right))
             }
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => Self::find_append_index_span(condition)
+                .or_else(|| Self::find_append_index_span(if_true))
+                .or_else(|| Self::find_append_index_span(if_false)),
             Expr::Unary { expr, .. } => Self::find_append_index_span(expr),
             Expr::Assign { expr, .. }
             | Expr::CompoundAssign { expr, .. }
@@ -2824,8 +2896,12 @@ fn unsupported_match_expression_message() -> &'static str {
     "unsupported match expression: expression-form branching is not implemented"
 }
 
-fn unsupported_ternary_message() -> &'static str {
-    "unsupported ternary expression: expression-form branching is not implemented"
+fn unsupported_short_ternary_message() -> &'static str {
+    "unsupported short ternary expression: short ternary value reuse is not implemented"
+}
+
+fn unsupported_nested_ternary_message() -> &'static str {
+    "unsupported nested ternary expression: parenthesize nested ternary expressions in the current subset"
 }
 
 fn unsupported_null_coalescing_message() -> &'static str {

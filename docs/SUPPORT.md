@@ -78,6 +78,10 @@
   scalar values (`null`, booleans, integers, floats, and strings)
 - strict identity comparisons: `===` and `!==` across the current scalar
   values only (`null`, booleans, integers, floats, and strings)
+- full ternary conditional expressions `$condition ? $if_true : $if_false`
+  over the current expression/value subset, including truthiness-based
+  condition selection, lazy branch evaluation, and parenthesized nested
+  ternaries
 - `if` / `elseif` / `else`
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
@@ -318,7 +322,8 @@
 - explicit parse diagnostics for unsupported exception syntax: `throw`,
   `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
-- explicit parse diagnostics for unsupported ternary conditional expressions
+- explicit parse diagnostics for unsupported short ternary and
+  unparenthesized nested ternary expressions
 - explicit parse diagnostics for unsupported assignment-expression forms
   outside direct static-variable `$name = expr`, including append-offset
   chained assignments and complex/nested targets
@@ -1614,12 +1619,13 @@
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
   order, exact native error objects, and native lowering are not implemented.
-- Ternary conditional expressions currently fail with a stable parse diagnostic
-  before expression-form branching exists. Both full ternary
-  `$condition ? $if_true : $if_false` and short ternary `$value ?: $fallback`
-  forms are rejected. Condition truthiness, short-ternary value reuse,
-  nesting/precedence, thrown expressions inside arms, exact native error
-  objects, and native lowering are not implemented.
+- Full ternary conditional expressions `$condition ? $if_true : $if_false`
+  execute over the current expression/value subset with truthiness-based
+  condition selection and lazy branch evaluation. Parenthesized nested ternary
+  expressions are supported. Short ternary `$value ?: $fallback`,
+  unparenthesized nested ternaries, thrown expressions inside arms, references,
+  copy-on-write aliasing, exact native error objects, and native lowering are
+  not implemented.
 - Assignment expressions are limited to direct static variables as
   `$name = expr`, direct array offsets as `$array[$key] = expr`, direct public
   object properties as `$object->property = expr`, direct append offsets as

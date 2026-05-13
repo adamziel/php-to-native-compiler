@@ -64,6 +64,9 @@ subset:
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow
+- full ternary conditional expressions `$condition ? $if_true : $if_false`
+  over the current expression/value subset, with truthiness-based condition
+  selection and lazy branch evaluation
 - `if` / `elseif` / `else`
 - `while`, C-style `for` loops over the documented header subset,
   `do ... while` post-condition loops, `switch`/`case`/`default` statements
@@ -196,8 +199,9 @@ subset:
   `do ... while`, alternate `if`/`elseif`/`else` colon/`endif` syntax,
   expression-form or alternate-syntax `switch`, `break`/`continue` depth
   arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
-  `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
-  conditional expressions, unsupported append-offset chained assignment
+  `finally`), unsupported PHP 8 `match` expressions, unsupported short
+  ternary and unparenthesized nested ternary expressions, unsupported
+  append-offset chained assignment
   expressions, unsupported complex or nested assignment-expression targets,
   unsupported append-offset `??=`,
   unsupported compound assignment targets outside direct static variables,
