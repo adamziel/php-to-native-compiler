@@ -1211,6 +1211,18 @@ impl Parser {
                 }),
                 _ => Err(unsupported_assignment_expression_target_message()),
             },
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => match *target {
+                Expr::Variable(object, _) => Ok(AssignTarget::Property {
+                    object,
+                    property,
+                    span,
+                }),
+                _ => Err(unsupported_assignment_expression_target_message()),
+            },
             _ => Err(unsupported_assignment_expression_target_message()),
         }
     }
@@ -2616,7 +2628,7 @@ fn unsupported_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_assignment_expression_target_message() -> &'static str {
-    "unsupported assignment expression target: only direct static variables and direct array offsets are implemented; object properties, append offsets, and nested targets are not implemented"
+    "unsupported assignment expression target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented"
 }
 
 fn unsupported_chained_assignment_expression_message() -> &'static str {

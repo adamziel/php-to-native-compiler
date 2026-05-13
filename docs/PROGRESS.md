@@ -2855,10 +2855,10 @@ Still fails:
   expressions fail with stable parse diagnostics, expression-position `??=`
   remains unsupported, and native emission rejects assignment expressions
   explicitly until lowering exists. Direct array-offset assignment expressions
-  were implemented in a later slice; object-property, nested-offset, and
-  append-offset assignment-expression targets remain unsupported. References,
-  copy-on-write aliasing, exact native error objects, and native lowering
-  remain unsupported.
+  and object-property assignment expressions were implemented in later slices;
+  nested-offset and append-offset assignment-expression targets remain
+  unsupported. References, copy-on-write aliasing, exact native error objects,
+  and native lowering remain unsupported.
 - Implemented expression-position direct array-offset assignment
   `$array[$key] = expr` over the current ordered array value model. Assignment
   expressions evaluate the offset key before the right-hand expression, write
@@ -2866,12 +2866,25 @@ Still fails:
   variables as arrays, and return the assigned value. Fixture and CLI snapshot
   coverage record result values, key/RHS ordering, undefined/null
   materialization, system PHP comparison passes for the supported fixture,
-  existing non-array targets fail with a stable runtime diagnostic, object
-  property, nested-offset, and append-offset assignment-expression targets
-  remain explicit unsupported parse boundaries, and native emission rejects
-  assignment expressions explicitly until lowering exists. References,
+  existing non-array targets fail with a stable runtime diagnostic,
+  nested-offset and append-offset assignment-expression targets remain
+  explicit unsupported parse boundaries, and native emission rejects
+  assignment expressions explicitly until lowering exists. Object-property
+  assignment expressions were implemented in a later slice. References,
   copy-on-write aliasing, exact native error objects, and native lowering
   remain unsupported.
+- Implemented expression-position direct public object-property assignment
+  `$object->property = expr` over the current minimal object value model.
+  Assignment expressions evaluate the right-hand expression, write existing
+  declared public property slots on direct object variables, and return the
+  assigned value. Fixture and CLI snapshot coverage record result values,
+  RHS-before-target-error behavior for non-object targets, system PHP
+  comparison passes for the supported fixture, nested property/offset and
+  append-offset assignment-expression targets remain explicit unsupported
+  parse boundaries, and native emission rejects assignment expressions
+  explicitly until lowering exists. Dynamic property names, missing property
+  materialization, non-public visibility context, references/copy-on-write,
+  exact native error objects, and native lowering remain unsupported.
 - Implemented expression-position direct static-variable compound assignment
   such as `($name += expr)` over the current scalar value model. Compound
   assignment expressions read the existing left-hand value, evaluate the

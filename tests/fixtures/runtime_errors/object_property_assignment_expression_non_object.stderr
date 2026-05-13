@@ -1,0 +1,2 @@
+runtime error at 8:7: invalid property access: cannot write property $name on int
+

@@ -99,6 +99,55 @@ fn array_offset_assignment_expression_rejects_non_array_targets() {
 }
 
 #[test]
+fn direct_object_property_assignment_expressions_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $name;
+    public $count;
+    public $result;
+}
+
+$box = new Box();
+echo ($box->name = "Ada"), ":", $box->name, "\n";
+echo ($box->count = 41 + 1), ":", $box->count, "\n";
+
+function next_value() {
+    echo "rhs\n";
+    return "value";
+}
+echo ($box->result = next_value()), ":", $box->result, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Ada:Ada\n42:42\nrhs\nvalue:value\n");
+}
+
+#[test]
+fn object_property_assignment_expression_rejects_non_object_targets_after_rhs() {
+    let error = run_source(
+        r#"<?php
+function next_value() {
+    echo "rhs\n";
+    return "value";
+}
+$value = 1;
+echo ($value->name = next_value());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "invalid property access: cannot write property $name on int"
+    );
+}
+
+#[test]
 fn chained_assignment_expressions_have_stable_parse_errors() {
     let cases = [
         ("<?php\n$value = $other = 1;\n", 2, 10),
@@ -121,14 +170,14 @@ fn chained_assignment_expressions_have_stable_parse_errors() {
 fn assignment_expression_rejects_complex_targets() {
     let cases = [
         (
-            "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value = 2);\n",
-            4,
-            19,
-        ),
-        (
             "<?php\n$items = [];\necho ($items['outer']['inner'] = 'value');\n",
             3,
             32,
+        ),
+        (
+            "<?php\nclass Box { public $value; }\n$box = new Box();\necho (($box->value)->nested = 2);\n",
+            4,
+            29,
         ),
     ];
 
@@ -139,7 +188,7 @@ fn assignment_expression_rejects_complex_targets() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported assignment expression target: only direct static variables and direct array offsets are implemented; object properties, append offsets, and nested targets are not implemented"
+            "unsupported assignment expression target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented"
         );
     }
 }
@@ -153,7 +202,7 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 
@@ -167,6 +216,19 @@ fn emit_ir_rejects_array_offset_assignment_expressions_until_native_lowering_exi
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_assignment_expressions_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$box = 1;\necho ($box->value = 2);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
     );
 }

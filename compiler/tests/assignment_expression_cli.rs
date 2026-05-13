@@ -9,7 +9,11 @@ fn assignment_expression_cli_snapshots_match_committed_outputs() {
         .parent()
         .expect("compiler has a workspace root");
     let mut fixtures = Vec::new();
-    for fixture_dir in ["tests/fixtures/milestone137", "tests/fixtures/milestone143"] {
+    for fixture_dir in [
+        "tests/fixtures/milestone137",
+        "tests/fixtures/milestone143",
+        "tests/fixtures/milestone144",
+    ] {
         fixtures.extend(cli_snapshot_fixtures(&workspace_root.join(fixture_dir)));
     }
 

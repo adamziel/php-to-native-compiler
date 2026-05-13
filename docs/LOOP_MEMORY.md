@@ -11566,3 +11566,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:50:21Z
 
 - Post-round 34 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:50:35Z
+
+- Starting round 35 at 20260513T015035Z from HEAD `546e366`.
+
+## Loop Event 2026-05-13T01:50:48Z
+
+- Pre-round 35 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:03:00Z
+
+- Task attempted: implemented expression-position direct public
+  object-property assignment `($object->property = expr)` over existing
+  declared public property slots in the current minimal object value model.
+  Assignment expressions return the assigned value, evaluate the right-hand
+  expression before target write errors, and reject non-object targets with a
+  stable runtime diagnostic. Nested property/offset and append-offset
+  assignment-expression targets remain explicit unsupported boundaries, and
+  native lowering rejects assignment expressions explicitly.
+- Files changed: `compiler/src/parser.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone144/object_property_assignment_expression.*`,
+  `tests/fixtures/runtime_errors/object_property_assignment_expression_non_object.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_assignment_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test
+  assignment_expression` passed; `cargo test -p phpc --test
+  syntax_boundaries` passed; `cargo test -p phpc --test
+  assignment_expression_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone144` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone144` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 156 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 26 fixtures;
+  `tools/run-tests.sh` passed with 387 fixtures, 140 system PHP comparisons,
+  and 247 comparison skips.
+- Remaining semantic gaps: append-offset assignment expressions,
+  nested-offset assignment expressions, nested property assignment
+  expressions, dynamic property names, missing-property materialization,
+  non-public visibility context, references/copy-on-write aliasing, exact
+  native error objects, and native lowering remain unsupported.
+- Next concrete task: implement or tighten the explicit boundary for
+  expression-position append-offset assignment such as `($array[] = expr)`.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add property assignment expressions"`
+  after the full suite passes.

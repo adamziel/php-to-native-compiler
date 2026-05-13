@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/object_property_assignment_expression_non_object.php:8:7: invalid property access: cannot write property $name on int
+--- stderr end ---

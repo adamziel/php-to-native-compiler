@@ -1,4 +1,3 @@
 <?php
-class Box { public $value; }
-$box = new Box();
-echo ($box->value = 2);
+$items = [];
+echo ($items["outer"]["inner"] = "value");

@@ -1376,7 +1376,7 @@ handled.
 
 ## Milestone 144: Object Property Assignment Expression Boundary
 
-- [ ] Add the next honest path for expression-position direct public
+- [x] Add the next honest path for expression-position direct public
   object-property assignment such as `($object->property = expr)`: either
   executable assignment result semantics over the current object value model,
   or a tightened explicit diagnostic boundary with fixture CLI coverage,
@@ -1384,3 +1384,13 @@ handled.
   names, non-public visibility context, missing properties,
   references/copy-on-write, exact native error objects, lvalue evaluation
   order, and native lowering.
+
+## Milestone 145: Append Offset Assignment Expression Boundary
+
+- [ ] Add the next honest path for expression-position array append
+  assignment such as `($array[] = expr)`: either executable append assignment
+  result semantics over the current ordered array value model, or a tightened
+  explicit diagnostic boundary with fixture CLI coverage, documentation,
+  native-codegen behavior, and named gaps for nested append offsets, object
+  properties, references/copy-on-write, exact native error objects, lvalue
+  evaluation order, and native lowering.

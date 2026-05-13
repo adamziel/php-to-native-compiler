@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+Ada:Ada
+42:42
+rhs
+value:value--- stdout end ---
+stderr:
+--- stderr end ---
