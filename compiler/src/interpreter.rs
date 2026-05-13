@@ -662,6 +662,20 @@ impl Interpreter {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return self.evaluate_null_coalescing(left, right, *span, scope);
                 }
+                if matches!(op, BinaryOp::LogicalAnd) {
+                    let left = self.evaluate(left, scope)?;
+                    if !left.is_truthy() {
+                        return Ok(Value::Bool(false));
+                    }
+                    return Ok(Value::Bool(self.evaluate(right, scope)?.is_truthy()));
+                }
+                if matches!(op, BinaryOp::LogicalOr) {
+                    let left = self.evaluate(left, scope)?;
+                    if left.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
+                    return Ok(Value::Bool(self.evaluate(right, scope)?.is_truthy()));
+                }
                 let left = self.evaluate(left, scope)?;
                 let right = self.evaluate(right, scope)?;
                 self.apply_binary(*op, left, right, *span)
@@ -3760,6 +3774,9 @@ impl Interpreter {
                 .php_identical_checked(&right)
                 .map(|identical| Value::Bool(!identical)),
             BinaryOp::NullCoalesce => unreachable!("null coalescing is evaluated lazily"),
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+                unreachable!("logical operators are evaluated lazily")
+            }
             BinaryOp::Lt => left
                 .php_cmp_checked(&right, Comparison::Lt)
                 .map(Value::Bool),

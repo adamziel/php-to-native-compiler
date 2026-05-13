@@ -3050,9 +3050,19 @@ Still fails:
   ternary rejection path. Unparenthesized nested ternaries, throw expressions
   inside arms, references, copy-on-write aliasing, exact native error objects,
   and native lowering remain unsupported.
+- Implemented logical `&&`, `||`, `and`, and `or` over the current value model.
+  The parser now gives symbolic operators PHP-style precedence and gives word
+  operators lower-than-assignment precedence in the current statement and
+  expression subset. The interpreter short-circuits right operands and returns
+  boolean results based on current truthiness. Fixture, CLI snapshot, unit, and
+  system PHP comparison coverage exercise truthiness, lazy evaluation,
+  symbolic precedence, word-operator assignment interaction, and explicit
+  native-codegen rejection. Bitwise `&`, `|`, `^`, logical `xor`,
+  references/copy-on-write side effects, exact native error objects, and native
+  lowering remain unsupported.
 
 Next:
 
-- Add an explicit logical operator boundary or executable slice for `&&`,
-  `||`, `and`, and `or`, including parser/runtime behavior, fixture CLI
-  coverage, documentation, native-codegen behavior, and named gaps.
+- Add the next honest boundary or executable slice for bitwise operators `&`,
+  `|`, and `^`, including parser/runtime behavior, fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps.

@@ -1047,7 +1047,11 @@ impl Parser {
                 let span = target.span();
                 Self::ensure_supported_compound_assignment_target(&target)
                     .map_err(|message| self.error_at(target.span(), message))?;
-                let expr = self.parse_expression()?;
+                let expr = self.parse_assignment_expression()?;
+                if self.check_low_precedence_logical_operator() {
+                    self.current = saved;
+                    return Ok(None);
+                }
                 self.consume_keyword(
                     TokenKind::Semicolon,
                     "expected ';' after compound assignment",
@@ -1076,7 +1080,11 @@ impl Parser {
                         ));
                     }
                 }
-                let expr = self.parse_expression()?;
+                let expr = self.parse_assignment_expression()?;
+                if self.check_low_precedence_logical_operator() {
+                    self.current = saved;
+                    return Ok(None);
+                }
                 self.consume_keyword(
                     TokenKind::Semicolon,
                     "expected ';' after null coalescing assignment",
@@ -1088,7 +1096,11 @@ impl Parser {
         }
 
         let span = target.span();
-        let expr = self.parse_expression()?;
+        let expr = self.parse_assignment_expression()?;
+        if self.check_low_precedence_logical_operator() {
+            self.current = saved;
+            return Ok(None);
+        }
         if Self::expr_contains_unsupported_assignment_rhs(&expr) {
             return Err(self.error_at(
                 expr.span(),
@@ -1341,8 +1353,38 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> CompileResult<Expr> {
-        let expr = self.parse_assignment_expression()?;
+        let expr = self.parse_low_precedence_logical_or()?;
         self.reject_assignment_expression_operator()?;
+        Ok(expr)
+    }
+
+    fn parse_low_precedence_logical_or(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_low_precedence_logical_and()?;
+        while self.match_identifier("or") {
+            let right = self.parse_low_precedence_logical_and()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalOr,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_low_precedence_logical_and(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_assignment_expression()?;
+        while self.match_identifier("and") {
+            let right = self.parse_assignment_expression()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalAnd,
+                right: Box::new(right),
+                span,
+            };
+        }
         Ok(expr)
     }
 
@@ -1483,7 +1525,7 @@ impl Parser {
         &mut self,
         allow_ternary: bool,
     ) -> CompileResult<Expr> {
-        let mut expr = self.parse_equality()?;
+        let mut expr = self.parse_symbolic_logical_or()?;
         if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
             && matches!(self.peek_next().kind, TokenKind::Equal)
         {
@@ -1496,7 +1538,7 @@ impl Parser {
                     self.error_at(operator_span, unsupported_assignment_expression_message())
                 );
             }
-            let right = self.parse_equality()?;
+            let right = self.parse_symbolic_logical_or()?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -1543,6 +1585,36 @@ impl Parser {
                 condition: Box::new(expr),
                 if_true: Box::new(if_true),
                 if_false: Box::new(if_false),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_symbolic_logical_or(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_symbolic_logical_and()?;
+        while self.match_token(|kind| matches!(kind, TokenKind::PipePipe)) {
+            let right = self.parse_symbolic_logical_and()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalOr,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_symbolic_logical_and(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_equality()?;
+        while self.match_token(|kind| matches!(kind, TokenKind::AmpAmp)) {
+            let right = self.parse_equality()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalAnd,
+                right: Box::new(right),
                 span,
             };
         }
@@ -2603,6 +2675,12 @@ impl Parser {
         }
     }
 
+    fn match_identifier(&mut self, expected: &str) -> bool {
+        self.match_token(|kind| {
+            matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+        })
+    }
+
     fn check(&self, predicate: impl FnOnce(&TokenKind) -> bool) -> bool {
         predicate(&self.peek().kind)
     }
@@ -2620,6 +2698,14 @@ impl Parser {
             TokenKind::Identifier(name) => name.eq_ignore_ascii_case("instanceof"),
             _ => false,
         }
+    }
+
+    fn check_low_precedence_logical_operator(&self) -> bool {
+        matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name)
+                if name.eq_ignore_ascii_case("and") || name.eq_ignore_ascii_case("or")
+        )
     }
 
     fn match_array_close(&mut self, delimiter: ArrayLiteralDelimiter) -> bool {
@@ -2814,9 +2900,11 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Backslash => "\\",
         TokenKind::Ellipsis => "...",
         TokenKind::Ampersand => "&",
+        TokenKind::AmpAmp => "&&",
         TokenKind::Question => "?",
         TokenKind::QuestionQuestion => "??",
         TokenKind::Pipe => "|",
+        TokenKind::PipePipe => "||",
         TokenKind::Colon => ":",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",

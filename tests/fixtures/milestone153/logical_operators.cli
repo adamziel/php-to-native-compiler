@@ -1,0 +1,26 @@
+exit: 0
+stdout:
+bool(false)
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+short:start
+after-or:or-ran
+after-and:and-ran
+bool(true)
+bool(false)
+bool(false)
+bool(true)
+bool(true)
+bool(false)
+bool(false)
+bool(false)
+bool(true)
+trace:and-rhs
+bool(true)
+trace:or-rhs
+bool(true)
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -12092,3 +12092,47 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:58:50Z
 
 - Post-round 43 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:59:00Z
+
+- Starting round 44 at 20260513T025900Z from HEAD `41cdc5d`.
+
+## Loop Event 2026-05-13T02:59:09Z
+
+- Pre-round 44 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:20:00Z
+
+- Task attempted: implemented logical `&&`, `||`, `and`, and `or` over the
+  current PHP-shaped value model. The lexer now recognizes symbolic logical
+  tokens, the parser gives `&&`/`||` PHP-style precedence and word
+  `and`/`or` lower-than-assignment precedence, and the interpreter
+  short-circuits right operands while returning boolean results from current
+  truthiness rules. Native codegen rejects logical expressions explicitly until
+  lowering exists.
+- Files changed: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/src/ast.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/logical_operators.rs`,
+  `compiler/tests/logical_operators_cli.rs`,
+  `tests/fixtures/milestone153/logical_operators.php`,
+  `tests/fixtures/milestone153/logical_operators.stdout`,
+  `tests/fixtures/milestone153/logical_operators.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  logical_operators --test logical_operators_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone153` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone153` passed with 1
+  system PHP comparison; `./target/debug/phpc compile <logical-expression>
+  --emit-ir` exited `1` with the expected logical-operator codegen rejection;
+  `tools/run-tests.sh` passed with 397 fixtures, 149 system PHP comparisons,
+  and 248 comparison skips.
+- Remaining semantic gaps: bitwise `&`, `|`, and `^`, logical `xor`, exact PHP
+  warning/error objects, references/copy-on-write side effects, and native
+  lowering remain unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  bitwise operators `&`, `|`, and `^`, including parser/runtime behavior,
+  fixture CLI coverage, documentation, native-codegen behavior, and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "logical operators: add short-circuit execution"`.

@@ -1465,8 +1465,17 @@ handled.
 
 ## Milestone 153: Logical Operator Boundary
 
-- [ ] Add the next honest boundary or executable slice for logical operators
+- [x] Add the next honest boundary or executable slice for logical operators
   `&&`, `||`, `and`, and `or`, including parser/runtime behavior, fixture CLI
   coverage, documentation, native-codegen behavior, and named gaps for
   precedence, short-circuiting, assignment-expression interaction,
   references/copy-on-write, exact native error objects, and native lowering.
+
+## Milestone 154: Bitwise Operator Boundary
+
+- [ ] Add the next honest boundary or executable slice for bitwise operators
+  `&`, `|`, and `^`, including parser/runtime behavior, fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps for integer/string
+  operand semantics, precedence, assignment-expression interaction,
+  references/copy-on-write, exact native warning/error behavior, and native
+  lowering.

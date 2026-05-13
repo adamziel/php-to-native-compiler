@@ -412,6 +412,8 @@ pub enum BinaryOp {
     Gt,
     Ge,
     NullCoalesce,
+    LogicalAnd,
+    LogicalOr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -81,9 +81,11 @@ pub enum TokenKind {
     Backslash,
     Ellipsis,
     Ampersand,
+    AmpAmp,
     Question,
     QuestionQuestion,
     Pipe,
+    PipePipe,
     Colon,
     Bang,
     Equal,
@@ -174,7 +176,13 @@ impl<'a> Lexer<'a> {
                         TokenKind::Dot
                     }
                 }
-                '&' => TokenKind::Ampersand,
+                '&' => {
+                    if self.match_char('&') {
+                        TokenKind::AmpAmp
+                    } else {
+                        TokenKind::Ampersand
+                    }
+                }
                 '?' => {
                     if self.match_char('?') {
                         TokenKind::QuestionQuestion
@@ -182,7 +190,13 @@ impl<'a> Lexer<'a> {
                         TokenKind::Question
                     }
                 }
-                '|' => TokenKind::Pipe,
+                '|' => {
+                    if self.match_char('|') {
+                        TokenKind::PipePipe
+                    } else {
+                        TokenKind::Pipe
+                    }
+                }
                 ':' => {
                     if self.match_char(':') {
                         TokenKind::DoubleColon

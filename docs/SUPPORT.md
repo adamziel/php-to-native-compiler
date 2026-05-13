@@ -78,6 +78,11 @@
   scalar values (`null`, booleans, integers, floats, and strings)
 - strict identity comparisons: `===` and `!==` across the current scalar
   values only (`null`, booleans, integers, floats, and strings)
+- logical operators `&&`, `||`, `and`, and `or` over the current value model:
+  operands use PHP-style truthiness, results are booleans, right operands are
+  evaluated lazily, `&&` binds tighter than `||`, and word operators `and` and
+  `or` bind lower than assignment in the current expression and statement
+  parser subset
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including truthiness-based condition selection,
@@ -1715,6 +1720,12 @@
   unparenthesized chained coalescing, precedence interactions beyond the
   current single-operator expression slice, references/copy-on-write, exact
   native error objects, and native lowering are not implemented.
+- Logical operators are limited to `&&`, `||`, `and`, and `or` over the
+  current truthiness rules. They short-circuit and return booleans, and fixture
+  coverage exercises symbolic precedence plus word-operator precedence around
+  direct assignment expressions. Bitwise `&`, `|`, `^`, logical `xor`,
+  operator-overloaded extension values, references/copy-on-write side effects,
+  exact native error objects, and native lowering are not implemented.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

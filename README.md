@@ -64,6 +64,10 @@ subset:
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow
+- logical `&&`, `||`, `and`, and `or` over the current truthiness rules, with
+  short-circuit evaluation, boolean result values, PHP-style `&&`/`||`
+  precedence, and lower-than-assignment `and`/`or` precedence in the current
+  expression and statement parser subset
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, with truthiness-based condition selection,
