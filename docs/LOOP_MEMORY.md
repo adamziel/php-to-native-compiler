@@ -14687,3 +14687,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   stderr coverage, not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "codegen: cover fallback backend stderr success"`
   after the full suite passes.
+
+## Loop Event 2026-05-13T07:25:54Z
+
+- Codex round 86 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T072138Z-86.log`.
+
+## Loop Event 2026-05-13T07:26:08Z
+
+- Post-round 86 test exit code: `0`.
+
+## Loop Event 2026-05-13T07:26:08Z
+
+- Post-round 86 tests passed; running checkpoint for this round.
