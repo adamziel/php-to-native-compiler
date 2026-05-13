@@ -1015,7 +1015,10 @@
   success-with-stderr selected-backend snapshot exposes a deterministic fake
   `clang` that emits assembly stdout, writes stderr diagnostics, and exits
   successfully, proving `phpc` returns the assembly and does not surface
-  backend stderr on successful emission. Bundled toolchains, assembly
+  backend stderr on successful emission. Additional success-with-stderr
+  fallback snapshots expose deterministic fake `llc` and `cc` tools, proving
+  the same behavior after LLVM backend fallback selection and after the `cc -S`
+  C fallback selection. Bundled toolchains, assembly
   linking/execution, backend-specific discovery semantics for every tool,
   backend-specific stderr guarantees, backend-specific assembly text, PHP
   zvals, native symbol-table storage, references/copy-on-write, exact native

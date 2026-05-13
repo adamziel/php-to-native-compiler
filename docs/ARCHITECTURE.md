@@ -133,6 +133,9 @@ that passes discovery, emits nonempty assembly stdout, writes a diagnostic to
 stderr, and exits successfully. That pins the current boundary: successful
 backend stderr is intentionally ignored by `phpc`, while assembly is taken only
 from stdout.
+Success-with-stderr fallback snapshots expose deterministic fake `llc` and
+`cc` tools with the same successful behavior, proving the shared success path
+after LLVM fallback selection and after the `cc -S` C fallback selection.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

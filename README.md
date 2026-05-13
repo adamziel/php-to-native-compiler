@@ -65,6 +65,9 @@ A success-with-stderr backend snapshot exposes a deterministic fake `clang`
 that passes discovery, emits assembly stdout, writes a diagnostic to stderr,
 and exits successfully, proving `phpc` returns the assembly and does not surface
 backend stderr on successful assembly emission.
+Additional success-with-stderr fallback snapshots expose deterministic fake
+`llc` and `cc` tools with the same behavior, proving that boundary after LLVM
+backend fallback selection and after the `cc -S` C fallback selection.
 
 ## Current Status
 
