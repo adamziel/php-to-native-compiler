@@ -11967,3 +11967,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Known-good tag: not created; this is a narrow expression-semantics
   checkpoint, not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "ternary expressions: add full conditional"`.
+
+## Loop Event 2026-05-13T02:47:28Z
+
+- Codex round 41 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T023916Z-41.log`.
+
+## Loop Event 2026-05-13T02:47:43Z
+
+- Post-round 41 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:47:43Z
+
+- Post-round 41 tests passed; running checkpoint for this round.
