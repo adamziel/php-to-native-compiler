@@ -18,7 +18,9 @@
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
-- assignment statements
+- assignment statements, including direct static-variable compound assignment
+  `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
+  `$name .= expr` over the current scalar value model
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings
 - unary `-` and `!`
@@ -31,7 +33,8 @@
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
   optional and each initializer/increment slot contains at most one expression
-  or assignment from the current assignment subset
+  or assignment from the current assignment subset, including direct
+  static-variable compound assignment
 - `do ... while` loops with a block or single-statement body and a
   post-condition expression
 - `switch ($value) { case ...: ... default: ... }` statements over the current
@@ -266,9 +269,9 @@
 - explicit parse diagnostics for unsupported ternary conditional expressions
 - explicit parse diagnostics for unsupported expression-position assignment
   forms such as `($name = expr)` and `($name ??= expr)`
-- explicit parse diagnostics for unsupported compound assignment forms such as
-  `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
-  `$name .= expr` before read-modify-write execution exists
+- explicit parse diagnostics for unsupported compound assignment targets
+  outside direct static variables and for expression-position compound
+  assignment forms before assignment expressions have value semantics
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -1561,10 +1564,21 @@
   objects, and native lowering are not implemented.
 - Assignment expressions currently fail with a stable parse diagnostic.
   Statement-level `=`, direct variable `??=`, direct array-offset `??=`, and
-  direct public object-property `??=` are the only executable assignment forms.
-  Assignment result values, chained assignments, expression-position `??=`,
-  lvalue evaluation order, references/copy-on-write, exact native error
-  objects, and native lowering are not implemented.
+  direct public object-property `??=`, plus statement-level direct
+  static-variable compound assignments, are the only executable assignment
+  forms. Assignment result values, chained assignments, expression-position
+  `??=` and expression-position compound assignment, lvalue evaluation order,
+  references/copy-on-write, exact native error objects, and native lowering
+  are not implemented.
+- Compound assignment is limited to direct static variables over the current
+  scalar value model. The read-modify-write operation reuses the existing PHP
+  shaped scalar arithmetic and string concatenation helpers, so undefined
+  left-hand variables, division by zero, non-numeric strings, arrays, and
+  objects fail through the existing stable runtime diagnostics. Array-offset
+  and object-property compound assignment targets, assignment result values,
+  references/copy-on-write, increment/decrement operators, PHP warning
+  recovery, exact native error objects, and native lowering are not
+  implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus
   direct-variable `$name ??= expr`, direct array-offset `$array[$key] ??=

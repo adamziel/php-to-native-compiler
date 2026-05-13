@@ -1,7 +1,7 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
-    ClassVisibility, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam, Program, Span,
-    Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl,
+    FunctionParam, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -606,6 +606,21 @@ impl Parser {
                 let expr = self.parse_expression()?;
                 return Ok(ForAction::Assign { target, expr });
             }
+            if let Some(op) = self.match_compound_assignment_operator() {
+                let AssignTarget::Variable { name, span } = target else {
+                    return Err(self.error_at(
+                        target.span(),
+                        unsupported_compound_assignment_target_message(),
+                    ));
+                };
+                let expr = self.parse_expression()?;
+                return Ok(ForAction::CompoundAssign {
+                    name,
+                    op,
+                    expr,
+                    span,
+                });
+            }
             self.current = saved;
         }
 
@@ -921,10 +936,24 @@ impl Parser {
         let saved = self.current;
         let target = self.parse_assignment_target()?;
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-            if self.check_compound_assignment_operator() {
-                return Err(
-                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
-                );
+            if let Some(op) = self.match_compound_assignment_operator() {
+                let AssignTarget::Variable { name, span } = target else {
+                    return Err(self.error_at(
+                        target.span(),
+                        unsupported_compound_assignment_target_message(),
+                    ));
+                };
+                let expr = self.parse_expression()?;
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after compound assignment",
+                )?;
+                return Ok(Some(Stmt::CompoundAssign {
+                    name,
+                    op,
+                    expr,
+                    span,
+                }));
             }
             if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
                 && matches!(self.peek_next().kind, TokenKind::Equal)
@@ -1106,7 +1135,10 @@ impl Parser {
             ));
         }
         if self.check_compound_assignment_operator() {
-            return Err(self.error_at(self.peek().span, unsupported_compound_assignment_message()));
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_compound_assignment_expression_message(),
+            ));
         }
         if self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
             && matches!(self.peek_next().kind, TokenKind::Equal)
@@ -1177,9 +1209,10 @@ impl Parser {
         let mut expr = self.parse_additive()?;
         loop {
             if self.check_compound_assignment_operator() {
-                return Err(
-                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
-                );
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_compound_assignment_expression_message(),
+                ));
             }
             if !self.match_token(|kind| matches!(kind, TokenKind::Dot)) {
                 break;
@@ -1200,9 +1233,10 @@ impl Parser {
         let mut expr = self.parse_multiplicative()?;
         loop {
             if self.check_compound_assignment_operator() {
-                return Err(
-                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
-                );
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_compound_assignment_expression_message(),
+                ));
             }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Plus)) {
                 BinaryOp::Add
@@ -1227,9 +1261,10 @@ impl Parser {
         let mut expr = self.parse_unary()?;
         loop {
             if self.check_compound_assignment_operator() {
-                return Err(
-                    self.error_at(self.peek().span, unsupported_compound_assignment_message())
-                );
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_compound_assignment_expression_message(),
+                ));
             }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Star)) {
                 BinaryOp::Mul
@@ -1922,6 +1957,24 @@ impl Parser {
         ) && matches!(self.peek_next().kind, TokenKind::Equal)
     }
 
+    fn match_compound_assignment_operator(&mut self) -> Option<CompoundAssignOp> {
+        if !self.check_compound_assignment_operator() {
+            return None;
+        }
+
+        let op = match self.peek().kind {
+            TokenKind::Plus => CompoundAssignOp::Add,
+            TokenKind::Minus => CompoundAssignOp::Sub,
+            TokenKind::Star => CompoundAssignOp::Mul,
+            TokenKind::Slash => CompoundAssignOp::Div,
+            TokenKind::Dot => CompoundAssignOp::Concat,
+            _ => unreachable!("caller checked compound assignment operator"),
+        };
+        self.advance();
+        self.advance();
+        Some(op)
+    }
+
     fn error_at(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Parse, span.line, span.column, message)
     }
@@ -2162,8 +2215,12 @@ fn unsupported_assignment_expression_message() -> &'static str {
     "unsupported assignment expression: assignment expressions are not implemented; use statement-level assignment in the current subset"
 }
 
-fn unsupported_compound_assignment_message() -> &'static str {
-    "unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset"
+fn unsupported_compound_assignment_expression_message() -> &'static str {
+    "unsupported compound assignment expression: compound assignments are only implemented as direct-variable statements in the current subset"
+}
+
+fn unsupported_compound_assignment_target_message() -> &'static str {
+    "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

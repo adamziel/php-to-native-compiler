@@ -362,18 +362,12 @@ fn emit_ir_rejects_assignment_expression_at_parse_boundary() {
 #[test]
 fn unsupported_compound_assignments_have_stable_parse_errors() {
     let cases = [
-        ("<?php\n$value += 2;\n", 2, 8),
-        ("<?php\n$value -= 2;\n", 2, 8),
-        ("<?php\n$value *= 2;\n", 2, 8),
-        ("<?php\n$value /= 2;\n", 2, 8),
-        ("<?php\n$value .= 'x';\n", 2, 8),
-        ("<?php\n$items = [];\n$items['key'] += 2;\n", 3, 15),
+        ("<?php\n$items = [];\n$items['key'] += 2;\n", 3, 1),
         (
             "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value += 2;\n",
             4,
-            13,
+            1,
         ),
-        ("<?php\n$value = 1;\necho ($value += 2);\n", 3, 14),
     ];
 
     for (source, line, column) in cases {
@@ -382,19 +376,31 @@ fn unsupported_compound_assignments_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset"
+            "unsupported compound assignment target: only direct static variables are implemented; array offsets and object properties are not implemented"
         );
     }
 }
 
 #[test]
-fn emit_ir_rejects_compound_assignment_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\n$value += 2;\n").unwrap_err();
+fn compound_assignment_expressions_have_stable_parse_errors() {
+    let error = parse_error("<?php\n$value = 1;\necho ($value += 2);\n");
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 14);
     assert_eq!(
         error.message,
-        "unsupported compound assignment: compound assignment operators (+=, -=, *=, /=, .=) are not implemented; use explicit assignment in the current subset"
+        "unsupported compound assignment expression: compound assignments are only implemented as direct-variable statements in the current subset"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$value += 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(
+        error.message,
+        "compound assignment is supported by phpc run for direct static variables but not LLVM IR emission yet"
     );
 }
 

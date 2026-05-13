@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+15
+12
+24
+6
+php-native
+6
+--- stdout end ---
+stderr:
+--- stderr end ---

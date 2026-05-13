@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Implemented direct static-variable compound assignment for `+=`, `-=`, `*=`,
+  `/=`, and `.=` over the current scalar value model, including
+  read-modify-write behavior in statements and `for` headers, undefined
+  left-hand diagnostics, fixture/CLI coverage, system PHP comparison, docs,
+  and native-codegen rejection.
 - Added explicit unsupported compound assignment diagnostics for `+=`, `-=`,
   `*=`, `/=`, and `.=` forms before read-modify-write semantics exist, with
   parser regression coverage, fixture/CLI snapshots, documentation, and

@@ -1253,10 +1253,19 @@ handled.
 
 ## Milestone 132: Direct Variable Compound Assignment Slice
 
-- [ ] Implement direct static-variable compound assignment for `$name += expr`,
+- [x] Implement direct static-variable compound assignment for `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
   the current scalar value model, including read-modify-write behavior,
   undefined-variable diagnostics, fixture CLI coverage, documentation,
   native-codegen rejection while lowering remains unsupported, and explicit
   gaps for array/object targets, references/copy-on-write, increment/decrement
   operators, exact native error objects, and broader PHP coercion recovery.
+
+## Milestone 133: Increment/Decrement Boundary
+
+- [ ] Add explicit parse diagnostics for unsupported pre/post increment and
+  decrement operators such as `++$name`, `$name++`, `--$name`, and `$name--`
+  before executable increment/decrement semantics exist, including parser
+  coverage, fixture CLI coverage, documentation, native-codegen parse-boundary
+  behavior, and named gaps for strings, arrays, objects, references,
+  copy-on-write, and exact native warning/error behavior.

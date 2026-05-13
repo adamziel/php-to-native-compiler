@@ -30,6 +30,12 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    CompoundAssign {
+        name: String,
+        op: CompoundAssignOp,
+        expr: Expr,
+        span: Span,
+    },
     NullCoalesceAssign {
         target: AssignTarget,
         expr: Expr,
@@ -149,8 +155,19 @@ pub enum UnsetTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ForAction {
-    Assign { target: AssignTarget, expr: Expr },
-    Expr { expr: Expr },
+    Assign {
+        target: AssignTarget,
+        expr: Expr,
+    },
+    CompoundAssign {
+        name: String,
+        op: CompoundAssignOp,
+        expr: Expr,
+        span: Span,
+    },
+    Expr {
+        expr: Expr,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,4 +358,13 @@ pub enum BinaryOp {
     Gt,
     Ge,
     NullCoalesce,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompoundAssignOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Concat,
 }

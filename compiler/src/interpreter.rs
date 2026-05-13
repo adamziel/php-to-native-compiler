@@ -9,8 +9,8 @@ use php_runtime::{
 };
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, Expr, ForAction,
-    FunctionDecl, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, CompoundAssignOp,
+    Expr, ForAction, FunctionDecl, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -245,6 +245,15 @@ impl Interpreter {
                 self.execute_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::CompoundAssign {
+                name,
+                op,
+                expr,
+                span,
+            } => {
+                self.execute_compound_assignment(name, *op, expr, *span, scope)?;
+                Ok(Flow::Normal)
+            }
             Stmt::NullCoalesceAssign { target, expr, .. } => {
                 self.execute_null_coalesce_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
@@ -412,6 +421,12 @@ impl Interpreter {
     ) -> CompileResult<()> {
         match action {
             ForAction::Assign { target, expr } => self.execute_assignment(target, expr, scope),
+            ForAction::CompoundAssign {
+                name,
+                op,
+                expr,
+                span,
+            } => self.execute_compound_assignment(name, *op, expr, *span, scope),
             ForAction::Expr { expr } => {
                 self.evaluate(expr, scope)?;
                 Ok(())
@@ -699,6 +714,28 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn execute_compound_assignment(
+        &mut self,
+        name: &str,
+        op: CompoundAssignOp,
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let left = scope.read_static(name, span)?;
+        let right = self.evaluate(expr, scope)?;
+        let value = match op {
+            CompoundAssignOp::Add => left.php_add(&right),
+            CompoundAssignOp::Sub => left.php_sub(&right),
+            CompoundAssignOp::Mul => left.php_mul(&right),
+            CompoundAssignOp::Div => left.php_div(&right),
+            CompoundAssignOp::Concat => left.php_concat(&right),
+        }
+        .map_err(|error| runtime_error(span, error))?;
+        scope.write_static(name, value);
+        Ok(())
     }
 
     fn execute_null_coalesce_assignment(

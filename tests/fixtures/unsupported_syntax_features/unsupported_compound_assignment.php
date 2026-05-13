@@ -1,3 +1,3 @@
 <?php
-$value = 1;
-$value += 2;
+$items = ["key" => 1];
+$items["key"] += 2;

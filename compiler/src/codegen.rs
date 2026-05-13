@@ -95,6 +95,10 @@ impl LlvmGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
+            Stmt::CompoundAssign { span, .. } => Err(self.unsupported(
+                *span,
+                "compound assignment is supported by phpc run for direct static variables but not LLVM IR emission yet",
+            )),
             Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
                 *span,
                 "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
@@ -669,6 +673,10 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
+            Stmt::CompoundAssign { span, .. } => Err(self.unsupported(
+                *span,
+                "compound assignment is supported by phpc run for direct static variables but not assembly emission yet",
+            )),
             Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
                 *span,
                 "null coalescing assignment is supported by phpc run for direct variables, direct array offsets, and direct object properties but not assembly emission yet",

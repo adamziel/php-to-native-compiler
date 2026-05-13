@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/undefined_compound_assignment.php:2:1: undefined variable '$missing'
+--- stderr end ---

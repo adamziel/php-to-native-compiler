@@ -10793,3 +10793,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-12T23:56:31Z
 
 - Post-round 22 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-12T23:56:43Z
+
+- Starting round 23 at 20260512T235643Z from HEAD `5fb9d70`.
+
+## Loop Event 2026-05-12T23:56:51Z
+
+- Pre-round 23 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:06:23Z
+
+- Task attempted: implemented direct static-variable compound assignment for
+  `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
+  `$name .= expr` over the current scalar value model, including statement
+  and `for` header read-modify-write behavior, undefined-left diagnostics,
+  explicit array/object target parse boundaries, expression-position compound
+  assignment parse boundaries, and native-codegen rejection.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/compound_assignment_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone132/compound_assignment.php`,
+  `tests/fixtures/milestone132/compound_assignment.stdout`,
+  `tests/fixtures/milestone132/compound_assignment.cli`,
+  `tests/fixtures/runtime_errors/undefined_compound_assignment.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_compound_assignment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test compound_assignment`
+  passed; `cargo test -p phpc --test syntax_boundaries compound_assignment`
+  passed; `cargo test -p phpc --test compound_assignment_cli` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone132` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone132`
+  passed with 1 system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 146 fixtures; `cargo run -p phpc
+  -- test tests/fixtures/unsupported_syntax_features` passed with 22 fixtures;
+  `tools/run-tests.sh` passed with 362 fixtures, 129 system PHP comparisons,
+  and 233 comparison skips.
+- Remaining semantic gaps: array-offset and object-property compound
+  assignment targets, compound assignment result values, references,
+  copy-on-write, increment/decrement operators, PHP warning recovery for
+  broader coercions, exact native error objects, and native lowering remain
+  unsupported.
+- Next concrete task: add an explicit increment/decrement operator boundary
+  for `++` and `--` before executable pre/post increment semantics exist.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add direct variable compound assignment"`
+  after the full suite passes.

@@ -2780,18 +2780,29 @@ Still fails:
   references/copy-on-write, exact native error objects, and native lowering
   remain unsupported.
 - Added explicit parse diagnostics for unsupported compound assignment forms
-  before read-modify-write execution exists. The parser now rejects statement
-  and expression-position forms using `+=`, `-=`, `*=`, `/=`, and `.=` with a
+  before read-modify-write execution existed. The parser rejected statement and
+  expression-position forms using `+=`, `-=`, `*=`, `/=`, and `.=` with a
   stable compound-assignment diagnostic, including direct variable,
   array-offset, and object-property target coverage. Fixture and CLI snapshot
-  coverage record a representative `phpc run` failure, and native emission
-  rejects the same syntax at parse time. Compound assignment result values,
-  read-modify-write ordering, array/object target execution,
-  references/copy-on-write, numeric/string coercion recovery, exact native
-  error objects, and native lowering remain unsupported.
+  coverage recorded a representative `phpc run` failure, and native emission
+  rejected the same syntax at parse time. The direct-variable statement slice
+  was implemented later.
+- Implemented direct static-variable compound assignment for `$name += expr`,
+  `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
+  the current scalar value model. Statement-level assignments and `for`
+  initializer/increment slots now perform read-modify-write through the
+  existing PHP-shaped arithmetic and concatenation helpers, including stable
+  undefined-variable, division-by-zero, and non-numeric-string diagnostics.
+  Fixture and CLI snapshot coverage record the success path and undefined
+  left-hand runtime error, system PHP comparison passes for the supported
+  fixture, expression-position compound assignment and array/object compound
+  targets still fail with stable parse diagnostics, and native emission rejects
+  compound assignment explicitly until lowering exists. Array/object target
+  execution, assignment result values, references/copy-on-write,
+  increment/decrement operators, broader PHP coercion warning recovery, exact
+  native error objects, and native lowering remain unsupported.
 
 Next:
 
-- Implement direct static-variable compound assignment for the current scalar
-  value model, keeping array/object targets and native lowering explicitly
-  unsupported.
+- Add an explicit increment/decrement operator boundary for `++` and `--`
+  before executable pre/post increment semantics exist.
