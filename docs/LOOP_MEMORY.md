@@ -12148,3 +12148,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:07:00Z
 
 - Post-round 44 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:07:12Z
+
+- Starting round 45 at 20260513T030712Z from HEAD `45a3087`.
+
+## Loop Event 2026-05-13T03:07:24Z
+
+- Pre-round 45 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:38:00Z
+
+- Task attempted: implemented Milestone 154 bitwise `&`, `|`, and `^` over the
+  current integer/string subset. The lexer/parser now accept the operators with
+  PHP-style precedence between equality and symbolic logical operators; the
+  interpreter returns integer results for current scalar-to-int operands and
+  bytewise string results for string-string operands when the resulting runtime
+  string remains valid UTF-8. Native codegen rejects bitwise expressions
+  explicitly until lowering exists.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/bitwise_operators.rs`,
+  `compiler/tests/bitwise_operators_cli.rs`,
+  `tests/fixtures/milestone154/bitwise_operators.php`,
+  `tests/fixtures/milestone154/bitwise_operators.stdout`,
+  `tests/fixtures/milestone154/bitwise_operators.cli`,
+  `tests/fixtures/runtime_errors/bitwise_non_numeric_string.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  bitwise_operators --test bitwise_operators_cli` passed; `cargo run -p phpc
+  -- test tests/fixtures/milestone154` passed with 1 fixture; `cargo run -p
+  phpc -- test --compare-php tests/fixtures/milestone154` passed with 1
+  system PHP comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 158 fixtures; `cargo run -p phpc -- run
+  tests/fixtures/milestone154/bitwise_operators.php` printed the committed CLI
+  exercise output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/bitwise_non_numeric_string.php` exited `1`
+  with the expected stable diagnostic; `tools/run-tests.sh` passed with 399
+  fixtures, 150 system PHP comparisons, and 249 comparison skips.
+- Remaining semantic gaps: arbitrary binary string results outside UTF-8,
+  non-numeric mixed strings beyond the current stable diagnostic,
+  arrays/objects, bitwise compound assignment (`&=`, `|=`, `^=`), unary
+  bitwise not (`~`), shift operators, PHP warning/deprecation recovery for
+  float-to-int precision loss, references/copy-on-write side effects, exact
+  native error objects, and native lowering remain unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  logical `xor`, including parser/runtime behavior, fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "bitwise operators: add int and string execution"`.

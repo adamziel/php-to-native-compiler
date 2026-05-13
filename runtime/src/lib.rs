@@ -283,6 +283,9 @@ pub enum ArithmeticOp {
     Multiply,
     Divide,
     Negate,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
 }
 
 impl fmt::Display for ArithmeticOp {
@@ -293,6 +296,9 @@ impl fmt::Display for ArithmeticOp {
             ArithmeticOp::Multiply => write!(f, "*"),
             ArithmeticOp::Divide => write!(f, "/"),
             ArithmeticOp::Negate => write!(f, "unary -"),
+            ArithmeticOp::BitwiseAnd => write!(f, "&"),
+            ArithmeticOp::BitwiseOr => write!(f, "|"),
+            ArithmeticOp::BitwiseXor => write!(f, "^"),
         }
     }
 }
@@ -1827,6 +1833,33 @@ impl Value {
         )))
     }
 
+    pub fn php_bitwise_and(&self, other: &Value) -> RuntimeResult<Value> {
+        self.php_bitwise(
+            other,
+            ArithmeticOp::BitwiseAnd,
+            |left, right| left & right,
+            |left, right| left & right,
+        )
+    }
+
+    pub fn php_bitwise_or(&self, other: &Value) -> RuntimeResult<Value> {
+        self.php_bitwise(
+            other,
+            ArithmeticOp::BitwiseOr,
+            |left, right| left | right,
+            |left, right| left | right,
+        )
+    }
+
+    pub fn php_bitwise_xor(&self, other: &Value) -> RuntimeResult<Value> {
+        self.php_bitwise(
+            other,
+            ArithmeticOp::BitwiseXor,
+            |left, right| left ^ right,
+            |left, right| left ^ right,
+        )
+    }
+
     pub fn php_eq(&self, other: &Value) -> bool {
         self.php_cmp(other, Comparison::Eq)
     }
@@ -1939,6 +1972,86 @@ impl Value {
             )),
         }
     }
+
+    fn php_bitwise(
+        &self,
+        other: &Value,
+        operation: ArithmeticOp,
+        byte_op: fn(u8, u8) -> u8,
+        int_op: fn(i64, i64) -> i64,
+    ) -> RuntimeResult<Value> {
+        if let (Value::String(left), Value::String(right)) = (self, other) {
+            return bitwise_strings(left, right, operation, byte_op).map(Value::String);
+        }
+
+        let left = self.to_bitwise_int(operation)?;
+        let right = other.to_bitwise_int(operation)?;
+        Ok(Value::Int(int_op(left, right)))
+    }
+
+    fn to_bitwise_int(&self, operation: ArithmeticOp) -> RuntimeResult<i64> {
+        match self {
+            Value::Null => Ok(0),
+            Value::Bool(false) => Ok(0),
+            Value::Bool(true) => Ok(1),
+            Value::Int(value) => Ok(*value),
+            Value::Float(value) => Ok(*value as i64),
+            Value::String(value) => match parse_numeric_string(value) {
+                Some(Number::Int(value)) => Ok(value),
+                Some(Number::Float(value)) => Ok(value as i64),
+                None => Err(RuntimeError::invalid_arithmetic(
+                    operation,
+                    "string is not numeric",
+                )),
+            },
+            Value::Array(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "arrays cannot be used with bitwise operators",
+            )),
+            Value::Object(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "objects cannot be used with bitwise operators",
+            )),
+        }
+    }
+}
+
+fn bitwise_strings(
+    left: &str,
+    right: &str,
+    operation: ArithmeticOp,
+    op: fn(u8, u8) -> u8,
+) -> RuntimeResult<String> {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let output = match operation {
+        ArithmeticOp::BitwiseAnd | ArithmeticOp::BitwiseXor => left
+            .iter()
+            .zip(right.iter())
+            .map(|(left, right)| op(*left, *right))
+            .collect(),
+        ArithmeticOp::BitwiseOr => {
+            let mut output = Vec::with_capacity(left.len().max(right.len()));
+            let common_len = left.len().min(right.len());
+            for index in 0..common_len {
+                output.push(op(left[index], right[index]));
+            }
+            if left.len() > common_len {
+                output.extend_from_slice(&left[common_len..]);
+            } else if right.len() > common_len {
+                output.extend_from_slice(&right[common_len..]);
+            }
+            output
+        }
+        _ => unreachable!("caller provided a bitwise operation"),
+    };
+
+    String::from_utf8(output).map_err(|_| {
+        RuntimeError::invalid_arithmetic(
+            operation,
+            "binary string results outside UTF-8 are not supported",
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

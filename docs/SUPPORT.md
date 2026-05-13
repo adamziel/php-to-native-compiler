@@ -83,6 +83,12 @@
   evaluated lazily, `&&` binds tighter than `||`, and word operators `and` and
   `or` bind lower than assignment in the current expression and statement
   parser subset
+- bitwise operators `&`, `|`, and `^` over the current integer/string subset:
+  integer-like operands produce integer results after current scalar-to-int
+  coercion, string-string operands use bytewise PHP behavior for `&`, `|`, and
+  `^` when the resulting runtime string remains valid UTF-8, and precedence is
+  `==`/`!=`/identity comparisons before `&`, then `^`, then `|`, then `&&`
+  and `||`
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, including truthiness-based condition selection,
@@ -276,7 +282,8 @@
   non-bool `in_array`/`array_search` strict-mode flag values, unsupported
   non-scalar `array_keys` search-value comparisons, non-bool `array_keys`
   strict-mode flag values, unsupported non-scalar `in_array`/`array_search`
-  comparisons, duplicate constants, undefined constants, unsupported
+  comparisons, bitwise non-numeric mixed string operands, bitwise array/object
+  operands, duplicate constants, undefined constants, unsupported
   `global` declarations, duplicate class/member metadata, undefined classes,
   unsupported object instantiation, undefined object properties, invalid
   property targets, unsupported non-public property access, non-object
@@ -1723,9 +1730,19 @@
 - Logical operators are limited to `&&`, `||`, `and`, and `or` over the
   current truthiness rules. They short-circuit and return booleans, and fixture
   coverage exercises symbolic precedence plus word-operator precedence around
-  direct assignment expressions. Bitwise `&`, `|`, `^`, logical `xor`,
-  operator-overloaded extension values, references/copy-on-write side effects,
-  exact native error objects, and native lowering are not implemented.
+  direct assignment expressions. Logical `xor`, operator-overloaded extension
+  values, references/copy-on-write side effects, exact native error objects,
+  and native lowering are not implemented.
+- Bitwise operators are limited to `&`, `|`, and `^` over the current
+  integer/string subset. Mixed operands use the current scalar-to-int coercion
+  path; string-string operands use bytewise operations but still store results
+  in the runtime's UTF-8 `String` value, so arbitrary binary outputs that are
+  not valid UTF-8 fail with a stable runtime diagnostic. Non-numeric mixed
+  strings fail instead of modeling PHP's exact native `TypeError` object,
+  arrays/objects are rejected, `&=`, `|=`, `^=`, unary bitwise not `~`, shift
+  operators, PHP warning/deprecation recovery for float-to-int precision loss,
+  references/copy-on-write side effects, and native lowering are not
+  implemented.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution

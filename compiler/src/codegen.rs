@@ -283,6 +283,15 @@ impl LlvmGenerator {
                         "logical operators are supported by phpc run but not LLVM IR emission yet",
                     ));
                 }
+                if matches!(
+                    op,
+                    BinaryOp::BitwiseAnd | BinaryOp::BitwiseOr | BinaryOp::BitwiseXor
+                ) {
+                    return Err(self.unsupported(
+                        *span,
+                        "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet",
+                    ));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -340,6 +349,12 @@ impl LlvmGenerator {
                 span,
                 "logical operators are supported by phpc run but not LLVM IR emission yet",
             )),
+            BinaryOp::BitwiseAnd | BinaryOp::BitwiseOr | BinaryOp::BitwiseXor => {
+                Err(self.unsupported(
+                    span,
+                    "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet",
+                ))
+            }
         }
     }
 
@@ -893,6 +908,15 @@ impl CGenerator {
                         "logical operators are supported by phpc run but not assembly emission yet",
                     ));
                 }
+                if matches!(
+                    op,
+                    BinaryOp::BitwiseAnd | BinaryOp::BitwiseOr | BinaryOp::BitwiseXor
+                ) {
+                    return Err(self.unsupported(
+                        *span,
+                        "bitwise operators are supported by phpc run for the current int/string subset but not assembly emission yet",
+                    ));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -950,6 +974,12 @@ impl CGenerator {
                 span,
                 "logical operators are supported by phpc run but not assembly emission yet",
             )),
+            BinaryOp::BitwiseAnd | BinaryOp::BitwiseOr | BinaryOp::BitwiseXor => {
+                Err(self.unsupported(
+                    span,
+                    "bitwise operators are supported by phpc run for the current int/string subset but not assembly emission yet",
+                ))
+            }
         }
     }
 

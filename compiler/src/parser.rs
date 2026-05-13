@@ -1607,13 +1607,58 @@ impl Parser {
     }
 
     fn parse_symbolic_logical_and(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_equality()?;
+        let mut expr = self.parse_bitwise_or()?;
         while self.match_token(|kind| matches!(kind, TokenKind::AmpAmp)) {
-            let right = self.parse_equality()?;
+            let right = self.parse_bitwise_or()?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: BinaryOp::LogicalAnd,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitwise_or(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_bitwise_xor()?;
+        while self.match_token(|kind| matches!(kind, TokenKind::Pipe)) {
+            let right = self.parse_bitwise_xor()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitwiseOr,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitwise_xor(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_bitwise_and()?;
+        while self.match_token(|kind| matches!(kind, TokenKind::Caret)) {
+            let right = self.parse_bitwise_and()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitwiseXor,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitwise_and(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_equality()?;
+        while self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+            let right = self.parse_equality()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitwiseAnd,
                 right: Box::new(right),
                 span,
             };
@@ -2905,6 +2950,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::QuestionQuestion => "??",
         TokenKind::Pipe => "|",
         TokenKind::PipePipe => "||",
+        TokenKind::Caret => "^",
         TokenKind::Colon => ":",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",

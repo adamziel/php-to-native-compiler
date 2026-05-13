@@ -68,6 +68,10 @@ subset:
   short-circuit evaluation, boolean result values, PHP-style `&&`/`||`
   precedence, and lower-than-assignment `and`/`or` precedence in the current
   expression and statement parser subset
+- bitwise `&`, `|`, and `^` over the current integer/string subset, including
+  PHP-style precedence, integer results for non-string-string operands after
+  current scalar-to-int coercion, and bytewise string results for string-string
+  operands when the resulting runtime string remains valid UTF-8
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
   expression/value subset, with truthiness-based condition selection,

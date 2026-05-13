@@ -3057,12 +3057,24 @@ Still fails:
   boolean results based on current truthiness. Fixture, CLI snapshot, unit, and
   system PHP comparison coverage exercise truthiness, lazy evaluation,
   symbolic precedence, word-operator assignment interaction, and explicit
-  native-codegen rejection. Bitwise `&`, `|`, `^`, logical `xor`,
-  references/copy-on-write side effects, exact native error objects, and native
-  lowering remain unsupported.
+  native-codegen rejection. Logical `xor`, references/copy-on-write side
+  effects, exact native error objects, and native lowering remain unsupported.
+- Implemented bitwise `&`, `|`, and `^` over the current integer/string subset.
+  The lexer and parser now accept the operators with PHP-style precedence
+  between equality and symbolic logical operators. The interpreter returns
+  integer results for current scalar-to-int operands and bytewise string
+  results for string-string operands when the resulting runtime string remains
+  valid UTF-8. Fixture, CLI snapshot, unit, runtime-error fixture, system PHP
+  comparison, and explicit native-codegen rejection coverage exercise integer
+  results, string results, mixed numeric strings, booleans/null, precedence,
+  and assignment-expression operands. Arbitrary binary strings outside UTF-8,
+  non-numeric mixed strings, arrays/objects, bitwise compound assignment,
+  unary bitwise not, shifts, PHP warning/deprecation recovery for float-to-int
+  precision loss, references/copy-on-write side effects, exact native error
+  objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for bitwise operators `&`,
-  `|`, and `^`, including parser/runtime behavior, fixture CLI coverage,
-  documentation, native-codegen behavior, and named gaps.
+- Add the next honest boundary or executable slice for logical `xor`, including
+  parser/runtime behavior, fixture CLI coverage, documentation, native-codegen
+  behavior, and named gaps.

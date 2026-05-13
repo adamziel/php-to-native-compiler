@@ -1473,9 +1473,17 @@ handled.
 
 ## Milestone 154: Bitwise Operator Boundary
 
-- [ ] Add the next honest boundary or executable slice for bitwise operators
+- [x] Add the next honest boundary or executable slice for bitwise operators
   `&`, `|`, and `^`, including parser/runtime behavior, fixture CLI coverage,
   documentation, native-codegen behavior, and named gaps for integer/string
   operand semantics, precedence, assignment-expression interaction,
   references/copy-on-write, exact native warning/error behavior, and native
   lowering.
+
+## Milestone 155: Logical Xor Boundary
+
+- [ ] Add the next honest boundary or executable slice for logical `xor`,
+  including parser/runtime behavior, fixture CLI coverage, documentation,
+  native-codegen behavior, and named gaps for precedence, assignment-expression
+  interaction, references/copy-on-write, exact native error behavior, and
+  native lowering.

@@ -318,5 +318,13 @@
   truthiness, with short-circuit evaluation, boolean results, PHP-style
   symbolic precedence, lower-than-assignment word-operator precedence,
   fixture/CLI coverage, system PHP comparison, and explicit native-codegen
-  rejection. Bitwise operators, logical `xor`, references/copy-on-write side
-  effects, exact native error objects, and native lowering remain unsupported.
+  rejection. Logical `xor`, references/copy-on-write side effects, exact
+  native error objects, and native lowering remain unsupported.
+- Implemented bitwise `&`, `|`, and `^` over the current integer/string
+  subset, with PHP-style precedence, integer results for current scalar-to-int
+  operands, bytewise string-string results when the runtime string remains
+  valid UTF-8, fixture/CLI coverage, system PHP comparison, stable runtime
+  diagnostics for non-numeric mixed strings, and explicit native-codegen
+  rejection. Arbitrary binary strings outside UTF-8, arrays/objects, bitwise
+  compound assignment, unary `~`, shifts, exact PHP warning/error objects,
+  references/copy-on-write, and native lowering remain explicit gaps.

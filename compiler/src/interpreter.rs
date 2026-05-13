@@ -3777,6 +3777,9 @@ impl Interpreter {
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
                 unreachable!("logical operators are evaluated lazily")
             }
+            BinaryOp::BitwiseAnd => left.php_bitwise_and(&right),
+            BinaryOp::BitwiseOr => left.php_bitwise_or(&right),
+            BinaryOp::BitwiseXor => left.php_bitwise_xor(&right),
             BinaryOp::Lt => left
                 .php_cmp_checked(&right, Comparison::Lt)
                 .map(Value::Bool),
