@@ -16309,5 +16309,5 @@ injects this file into every prompt. Each Codex pass should update it with:
   fallback output boundary before broader runtime-backed native lowering.
 - Known-good tag: not created; this is narrow native assembly CLI coverage, not
   a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot mixed scalar output assembly"`
-  after the full suite passes.
+- Checkpoint: `b0ccf87` (`codegen: snapshot mixed scalar output assembly`).
+  A follow-up docs checkpoint records this commit hash in durable loop memory.
