@@ -1,7 +1,8 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
     ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl,
-    FunctionParam, IncrementDecrementOp, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program, Span, Stmt,
+    SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -967,6 +968,7 @@ impl Parser {
     }
 
     fn try_parse_prefix_increment_decrement_statement(&mut self) -> CompileResult<Option<Stmt>> {
+        let saved = self.current;
         let operator_span = self.peek().span;
         let Some(op) = self.match_increment_decrement_operator() else {
             return Ok(None);
@@ -982,10 +984,8 @@ impl Parser {
         let target = self.parse_assignment_target()?;
         if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
             if matches!(target, AssignTarget::Variable { .. }) {
-                return Err(self.error_at(
-                    operator_span,
-                    unsupported_increment_decrement_expression_message(),
-                ));
+                self.current = saved;
+                return Ok(None);
             }
             return Err(self.error_at(
                 target.span(),
@@ -1022,10 +1022,8 @@ impl Parser {
             if let Some(op) = self.match_increment_decrement_operator() {
                 if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
                     if matches!(target, AssignTarget::Variable { .. }) {
-                        return Err(self.error_at(
-                            target.span(),
-                            unsupported_increment_decrement_expression_message(),
-                        ));
+                        self.current = saved;
+                        return Ok(None);
                     }
                     return Err(self.error_at(
                         target.span(),
@@ -1396,11 +1394,36 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> CompileResult<Expr> {
-        if self.check_increment_decrement_operator() {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_increment_decrement_expression_message(),
-            ));
+        let operator_span = self.peek().span;
+        if let Some(op) = self.match_increment_decrement_operator() {
+            if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+                return Err(self.error_at(
+                    operator_span,
+                    unsupported_increment_decrement_target_message(),
+                ));
+            }
+
+            let target = self.parse_assignment_target()?;
+            let AssignTarget::Variable { name, .. } = target else {
+                return Err(self.error_at(
+                    target.span(),
+                    unsupported_increment_decrement_target_message(),
+                ));
+            };
+
+            if self.check_increment_decrement_operator() {
+                return Err(self.error_at(
+                    operator_span,
+                    unsupported_increment_decrement_expression_message(),
+                ));
+            }
+
+            return Ok(Expr::IncrementDecrement {
+                name,
+                op,
+                position: IncrementDecrementPosition::Pre,
+                span: operator_span,
+            });
         }
 
         if self.match_token(|kind| matches!(kind, TokenKind::Minus)) {
@@ -1478,10 +1501,22 @@ impl Parser {
             }
 
             if self.check_increment_decrement_operator() {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_increment_decrement_expression_message(),
-                ));
+                let Expr::Variable(name, span) = expr else {
+                    return Err(self.error_at(
+                        expr.span(),
+                        unsupported_increment_decrement_target_message(),
+                    ));
+                };
+                let op = self
+                    .match_increment_decrement_operator()
+                    .expect("caller checked increment/decrement operator");
+                expr = Expr::IncrementDecrement {
+                    name,
+                    op,
+                    position: IncrementDecrementPosition::Post,
+                    span,
+                };
+                continue;
             }
 
             break;
@@ -1893,6 +1928,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
+            | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
@@ -1936,6 +1972,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
+            | Expr::IncrementDecrement { .. }
             | Expr::New { .. } => Err(self.error_at(
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
@@ -2370,7 +2407,7 @@ fn unsupported_compound_assignment_target_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_expression_message() -> &'static str {
-    "unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset"
+    "unsupported increment/decrement expression: chained increment/decrement expressions are not implemented"
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {

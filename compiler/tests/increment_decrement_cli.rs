@@ -8,7 +8,7 @@ fn increment_decrement_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dirs = ["milestone134", "milestone135"];
+    let fixture_dirs = ["milestone134", "milestone135", "milestone136"];
     let mut fixtures = fixture_dirs
         .iter()
         .flat_map(|dir| {

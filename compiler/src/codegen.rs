@@ -241,6 +241,10 @@ impl LlvmGenerator {
                 *span,
                 "unary expressions are supported by phpc run but not LLVM IR emission yet",
             )),
+            Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
+                *span,
+                "increment/decrement expressions are supported by phpc run for direct static int/float variables but not LLVM IR emission yet",
+            )),
             Expr::Binary {
                 left,
                 op,
@@ -816,6 +820,10 @@ impl CGenerator {
             Expr::Unary { span, .. } => Err(self.unsupported(
                 *span,
                 "unary expressions are supported by phpc run but not assembly emission yet",
+            )),
+            Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
+                *span,
+                "increment/decrement expressions are supported by phpc run for direct static int/float variables but not assembly emission yet",
             )),
             Expr::Binary {
                 left,

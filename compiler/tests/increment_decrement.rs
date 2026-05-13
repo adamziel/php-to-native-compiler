@@ -55,11 +55,54 @@ echo "done:", $sum, "\n";
 }
 
 #[test]
+fn expression_increment_decrement_returns_pre_or_post_values() {
+    let execution = run_source(
+        r#"<?php
+$int = 10;
+echo ++$int, ":", $int, "\n";
+echo $int++, ":", $int, "\n";
+echo --$int, ":", $int, "\n";
+echo $int--, ":", $int, "\n";
+
+$value = 2;
+echo $value++ + 10, ":", $value, "\n";
+echo ++$value + 10, ":", $value, "\n";
+echo $value++ + $value++, ":", $value, "\n";
+
+$side = 1;
+++$side + 10;
+echo "side:", $side, "\n";
+$side++ + 10;
+echo "side:", $side, "\n";
+
+$float = 1.5;
+echo $float++, ":", $float, "\n";
+echo --$float, ":", $float, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "11:11\n11:12\n11:11\n11:10\n12:3\n14:4\n9:6\nside:2\nside:3\n1.5:2.5\n1.5:1.5\n"
+    );
+}
+
+#[test]
 fn undefined_increment_decrement_left_side_is_runtime_error() {
     let error = runtime_error("<?php\n$missing++;\n");
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined variable '$missing'");
+}
+
+#[test]
+fn expression_undefined_increment_decrement_left_side_is_runtime_error() {
+    let error = runtime_error("<?php\necho $missing++;\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
     assert_eq!(error.message, "undefined variable '$missing'");
 }
 
@@ -85,6 +128,18 @@ fn increment_decrement_rejects_non_numeric_current_gap() {
 }
 
 #[test]
+fn expression_increment_decrement_rejects_non_numeric_current_gap() {
+    let error = runtime_error("<?php\n$value = 'az';\necho ++$value;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call increment/decrement: only int and float variables are implemented, got string"
+    );
+}
+
+#[test]
 fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
     let error = runtime_error(
         "<?php\n$value = 'az';\n$go = true;\nfor (; $go; ++$value) {\n    $go = false;\n}\n",
@@ -95,6 +150,19 @@ fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(
         error.message,
         "unsupported call increment/decrement: only int and float variables are implemented, got string"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_increment_decrement_expressions_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value = 1;\necho $value++;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "increment/decrement expressions are supported by phpc run for direct static int/float variables but not LLVM IR emission yet"
     );
 }
 

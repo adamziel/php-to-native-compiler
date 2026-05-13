@@ -408,18 +408,6 @@ fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
 fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$value = 1;\necho ++$value;\n",
-            3,
-            6,
-            "unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset",
-        ),
-        (
-            "<?php\n$value = 1;\necho $value--;\n",
-            3,
-            12,
-            "unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset",
-        ),
-        (
             "<?php\n$values = [1];\n++$values[0];\n",
             3,
             3,
@@ -430,6 +418,24 @@ fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
             3,
             1,
             "unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented",
+        ),
+        (
+            "<?php\n$values = [1];\necho ++$values[0];\n",
+            3,
+            8,
+            "unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented",
+        ),
+        (
+            "<?php\n$values = [1];\necho $values[0]--;\n",
+            3,
+            6,
+            "unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented",
+        ),
+        (
+            "<?php\n$value = 1;\necho ++$value++;\n",
+            3,
+            6,
+            "unsupported increment/decrement expression: chained increment/decrement expressions are not implemented",
         ),
     ];
 
@@ -468,13 +474,13 @@ fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors()
 }
 
 #[test]
-fn emit_ir_rejects_increment_decrement_at_parse_boundary() {
+fn emit_ir_rejects_increment_decrement_expressions_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$value = 1;\necho $value++;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "unsupported increment/decrement expression: increment/decrement is only implemented as direct-variable statements in the current subset"
+        "increment/decrement expressions are supported by phpc run for direct static int/float variables but not LLVM IR emission yet"
     );
 }
 

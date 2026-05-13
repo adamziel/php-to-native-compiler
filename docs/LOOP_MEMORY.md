@@ -11046,3 +11046,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T00:33:29Z
 
 - Post-round 26 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T00:33:40Z
+
+- Starting round 27 at 20260513T003340Z from HEAD `3e56d9d`.
+
+## Loop Event 2026-05-13T00:33:52Z
+
+- Pre-round 27 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:42:01Z
+
+- Task attempted: implemented expression-position direct static-variable
+  pre/post increment and decrement for existing integer and float variables.
+  Prefix forms return the updated value, postfix forms return the previous
+  value, and both mutate the variable in place through the same
+  read-modify-write helper used by statement and `for` header forms.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/increment_decrement_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone136/expression_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/expression_undefined_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/expression_unsupported_string_increment.*`,
+  updated increment/decrement unsupported-syntax fixtures, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test increment_decrement -- --nocapture`
+  passed with 12 tests; `cargo test -p phpc --test syntax_boundaries increment -- --nocapture`
+  passed with 3 filtered tests; `cargo test -p phpc --test
+  increment_decrement_cli -- --nocapture` passed; `cargo test -p phpc --test
+  runtime_error_cli -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone136` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone136` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 26 fixtures; `cargo
+  run -p phpc -- test tests/fixtures/runtime_errors` passed with 152
+  fixtures; `cargo run -p phpc -- compile
+  tests/fixtures/milestone136/expression_increment_decrement.php --emit-ir`
+  exited `1` with the expected codegen rejection; `tools/run-tests.sh` passed
+  with 375 fixtures, 132 system PHP comparisons, and 243 comparison skips.
+- Remaining semantic gaps: PHP string increment/decrement semantics,
+  array-offset and object-property increment/decrement targets, chained
+  increment/decrement expressions, references, copy-on-write, exact native
+  warning/error behavior, broader PHP coercion recovery, and native lowering
+  remain unsupported.
+- Next concrete task: implement expression-position direct static-variable
+  assignment `$name = expr` for the current value model, including assignment
+  result values and explicit gaps for chained assignments, complex lvalues,
+  references/copy-on-write, exact native error objects, and native lowering.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add increment decrement expressions"`
+  after the full suite passes.

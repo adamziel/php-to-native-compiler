@@ -318,6 +318,12 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    IncrementDecrement {
+        name: String,
+        op: IncrementDecrementOp,
+        position: IncrementDecrementPosition,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -341,7 +347,8 @@ impl Expr {
             | Expr::DynamicCall { span, .. }
             | Expr::New { span, .. }
             | Expr::Binary { span, .. }
-            | Expr::Unary { span, .. } => *span,
+            | Expr::Unary { span, .. }
+            | Expr::IncrementDecrement { span, .. } => *span,
         }
     }
 }
@@ -383,4 +390,10 @@ pub enum CompoundAssignOp {
 pub enum IncrementDecrementOp {
     Increment,
     Decrement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncrementDecrementPosition {
+    Pre,
+    Post,
 }

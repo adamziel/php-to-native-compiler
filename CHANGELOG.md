@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Implemented expression-position direct static-variable pre/post increment
+  and decrement for existing integer and float variables, including
+  pre-vs-post result values, read-modify-write behavior, undefined-variable
+  and unsupported-string diagnostics, fixture/CLI coverage, system PHP
+  comparison, documentation, and native-codegen rejection while string
+  increment semantics, array/object targets, chained increment/decrement
+  expressions, references, copy-on-write, and broader PHP warning recovery
+  remain explicit gaps.
 - Implemented direct static-variable pre/post increment and decrement in
   C-style `for` initializer and increment slots for existing integer and float
   variables, including loop execution behavior, undefined-variable and
@@ -17,7 +25,7 @@
 - Added explicit unsupported pre/post increment and decrement diagnostics
   before executable statement-level semantics existed. After the executable
   direct-variable int/float slice, the retained diagnostics cover
-  expression-position increment/decrement and unsupported array/object targets.
+  unsupported array/object targets.
 - Implemented direct static-variable compound assignment for `+=`, `-=`, `*=`,
   `/=`, and `.=` over the current scalar value model, including
   read-modify-write behavior in statements and `for` headers, undefined

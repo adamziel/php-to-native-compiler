@@ -10,8 +10,8 @@ use php_runtime::{
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, CompoundAssignOp,
-    Expr, ForAction, FunctionDecl, IncrementDecrementOp, Program, Span, Stmt, SwitchCase, UnaryOp,
-    UnsetTarget,
+    Expr, ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, Program, Span,
+    Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -602,6 +602,12 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
             }
+            Expr::IncrementDecrement {
+                name,
+                op,
+                position,
+                span,
+            } => self.evaluate_increment_decrement(name, *op, *position, *span, scope),
             Expr::Binary {
                 left,
                 op,
@@ -754,7 +760,35 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let value = scope.read_static(name, span)?;
-        let updated = match (value, op) {
+        let updated = Self::increment_decrement_value(value, op, span)?;
+        scope.write_static(name, updated);
+        Ok(())
+    }
+
+    fn evaluate_increment_decrement(
+        &mut self,
+        name: &str,
+        op: IncrementDecrementOp,
+        position: IncrementDecrementPosition,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let previous = scope.read_static(name, span)?;
+        let updated = Self::increment_decrement_value(previous.clone(), op, span)?;
+        scope.write_static(name, updated.clone());
+
+        Ok(match position {
+            IncrementDecrementPosition::Pre => updated,
+            IncrementDecrementPosition::Post => previous,
+        })
+    }
+
+    fn increment_decrement_value(
+        value: Value,
+        op: IncrementDecrementOp,
+        span: Span,
+    ) -> CompileResult<Value> {
+        Ok(match (value, op) {
             (Value::Int(value), IncrementDecrementOp::Increment) => {
                 Value::Int(value.wrapping_add(1))
             }
@@ -775,9 +809,7 @@ impl Interpreter {
                     ),
                 ));
             }
-        };
-        scope.write_static(name, updated);
-        Ok(())
+        })
     }
 
     fn execute_null_coalesce_assignment(

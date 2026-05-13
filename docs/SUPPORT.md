@@ -22,9 +22,10 @@
   `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
   `$name .= expr` over the current scalar value model
 - direct static-variable pre/post increment and decrement in statement
-  position and in C-style `for` initializer/increment slots: `++$name`,
-  `$name++`, `--$name`, and `$name--` for existing integer and float variables
-  only
+  position, expression position, and C-style `for` initializer/increment
+  slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
+  and float variables only. In expressions, pre forms return the updated
+  value and post forms return the previous value.
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings
 - unary `-` and `!`
@@ -277,8 +278,8 @@
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables and for expression-position compound
   assignment forms before assignment expressions have value semantics
-- explicit parse diagnostics for unsupported increment/decrement expression
-  forms and targets outside direct static variables
+- explicit parse diagnostics for unsupported increment/decrement targets
+  outside direct static variables and chained increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -1586,14 +1587,13 @@
   references/copy-on-write, PHP warning recovery, exact native error objects,
   and native lowering are not implemented.
 - Pre/post increment and decrement is limited to direct static variables whose
-  current values are integers or floats, either as standalone statements or as
-  single C-style `for` initializer/increment actions. Pre and post forms both
-  update the variable in place; expression result values are not exposed
-  because expression-position increment/decrement remains unsupported.
-  Strings, arrays, objects, undefined variables, array-offset targets,
-  object-property targets, references, copy-on-write, exact native
-  warning/error behavior, PHP string increment semantics, broader coercion
-  recovery, and native lowering are not implemented.
+  current values are integers or floats, either as standalone statements,
+  expressions, or single C-style `for` initializer/increment actions.
+  Expression pre forms return the updated value and expression post forms
+  return the previous value. Strings, arrays, objects, undefined variables,
+  array-offset targets, object-property targets, references, copy-on-write,
+  exact native warning/error behavior, PHP string increment semantics, broader
+  coercion recovery, and native lowering are not implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus
   direct-variable `$name ??= expr`, direct array-offset `$array[$key] ??=

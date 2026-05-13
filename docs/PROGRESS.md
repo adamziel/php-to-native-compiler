@@ -2803,21 +2803,21 @@ Still fails:
   native error objects, and native lowering remain unsupported.
 - Added explicit parse diagnostics for unsupported pre/post increment and
   decrement operators before executable `++`/`--` semantics existed. After the
-  direct-variable statement slice was added, the retained parse diagnostics
-  cover expression-position increment/decrement and array/object targets.
+  direct-variable statement and expression slices were added, the retained
+  parse diagnostics cover array/object targets.
 - Implemented statement-level direct static-variable pre/post increment and
   decrement for existing integer and float variables. `++$name`, `$name++`,
   `--$name`, and `$name--` now update the variable in place for the current
   int/float subset, undefined variables fail with the existing stable
   undefined-variable diagnostic, strings fail with a stable unsupported
-  increment/decrement diagnostic, and array/object targets plus
-  expression-position forms still fail at parse time. Fixture and CLI snapshot
+  increment/decrement diagnostic, and array/object targets still fail at parse
+  time. Fixture and CLI snapshot
   coverage record the success and runtime-error paths, system PHP comparison
   passes for the supported int/float fixture, and native emission rejects
   increment/decrement explicitly until lowering exists. PHP string increment
-  behavior, arrays, objects, references, copy-on-write, expression result
-  values for pre/post forms, exact native warning/error behavior, broader
-  coercion recovery, and native lowering remain unsupported.
+  behavior, arrays, objects, references, copy-on-write, exact native
+  warning/error behavior, broader coercion recovery, and native lowering remain
+  unsupported.
 - Implemented direct static-variable pre/post increment and decrement in
   C-style `for` initializer and increment slots for existing integer and float
   variables. Header actions now reuse the same read-modify-write execution path
@@ -2828,15 +2828,27 @@ Still fails:
   increment/decrement diagnostic, fixture and CLI snapshot coverage record the
   success and runtime-error paths, system PHP comparison passes for the
   supported header fixture, and native emission rejects the containing `for`
-  loop until lowering exists. Expression-position increment/decrement result
-  values, strings, array/object targets, references, copy-on-write, exact
-  native warning/error behavior, broader coercion recovery, and native lowering
-  remain unsupported.
+  loop until lowering exists. Strings, array/object targets, references,
+  copy-on-write, exact native warning/error behavior, broader coercion
+  recovery, and native lowering remain unsupported.
+- Implemented expression-position direct static-variable pre/post increment
+  and decrement for existing integer and float variables. Prefix forms return
+  the updated value, postfix forms return the previous value, and both mutate
+  the variable in place through the same read-modify-write path as statements
+  and `for` header actions. Undefined expression operands fail with the stable
+  undefined-variable diagnostic, string operands fail with the stable
+  unsupported increment/decrement diagnostic, fixture and CLI snapshot coverage
+  record success and runtime-error paths, system PHP comparison passes for the
+  supported expression fixture, array/object targets remain parse-boundary
+  gaps, chained increment/decrement expressions retain a stable parse
+  diagnostic, and native emission rejects increment/decrement expressions
+  explicitly until lowering exists. PHP string increment behavior, arrays,
+  objects, references, copy-on-write, exact native warning/error behavior,
+  broader coercion recovery, and native lowering remain unsupported.
 
 Next:
 
-- Implement expression-position direct static-variable pre/post
-  increment/decrement for the same integer/float value subset, including
-  pre-vs-post result values, while keeping strings, array/object targets,
-  references/copy-on-write, exact native warning/error behavior, broader
-  coercion recovery, and native lowering explicit gaps.
+- Implement direct static-variable assignment expressions for the current
+  scalar/array/object value model, including assignment result values and
+  explicit gaps for chained assignments, complex lvalues, references,
+  copy-on-write, exact native error objects, and native lowering.

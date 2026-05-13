@@ -1293,10 +1293,20 @@ handled.
 
 ## Milestone 136: Increment/Decrement Expression Follow-up
 
-- [ ] Implement expression-position direct static-variable pre/post increment
+- [x] Implement expression-position direct static-variable pre/post increment
   and decrement for integer and float variables, including pre-vs-post result
   values, read-modify-write behavior, undefined-variable and unsupported-type
   diagnostics, fixture CLI coverage, documentation, native-codegen rejection
   while lowering remains unsupported, and explicit gaps for strings,
-  array/object targets, references/copy-on-write, exact native warning/error
-  behavior, broader coercion recovery, and native lowering.
+  array/object targets, chained increment/decrement expressions,
+  references/copy-on-write, exact native warning/error behavior, broader
+  coercion recovery, and native lowering.
+
+## Milestone 137: Direct Variable Assignment Expression Slice
+
+- [ ] Implement expression-position direct static-variable assignment
+  `$name = expr` for the current value model, including assignment result
+  values, read/write ordering, fixture CLI coverage, documentation,
+  native-codegen rejection while lowering remains unsupported, and explicit
+  gaps for chained assignments, array/object targets, references,
+  copy-on-write, exact native error objects, and native lowering.
