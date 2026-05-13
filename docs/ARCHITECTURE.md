@@ -89,6 +89,11 @@ The C fallback exists only to keep `phpc compile --emit-asm` executable on
 machines without LLVM tools. It must not grow into the primary backend without a
 documented architecture decision.
 
+Current native lowering rejects PHP comparison operators before operand
+lowering. That keeps generated code from implying PHP comparison coercions,
+array/object comparison behavior, `NAN`/`INF` edge cases, or exact native error
+objects that only the interpreter path currently handles or diagnoses.
+
 ## Dynamic Features
 
 Dynamic PHP features will be implemented as runtime fallback zones:

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone165/native_comparison_boundary.php:2:6: LLVM comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics
+--- stderr end ---

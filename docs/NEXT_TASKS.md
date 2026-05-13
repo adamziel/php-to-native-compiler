@@ -1570,9 +1570,19 @@ handled.
 
 ## Milestone 165: Native Comparison Boundary
 
-- [ ] Add the next honest native-codegen boundary for comparison operators,
+- [x] Add the next honest native-codegen boundary for comparison operators,
   either by lowering a narrow scalar comparison subset in LLVM IR/C assembly or
   by tightening explicit diagnostics with fixture CLI coverage, documentation,
   and named gaps for PHP comparison coercions, arrays/objects, `NAN`/`INF`,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering.
+
+## Milestone 166: Native Logical Operator Boundary
+
+- [ ] Add the next honest native-codegen boundary for logical operators
+  `&&`, `||`, `and`, `xor`, and `or`, either by lowering a narrow boolean
+  result subset with short-circuit behavior where required or by tightening
+  explicit diagnostics with fixture CLI coverage, documentation, and named gaps
+  for truthiness over arrays/objects, side-effect ordering,
   references/copy-on-write, exact native error objects, and broader native
   lowering.

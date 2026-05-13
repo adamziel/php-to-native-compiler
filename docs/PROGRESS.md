@@ -3176,9 +3176,19 @@ Still fails:
   snapshot pins the native rejection. PHP warning/recovery behavior,
   references/copy-on-write side effects, exact native error objects, and
   broader numeric lowering remain unsupported.
+- Added a native comparison boundary. LLVM IR emission now rejects `==`, `!=`,
+  `===`, `!==`, `<`, `<=`, `>`, and `>=` before lowering operands, with a
+  specific codegen diagnostic until generated code has PHP comparison
+  coercions and non-scalar comparison diagnostics. The C assembly fallback
+  carries the same boundary for consistency, `phpc run` fixture coverage still
+  proves the current scalar comparison subset, and a `phpc compile --emit-ir`
+  CLI snapshot pins the native rejection. PHP comparison coercions for all
+  value types, arrays/objects, `NAN`/`INF`, references/copy-on-write side
+  effects, exact native error objects, and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for comparisons, either by
-  lowering a narrow scalar comparison subset or by tightening diagnostics and
-  fixture coverage for native comparison rejection.
+- Add the next honest native-codegen boundary for logical operators, either by
+  lowering a narrow boolean result subset or by tightening diagnostics and
+  fixture coverage for native logical-operator rejection.

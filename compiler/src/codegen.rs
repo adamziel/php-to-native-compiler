@@ -271,6 +271,12 @@ impl LlvmGenerator {
                 right,
                 span,
             } => {
+                if is_comparison_op(*op) {
+                    return Err(self.unsupported(
+                        *span,
+                        "LLVM comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics",
+                    ));
+                }
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.unsupported(
                         *span,
@@ -347,7 +353,7 @@ impl LlvmGenerator {
             | BinaryOp::Gt
             | BinaryOp::Ge => Err(self.unsupported(
                 span,
-                "comparisons are supported by phpc run but not LLVM IR emission yet",
+                "LLVM comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics",
             )),
             BinaryOp::NullCoalesce => Err(self.unsupported(
                 span,
@@ -968,6 +974,12 @@ impl CGenerator {
                 right,
                 span,
             } => {
+                if is_comparison_op(*op) {
+                    return Err(self.unsupported(
+                        *span,
+                        "assembly comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics",
+                    ));
+                }
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.unsupported(
                         *span,
@@ -1044,7 +1056,7 @@ impl CGenerator {
             | BinaryOp::Gt
             | BinaryOp::Ge => Err(self.unsupported(
                 span,
-                "comparisons are supported by phpc run but not assembly emission yet",
+                "assembly comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics",
             )),
             BinaryOp::NullCoalesce => Err(self.unsupported(
                 span,
@@ -1322,6 +1334,20 @@ fn classify_c_divisor(value: &CValue) -> NativeDivisorStatus {
         },
         CValue::String(_) => NativeDivisorStatus::UnsupportedCoercion,
     }
+}
+
+fn is_comparison_op(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::Eq
+            | BinaryOp::Ne
+            | BinaryOp::StrictEq
+            | BinaryOp::StrictNe
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Gt
+            | BinaryOp::Ge
+    )
 }
 
 fn format_float_literal(value: f64) -> String {

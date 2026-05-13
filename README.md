@@ -346,8 +346,10 @@ statically known zero divisors and runtime-computed divisors before emitting
 LLVM IR or fallback C; dynamic zero checks and PHP-shaped native
 `DivisionByZeroError` objects are not implemented. Native arithmetic also
 rejects string operands explicitly until numeric-string coercion exists in
-generated code. Unsupported programs and broader PHP coercions are rejected
-with structured codegen errors.
+generated code. Native comparison operators are rejected with a specific
+codegen diagnostic until generated code has PHP comparison coercions and
+non-scalar comparison diagnostics. Unsupported programs and broader PHP
+coercions are rejected with structured codegen errors.
 
 Fixture tests live under `tests/fixtures`. For editor-friendly expected-output
 files, the test runner strips one final newline from `.stdout` and `.stderr`

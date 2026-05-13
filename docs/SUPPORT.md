@@ -911,7 +911,10 @@
   and exact PHP error objects are still outside native lowering. Native
   arithmetic rejects string operands for `+`, `-`, `*`, `/`, and `%` with a
   specific codegen diagnostic until numeric-string coercion and non-numeric
-  string diagnostics exist in generated code.
+  string diagnostics exist in generated code. Native comparison operators
+  `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
+  operand lowering with a specific codegen diagnostic until generated code has
+  PHP comparison coercions and non-scalar comparison diagnostics.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
@@ -1535,11 +1538,13 @@
   yet, including well-formed numeric strings that `phpc run` can execute.
 - Scalar comparison gaps: strict identity is implemented only for the current
   scalar values. Strict identity for arrays, objects, resources, references,
-  object handle identity, and native lowering is not implemented. Array/object
-  strict identity operands fail with stable unsupported-comparison runtime
-  diagnostics. Float identity currently follows Rust/PHP-style `f64` equality
-  for representable literals and does not claim broader `NAN`/`INF` precision
-  edge-case coverage.
+  object handle identity, and native lowering is not implemented. LLVM
+  IR/assembly emission rejects all comparison operators explicitly instead of
+  lowering partial PHP comparison semantics. Array/object strict identity
+  operands fail with stable unsupported-comparison runtime diagnostics. Float
+  identity currently follows Rust/PHP-style `f64` equality for representable
+  literals and does not claim broader `NAN`/`INF` precision edge-case
+  coverage.
 - Array gaps: array spread elements and array reference elements are rejected
   with stable parse diagnostics. `unset(...)` forms outside direct variables
   and direct array-offset operands, comma-separated `for` header expression

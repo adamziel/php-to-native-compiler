@@ -12827,3 +12827,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:26:18Z
 
 - Post-round 55 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:26:30Z
+
+- Starting round 56 at 20260513T042629Z from HEAD `0b864e2`.
+
+## Loop Event 2026-05-13T04:26:43Z
+
+- Pre-round 56 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:36:58Z
+
+- Task attempted: completed Milestone 165 by tightening the native codegen
+  boundary for comparison operators. LLVM IR emission now rejects `==`, `!=`,
+  `===`, `!==`, `<`, `<=`, `>`, and `>=` before lowering operands with a
+  specific diagnostic until generated code has PHP comparison coercions and
+  non-scalar comparison diagnostics; the C assembly fallback carries the same
+  boundary for consistency. Runtime fixture coverage still proves the current
+  `phpc run` scalar comparison subset.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_comparison_boundary.rs`,
+  `compiler/tests/strict_identity.rs`,
+  `tests/fixtures/milestone165/native_comparison_boundary.php`,
+  `tests/fixtures/milestone165/native_comparison_boundary.stdout`,
+  `tests/fixtures/milestone165/native_comparison_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_comparison_boundary -- --nocapture` passed with 5 tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone165` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone165` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- compile
+  tests/fixtures/milestone165/native_comparison_boundary.php --emit-ir` exited
+  `1` with the expected explicit native comparison codegen diagnostic;
+  an initial `tools/run-tests.sh` run failed only because
+  `compiler/tests/strict_identity.rs` asserted the old diagnostic wording, then
+  `cargo test -p phpc --test strict_identity
+  emit_ir_rejects_strict_identity_until_native_comparison_lowering_exists`
+  passed after updating the assertion; final `tools/run-tests.sh` passed with
+  415 fixtures, 161 system PHP comparisons, and 254 comparison skips.
+- Remaining semantic gaps: generated code still lacks PHP comparison
+  coercions, comparison lowering for arrays/objects/resources, `NAN`/`INF`
+  edge-case behavior, references/copy-on-write side effects, exact native error
+  objects, and broader native lowering.
+- Next concrete task: add Milestone 166, the next honest native-codegen
+  boundary for logical operators, either by lowering a narrow boolean result
+  subset or by tightening diagnostics and fixture coverage for native
+  logical-operator rejection.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject comparison operators"`.

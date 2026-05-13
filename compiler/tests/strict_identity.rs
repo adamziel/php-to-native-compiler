@@ -89,5 +89,8 @@ fn emit_ir_rejects_strict_identity_until_native_comparison_lowering_exists() {
     let error = emit_ir_source("<?php\necho 1 === 1;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert!(error.message.contains("comparisons"), "{}", error.message);
+    assert_eq!(
+        error.message,
+        "LLVM comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics"
+    );
 }

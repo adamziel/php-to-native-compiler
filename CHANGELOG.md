@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a native comparison boundary. LLVM IR emission now rejects `==`, `!=`,
+  `===`, `!==`, `<`, `<=`, `>`, and `>=` before lowering operands, with a
+  specific codegen diagnostic until generated code has PHP comparison
+  coercions and non-scalar comparison diagnostics; the C assembly fallback
+  carries the same boundary for consistency. A runtime fixture still proves the
+  current scalar comparison subset, and a `phpc compile --emit-ir` CLI
+  snapshot pins the native rejection. PHP comparison coercions for all value
+  types, arrays/objects, `NAN`/`INF`, references/copy-on-write, exact native
+  error objects, and broader native lowering remain explicit gaps.
 - Added a native string arithmetic boundary. LLVM IR emission now rejects
   string operands for `+`, `-`, `*`, `/`, and `%` with a specific codegen
   diagnostic until generated code has numeric-string coercion and non-numeric
