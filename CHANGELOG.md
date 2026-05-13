@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for discovery probe
+  start-failure cases where candidate backend command names exist on `PATH`
+  but cannot be started for `--version`. The Milestone 218 fixture runs as a
+  lowerable scalar echo/print program, while assembly CLI tests expose
+  deterministic unstartable fake `clang`, `llc`, and `cc` probe commands. The
+  committed snapshots prove unstartable probes are skipped before fallback to
+  `llc`, before fallback to `cc`, and before the stable missing-backend
+  diagnostic when every candidate probe cannot start. Bundled toolchains,
+  assembly linking/execution, backend-specific discovery semantics, exact
+  native error objects, and broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   start-failure precedence when `clang` is unavailable, selected `llc` passes
   discovery but cannot be started for assembly emission, and `cc` is also

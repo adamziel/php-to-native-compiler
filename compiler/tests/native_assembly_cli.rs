@@ -1744,6 +1744,108 @@ fn native_scalar_echo_emit_asm_reports_llc_start_failure_without_cc_fallback_cli
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_skips_unstartable_clang_probe_cli_summary_matches_committed_output()
+{
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone218/native_assembly_probe_start_failure.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_unstartable_clang_probe_then_fake_llc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone218/native_assembly_probe_start_failure_clang_to_llc_emit_asm.cli",
+    ))
+    .expect("native assembly probe-start-failure clang-to-llc CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_skips_unstartable_llvm_probes_before_cc_cli_summary_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone218/native_assembly_probe_start_failure.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_unstartable_llvm_probes_then_fake_cc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone218/native_assembly_probe_start_failure_llvm_to_cc_emit_asm.cli",
+    ))
+    .expect("native assembly probe-start-failure llvm-to-cc CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_all_unstartable_probes_missing_backend_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone218/native_assembly_probe_start_failure.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_all_unstartable_backend_probes(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone218/native_assembly_probe_start_failure_exhaustion_emit_asm.cli",
+    ))
+    .expect("native assembly probe-start-failure exhaustion CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -3662,6 +3764,126 @@ exit 108\n",
         Self { path }
     }
 
+    fn with_unstartable_clang_probe_then_fake_llc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-unstartable-clang-probe-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary unstartable-clang-probe PATH directory can be created");
+
+        let clang = path.join("clang");
+        write_unstartable_backend_probe(&clang);
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary unstartable-clang-probe llc script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect("temporary unstartable-clang-probe llc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions)
+            .expect("temporary unstartable-clang-probe llc script can be made executable");
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+printf '%s\\n' 'unexpected cc fallback invocation after unstartable clang probe' >&2\n\
+exit 109\n",
+        )
+        .expect("temporary unstartable-clang-probe unused cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary unstartable-clang-probe unused cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary unstartable-clang-probe unused cc script can be made executable");
+
+        Self { path }
+    }
+
+    fn with_unstartable_llvm_probes_then_fake_cc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-unstartable-llvm-probes-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary unstartable-llvm-probes PATH directory can be created");
+
+        write_unstartable_backend_probe(&path.join("clang"));
+        write_unstartable_backend_probe(&path.join("llc"));
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary unstartable-llvm-probes cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary unstartable-llvm-probes cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary unstartable-llvm-probes cc script can be made executable");
+
+        Self { path }
+    }
+
+    fn with_all_unstartable_backend_probes(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-all-unstartable-probes-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary all-unstartable-probes PATH directory can be created");
+
+        for command in ["clang", "llc", "cc"] {
+            write_unstartable_backend_probe(&path.join(command));
+        }
+
+        Self { path }
+    }
+
     fn with_stderr_successful_llc_only(workspace_root: &Path) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -3954,6 +4176,18 @@ impl Drop for TempPath {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
     }
+}
+
+#[cfg(unix)]
+fn write_unstartable_backend_probe(path: &Path) {
+    fs::write(path, "#!/nonexistent/phpc-probe-start-failure\n")
+        .expect("temporary unstartable backend probe script can be written");
+    let mut permissions = fs::metadata(path)
+        .expect("temporary unstartable backend probe script metadata is readable")
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+    fs::set_permissions(path, permissions)
+        .expect("temporary unstartable backend probe script can be made executable");
 }
 
 fn render_asm_cli_summary(output: &Output) -> String {

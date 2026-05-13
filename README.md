@@ -115,6 +115,10 @@ Failed backend discovery probe output snapshots expose deterministic fake
 and stderr diagnostics before fallback selection or missing-backend reporting,
 proving failed-probe output is ignored and the stable backend selection result
 is preserved.
+Backend discovery probe start-failure snapshots expose deterministic fake
+`clang`, `llc`, and `cc` command names that exist on `PATH` but cannot be
+started for `--version`, proving those failed starts are treated as unavailable
+before fallback selection or missing-backend reporting.
 A selected-backend start-failure snapshot exposes a deterministic fake
 `clang` that passes discovery and then rewrites itself to use a missing
 interpreter before assembly emission, proving `phpc` reports the stable

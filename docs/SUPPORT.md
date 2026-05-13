@@ -1053,7 +1053,12 @@
   stderr diagnostics are also covered with deterministic fake `clang`, `llc`,
   and `cc` tools, proving failed-probe output is ignored before fallback
   selection and before the stable missing-backend diagnostic when every
-  candidate probe fails. A selected-backend start-failure snapshot uses a
+  candidate probe fails. Discovery probe start-failure snapshots use
+  deterministic fake `clang`, `llc`, and `cc` command names that exist on
+  `PATH` but cannot be started for `--version`, proving probe start failures
+  are treated as unavailable before fallback selection and before the stable
+  missing-backend diagnostic when every candidate probe cannot start. A
+  selected-backend start-failure snapshot uses a
   deterministic fake `clang` that passes discovery and then rewrites itself to
   use a missing interpreter before actual assembly emission, proving the
   stable `failed to start clang for assembly emission` diagnostic for that
@@ -1094,7 +1099,7 @@
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed
-  probe output semantics, broader backend race-condition recovery beyond
+  probe output/start-failure semantics, broader backend race-condition recovery beyond
   command-start diagnostics, backend-specific stdout/stderr guarantees,
   backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native

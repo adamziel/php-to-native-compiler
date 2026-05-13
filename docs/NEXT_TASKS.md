@@ -2049,10 +2049,20 @@ handled.
 
 ## Milestone 218: Native Assembly Probe Start-Failure Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for discovery probe
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for discovery probe
   start-failure cases where candidate backend command names exist but cannot
   be started for `--version`, proving those failed starts are treated as
   unavailable before fallback selection or missing-backend diagnostics, with
   deterministic test doubles, documentation, and named gaps for bundled
   toolchains, backend-specific discovery semantics, exact native error
   objects, and broader native lowering.
+
+## Milestone 219: Native Assembly Probe Permission-Denied Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for discovery probe
+  permission-denied cases where candidate backend command names exist on
+  `PATH` but are not executable for `--version`, proving those probe failures
+  are treated as unavailable before fallback selection or missing-backend
+  diagnostics, with deterministic test doubles, documentation, and named gaps
+  for bundled toolchains, backend-specific discovery semantics, exact native
+  error objects, and broader native lowering.

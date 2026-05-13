@@ -192,6 +192,12 @@ stderr diagnostics before fallback selection or missing-backend reporting.
 That pins the current boundary that failed-probe output is ignored and failed
 probes still behave like unavailable tools, without treating that as full
 backend-specific failed-probe output semantics.
+Backend discovery probe start-failure snapshots expose deterministic fake
+`clang`, `llc`, and `cc` command names that exist on `PATH` but cannot be
+started for `--version`. That pins the current boundary that probe start
+failures are treated as unavailable before fallback selection or
+missing-backend reporting, without treating that as full backend-specific
+discovery semantics.
 A selected-backend start-failure snapshot exposes a deterministic fake `clang`
 that passes discovery and then rewrites itself to use a missing interpreter
 before assembly emission. That pins the current diagnostic for a race-like
