@@ -224,6 +224,12 @@ permission before assembly emission. Those pin the same fallback backend start
 diagnostics for permission-denied starts after discovery, including the
 current no-recovery boundary where a selected `llc` start failure is reported
 without falling through to the `cc -S` C fallback.
+A mixed scalar output snapshot uses deterministic fake `clang` coverage for a
+lowerable straight-line program with both `echo` and `print`. A matching C
+fallback snapshot hides LLVM assembly tools and uses a deterministic fake `cc`
+that validates generated C fallback markers for that same static scalar output
+boundary. These snapshots do not claim runtime-backed output conversion,
+linking, execution, or broader native lowering.
 A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands together. It pins the current selection order by proving
 successful `clang` assembly emission is used before LLVM or C fallback tools

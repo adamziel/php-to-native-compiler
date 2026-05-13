@@ -1083,7 +1083,10 @@
   to the `cc -S` C fallback. A mixed scalar output snapshot uses a lowerable
   fixture with both `echo` and `print`, plus a deterministic fake `clang`, to
   prove the current static scalar `printf` assembly path accepts mixed output
-  statements without claiming runtime-backed output conversion. A
+  statements without claiming runtime-backed output conversion. A matching
+  C fallback mixed-output snapshot hides LLVM assembly tools and uses a
+  deterministic fake `cc` that validates generated C fallback source markers
+  for the same static scalar `echo`/`print` boundary. A
   backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
   `cc` commands together and proves successful `clang` emission is selected
   before fallback tools when all candidates are available. A

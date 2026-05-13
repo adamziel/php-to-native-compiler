@@ -144,6 +144,9 @@ permission-denied starts do not fall through to the `cc -S` C fallback.
 A mixed scalar output snapshot uses a lowerable straight-line program with
 both `echo` and `print`, proving the current native assembly CLI path accepts
 that static scalar output subset without claiming runtime-backed conversion.
+A matching C fallback mixed-output snapshot hides LLVM assembly tools and uses
+a deterministic fake `cc` that validates generated C fallback markers for the
+same static scalar `echo`/`print` boundary.
 A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands together, proving successful `clang` assembly emission is
 selected before fallback tools when all candidates are available.

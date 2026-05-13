@@ -2097,9 +2097,17 @@ handled.
 
 ## Milestone 223: Native Scalar Output C Fallback Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for the documented
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for the documented
   `cc -S` fallback using a lowerable straight-line scalar program that mixes
   `echo` and `print`, including fixture CLI coverage, documentation of the C
   fallback output boundary, and named gaps for runtime-backed output
   conversion, exact native PHP errors, linking/execution, and broader native
   lowering.
+
+## Milestone 224: Native Scalar Reassignment Assembly Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a lowerable
+  straight-line scalar reassignment program, including fixture CLI coverage,
+  documentation of the current static-variable overwrite boundary, and named
+  gaps for native symbol-table storage, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native lowering.

@@ -3812,9 +3812,18 @@ Still fails:
   scalar `printf` output path without claiming runtime-backed output
   conversion, control-flow output, exact native PHP errors, or broader native
   lowering.
+- Added explicit `phpc compile --emit-asm` C fallback CLI coverage for a
+  lowerable mixed scalar `echo`/`print` program. The Milestone 223 fixture runs
+  through `phpc run` and system PHP, and the assembly CLI test hides LLVM
+  assembly tools while exposing a deterministic fake `cc` that validates
+  generated C fallback source markers before emitting normalized assembly.
+  This pins the current fallback static scalar output path without claiming
+  runtime-backed output conversion, linking/execution, exact native PHP
+  errors, or broader native lowering.
 
 Next:
 
-- Add Milestone 223, a C fallback CLI snapshot for a lowerable mixed
-  `echo`/`print` scalar program, documenting the current fallback output
-  boundary before adding broader runtime-backed native lowering.
+- Add Milestone 224, explicit `phpc compile --emit-asm` CLI coverage for a
+  lowerable straight-line scalar reassignment program, documenting the current
+  native static-variable overwrite boundary before broader symbol-table-backed
+  native lowering.

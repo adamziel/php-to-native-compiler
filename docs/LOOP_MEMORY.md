@@ -16323,3 +16323,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T10:40:57Z
 
 - Post-round 113 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T10:41:58Z
+
+- Starting round 114 at 20260513T104157Z from HEAD `49c2c23`.
+
+## Loop Event 2026-05-13T10:42:45Z
+
+- Pre-round 114 test exit code: `0`.
+
+## Loop Event 2026-05-13T10:52:00Z
+
+- Task attempted: completed Milestone 223 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for the documented `cc -S` fallback using a
+  lowerable straight-line scalar program that mixes `echo` and `print`. The
+  new fixture runs through `phpc run` and system PHP comparison, and the
+  assembly CLI test hides LLVM assembly tools while exposing a deterministic
+  fake `cc` that validates generated C fallback source markers before emitting
+  normalized assembly.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone223/native_scalar_mixed_echo_print_cc_fallback.php`,
+  `tests/fixtures/milestone223/native_scalar_mixed_echo_print_cc_fallback.stdout`,
+  `tests/fixtures/milestone223/native_scalar_mixed_echo_print_cc_fallback_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed after `cargo fmt`;
+  `cargo test -p phpc --test native_assembly_cli mixed_echo_print --
+  --nocapture` passed with 2 focused tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone223` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone223` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 473 fixtures, 217 system PHP
+  comparisons, and 256 comparison skips.
+- Remaining semantic gaps: native scalar output remains limited to static
+  `printf` emission for the narrow straight-line lowerable subset; C fallback
+  source validation is a deterministic test-double contract, not full
+  backend-specific C validation; runtime-backed output conversion,
+  linking/execution, exact native PHP errors, PHP zvals, native symbol-table
+  storage, references/copy-on-write, and broader native lowering remain
+  unsupported.
+- Next concrete task: add Milestone 224 native scalar reassignment assembly
+  coverage for a lowerable straight-line scalar reassignment program,
+  documenting the current static-variable overwrite boundary before broader
+  symbol-table-backed native lowering.
+- Known-good tag: not created; this is narrow C fallback CLI coverage, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot mixed scalar C fallback"`.

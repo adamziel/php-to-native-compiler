@@ -965,3 +965,10 @@
   without falling through to fallback tools. Bundled toolchains, assembly
   linking/execution, exact native error objects, and broader native lowering
   remain unsupported.
+- Added a Milestone 223 `phpc compile --emit-asm` C fallback mixed-output
+  snapshot. The fixture mixes `echo` and `print`, runs through `phpc run` and
+  system PHP comparison, and the assembly test hides LLVM assembly tools while
+  exposing a deterministic fake `cc` that validates generated C fallback
+  source markers before emitting normalized assembly. Runtime-backed output
+  conversion, linking/execution, exact native PHP errors, and broader native
+  lowering remain unsupported.
