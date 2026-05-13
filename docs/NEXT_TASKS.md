@@ -1498,8 +1498,17 @@ handled.
 
 ## Milestone 157: Shift Operator Boundary
 
-- [ ] Add the next honest boundary or executable slice for shift operators
+- [x] Add the next honest boundary or executable slice for shift operators
   `<<` and `>>`, including parser/runtime behavior, fixture CLI coverage,
   documentation, native-codegen behavior, and named gaps for integer operand
   coercion, negative shift counts, overflow behavior, references/copy-on-write,
+  exact native warning/error behavior, and native lowering.
+
+## Milestone 158: Bitwise Compound Assignment Boundary
+
+- [ ] Add the next honest boundary or executable slice for bitwise and shift
+  compound assignment operators such as `&=`, `|=`, `^=`, `<<=`, and `>>=`,
+  including parser/runtime behavior or stable diagnostics, fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps for
+  read-modify-write ordering, array/object targets, references/copy-on-write,
   exact native warning/error behavior, and native lowering.

@@ -12335,3 +12335,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:30:53Z
 
 - Post-round 47 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:31:05Z
+
+- Starting round 48 at 20260513T033105Z from HEAD `3946274`.
+
+## Loop Event 2026-05-13T03:31:16Z
+
+- Pre-round 48 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:36:35Z
+
+- Task attempted: implemented Milestone 157 shift operators `<<` and `>>` over
+  the current scalar-to-int coercion subset. The lexer/parser now accept both
+  operators with PHP-compatible precedence between additive expressions and
+  concatenation; the interpreter returns integer shift results, treats large
+  left shifts as zero, sign-fills large right shifts to zero or `-1`, and
+  reports stable diagnostics for negative shift counts. Native codegen rejects
+  shift operators through the existing bitwise-operator lowering boundary.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/shift_operators.rs`,
+  `compiler/tests/shift_operators_cli.rs`,
+  `tests/fixtures/milestone157/shift_operators.php`,
+  `tests/fixtures/milestone157/shift_operators.stdout`,
+  `tests/fixtures/milestone157/shift_operators.cli`,
+  `tests/fixtures/runtime_errors/negative_shift_count.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p php_runtime
+  shift_operators -- --nocapture` passed; `cargo test -p phpc --test
+  shift_operators -- --nocapture` passed; `cargo test -p phpc --test
+  shift_operators_cli -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone157` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone157` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 160 fixtures; `cargo test -p phpc --test runtime_error_cli --
+  --nocapture` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone157/shift_operators.php` printed the committed CLI
+  exercise output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/negative_shift_count.php` exited `1` with the
+  expected stable diagnostic; `tools/run-tests.sh` passed with 404 fixtures,
+  153 system PHP comparisons, and 251 comparison skips.
+- Remaining semantic gaps: string operands that are not numeric,
+  arrays/objects, exact native `ArithmeticError`/`TypeError` objects,
+  warning/deprecation recovery for float-to-int precision loss, bitwise/shift
+  compound assignment, references/copy-on-write side effects, and native
+  lowering remain unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  bitwise and shift compound assignment operators such as `&=`, `|=`, `^=`,
+  `<<=`, and `>>=`, with fixture CLI coverage and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "bitwise operators: add shift execution"`.

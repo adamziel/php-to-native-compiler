@@ -1760,7 +1760,7 @@ impl Parser {
     }
 
     fn parse_concat(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_additive()?;
+        let mut expr = self.parse_shift()?;
         loop {
             if self.check_compound_assignment_operator() {
                 break;
@@ -1768,11 +1768,33 @@ impl Parser {
             if !self.match_token(|kind| matches!(kind, TokenKind::Dot)) {
                 break;
             }
-            let right = self.parse_additive()?;
+            let right = self.parse_shift()?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: BinaryOp::Concat,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_shift(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_additive()?;
+        loop {
+            let op = if self.match_token(|kind| matches!(kind, TokenKind::LeftShift)) {
+                BinaryOp::ShiftLeft
+            } else if self.match_token(|kind| matches!(kind, TokenKind::RightShift)) {
+                BinaryOp::ShiftRight
+            } else {
+                break;
+            };
+            let right = self.parse_additive()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op,
                 right: Box::new(right),
                 span,
             };
@@ -2989,8 +3011,10 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::StrictBangEqual => "!==",
         TokenKind::Less => "<",
         TokenKind::LessEqual => "<=",
+        TokenKind::LeftShift => "<<",
         TokenKind::Greater => ">",
         TokenKind::GreaterEqual => ">=",
+        TokenKind::RightShift => ">>",
     }
 }
 

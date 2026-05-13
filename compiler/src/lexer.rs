@@ -98,8 +98,10 @@ pub enum TokenKind {
     StrictBangEqual,
     Less,
     LessEqual,
+    LeftShift,
     Greater,
     GreaterEqual,
+    RightShift,
 }
 
 pub fn tokenize(source: &str) -> CompileResult<Vec<Token>> {
@@ -236,6 +238,8 @@ impl<'a> Lexer<'a> {
                 '<' => {
                     if self.match_char('=') {
                         TokenKind::LessEqual
+                    } else if self.match_char('<') {
+                        TokenKind::LeftShift
                     } else {
                         TokenKind::Less
                     }
@@ -243,6 +247,8 @@ impl<'a> Lexer<'a> {
                 '>' => {
                     if self.match_char('=') {
                         TokenKind::GreaterEqual
+                    } else if self.match_char('>') {
+                        TokenKind::RightShift
                     } else {
                         TokenKind::Greater
                     }

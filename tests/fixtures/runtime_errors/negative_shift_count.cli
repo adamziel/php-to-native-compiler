@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/negative_shift_count.php:2:6: invalid arithmetic for <<: bit shift by negative number
+--- stderr end ---

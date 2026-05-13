@@ -3785,6 +3785,8 @@ impl Interpreter {
             BinaryOp::BitwiseAnd => left.php_bitwise_and(&right),
             BinaryOp::BitwiseOr => left.php_bitwise_or(&right),
             BinaryOp::BitwiseXor => left.php_bitwise_xor(&right),
+            BinaryOp::ShiftLeft => left.php_shift_left(&right),
+            BinaryOp::ShiftRight => left.php_shift_right(&right),
             BinaryOp::Lt => left
                 .php_cmp_checked(&right, Comparison::Lt)
                 .map(Value::Bool),

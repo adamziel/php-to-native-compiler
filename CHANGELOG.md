@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Implemented shift operators `<<` and `>>` over the current scalar-to-int
+  coercion subset, with PHP-compatible precedence between additive expressions
+  and concatenation, integer result behavior, large-count handling, fixture/CLI
+  coverage, system PHP comparison, stable negative-count diagnostics, and
+  explicit native-codegen rejection. String operands that are not numeric,
+  arrays/objects, exact native `ArithmeticError`/`TypeError` objects,
+  warning/deprecation recovery for float-to-int precision loss, bitwise/shift
+  compound assignment, references/copy-on-write, and native lowering remain
+  explicit gaps.
 - Implemented unary bitwise not `~` over the current integer/string slice,
   with integer result behavior, UTF-8-preserving string byte behavior,
   precedence/assignment-expression coverage, fixture/CLI coverage, system PHP

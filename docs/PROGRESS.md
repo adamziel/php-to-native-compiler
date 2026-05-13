@@ -3093,9 +3093,24 @@ Still fails:
   non-int/non-string operand execution matching exact PHP `TypeError` objects,
   bitwise compound assignment, shifts, references/copy-on-write side effects,
   and native lowering remain unsupported.
+- Implemented shift operators `<<` and `>>` over the current scalar-to-int
+  coercion subset. The lexer and parser now accept both shift operators with
+  PHP-compatible precedence between additive expressions and concatenation,
+  the interpreter returns integer shift results, large left shifts return zero,
+  large right shifts sign-fill to zero or `-1`, and negative shift counts fail
+  with a stable runtime diagnostic. Fixture, CLI snapshot, unit,
+  runtime-error fixture, system PHP comparison, and native-codegen rejection
+  coverage exercise integer results, null/bool/numeric-string coercions,
+  precedence, assignment-expression operands, large counts, and the negative
+  count diagnostic. String operands that are not numeric, arrays/objects,
+  exact native `ArithmeticError`/`TypeError` objects,
+  warning/deprecation recovery for float-to-int precision loss, bitwise/shift
+  compound assignment, references/copy-on-write side effects, and native
+  lowering remain unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for shift operators `<<`
-  and `>>`, including parser/runtime behavior, fixture CLI coverage,
-  documentation, native-codegen behavior, and named gaps.
+- Add the next honest boundary or executable slice for bitwise and shift
+  compound assignment operators such as `&=`, `|=`, `^=`, `<<=`, and `>>=`,
+  including parser/runtime behavior or stable diagnostics, fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps.

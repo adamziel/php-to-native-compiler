@@ -287,6 +287,8 @@ pub enum ArithmeticOp {
     BitwiseOr,
     BitwiseXor,
     BitwiseNot,
+    ShiftLeft,
+    ShiftRight,
 }
 
 impl fmt::Display for ArithmeticOp {
@@ -301,6 +303,8 @@ impl fmt::Display for ArithmeticOp {
             ArithmeticOp::BitwiseOr => write!(f, "|"),
             ArithmeticOp::BitwiseXor => write!(f, "^"),
             ArithmeticOp::BitwiseNot => write!(f, "~"),
+            ArithmeticOp::ShiftLeft => write!(f, "<<"),
+            ArithmeticOp::ShiftRight => write!(f, ">>"),
         }
     }
 }
@@ -1889,6 +1893,38 @@ impl Value {
         }
     }
 
+    pub fn php_shift_left(&self, other: &Value) -> RuntimeResult<Value> {
+        let left = self.to_bitwise_int(ArithmeticOp::ShiftLeft)?;
+        let right = other.to_bitwise_int(ArithmeticOp::ShiftLeft)?;
+        if right < 0 {
+            return Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::ShiftLeft,
+                "bit shift by negative number",
+            ));
+        }
+        let right = right as u32;
+        if right >= i64::BITS {
+            return Ok(Value::Int(0));
+        }
+        Ok(Value::Int((left as u64).wrapping_shl(right) as i64))
+    }
+
+    pub fn php_shift_right(&self, other: &Value) -> RuntimeResult<Value> {
+        let left = self.to_bitwise_int(ArithmeticOp::ShiftRight)?;
+        let right = other.to_bitwise_int(ArithmeticOp::ShiftRight)?;
+        if right < 0 {
+            return Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::ShiftRight,
+                "bit shift by negative number",
+            ));
+        }
+        let right = right as u32;
+        if right >= i64::BITS - 1 {
+            return Ok(Value::Int(if left < 0 { -1 } else { 0 }));
+        }
+        Ok(Value::Int(left >> right))
+    }
+
     pub fn php_eq(&self, other: &Value) -> bool {
         self.php_cmp(other, Comparison::Eq)
     }
@@ -2408,6 +2444,71 @@ mod tests {
         assert_eq!(
             error.message(),
             "invalid arithmetic for ~: binary string results outside UTF-8 are not supported"
+        );
+    }
+
+    #[test]
+    fn shift_operators_handle_current_int_coercion_subset() {
+        assert_eq!(
+            Value::Int(8).php_shift_left(&Value::Int(1)).unwrap(),
+            Value::Int(16)
+        );
+        assert_eq!(
+            Value::Int(8).php_shift_right(&Value::Int(1)).unwrap(),
+            Value::Int(4)
+        );
+        assert_eq!(
+            Value::Int(-8).php_shift_right(&Value::Int(1)).unwrap(),
+            Value::Int(-4)
+        );
+        assert_eq!(
+            Value::String("8".to_string())
+                .php_shift_left(&Value::Bool(true))
+                .unwrap(),
+            Value::Int(16)
+        );
+        assert_eq!(
+            Value::Null.php_shift_right(&Value::Int(1)).unwrap(),
+            Value::Int(0)
+        );
+        assert_eq!(
+            Value::Int(8).php_shift_left(&Value::Int(64)).unwrap(),
+            Value::Int(0)
+        );
+        assert_eq!(
+            Value::Int(-1).php_shift_right(&Value::Int(64)).unwrap(),
+            Value::Int(-1)
+        );
+    }
+
+    #[test]
+    fn shift_operators_report_negative_counts_with_stable_errors() {
+        let error = Value::Int(8).php_shift_left(&Value::Int(-1)).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::ShiftLeft,
+                reason: "bit shift by negative number".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for <<: bit shift by negative number"
+        );
+
+        let error = Value::Int(8).php_shift_right(&Value::Int(-1)).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::ShiftRight,
+                reason: "bit shift by negative number".to_string(),
+            }
+        );
+        assert_eq!(
+            error.message(),
+            "invalid arithmetic for >>: bit shift by negative number"
         );
     }
 

@@ -1,0 +1,17 @@
+exit: 0
+stdout:
+int(16)
+int(4)
+int(-4)
+int(24)
+int(8)
+string(2) "x4"
+bool(true)
+int(16)
+int(0)
+int(0)
+int(-1)
+int(16)
+4--- stdout end ---
+stderr:
+--- stderr end ---
