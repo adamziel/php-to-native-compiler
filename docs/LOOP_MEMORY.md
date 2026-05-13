@@ -12080,3 +12080,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Known-good tag: not created; this is a narrow expression-coverage checkpoint,
   not a major verified stable state.
 - Checkpoint: `12482fd ternary expressions: cover precedence mixes`.
+
+## Loop Event 2026-05-13T02:58:40Z
+
+- Codex round 43 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T025408Z-43.log`.
+
+## Loop Event 2026-05-13T02:58:50Z
+
+- Post-round 43 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:58:50Z
+
+- Post-round 43 tests passed; running checkpoint for this round.
