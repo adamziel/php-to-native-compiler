@@ -1717,8 +1717,17 @@ handled.
 
 ## Milestone 181: Native Variable Read Boundary
 
-- [ ] Add the next honest native-codegen boundary for undefined or dynamic
+- [x] Add the next honest native-codegen boundary for undefined or dynamic
   variable reads in the straight-line lowerer, including explicit diagnostics,
   fixture CLI coverage, documentation, and named gaps for native symbol-table
   storage, references/copy-on-write, exact PHP undefined-variable error
   objects, and broader native lowering.
+
+## Milestone 182: Native Assembly CLI Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI exercise coverage for the
+  current lowerable scalar echo/assignment subset without snapshotting
+  platform-specific assembly text, including tests, documentation, and named
+  gaps for linking/execution, PHP zvals, symbol-table storage,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering.

@@ -99,6 +99,10 @@ previously assigned static variables, and `echo`/`print` through static
 `printf` calls. It does not model PHP zvals, symbol-table storage,
 references/copy-on-write, dynamic string allocation, locale/version-specific
 float formatting, or native PHP error objects.
+Native reads of variables that have not been statically assigned earlier in
+that same straight-line lowerer are rejected with a specific codegen
+diagnostic until native symbol-table storage, undefined-variable diagnostics,
+references/copy-on-write behavior, and exact native error behavior exist.
 Native lowering rejects unary minus and logical not before operand lowering
 until generated code has PHP numeric coercion, truthiness conversion,
 references/copy-on-write side-effect behavior, and exact native error behavior.

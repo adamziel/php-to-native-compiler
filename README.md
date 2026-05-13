@@ -349,7 +349,11 @@ strings are emitted through static string constants. Binary arithmetic
 operators `+`, `-`, `*`, `/`, and `%` are rejected before operand lowering
 until generated code has PHP numeric coercion, dynamic division/modulo zero
 checks, modulo coercions, references/copy-on-write behavior, and exact native
-error behavior. Native string concatenation `.` is rejected before
+error behavior. Reads of variables that were not statically assigned earlier
+in the same straight-line native lowering pass are rejected with a specific
+codegen diagnostic until generated code has native symbol-table storage,
+undefined-variable diagnostics, references/copy-on-write behavior, and exact
+native error behavior. Native string concatenation `.` is rejected before
 operand lowering until generated code has PHP string conversion, dynamic
 allocation, references/copy-on-write behavior, and exact native error behavior.
 Native comparison operators are rejected with a specific

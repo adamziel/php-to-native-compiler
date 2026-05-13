@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Added a native variable-read boundary. LLVM IR emission now rejects reads of
+  variables that were not statically assigned earlier in the same
+  straight-line native subset, including reads in `echo`, `print`, and
+  assignment right-hand sides, with a specific codegen diagnostic until
+  generated code has native symbol-table storage, undefined-variable
+  diagnostics, references/copy-on-write behavior, and exact native error
+  behavior; the C assembly fallback carries the same boundary for consistency.
+  A Milestone 181 fixture pins the current `phpc run` undefined-variable
+  runtime diagnostic, and a `phpc compile --emit-ir` CLI snapshot pins the
+  native rejection. Dynamic variable variables remain an earlier lexer/parser
+  boundary, and native PHP symbol tables, warning/continue behavior, exact
+  native error objects, references/copy-on-write, and broader variable
+  lowering remain explicit gaps.
 - Added positive native scalar echo/assignment coverage for the remaining
   lowerable straight-line subset: literal `null`, booleans, integers, floats,
   and strings; direct static-variable assignments from those values; direct

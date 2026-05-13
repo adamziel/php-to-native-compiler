@@ -29,6 +29,8 @@ const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary
 const ASSEMBLY_ARITHMETIC_REJECTION: &str = "assembly arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 const LLVM_CONCAT_REJECTION: &str = "LLVM concatenation lowering rejects string concatenation until native PHP string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
 const ASSEMBLY_CONCAT_REJECTION: &str = "assembly concatenation lowering rejects string concatenation until native PHP string conversion, dynamic allocation, references/copy-on-write, and exact native error behavior exist; phpc run handles current concatenation behavior";
+const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
+const ASSEMBLY_VARIABLE_READ_REJECTION: &str = "assembly variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -182,12 +184,11 @@ impl LlvmGenerator {
             Expr::Property { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
-            Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
-                self.unsupported(
-                    *span,
-                    format!("variable '${name}' is not known in LLVM lowering"),
-                )
-            }),
+            Expr::Variable(name, span) => self
+                .variables
+                .get(name)
+                .cloned()
+                .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION)),
             Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
@@ -657,12 +658,11 @@ impl CGenerator {
             Expr::Property { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
-            Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
-                self.unsupported(
-                    *span,
-                    format!("variable '${name}' is not known in assembly lowering"),
-                )
-            }),
+            Expr::Variable(name, span) => self
+                .variables
+                .get(name)
+                .cloned()
+                .ok_or_else(|| self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION)),
             Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }

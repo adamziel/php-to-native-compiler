@@ -3345,10 +3345,22 @@ Still fails:
   zvals, symbol-table storage, dynamic values, references/copy-on-write,
   dynamic string allocation, exact PHP float formatting/error objects, and
   broader native lowering remain unsupported.
+- Added a native variable-read boundary. LLVM IR emission now rejects reads of
+  variables that were not statically assigned earlier in the same
+  straight-line lowerer, including reads in `echo`, `print`, and assignment
+  right-hand sides, with a specific codegen diagnostic until generated code has
+  native symbol-table storage, undefined-variable diagnostics,
+  references/copy-on-write behavior, and exact native error behavior. The C
+  assembly fallback carries the same boundary for consistency, the Milestone
+  181 fixture pins the current `phpc run` undefined-variable runtime
+  diagnostic, and a `phpc compile --emit-ir` CLI snapshot pins the native
+  rejection. Dynamic variable variables still fail earlier at the lexer/parser
+  boundary; native PHP symbol tables, warning/continue behavior, exact
+  undefined-variable error objects, references/copy-on-write side effects, and
+  broader native variable lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for undefined or dynamic
-  variable reads in the straight-line lowerer, with explicit diagnostics,
-  fixture CLI coverage, documentation, and named gaps for symbol-table storage,
-  references/copy-on-write, and exact native PHP error objects.
+- Add explicit `phpc compile --emit-asm` CLI exercise coverage for the current
+  lowerable scalar echo/assignment subset without snapshotting
+  platform-specific assembly text.

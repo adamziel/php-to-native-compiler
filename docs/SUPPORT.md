@@ -910,10 +910,14 @@
   are rejected before operand lowering with a specific codegen diagnostic until
   generated code has PHP numeric coercion, dynamic division/modulo zero checks,
   modulo coercions, references/copy-on-write behavior, and exact native error
-  objects. Native string concatenation `.` is rejected before operand lowering
-  with a specific codegen diagnostic until generated code has PHP string
-  conversion, dynamic allocation, references/copy-on-write behavior, and exact
-  native error objects. Native comparison operators
+  objects. Native reads of variables that were not statically assigned earlier
+  in the same straight-line lowerer are rejected with a specific codegen
+  diagnostic until generated code has native symbol-table storage,
+  undefined-variable diagnostics, references/copy-on-write behavior, and exact
+  native error objects. Native string concatenation `.` is rejected before
+  operand lowering with a specific codegen diagnostic until generated code has
+  PHP string conversion, dynamic allocation, references/copy-on-write behavior,
+  and exact native error objects. Native comparison operators
   `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
   PHP comparison coercions and non-scalar comparison diagnostics. Native

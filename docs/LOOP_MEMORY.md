@@ -13849,3 +13849,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:14:36Z
 
 - Post-round 71 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:14:51Z
+
+- Starting round 72 at 20260513T061451Z from HEAD `c406f64`.
+
+## Loop Event 2026-05-13T06:15:03Z
+
+- Pre-round 72 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:20:10Z
+
+- Task attempted: completed Milestone 181 by adding an explicit native
+  variable-read boundary. LLVM IR emission now rejects reads of variables that
+  were not statically assigned earlier in the same straight-line native subset,
+  including `echo`, `print`, and assignment RHS reads; the C assembly fallback
+  carries the same boundary for consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_variable_read_boundary.rs`,
+  `tests/fixtures/milestone181/native_variable_read_boundary.php`,
+  `tests/fixtures/milestone181/native_variable_read_boundary.stderr`,
+  `tests/fixtures/milestone181/native_variable_read_boundary.exit`,
+  `tests/fixtures/milestone181/native_variable_read_boundary.phpc-only`,
+  `tests/fixtures/milestone181/native_variable_read_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_variable_read_boundary -- --nocapture` passed with 5 tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone181` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone181` passed with 1 comparison skipped due to
+  `.phpc-only`; `./target/debug/phpc compile
+  tests/fixtures/milestone181/native_variable_read_boundary.php --emit-ir`
+  exited `1` with the expected explicit native variable-read diagnostic;
+  `tools/run-tests.sh` passed with 431 fixtures, 175 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: generated code still lacks native symbol-table
+  storage, dynamic variable-variable reads, PHP warning/continue behavior for
+  undefined variables, exact native PHP undefined-variable error objects,
+  references/copy-on-write behavior, and broader native variable lowering.
+- Next concrete task: add Milestone 182, explicit `phpc compile --emit-asm`
+  CLI exercise coverage for the current lowerable scalar echo/assignment
+  subset without snapshotting platform-specific assembly text.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native variable read boundary"`
+  after the full suite passes.

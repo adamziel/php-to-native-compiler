@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic; system PHP emits native warning/error output for an undefined variable.
