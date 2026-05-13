@@ -930,7 +930,11 @@
   rejected before argument or callee lowering with a specific codegen
   diagnostic until generated code has runtime call lookup, stack-frame layout,
   arity/type diagnostics, callable builtin dispatch, dynamic string-call
-  dispatch, and exact native error objects.
+  dispatch, and exact native error objects. Native user-function declarations
+  and return statements are rejected before function-body lowering with a
+  specific codegen diagnostic until generated code has function symbol tables,
+  stack-frame layout, default parameter binding, recursion guards,
+  return-value flow, and exact native error behavior.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
@@ -995,7 +999,10 @@
   traces. Forward constant references at omitted-argument binding time,
   namespace-aware constants, class constants, dynamic defaults,
   references/copy-on-write behavior, and native lowering for defaults are not
-  implemented. Non-constant defaults such as variables, calls, dynamic calls,
+  implemented. Native lowering for user-function declarations and returns is
+  explicitly rejected until function symbol tables, stack-frame layout, default
+  parameter binding, recursion guards, return-value flow, and exact native
+  error behavior exist. Non-constant defaults such as variables, calls, dynamic calls,
   and indexed reads are rejected by the parser. Required parameters after default
   parameters are also rejected instead of modeling PHP's deprecation and
   implicit-required behavior. Variadic parameters and argument unpacking,

@@ -2065,8 +2065,8 @@ Tested:
   accumulator output.
 - `cargo run -p phpc -- test tests/fixtures/runtime_errors` passes with 112
   runtime-error fixtures.
-- `tools/run-tests.sh` passes with 256 fixtures, 104 system PHP comparisons,
-  and 152 `.phpc-only` skips.
+- `tools/run-tests.sh` passes with 420 fixtures, 166 system PHP comparisons,
+  and 254 comparison skips.
 - `cargo run -p phpc -- run examples/hello.php` prints `hello`.
 - `cargo run -p phpc -- compile tests/fixtures/milestone1/basic_arithmetic.php --emit-ir`
   emits LLVM IR containing native arithmetic and `printf` calls.
@@ -3224,9 +3224,19 @@ Still fails:
   current function-call subset, and a `phpc compile --emit-ir` CLI snapshot
   pins the native rejection. References/copy-on-write side effects and broader
   native lowering remain unsupported.
+- Added a native user-function declaration/return boundary. LLVM IR emission
+  now rejects user-function declarations and return statements before
+  traversing function bodies, with a specific codegen diagnostic until
+  generated code has function symbol tables, stack-frame layout, default
+  parameter binding, recursion guards, return-value flow, and exact native
+  error behavior. The C assembly fallback carries the same boundary for
+  consistency, `phpc run` fixture coverage still proves current user-function
+  declarations/defaults/returns, and a `phpc compile --emit-ir` CLI snapshot
+  pins the native rejection. References/copy-on-write side effects and broader
+  native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for user-function declarations
-  and returns before native function symbol tables, stack-frame layout, and
-  return-value flow exist.
+- Add the next honest native-codegen boundary for executable magic constants
+  before native source mapping, path canonicalization, and function-context
+  lowering exist.

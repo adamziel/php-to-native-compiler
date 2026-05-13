@@ -13141,3 +13141,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:55:19Z
 
 - Post-round 60 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:55:43Z
+
+- Starting round 61 at 20260513T045543Z from HEAD `375c181`.
+
+## Loop Event 2026-05-13T04:56:00Z
+
+- Pre-round 61 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:01:12Z
+
+- Task attempted: completed Milestone 170 by tightening the native codegen
+  boundary for user-function declarations and return statements. LLVM IR
+  emission now rejects function declarations and return statements before
+  traversing function bodies with a specific diagnostic until generated code
+  has function symbol tables, stack-frame layout, default parameter binding,
+  recursion guards, return-value flow, and exact native error behavior; the C
+  assembly fallback carries the same boundary for consistency. Runtime fixture
+  coverage still proves the current `phpc run` user-function declaration,
+  default-parameter, and return subset.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_function_declaration_boundary.rs`,
+  `tests/fixtures/milestone170/native_function_declaration_boundary.php`,
+  `tests/fixtures/milestone170/native_function_declaration_boundary.stdout`,
+  `tests/fixtures/milestone170/native_function_declaration_boundary_emit_ir.cli`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` completed; `cargo test -p phpc --test
+  native_function_declaration_boundary` passed with 6 tests; `cargo run -p
+  phpc -- test tests/fixtures/milestone170` passed with 1 fixture; `cargo run
+  -p phpc -- test --compare-php tests/fixtures/milestone170` passed with 1
+  system PHP comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone170/native_function_declaration_boundary.php
+  --emit-ir` exited `1` with the expected explicit native user-function
+  declaration codegen diagnostic; `tools/run-tests.sh` passed with 420
+  fixtures, 166 system PHP comparisons, and 254 comparison skips.
+- Remaining semantic gaps: generated code still lacks function symbol tables,
+  stack-frame layout, default parameter binding, recursion guards,
+  return-value flow, references/copy-on-write side effects, exact native error
+  objects, and broader native lowering for user functions.
+- Next concrete task: add Milestone 171, the next honest native-codegen
+  boundary for executable magic constants before native source mapping, path
+  canonicalization, and function-context lowering exist.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject function declarations"`.

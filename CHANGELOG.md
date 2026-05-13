@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added a native user-function declaration/return boundary. LLVM IR emission
+  now rejects function declarations and return statements before traversing
+  function bodies, with a specific codegen diagnostic until generated code has
+  function symbol tables, stack-frame layout, default parameter binding,
+  recursion guards, return-value flow, and exact native error behavior; the C
+  assembly fallback carries the same boundary for consistency. A runtime
+  fixture still proves current user-function declarations, default parameters,
+  and returns, and a `phpc compile --emit-ir` CLI snapshot pins the native
+  rejection. References/copy-on-write and broader native lowering remain
+  explicit gaps.
 - Added a native function-call boundary. LLVM IR emission now rejects function
   calls, including direct callable builtins, user functions, and dynamic
   string-valued calls, before lowering arguments or callees, with a specific

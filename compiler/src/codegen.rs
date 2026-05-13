@@ -9,6 +9,8 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects tern
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins, and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -118,7 +120,7 @@ impl LlvmGenerator {
             }
             Stmt::Function(function) => Err(self.unsupported(
                 function.span,
-                "function declarations are not lowered to LLVM IR yet",
+                LLVM_FUNCTION_DECLARATION_REJECTION,
             )),
             Stmt::Class(class) => Err(self.unsupported(
                 class.span,
@@ -166,7 +168,7 @@ impl LlvmGenerator {
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
-                "return is only valid inside functions, which are not lowered yet",
+                LLVM_FUNCTION_DECLARATION_REJECTION,
             )),
             Stmt::Break { span } => Err(self.unsupported(
                 *span,
@@ -828,7 +830,7 @@ impl CGenerator {
             }
             Stmt::Function(function) => Err(self.unsupported(
                 function.span,
-                "function declarations are not lowered to assembly yet",
+                ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
             )),
             Stmt::Class(class) => Err(self.unsupported(
                 class.span,
@@ -876,7 +878,7 @@ impl CGenerator {
             )),
             Stmt::Return { span, .. } => Err(self.unsupported(
                 *span,
-                "return is only valid inside functions, which are not lowered yet",
+                ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
             )),
             Stmt::Break { span } => Err(self.unsupported(
                 *span,

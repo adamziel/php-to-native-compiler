@@ -108,6 +108,10 @@ Native lowering rejects direct and dynamic function calls before argument,
 callee, or callback lowering until generated code has runtime call lookup,
 stack-frame layout, arity/type diagnostics, callable builtin dispatch, dynamic
 string-call dispatch, and exact native error behavior.
+Native lowering also rejects user-function declarations and return statements
+before traversing function bodies until generated code has function symbol
+tables, stack-frame layout, default parameter binding, recursion guards,
+return-value flow, and exact native error behavior.
 
 ## Dynamic Features
 
