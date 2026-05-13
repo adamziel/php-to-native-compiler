@@ -12458,3 +12458,60 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:44:50Z
 
 - Post-round 49 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:45:13Z
+
+- Starting round 50 at 20260513T034512Z from HEAD `46b8ff3`.
+
+## Loop Event 2026-05-13T03:45:29Z
+
+- Pre-round 50 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:07:18Z
+
+- Task attempted: implemented Milestone 159 modulo `%` over the current
+  integer-coercion subset. The lexer/parser now accept `%` with
+  multiplicative precedence, the interpreter coerces supported scalar operands
+  to integers and returns integer remainders, modulo by zero has a stable
+  runtime diagnostic, and native LLVM/C assembly emission rejects modulo
+  explicitly until lowering exists.
+- Files changed: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/modulo_operator.rs`,
+  `compiler/tests/modulo_operator_cli.rs`,
+  `tests/fixtures/milestone159/modulo_operator.php`,
+  `tests/fixtures/milestone159/modulo_operator.stdout`,
+  `tests/fixtures/milestone159/modulo_operator.cli`,
+  `tests/fixtures/milestone159/modulo_codegen.php`,
+  `tests/fixtures/milestone159/modulo_codegen.stdout`,
+  `tests/fixtures/milestone159/modulo_by_zero.php`,
+  `tests/fixtures/milestone159/modulo_by_zero.stderr`,
+  `tests/fixtures/milestone159/modulo_by_zero.exit`,
+  `tests/fixtures/milestone159/modulo_by_zero.phpc-only`,
+  `tests/fixtures/milestone159/modulo_by_zero.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo fmt --check` passed;
+  `cargo test -p php_runtime modulo -- --nocapture` passed with 2 focused
+  runtime tests; `cargo test -p phpc --test modulo_operator` passed with 5
+  tests; `cargo test -p phpc --test modulo_operator_cli` passed; `cargo run
+  -p phpc -- test tests/fixtures/milestone159` passed with 3 fixtures; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/milestone159` passed with
+  2 system PHP comparisons and 1 `.phpc-only` skip; `cargo run -p phpc -- run
+  tests/fixtures/milestone159/modulo_operator.php` printed the committed CLI
+  exercise output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone159/modulo_codegen.php --emit-ir` exited `1` with
+  the expected explicit modulo codegen rejection; `tools/run-tests.sh` passed
+  with 408 fixtures, 156 system PHP comparisons, and 252 comparison skips.
+- Remaining semantic gaps: non-numeric strings, arrays/objects, float-to-int
+  precision warnings, exact native `DivisionByZeroError`/`TypeError` objects,
+  modulo compound assignment `%=`, references/copy-on-write side effects, and
+  native lowering remain unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  modulo compound assignment `%=`, including parser/runtime behavior or stable
+  diagnostics, fixture CLI coverage, documentation, native-codegen behavior,
+  and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "arithmetic: add modulo execution"`.

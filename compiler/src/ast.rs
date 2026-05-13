@@ -403,6 +403,7 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Mod,
     Concat,
     Eq,
     Ne,

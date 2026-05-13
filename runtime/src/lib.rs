@@ -282,6 +282,7 @@ pub enum ArithmeticOp {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
     Negate,
     BitwiseAnd,
     BitwiseOr,
@@ -298,6 +299,7 @@ impl fmt::Display for ArithmeticOp {
             ArithmeticOp::Subtract => write!(f, "-"),
             ArithmeticOp::Multiply => write!(f, "*"),
             ArithmeticOp::Divide => write!(f, "/"),
+            ArithmeticOp::Modulo => write!(f, "%"),
             ArithmeticOp::Negate => write!(f, "unary -"),
             ArithmeticOp::BitwiseAnd => write!(f, "&"),
             ArithmeticOp::BitwiseOr => write!(f, "|"),
@@ -1824,6 +1826,22 @@ impl Value {
         }
     }
 
+    pub fn php_mod(&self, other: &Value) -> RuntimeResult<Value> {
+        let left = self.to_arithmetic_int(ArithmeticOp::Modulo)?;
+        let right = other.to_arithmetic_int(ArithmeticOp::Modulo)?;
+        if right == 0 {
+            return Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::Modulo,
+                "modulo by zero",
+            ));
+        }
+        if left == i64::MIN && right == -1 {
+            return Ok(Value::Int(0));
+        }
+
+        Ok(Value::Int(left % right))
+    }
+
     pub fn php_negate(&self) -> RuntimeResult<Value> {
         match self.to_arithmetic_number(ArithmeticOp::Negate)? {
             Number::Int(value) => Ok(Value::Int(value.wrapping_neg())),
@@ -2035,6 +2053,13 @@ impl Value {
                 operation,
                 "objects are not numeric",
             )),
+        }
+    }
+
+    fn to_arithmetic_int(&self, operation: ArithmeticOp) -> RuntimeResult<i64> {
+        match self.to_arithmetic_number(operation)? {
+            Number::Int(value) => Ok(value),
+            Number::Float(value) => Ok(value as i64),
         }
     }
 
@@ -2350,6 +2375,47 @@ mod tests {
                 .unwrap(),
             Value::Float(0.75)
         );
+    }
+
+    #[test]
+    fn modulo_coerces_supported_operands_to_integers() {
+        assert_eq!(
+            Value::Int(7).php_mod(&Value::Int(3)).unwrap(),
+            Value::Int(1)
+        );
+        assert_eq!(
+            Value::Int(-7).php_mod(&Value::Int(3)).unwrap(),
+            Value::Int(-1)
+        );
+        assert_eq!(
+            Value::Float(7.9).php_mod(&Value::Int(3)).unwrap(),
+            Value::Int(1)
+        );
+        assert_eq!(
+            Value::String(" 8 ".to_string())
+                .php_mod(&Value::Bool(true))
+                .unwrap(),
+            Value::Int(0)
+        );
+        assert_eq!(Value::Null.php_mod(&Value::Int(3)).unwrap(), Value::Int(0));
+        assert_eq!(
+            Value::Int(i64::MIN).php_mod(&Value::Int(-1)).unwrap(),
+            Value::Int(0)
+        );
+    }
+
+    #[test]
+    fn modulo_reports_zero_divisor_with_stable_error() {
+        let error = Value::Int(5).php_mod(&Value::Int(0)).unwrap_err();
+
+        assert_eq!(
+            error.kind(),
+            &RuntimeErrorKind::InvalidArithmetic {
+                operation: ArithmeticOp::Modulo,
+                reason: "modulo by zero".to_string(),
+            }
+        );
+        assert_eq!(error.message(), "invalid arithmetic for %: modulo by zero");
     }
 
     #[test]

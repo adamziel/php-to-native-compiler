@@ -76,7 +76,10 @@
   and float variables only. In expressions, pre forms return the updated
   value and post forms return the previous value.
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
-  integers, floats, and well-formed numeric strings
+  integers, floats, and well-formed numeric strings; modulo `%` over the
+  current integer-coercion subset for `null`, booleans, integers, floats, and
+  well-formed numeric strings, returning integer remainders and reporting a
+  stable modulo-by-zero diagnostic
 - unary `-` and `!`
 - string concatenation: `.`
 - loose comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current
@@ -245,7 +248,8 @@
   declarations and internal trait metadata are not represented,
   and `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
-  unsupported calls, division by zero, non-numeric string arithmetic, and
+  unsupported calls, division by zero, modulo by zero, non-numeric string
+  arithmetic, and
   undefined functions, non-string dynamic function callees, unsupported
   `constant`/`defined` names and non-string `constant`/`defined` name
   arguments, duplicate constants, unsupported `define()` names, values, and
@@ -1710,7 +1714,8 @@
   Statement forms, expression forms such as `($name += expr)` and
   `($array[$key] += expr)` and `($object->property += expr)`, and single
   C-style `for` initializer/increment actions are supported for those direct
-  targets; expression forms return the updated value. Append offsets, nested
+  targets; expression forms return the updated value. Modulo compound
+  assignment `%=` is not implemented yet. Append offsets, nested
   offsets/properties, dynamic property names, non-public visibility context,
   references/copy-on-write, PHP warning recovery, exact native error objects,
   and native lowering are not implemented.

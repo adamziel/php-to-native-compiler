@@ -3772,6 +3772,7 @@ impl Interpreter {
             BinaryOp::Sub => left.php_sub(&right),
             BinaryOp::Mul => left.php_mul(&right),
             BinaryOp::Div => left.php_div(&right),
+            BinaryOp::Mod => left.php_mod(&right),
             BinaryOp::Concat => left.php_concat(&right),
             BinaryOp::Eq => left
                 .php_cmp_checked(&right, Comparison::Eq)

@@ -62,7 +62,7 @@ subset:
   have executable coverage in function call arguments, array literal
   keys/values, `if`/loop conditions, and builtin arguments for the documented
   direct-target subset
-- `+`, `-`, `*`, `/`, `.`
+- `+`, `-`, `*`, `/`, `%`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow
 - logical `&&`, `||`, `and`, `xor`, and `or` over the current truthiness

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Implemented modulo `%` over the current integer-coercion subset, with
+  multiplicative parser precedence, integer remainder results, null/bool/int/
+  float/well-formed numeric-string coercions, fixture/CLI coverage, system PHP
+  comparison for the supported fixture, stable modulo-by-zero diagnostics, and
+  explicit native-codegen rejection. Non-numeric strings, arrays/objects,
+  float-to-int precision warnings, exact native error objects, `%=` compound
+  assignment, references/copy-on-write, and native lowering remain explicit
+  gaps.
 - Implemented bitwise and shift compound assignment operators `&=`, `|=`,
   `^=`, `<<=`, and `>>=` for the existing direct static-variable, direct
   array-offset, and direct public object-property compound-assignment target

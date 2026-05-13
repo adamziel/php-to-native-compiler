@@ -3119,11 +3119,24 @@ Still fails:
   arrays/objects as bitwise values, exact native warning/error objects,
   references/copy-on-write side effects, and native lowering remain
   unsupported.
+- Implemented modulo `%` over the current integer-coercion subset. The lexer
+  and parser now accept `%` with multiplicative precedence, the interpreter
+  coerces `null`, booleans, integers, floats, and well-formed numeric strings
+  to integers before computing the remainder, and modulo by zero fails with a
+  stable runtime diagnostic. Fixture, CLI snapshot, unit, system PHP
+  comparison, and native-codegen rejection coverage exercise integer results,
+  null/bool/numeric-string coercions, precedence, assignment-expression
+  operands, and the modulo-by-zero diagnostic. Non-numeric strings,
+  arrays/objects, float-to-int precision warnings, exact native
+  `DivisionByZeroError`/`TypeError` objects, modulo compound assignment,
+  references/copy-on-write side effects, and native lowering remain
+  unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for the modulo operator
-  `%`, including parser/runtime behavior or stable diagnostics, fixture CLI
-  coverage, documentation, native-codegen behavior, and named gaps for
-  division-by-zero behavior, integer coercion, references/copy-on-write, exact
-  native warning/error behavior, and native lowering.
+- Add the next honest boundary or executable slice for modulo compound
+  assignment `%=`, including parser/runtime behavior or stable diagnostics,
+  fixture CLI coverage, documentation, native-codegen behavior, and named gaps
+  for read-modify-write ordering, array/object targets,
+  references/copy-on-write, exact native warning/error behavior, and native
+  lowering.

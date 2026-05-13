@@ -1,0 +1,15 @@
+exit: 0
+stdout:
+int(1)
+int(-1)
+int(1)
+int(0)
+int(0)
+int(4)
+int(3)
+string(2) "x1"
+bool(true)
+int(3)
+11--- stdout end ---
+stderr:
+--- stderr end ---

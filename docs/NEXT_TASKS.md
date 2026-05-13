@@ -1515,8 +1515,17 @@ handled.
 
 ## Milestone 159: Modulo Operator Boundary
 
-- [ ] Add the next honest boundary or executable slice for the modulo operator
+- [x] Add the next honest boundary or executable slice for the modulo operator
   `%`, including parser/runtime behavior or stable diagnostics, fixture CLI
   coverage, documentation, native-codegen behavior, and named gaps for
   division-by-zero behavior, integer coercion, references/copy-on-write, exact
   native warning/error behavior, and native lowering.
+
+## Milestone 160: Modulo Compound Assignment Boundary
+
+- [ ] Add the next honest boundary or executable slice for modulo compound
+  assignment `%=`, including parser/runtime behavior or stable diagnostics,
+  fixture CLI coverage, documentation, native-codegen behavior, and named gaps
+  for read-modify-write ordering, array/object targets,
+  references/copy-on-write, exact native warning/error behavior, and native
+  lowering.

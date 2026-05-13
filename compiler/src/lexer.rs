@@ -75,6 +75,7 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Percent,
     Dot,
     ObjectOperator,
     DoubleColon,
@@ -169,6 +170,7 @@ impl<'a> Lexer<'a> {
                 }
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
+                '%' => TokenKind::Percent,
                 '.' => {
                     if self.match_char('.') {
                         if self.match_char('.') {

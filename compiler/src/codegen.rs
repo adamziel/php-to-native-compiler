@@ -299,6 +299,12 @@ impl LlvmGenerator {
                         "bitwise operators are supported by phpc run for the current int/string subset but not LLVM IR emission yet",
                     ));
                 }
+                if matches!(op, BinaryOp::Mod) {
+                    return Err(self.unsupported(
+                        *span,
+                        "modulo is supported by phpc run for the current int-coercion subset but not LLVM IR emission yet",
+                    ));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -336,6 +342,10 @@ impl LlvmGenerator {
                 self.emit_numeric_binary(left, op, right, span)
             }
             BinaryOp::Div => self.emit_div(left, right, span),
+            BinaryOp::Mod => Err(self.unsupported(
+                span,
+                "modulo is supported by phpc run for the current int-coercion subset but not LLVM IR emission yet",
+            )),
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -933,6 +943,12 @@ impl CGenerator {
                         "bitwise operators are supported by phpc run for the current int/string subset but not assembly emission yet",
                     ));
                 }
+                if matches!(op, BinaryOp::Mod) {
+                    return Err(self.unsupported(
+                        *span,
+                        "modulo is supported by phpc run for the current int-coercion subset but not assembly emission yet",
+                    ));
+                }
                 let left = self.emit_expr(left)?;
                 let right = self.emit_expr(right)?;
                 self.emit_binary(left, *op, right, *span)
@@ -970,6 +986,10 @@ impl CGenerator {
                 self.emit_numeric_binary(left, op, right, span)
             }
             BinaryOp::Div => self.emit_div(left, right, span),
+            BinaryOp::Mod => Err(self.unsupported(
+                span,
+                "modulo is supported by phpc run for the current int-coercion subset but not assembly emission yet",
+            )),
             BinaryOp::Concat => self.emit_concat(left, right, span),
             BinaryOp::Eq
             | BinaryOp::Ne

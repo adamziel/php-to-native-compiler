@@ -1846,6 +1846,8 @@ impl Parser {
                 BinaryOp::Mul
             } else if self.match_token(|kind| matches!(kind, TokenKind::Slash)) {
                 BinaryOp::Div
+            } else if self.match_token(|kind| matches!(kind, TokenKind::Percent)) {
+                BinaryOp::Mod
             } else {
                 break;
             };
@@ -3007,6 +3009,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Minus => "-",
         TokenKind::Star => "*",
         TokenKind::Slash => "/",
+        TokenKind::Percent => "%",
         TokenKind::Dot => ".",
         TokenKind::ObjectOperator => "->",
         TokenKind::DoubleColon => "::",
