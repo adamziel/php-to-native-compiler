@@ -226,6 +226,10 @@ An empty-stderr fallback failure-precedence snapshot covers the same boundary
 when selected `llc` exits nonzero without diagnostics while `cc` is also
 available. It pins the stable empty-stderr `llc` diagnostic as final rather
 than falling through to the `cc -S` C fallback.
+An empty-stderr selected-backend failure-precedence snapshot covers the same
+no-recovery boundary when selected `clang` exits nonzero without diagnostics
+while `llc` and `cc` are also available. It pins the stable empty-stderr
+`clang` diagnostic as final rather than falling through to fallback tools.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

@@ -2018,10 +2018,21 @@ handled.
 
 ## Milestone 215: Native Assembly Empty-Stderr Selected Backend Failure Precedence
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
   failure precedence when selected `clang` passes discovery but exits nonzero
   without stderr while fallback `llc` and `cc` commands are also available,
   proving the stable empty-stderr `clang` diagnostic is reported without
   silently falling through to fallback tools, with deterministic test doubles,
   documentation, and named gaps for full backend recovery semantics, bundled
   toolchains, exact native error objects, and broader native lowering.
+
+## Milestone 216: Native Assembly Selected Backend Start-Failure Precedence
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  start-failure precedence when selected `clang` passes discovery but cannot be
+  started for assembly emission while fallback `llc` and `cc` commands are
+  also available, proving the stable selected-backend start diagnostic is
+  reported without silently falling through to fallback tools, with
+  deterministic test doubles, documentation, and named gaps for full backend
+  recovery semantics, bundled toolchains, exact native error objects, and
+  broader native lowering.

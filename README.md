@@ -143,6 +143,10 @@ An empty-stderr fallback failure-precedence snapshot covers the same
 `clang`-unavailable boundary when selected `llc` exits nonzero without
 diagnostics, proving the stable empty-stderr `llc` diagnostic also blocks
 `cc -S` fallback recovery.
+An empty-stderr selected-backend failure-precedence snapshot exposes
+deterministic fake `clang`, `llc`, and `cc` commands together, proves the
+stable empty-stderr `clang` diagnostic is reported as final, and proves
+fallback tools are not invoked after selected `clang` fails.
 
 ## Current Status
 

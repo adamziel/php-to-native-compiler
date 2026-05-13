@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  failure precedence when selected `clang` exits nonzero without stderr while
+  fallback `llc` and `cc` are also available. The Milestone 215 fixture runs
+  as a lowerable scalar echo/print program, while the assembly CLI test
+  exposes deterministic fake `clang`, `llc`, and `cc` tools where selected
+  `clang` fails silently and fallback tools would fail loudly if invoked.
+  Bundled toolchains, assembly linking/execution, full backend recovery
+  semantics, exact native error objects, and broader native lowering remain
+  explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   failure precedence when `clang` is unavailable, selected `llc` exits nonzero
   without stderr, and `cc` is also available. The Milestone 214 fixture runs

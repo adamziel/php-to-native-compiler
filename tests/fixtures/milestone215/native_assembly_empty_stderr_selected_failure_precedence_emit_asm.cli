@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone215/native_assembly_empty_stderr_selected_failure_precedence.php:0:0: clang failed to emit assembly: backend exited without stderr
+--- stderr end ---

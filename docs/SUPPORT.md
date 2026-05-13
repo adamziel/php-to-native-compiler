@@ -1077,7 +1077,11 @@
   `cc -S` C fallback. An empty-stderr fallback failure-precedence snapshot
   covers the same `clang`-unavailable boundary when selected `llc` exits
   nonzero without diagnostics, proving the stable empty-stderr `llc`
-  diagnostic is reported without `cc -S` fallback recovery. Bundled toolchains,
+  diagnostic is reported without `cc -S` fallback recovery. An empty-stderr
+  selected-backend failure-precedence snapshot exposes deterministic fake
+  `clang`, `llc`, and `cc` commands together, makes selected `clang` exit
+  nonzero without diagnostics, and proves the stable empty-stderr `clang`
+  diagnostic is reported without falling through to fallback tools. Bundled toolchains,
   assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,

@@ -15854,3 +15854,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T09:34:10Z
 
 - Post-round 105 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T09:34:23Z
+
+- Starting round 106 at 20260513T093423Z from HEAD `1cb9639`.
+
+## Loop Event 2026-05-13T09:34:37Z
+
+- Pre-round 106 test exit code: `0`.
+
+## Loop Event 2026-05-13T09:40:27Z
+
+- Task attempted: added Milestone 215 explicit `phpc compile --emit-asm` CLI
+  coverage for selected backend failure precedence when selected `clang` passes
+  discovery but exits nonzero without stderr while fallback `llc` and `cc`
+  commands are also available.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone215/native_assembly_empty_stderr_selected_failure_precedence.php`,
+  `tests/fixtures/milestone215/native_assembly_empty_stderr_selected_failure_precedence.stdout`,
+  `tests/fixtures/milestone215/native_assembly_empty_stderr_selected_failure_precedence_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_reports_empty_stderr_clang_failure_without_fallback_cli_snapshot_matches_committed_output`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone215` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone215`
+  passed with 1 system PHP comparison; `tools/run-tests.sh` passed with 465
+  fixtures, 209 system PHP comparisons, and 256 skipped comparisons.
+- Remaining semantic gaps: bundled toolchains, assembly linking/execution,
+  full backend recovery semantics, exact native error objects, and broader
+  native lowering remain unsupported. No `known-good/...` tag was created
+  because this was routine CLI boundary coverage rather than a major stable
+  state.
+- Next concrete task: add Milestone 216 selected backend start-failure
+  precedence coverage for a discovered `clang` command that cannot be started
+  while fallback `llc` and `cc` are also available.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot empty-stderr selected failure precedence"`
+  after the full suite passes.
