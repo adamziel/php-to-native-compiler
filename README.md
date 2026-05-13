@@ -83,6 +83,10 @@ fallback selection and after the `cc -S` C fallback selection.
 A selected-backend whitespace-only success snapshot exposes a deterministic
 fake `clang` that exits successfully with only whitespace on stdout, proving
 the same stable diagnostic before fallback selection.
+A selected-backend whitespace-with-stderr success snapshot exposes a
+deterministic fake `clang` that exits successfully with only whitespace on
+stdout and diagnostics on stderr, proving stdout validation wins and backend
+stderr remains unsurfaced on invalid successful output.
 
 ## Current Status
 

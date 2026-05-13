@@ -1030,7 +1030,11 @@
   whitespace-only-output diagnostic after fallback selection. A selected
   backend whitespace-only success snapshot exposes deterministic fake `clang`
   with the same whitespace-only stdout behavior, proving that diagnostic before
-  fallback selection too. Bundled toolchains, assembly linking/execution,
+  fallback selection too. A selected backend whitespace-with-stderr success
+  snapshot exposes deterministic fake `clang` that exits successfully with
+  whitespace-only stdout and stderr diagnostics, proving stdout validation
+  wins and successful-backend stderr is not surfaced on invalid successful
+  output. Bundled toolchains, assembly linking/execution,
   backend-specific discovery semantics for every tool, backend-specific
   stdout/stderr guarantees, backend-specific assembly text, PHP zvals, native
   symbol-table storage, references/copy-on-write, exact native error objects,

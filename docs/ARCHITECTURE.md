@@ -151,6 +151,11 @@ after the `cc -S` C fallback selection.
 A selected-backend whitespace-only success snapshot exposes a deterministic
 fake `clang` that exits successfully with only whitespace on stdout. That pins
 the same shared whitespace-only-output diagnostic before fallback selection.
+A selected-backend whitespace-with-stderr success snapshot exposes a
+deterministic fake `clang` that exits successfully with only whitespace on
+stdout while writing stderr diagnostics. That pins stdout validation as the
+reported failure and keeps successful-backend stderr unsurfaced even when the
+successful stdout artifact is invalid.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

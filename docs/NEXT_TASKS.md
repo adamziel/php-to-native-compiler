@@ -1878,10 +1878,20 @@ handled.
 
 ## Milestone 200: Native Assembly Invalid Success Output Stderr Precedence
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
   `clang` backend success case that writes stderr diagnostics while producing
   whitespace-only assembly stdout, proving stdout validation wins and backend
   stderr remains unsurfaced on invalid successful output, including
   deterministic test doubles, documentation, and named gaps for
   backend-specific assembly validation, bundled toolchains, exact native error
   objects, and broader native lowering.
+
+## Milestone 201: Native Assembly Invalid Fallback Output Stderr Precedence
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
+  and `cc` backend success cases that write stderr diagnostics while producing
+  whitespace-only assembly stdout, proving stdout validation wins and backend
+  stderr remains unsurfaced on invalid successful output after fallback
+  selection, including deterministic test doubles, documentation, and named
+  gaps for backend-specific assembly validation, bundled toolchains, exact
+  native error objects, and broader native lowering.
