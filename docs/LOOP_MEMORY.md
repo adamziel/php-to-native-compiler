@@ -15662,5 +15662,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   available.
 - Known-good tag: not created; this is narrow fallback backend selection
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot fallback backend precedence"`
-  after the full suite passes.
+- Checkpoint: `93b9e64` (`codegen: snapshot fallback backend precedence`).
