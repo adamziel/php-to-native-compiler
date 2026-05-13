@@ -43,6 +43,8 @@ shape without depending on toolchain-specific stderr.
 A deterministic fake-`llc` snapshot hides `clang` and `cc` while exposing only
 `llc`, proving the documented LLVM backend selection order without committing
 backend-specific assembly text.
+A failing fake-`llc` snapshot records the stable selected-`llc` failure
+diagnostic when `clang` is unavailable.
 
 ## Current Status
 

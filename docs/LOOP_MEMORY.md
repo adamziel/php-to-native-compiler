@@ -14231,3 +14231,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:49:05Z
 
 - Post-round 78 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:49:20Z
+
+- Starting round 79 at 20260513T064920Z from HEAD `ab0cfe3`.
+
+## Loop Event 2026-05-13T06:49:36Z
+
+- Pre-round 79 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:51:57Z
+
+- Task attempted: completed Milestone 188 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for selected `llc` backend failure diagnostics. The
+  new Milestone 188 fixture is a lowerable scalar echo/print program, and the
+  assembly CLI test invokes `--emit-asm` with a temporary PATH exposing only a
+  deterministic fake `llc` that passes discovery and exits nonzero after
+  accepting generated LLVM IR, proving the stable selected-`llc` failure
+  diagnostic shape.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone188/native_assembly_llc_failure.php`,
+  `tests/fixtures/milestone188/native_assembly_llc_failure.stdout`,
+  `tests/fixtures/milestone188/native_assembly_llc_failure_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli -- --nocapture` passed with 7 tests; `cargo run
+  -p phpc -- test tests/fixtures/milestone188` passed with 1 fixture; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/milestone188` passed with 1
+  system PHP comparison; `tools/run-tests.sh` passed with 438 fixtures, 182
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: backend-specific stderr guarantees are still not
+  provided; phpc does not bundle an assembly toolchain; assembly output is not
+  linked or executed; generated code still lacks exact native PHP error objects
+  and broader native lowering.
+- Next concrete task: add Milestone 189, explicit `phpc compile --emit-asm`
+  CLI coverage for `cc -S` fallback failure diagnostics when `clang` and `llc`
+  are unavailable and available `cc` exits nonzero.
+- Known-good tag: not created; this is narrow native CLI backend-failure
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly llc failure CLI coverage"`
+  after the full suite passes.

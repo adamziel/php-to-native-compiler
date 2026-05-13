@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone188/native_assembly_llc_failure.php:0:0: llc failed to emit assembly: fake llc backend failed after accepting LLVM IR
+--- stderr end ---

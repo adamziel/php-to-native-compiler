@@ -991,9 +991,12 @@
   failure diagnostic shape without committing real toolchain stderr. A
   selected-`llc` snapshot hides `clang` and `cc` while exposing only a
   deterministic fake `llc`, proving the documented LLVM backend selection order
-  with normalized assembly-shape checks. Bundled toolchains, assembly
-  linking/execution, backend-specific stderr guarantees, backend-specific
-  assembly text, PHP zvals, native symbol-table storage,
+  with normalized assembly-shape checks. A selected-`llc` failure snapshot uses
+  a deterministic fake `llc` that passes discovery and exits nonzero after
+  accepting generated LLVM IR, proving the stable `llc failed to emit
+  assembly` diagnostic shape without committing real toolchain stderr. Bundled
+  toolchains, assembly linking/execution, backend-specific stderr guarantees,
+  backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.

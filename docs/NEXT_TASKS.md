@@ -1776,8 +1776,16 @@ handled.
 
 ## Milestone 188: Native Assembly LLC Failure CLI Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected `llc`
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for selected `llc`
   backend failure diagnostics when `clang` is unavailable and available `llc`
   exits nonzero, including stable stderr normalization, documentation, and
   named gaps for backend-specific diagnostics, bundled toolchains, exact
+  native error objects, and broader native lowering.
+
+## Milestone 189: Native Assembly C Fallback Failure CLI Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for `cc -S` fallback
+  failure diagnostics when `clang` and `llc` are unavailable and available
+  `cc` exits nonzero, including stable stderr normalization, documentation,
+  and named gaps for backend-specific diagnostics, bundled toolchains, exact
   native error objects, and broader native lowering.
