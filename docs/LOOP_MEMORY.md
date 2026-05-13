@@ -11736,3 +11736,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   expressions such as `$left = $right = expr`, either direct-target execution
   or a tighter documented diagnostic boundary.
 - Checkpoint: `01b9922 assignment expressions: add null coalescing results`.
+
+## Loop Event 2026-05-13T02:17:28Z
+
+- Codex round 37 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T020727Z-37.log`.
+
+## Loop Event 2026-05-13T02:17:43Z
+
+- Post-round 37 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:17:43Z
+
+- Post-round 37 tests passed; running checkpoint for this round.
