@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback assembly
+  backend commands that pass discovery but cannot be started for actual
+  emission. The Milestone 209 fixture runs as a lowerable scalar echo/print
+  program, while assembly CLI tests use deterministic fake `llc` and `cc`
+  tools that pass `--version` and then rewrite themselves to use a missing
+  interpreter. The committed snapshots prove the stable fallback start-failure
+  diagnostics. Bundled toolchains, assembly linking/execution, broader backend
+  race-condition recovery, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for a selected
   assembly backend command that passes discovery but cannot be started for
   actual emission. The Milestone 208 fixture runs as a lowerable scalar

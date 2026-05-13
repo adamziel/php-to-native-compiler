@@ -120,6 +120,10 @@ A selected-backend start-failure snapshot exposes a deterministic fake
 interpreter before assembly emission, proving `phpc` reports the stable
 selected-backend start diagnostic when a previously discovered command cannot
 be started.
+Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
+tools with the same race-like behavior, proving the stable fallback backend
+start diagnostics after LLVM fallback selection and after the `cc -S` C
+fallback selection.
 
 ## Current Status
 

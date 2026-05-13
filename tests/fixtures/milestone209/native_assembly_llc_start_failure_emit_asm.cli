@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone209/native_assembly_fallback_start_failure.php:0:0: failed to start llc for assembly emission: No such file or directory (os error 2)
+--- stderr end ---

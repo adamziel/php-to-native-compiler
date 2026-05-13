@@ -15504,3 +15504,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T08:38:41Z
 
 - Post-round 99 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T08:38:53Z
+
+- Starting round 100 at 20260513T083853Z from HEAD `49a69e9`.
+
+## Loop Event 2026-05-13T08:39:04Z
+
+- Pre-round 100 test exit code: `0`.
+
+## Loop Event 2026-05-13T08:55:00Z
+
+- Task attempted: completed Milestone 209 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for fallback assembly backend commands that pass
+  discovery but cannot be started for actual emission. The new Milestone 209
+  fixture is a lowerable scalar echo/print program, and the assembly CLI tests
+  invoke `--emit-asm` with temporary PATHs exposing deterministic fake `llc`
+  and `cc` tools that pass `--version` and then rewrite themselves to use a
+  missing interpreter before assembly emission.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone209/native_assembly_fallback_start_failure.php`,
+  `tests/fixtures/milestone209/native_assembly_fallback_start_failure.stdout`,
+  `tests/fixtures/milestone209/native_assembly_llc_start_failure_emit_asm.cli`,
+  `tests/fixtures/milestone209/native_assembly_cc_start_failure_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone209` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone209` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test native_assembly_cli start_failure --
+  --nocapture` passed with 3 focused tests; `cargo test -p phpc --test
+  native_assembly_cli -- --nocapture` passed with 43 tests;
+  `tools/run-tests.sh` passed with 459 fixtures, 203 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; backend race-condition coverage is
+  limited to command-start diagnostics for selected and fallback backends;
+  generated code still lacks exact native PHP error objects and broader native
+  lowering.
+- Next concrete task: add Milestone 210, explicit `phpc compile --emit-asm`
+  CLI coverage for backend selection precedence when `clang`, `llc`, and `cc`
+  are all available.
+- Known-good tag: not created; this is narrow fallback backend start-failure
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot fallback backend start failures"`
+  after the full suite passes.

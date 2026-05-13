@@ -1057,13 +1057,16 @@
   deterministic fake `clang` that passes discovery and then rewrites itself to
   use a missing interpreter before actual assembly emission, proving the
   stable `failed to start clang for assembly emission` diagnostic for that
-  race-like command-start boundary. Bundled toolchains, assembly
-  linking/execution, full
+  race-like command-start boundary. Fallback start-failure snapshots use
+  deterministic fake `llc` and `cc` tools with the same behavior, proving the
+  stable `failed to start llc for assembly emission` and `failed to start cc
+  for assembly emission` diagnostics after fallback selection. Bundled
+  toolchains, assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed
-  probe output semantics, backend race-condition recovery across all selected
-  and fallback tools, backend-specific stdout/stderr guarantees,
+  probe output semantics, broader backend race-condition recovery beyond
+  command-start diagnostics, backend-specific stdout/stderr guarantees,
   backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
