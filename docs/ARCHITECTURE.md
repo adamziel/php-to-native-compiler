@@ -93,6 +93,10 @@ Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,
 array/object comparison behavior, `NAN`/`INF` edge cases, or exact native error
 objects that only the interpreter path currently handles or diagnoses.
+Native lowering also rejects logical operators before operand lowering until
+generated code has explicit PHP truthiness conversion, short-circuit
+side-effect ordering for `&&`, `||`, `and`, and `or`, and both-operand
+evaluation for `xor`.
 
 ## Dynamic Features
 

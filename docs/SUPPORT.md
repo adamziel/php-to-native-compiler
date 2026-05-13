@@ -914,7 +914,11 @@
   string diagnostics exist in generated code. Native comparison operators
   `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
-  PHP comparison coercions and non-scalar comparison diagnostics.
+  PHP comparison coercions and non-scalar comparison diagnostics. Native
+  logical operators `&&`, `||`, `and`, `xor`, and `or` are rejected before
+  operand lowering with a specific codegen diagnostic until generated code has
+  PHP truthiness conversion, short-circuit side-effect ordering, and broader
+  array/object truthiness coverage.
   `if`/`elseif`/`else`, `while`, arrays, array
   indexing, array assignment, variable unset, array offset unset,
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
@@ -1771,7 +1775,9 @@
   symbolic precedence plus word-operator precedence around direct assignment
   expressions. Operator-overloaded extension values, references/copy-on-write
   side effects, exact native error objects, and native lowering are not
-  implemented.
+  implemented. LLVM IR/assembly emission rejects logical operators before
+  operand lowering so generated code does not imply partial PHP truthiness or
+  short-circuit semantics.
 - Bitwise operators are limited to `&`, `|`, `^`, unary `~`, and shift
   operators `<<`/`>>` over the current integer/string subset. Mixed binary
   operands and shift operands use the current

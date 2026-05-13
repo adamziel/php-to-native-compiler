@@ -1579,10 +1579,19 @@ handled.
 
 ## Milestone 166: Native Logical Operator Boundary
 
-- [ ] Add the next honest native-codegen boundary for logical operators
+- [x] Add the next honest native-codegen boundary for logical operators
   `&&`, `||`, `and`, `xor`, and `or`, either by lowering a narrow boolean
   result subset with short-circuit behavior where required or by tightening
   explicit diagnostics with fixture CLI coverage, documentation, and named gaps
   for truthiness over arrays/objects, side-effect ordering,
   references/copy-on-write, exact native error objects, and broader native
   lowering.
+
+## Milestone 167: Native Bitwise Operator Boundary
+
+- [ ] Add the next honest native-codegen boundary for bitwise and shift
+  operators `&`, `|`, `^`, `~`, `<<`, and `>>`, either by lowering a narrow
+  integer-only subset or by tightening explicit diagnostics with fixture CLI
+  coverage, documentation, and named gaps for string bytewise operations,
+  scalar-to-int coercion, negative/large shifts, references/copy-on-write,
+  exact native error objects, and broader native lowering.

@@ -289,7 +289,7 @@ impl LlvmGenerator {
                 ) {
                     return Err(self.unsupported(
                         *span,
-                        "logical operators are supported by phpc run but not LLVM IR emission yet",
+                        "LLVM logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior",
                     ));
                 }
                 if matches!(
@@ -361,7 +361,7 @@ impl LlvmGenerator {
             )),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => Err(self.unsupported(
                 span,
-                "logical operators are supported by phpc run but not LLVM IR emission yet",
+                "LLVM logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior",
             )),
             BinaryOp::BitwiseAnd
             | BinaryOp::BitwiseOr
@@ -992,7 +992,7 @@ impl CGenerator {
                 ) {
                     return Err(self.unsupported(
                         *span,
-                        "logical operators are supported by phpc run but not assembly emission yet",
+                        "assembly logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior",
                     ));
                 }
                 if matches!(
@@ -1064,7 +1064,7 @@ impl CGenerator {
             )),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => Err(self.unsupported(
                 span,
-                "logical operators are supported by phpc run but not assembly emission yet",
+                "assembly logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior",
             )),
             BinaryOp::BitwiseAnd
             | BinaryOp::BitwiseOr

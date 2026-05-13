@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a native logical-operator boundary. LLVM IR emission now rejects
+  `&&`, `||`, `and`, `xor`, and `or` before lowering operands, with a specific
+  codegen diagnostic until generated code has PHP truthiness conversion and
+  short-circuit semantics; the C assembly fallback carries the same boundary
+  for consistency. A runtime fixture still proves the current logical-operator
+  subset, and a `phpc compile --emit-ir` CLI snapshot pins the native
+  rejection. Truthiness over arrays/objects in generated code, side-effect
+  ordering, references/copy-on-write, exact native error objects, and broader
+  native lowering remain explicit gaps.
 - Added a native comparison boundary. LLVM IR emission now rejects `==`, `!=`,
   `===`, `!==`, `<`, `<=`, `>`, and `>=` before lowering operands, with a
   specific codegen diagnostic until generated code has PHP comparison

@@ -12891,3 +12891,53 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T04:33:11Z
 
 - Post-round 56 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T04:33:38Z
+
+- Starting round 57 at 20260513T043338Z from HEAD `737119f`.
+
+## Loop Event 2026-05-13T04:33:54Z
+
+- Pre-round 57 test exit code: `0`.
+
+## Loop Event 2026-05-13T04:38:24Z
+
+- Task attempted: completed Milestone 166 by tightening the native codegen
+  boundary for logical operators. LLVM IR emission now rejects `&&`, `||`,
+  `and`, `xor`, and `or` before lowering operands with a specific diagnostic
+  until generated code has PHP truthiness conversion and short-circuit
+  semantics; the C assembly fallback carries the same boundary for
+  consistency. Runtime fixture coverage still proves the current `phpc run`
+  logical-operator subset.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/logical_operators.rs`, `compiler/tests/logical_xor.rs`,
+  `compiler/tests/native_logical_boundary.rs`,
+  `tests/fixtures/milestone166/native_logical_boundary.php`,
+  `tests/fixtures/milestone166/native_logical_boundary.stdout`,
+  `tests/fixtures/milestone166/native_logical_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_logical_boundary -- --nocapture` passed with 5 tests;
+  `cargo test -p phpc --test logical_operators -- --nocapture` passed with 5
+  tests; `cargo test -p phpc --test logical_xor -- --nocapture` passed with
+  5 tests; `cargo run -p phpc -- test tests/fixtures/milestone166` passed
+  with 1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone166` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- compile
+  tests/fixtures/milestone166/native_logical_boundary.php --emit-ir` exited
+  `1` with the expected explicit native logical codegen diagnostic;
+  `tools/run-tests.sh` passed with 416 fixtures, 162 system PHP comparisons,
+  and 254 comparison skips.
+- Remaining semantic gaps: generated code still lacks PHP truthiness
+  conversion for arrays/objects, short-circuit side-effect ordering for
+  logical operators, references/copy-on-write side effects, exact native error
+  objects, and broader native lowering.
+- Next concrete task: add Milestone 167, the next honest native-codegen
+  boundary for bitwise and shift operators, either by lowering a narrow
+  integer-only subset or by tightening diagnostics and fixture coverage for
+  native bitwise/shift rejection.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "native codegen: reject logical operators"`.

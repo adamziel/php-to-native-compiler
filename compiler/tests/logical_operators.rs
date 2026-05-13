@@ -97,6 +97,6 @@ fn emit_ir_rejects_logical_operators_until_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "logical operators are supported by phpc run but not LLVM IR emission yet"
+        "LLVM logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior"
     );
 }
