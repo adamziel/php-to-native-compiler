@@ -98,6 +98,9 @@ diagnostics are returned before backend discovery or invocation.
 A separate backend-absence CLI snapshot runs a lowerable scalar program with
 backend tools removed from `PATH`; this pins the missing-backend diagnostic
 after LLVM lowering has succeeded.
+The C fallback path has its own CLI snapshot that hides `clang` and `llc` while
+exposing only `cc`; it checks normalized success properties instead of exact
+assembly text.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

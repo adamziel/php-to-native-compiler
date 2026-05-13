@@ -34,6 +34,9 @@ before attempting assembly backend discovery.
 A separate lowerable scalar snapshot removes backend tools from `PATH` and
 records the stable missing-backend diagnostic for environments without
 `clang`, `llc`, or `cc`.
+Another lowerable scalar snapshot hides `clang` and `llc` while exposing only a
+`cc` command, proving the documented `cc -S` fallback with normalized assembly
+output checks instead of backend-specific assembly text.
 
 ## Current Status
 

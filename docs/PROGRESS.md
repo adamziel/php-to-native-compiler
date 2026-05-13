@@ -3392,9 +3392,16 @@ Still fails:
   missing-backend diagnostic after LLVM lowering succeeds. Bundled toolchains,
   assembly linking/execution, exact native error objects, and broader native
   lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for the documented
+  `cc -S` fallback path. The Milestone 185 fixture runs through `phpc run` and
+  system PHP as a lowerable scalar echo/print program, while the assembly CLI
+  test invokes `--emit-asm` with a temporary PATH that hides `clang` and `llc`
+  and exposes only `cc`, then compares a normalized success summary instead of
+  backend-specific assembly text. Bundled toolchains, assembly
+  linking/execution, exact native error objects, and broader native lowering
+  remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for the documented
-  `cc -S` fallback path when LLVM tools are unavailable but a C compiler
-  backend exists, without snapshotting platform-specific assembly text.
+- Add explicit `phpc compile --emit-asm` CLI coverage for selected-backend
+  failure diagnostics when the chosen assembly backend exits nonzero.

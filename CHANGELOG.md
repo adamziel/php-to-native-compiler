@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for the documented
+  `cc -S` fallback path. The Milestone 185 fixture runs as a lowerable scalar
+  echo/print program, and the assembly CLI test invokes `--emit-asm` with a
+  temporary PATH that hides `clang` and `llc` while exposing only `cc`. The
+  committed snapshot checks a normalized success summary rather than exact
+  assembly text. Bundled toolchains, assembly linking/execution, exact native
+  error objects, and broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for the current
   lowerable scalar subset when no assembly backend tools are available. The
   Milestone 184 fixture runs as a scalar echo/print program, while the assembly

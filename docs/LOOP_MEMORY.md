@@ -14074,3 +14074,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:34:26Z
 
 - Post-round 75 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:34:42Z
+
+- Starting round 76 at 20260513T063441Z from HEAD `4ce92d0`.
+
+## Loop Event 2026-05-13T06:35:01Z
+
+- Pre-round 76 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:38:12Z
+
+- Task attempted: added explicit `phpc compile --emit-asm` CLI coverage for
+  the documented `cc -S` fallback path. The new Milestone 185 fixture is a
+  lowerable scalar echo/print program, and the assembly CLI test invokes
+  `--emit-asm` with a temporary PATH that hides `clang` and `llc` while
+  exposing only `cc`, then compares normalized assembly output properties.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone185/native_assembly_cc_fallback.php`,
+  `tests/fixtures/milestone185/native_assembly_cc_fallback.stdout`,
+  `tests/fixtures/milestone185/native_assembly_cc_fallback_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli` passed with 4 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone185` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone185` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 435 fixtures, 179 system PHP
+  comparisons, and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; backend failure diagnostics may
+  include backend-specific stderr; generated code still lacks exact native PHP
+  error objects and broader native lowering.
+- Next concrete task: add Milestone 186, explicit `phpc compile --emit-asm`
+  CLI coverage for selected-backend failure diagnostics when an available
+  assembly backend exits nonzero.
+- Known-good tag: not created; this is a narrow native CLI coverage checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly cc fallback CLI coverage"`
+  after the full suite passes.
