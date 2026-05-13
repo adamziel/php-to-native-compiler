@@ -3,6 +3,17 @@
 ## Unreleased
 
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  success cases that produce empty assembly stdout. The Milestone 197 fixture
+  runs as a lowerable scalar echo/print program, while assembly CLI tests
+  invoke `--emit-asm` with temporary PATHs exposing deterministic fake `llc`
+  and `cc` tools that pass discovery, accept generated input, emit no stdout,
+  and exit successfully. The committed snapshots prove the stable `llc
+  emitted empty assembly output` and `cc emitted empty assembly output`
+  diagnostics after LLVM backend fallback selection and after `cc -S` C
+  fallback selection. Bundled toolchains, assembly linking/execution,
+  backend-specific stdout/stderr guarantees, exact native error objects, and
+  broader native lowering remain explicit gaps.
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   failures that exit nonzero without stderr diagnostics. The Milestone 196
   fixture runs as a lowerable scalar echo/print program, while assembly CLI
   tests invoke `--emit-asm` with temporary PATHs exposing deterministic fake

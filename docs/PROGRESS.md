@@ -3515,9 +3515,21 @@ Still fails:
   C fallback selection. Bundled toolchains, assembly linking/execution,
   backend-specific stderr guarantees, exact native error objects, and broader
   native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  success cases that produce empty assembly stdout. The Milestone 197 fixture
+  runs through `phpc run` and system PHP as a lowerable scalar echo/print
+  program, while assembly CLI tests invoke `--emit-asm` with temporary PATHs
+  exposing deterministic fake `llc` and `cc` tools that pass discovery, accept
+  generated input, emit no stdout, and exit successfully. The committed
+  snapshots prove the stable `llc emitted empty assembly output` and `cc
+  emitted empty assembly output` diagnostics after LLVM backend fallback
+  selection and after `cc -S` C fallback selection. Bundled toolchains,
+  assembly linking/execution, backend-specific stdout/stderr guarantees, exact
+  native error objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit CLI coverage for selected `llc` and `cc` backend success cases
-  that exit successfully without assembly stdout, proving the empty-output
-  diagnostic after fallback selection.
+- Add explicit CLI coverage for selected fallback backend success cases that
+  produce only whitespace assembly stdout, either by rejecting whitespace-only
+  output with stable diagnostics or by documenting and testing the current
+  behavior.

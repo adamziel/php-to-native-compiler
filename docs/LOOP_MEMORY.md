@@ -14762,3 +14762,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T07:31:27Z
 
 - Post-round 87 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T07:31:41Z
+
+- Starting round 88 at 20260513T073141Z from HEAD `bed7b7e`.
+
+## Loop Event 2026-05-13T07:31:58Z
+
+- Pre-round 88 test exit code: `0`.
+
+## Loop Event 2026-05-13T07:37:20Z
+
+- Task attempted: completed Milestone 197 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for fallback backend success cases that produce
+  empty assembly stdout. The new Milestone 197 fixture is a lowerable scalar
+  echo/print program, and the assembly CLI tests invoke `--emit-asm` with
+  temporary PATHs exposing deterministic fake `llc` and `cc` tools that pass
+  discovery, accept generated input, emit no stdout, and exit successfully.
+  The committed snapshots prove the stable `llc emitted empty assembly output`
+  and `cc emitted empty assembly output` diagnostics after LLVM backend
+  fallback selection and after `cc -S` C fallback selection.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone197/native_assembly_empty_fallback_stdout.php`,
+  `tests/fixtures/milestone197/native_assembly_empty_fallback_stdout.stdout`,
+  `tests/fixtures/milestone197/native_assembly_llc_empty_stdout_emit_asm.cli`,
+  `tests/fixtures/milestone197/native_assembly_cc_empty_stdout_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round so far: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli
+  native_scalar_echo_emit_asm_llc_empty_stdout_success_cli_snapshot_matches_committed_output
+  -- --nocapture` passed; `cargo test -p phpc --test native_assembly_cli
+  native_scalar_echo_emit_asm_cc_empty_stdout_success_cli_snapshot_matches_committed_output
+  -- --nocapture` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone197` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone197` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test native_assembly_cli -- --nocapture`
+  passed with 19 tests; `tools/run-tests.sh` passed with 447 fixtures, 191
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; backend-specific stdout/stderr
+  guarantees remain narrow test-double coverage; generated code still lacks
+  exact native PHP error objects and broader native lowering.
+- Next concrete task: add Milestone 198, explicit `phpc compile --emit-asm`
+  CLI coverage for selected fallback backend success cases that produce only
+  whitespace assembly stdout, either by rejecting whitespace-only output with
+  stable diagnostics or by documenting and testing the current behavior.
+- Known-good tag: not created; this is narrow native CLI fallback-backend
+  empty-output diagnostic coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: cover fallback backend empty-output success"`
+  after the full suite passes.
