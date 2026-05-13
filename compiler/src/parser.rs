@@ -610,15 +610,11 @@ impl Parser {
             }
 
             let target = self.parse_assignment_target()?;
-            let AssignTarget::Variable { name, .. } = target else {
-                return Err(self.error_at(
-                    target.span(),
-                    unsupported_increment_decrement_target_message(),
-                ));
-            };
+            Self::ensure_supported_increment_decrement_target(&target)
+                .map_err(|message| self.error_at(target.span(), message))?;
 
             return Ok(ForAction::IncrementDecrement {
-                name,
+                target,
                 op,
                 span: operator_span,
             });
@@ -628,14 +624,11 @@ impl Parser {
             let saved = self.current;
             let target = self.parse_assignment_target()?;
             if let Some(op) = self.match_increment_decrement_operator() {
-                let AssignTarget::Variable { name, span } = target else {
-                    return Err(self.error_at(
-                        target.span(),
-                        unsupported_increment_decrement_target_message(),
-                    ));
-                };
+                let span = target.span();
+                Self::ensure_supported_increment_decrement_target(&target)
+                    .map_err(|message| self.error_at(target.span(), message))?;
 
-                return Ok(ForAction::IncrementDecrement { name, op, span });
+                return Ok(ForAction::IncrementDecrement { target, op, span });
             }
             if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                 let expr = self.parse_expression()?;
@@ -980,7 +973,10 @@ impl Parser {
 
         let target = self.parse_assignment_target()?;
         if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-            if matches!(target, AssignTarget::Variable { .. }) {
+            if matches!(
+                target,
+                AssignTarget::Variable { .. } | AssignTarget::Property { .. }
+            ) {
                 self.current = saved;
                 return Ok(None);
             }
@@ -994,15 +990,11 @@ impl Parser {
             "expected ';' after increment/decrement",
         )?;
 
-        let AssignTarget::Variable { name, .. } = target else {
-            return Err(self.error_at(
-                target.span(),
-                unsupported_increment_decrement_target_message(),
-            ));
-        };
+        Self::ensure_supported_increment_decrement_target(&target)
+            .map_err(|message| self.error_at(target.span(), message))?;
 
         Ok(Some(Stmt::IncrementDecrement {
-            name,
+            target,
             op,
             span: operator_span,
         }))
@@ -1018,7 +1010,10 @@ impl Parser {
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
             if let Some(op) = self.match_increment_decrement_operator() {
                 if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-                    if matches!(target, AssignTarget::Variable { .. }) {
+                    if matches!(
+                        target,
+                        AssignTarget::Variable { .. } | AssignTarget::Property { .. }
+                    ) {
                         self.current = saved;
                         return Ok(None);
                     }
@@ -1032,14 +1027,11 @@ impl Parser {
                     "expected ';' after increment/decrement",
                 )?;
 
-                let AssignTarget::Variable { name, span } = target else {
-                    return Err(self.error_at(
-                        target.span(),
-                        unsupported_increment_decrement_target_message(),
-                    ));
-                };
+                let span = target.span();
+                Self::ensure_supported_increment_decrement_target(&target)
+                    .map_err(|message| self.error_at(target.span(), message))?;
 
-                return Ok(Some(Stmt::IncrementDecrement { name, op, span }));
+                return Ok(Some(Stmt::IncrementDecrement { target, op, span }));
             }
             if let Some(op) = self.match_compound_assignment_operator() {
                 let span = target.span();
@@ -1140,6 +1132,17 @@ impl Parser {
             | AssignTarget::Property { .. } => Ok(()),
             AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
+            }
+        }
+    }
+
+    fn ensure_supported_increment_decrement_target(
+        target: &AssignTarget,
+    ) -> Result<(), &'static str> {
+        match target {
+            AssignTarget::Variable { .. } | AssignTarget::Property { .. } => Ok(()),
+            AssignTarget::ArrayIndex { .. } => {
+                Err(unsupported_increment_decrement_target_message())
             }
         }
     }
@@ -1507,12 +1510,8 @@ impl Parser {
             }
 
             let target = self.parse_assignment_target()?;
-            let AssignTarget::Variable { name, .. } = target else {
-                return Err(self.error_at(
-                    target.span(),
-                    unsupported_increment_decrement_target_message(),
-                ));
-            };
+            Self::ensure_supported_increment_decrement_target(&target)
+                .map_err(|message| self.error_at(target.span(), message))?;
 
             if self.check_increment_decrement_operator() {
                 return Err(self.error_at(
@@ -1522,7 +1521,7 @@ impl Parser {
             }
 
             return Ok(Expr::IncrementDecrement {
-                name,
+                target: Box::new(target),
                 op,
                 position: IncrementDecrementPosition::Pre,
                 span: operator_span,
@@ -1604,17 +1603,36 @@ impl Parser {
             }
 
             if self.check_increment_decrement_operator() {
-                let Expr::Variable(name, span) = expr else {
-                    return Err(self.error_at(
-                        expr.span(),
-                        unsupported_increment_decrement_target_message(),
-                    ));
+                let target = match expr {
+                    Expr::Variable(name, span) => AssignTarget::Variable { name, span },
+                    Expr::Property {
+                        target,
+                        property,
+                        span,
+                    } => match *target {
+                        Expr::Variable(object, _) => AssignTarget::Property {
+                            object,
+                            property,
+                            span,
+                        },
+                        _ => {
+                            return Err(self
+                                .error_at(span, unsupported_increment_decrement_target_message()));
+                        }
+                    },
+                    _ => {
+                        return Err(self.error_at(
+                            expr.span(),
+                            unsupported_increment_decrement_target_message(),
+                        ));
+                    }
                 };
                 let op = self
                     .match_increment_decrement_operator()
                     .expect("caller checked increment/decrement operator");
+                let span = target.span();
                 expr = Expr::IncrementDecrement {
-                    name,
+                    target: Box::new(target),
                     op,
                     position: IncrementDecrementPosition::Post,
                     span,
@@ -2561,7 +2579,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented"
+    "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

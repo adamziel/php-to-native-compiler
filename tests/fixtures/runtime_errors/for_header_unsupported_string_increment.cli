@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/for_header_unsupported_string_increment.php:4:13: unsupported call increment/decrement: only int and float variables are implemented, got string
+runtime error at tests/fixtures/runtime_errors/for_header_unsupported_string_increment.php:4:13: unsupported call increment/decrement: only int and float variables or object properties are implemented, got string
 --- stderr end ---

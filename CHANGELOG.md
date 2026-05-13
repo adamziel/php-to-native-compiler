@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Implemented direct public object-property pre/post increment and decrement
+  `++$object->property`, `$object->property++`, `--$object->property`, and
+  `$object->property--` over existing declared public integer/float property
+  slots, including statement, expression, and C-style `for` header forms,
+  pre/post expression result values, missing-property, non-public-property,
+  non-object-target, and unsupported-string diagnostics, fixture/CLI coverage,
+  documentation, and native-codegen rejection while string increment
+  semantics, dynamic property names, missing-property materialization,
+  non-public visibility context, nested properties/offsets,
+  references/copy-on-write, exact native warning/error behavior, broader PHP
+  coercion recovery, and native lowering remain explicit gaps.
 - Implemented direct public object-property compound assignment
   `$object->property += expr`, `-=`, `*=`, `/=`, and `.=` over existing
   declared public property slots, including statement, expression, and

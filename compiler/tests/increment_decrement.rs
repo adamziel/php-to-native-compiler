@@ -89,6 +89,50 @@ echo --$float, ":", $float, "\n";
 }
 
 #[test]
+fn object_property_increment_decrement_updates_values_and_returns_pre_or_post_values() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $value;
+    public $float;
+    public $i;
+    public $sum;
+}
+
+$box = new Box();
+$box->value = 10;
+++$box->value;
+echo $box->value, "\n";
+echo $box->value++, ":", $box->value, "\n";
+echo --$box->value, ":", $box->value, "\n";
+echo $box->value--, ":", $box->value, "\n";
+
+$box->float = 1.5;
+echo $box->float++, ":", $box->float, "\n";
+echo --$box->float, ":", $box->float, "\n";
+
+$box->value = 1;
+++$box->value + 10;
+echo "side:", $box->value, "\n";
+$box->value++ + 10;
+echo "side:", $box->value, "\n";
+
+$box->sum = 0;
+for ($box->i = 0; $box->i < 3; $box->i++) {
+    $box->sum += $box->i;
+}
+echo $box->sum, ":", $box->i, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "11\n11:12\n11:11\n11:10\n1.5:2.5\n1.5:1.5\nside:2\nside:3\n3:3\n"
+    );
+}
+
+#[test]
 fn undefined_increment_decrement_left_side_is_runtime_error() {
     let error = runtime_error("<?php\n$missing++;\n");
 
@@ -116,6 +160,56 @@ fn for_header_undefined_increment_decrement_left_side_is_runtime_error() {
 }
 
 #[test]
+fn object_property_increment_decrement_reports_missing_properties() {
+    let error =
+        runtime_error("<?php\nclass Box { public $value; }\n$box = new Box();\n$box->missing++;\n");
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined property Box::$missing");
+}
+
+#[test]
+fn object_property_increment_decrement_reports_non_public_properties() {
+    let error = runtime_error(
+        "<?php\nclass Box { private $secret; }\n$box = new Box();\n++$box->secret;\n",
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+    );
+}
+
+#[test]
+fn object_property_increment_decrement_reports_non_object_targets() {
+    let error = runtime_error("<?php\n$box = 1;\n$box->value++;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid property access: cannot read property $value from int"
+    );
+}
+
+#[test]
+fn object_property_increment_decrement_rejects_non_numeric_current_gap() {
+    let error = runtime_error(
+        "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value = 'az';\n$box->value++;\n",
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
+    );
+}
+
+#[test]
 fn increment_decrement_rejects_non_numeric_current_gap() {
     let error = runtime_error("<?php\n$value = 'az';\n++$value;\n");
 
@@ -123,7 +217,7 @@ fn increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
     );
 }
 
@@ -135,7 +229,7 @@ fn expression_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
     );
 }
 
@@ -149,7 +243,7 @@ fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 13);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
     );
 }
 
@@ -162,7 +256,7 @@ fn emit_ir_rejects_increment_decrement_expressions_until_native_lowering_exists(
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "increment/decrement expressions are supported by phpc run for direct static int/float variables but not LLVM IR emission yet"
+        "increment/decrement expressions are supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
     );
 }
 
@@ -175,7 +269,20 @@ fn emit_ir_rejects_increment_decrement_until_native_lowering_exists() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "increment/decrement is supported by phpc run for direct static int/float variables but not LLVM IR emission yet"
+        "increment/decrement is supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_property_increment_decrement_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$box->value++;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "increment/decrement is supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
     );
 }
 

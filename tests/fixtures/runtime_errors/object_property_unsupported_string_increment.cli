@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/object_property_unsupported_string_increment.php:8:1: unsupported call increment/decrement: only int and float variables or object properties are implemented, got string
+--- stderr end ---

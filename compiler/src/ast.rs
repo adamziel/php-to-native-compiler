@@ -37,7 +37,7 @@ pub enum Stmt {
         span: Span,
     },
     IncrementDecrement {
-        name: String,
+        target: AssignTarget,
         op: IncrementDecrementOp,
         span: Span,
     },
@@ -171,7 +171,7 @@ pub enum ForAction {
         span: Span,
     },
     IncrementDecrement {
-        name: String,
+        target: AssignTarget,
         op: IncrementDecrementOp,
         span: Span,
     },
@@ -330,7 +330,7 @@ pub enum Expr {
         span: Span,
     },
     IncrementDecrement {
-        name: String,
+        target: Box<AssignTarget>,
         op: IncrementDecrementOp,
         position: IncrementDecrementPosition,
         span: Span,

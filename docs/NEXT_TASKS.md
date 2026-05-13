@@ -1344,7 +1344,7 @@ handled.
 
 ## Milestone 141: Object Property Increment Boundary
 
-- [ ] Add the next honest path for `++$object->property`, `$object->property++`,
+- [x] Add the next honest path for `++$object->property`, `$object->property++`,
   `--$object->property`, and `$object->property--`: either executable direct
   public-property increment/decrement semantics over the current object value
   model, or a tightened explicit diagnostic boundary with fixture CLI coverage,
@@ -1352,3 +1352,14 @@ handled.
   semantics, dynamic property names, non-public visibility context, missing
   properties, references, copy-on-write, exact native warning/error behavior,
   broader PHP coercion recovery, and native lowering.
+
+## Milestone 142: Array Offset Increment Boundary
+
+- [ ] Add the next honest path for `++$array[$key]`, `$array[$key]++`,
+  `--$array[$key]`, and `$array[$key]--`: either executable direct
+  array-offset increment/decrement semantics over the current ordered array
+  value model, or a tightened explicit diagnostic boundary with fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps for append
+  offsets, nested offsets, string increment semantics, missing keys,
+  references, copy-on-write, exact native warning/error behavior, broader PHP
+  coercion recovery, and native lowering.

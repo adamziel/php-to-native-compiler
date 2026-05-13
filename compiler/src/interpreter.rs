@@ -262,8 +262,8 @@ impl Interpreter {
                 self.execute_compound_assignment(target, *op, expr, *span, scope)?;
                 Ok(Flow::Normal)
             }
-            Stmt::IncrementDecrement { name, op, span } => {
-                self.execute_increment_decrement(name, *op, *span, scope)?;
+            Stmt::IncrementDecrement { target, op, span } => {
+                self.execute_increment_decrement(target, *op, *span, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::NullCoalesceAssign { target, expr, .. } => {
@@ -439,8 +439,8 @@ impl Interpreter {
                 expr,
                 span,
             } => self.execute_compound_assignment(target, *op, expr, *span, scope),
-            ForAction::IncrementDecrement { name, op, span } => {
-                self.execute_increment_decrement(name, *op, *span, scope)
+            ForAction::IncrementDecrement { target, op, span } => {
+                self.execute_increment_decrement(target, *op, *span, scope)
             }
             ForAction::Expr { expr } => {
                 self.evaluate(expr, scope)?;
@@ -621,11 +621,11 @@ impl Interpreter {
                 span,
             } => self.evaluate_compound_assignment(target, *op, expr, *span, scope),
             Expr::IncrementDecrement {
-                name,
+                target,
                 op,
                 position,
                 span,
-            } => self.evaluate_increment_decrement(name, *op, *position, *span, scope),
+            } => self.evaluate_increment_decrement(target, *op, *position, *span, scope),
             Expr::Binary {
                 left,
                 op,
@@ -923,33 +923,82 @@ impl Interpreter {
 
     fn execute_increment_decrement(
         &mut self,
-        name: &str,
+        target: &AssignTarget,
         op: IncrementDecrementOp,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
-        let value = scope.read_static(name, span)?;
+        let (place, value) = self.read_increment_decrement_left(target, span, scope)?;
         let updated = Self::increment_decrement_value(value, op, span)?;
-        scope.write_static(name, updated);
+        self.write_compound_assignment_place(place, updated, span, scope)?;
         Ok(())
     }
 
     fn evaluate_increment_decrement(
         &mut self,
-        name: &str,
+        target: &AssignTarget,
         op: IncrementDecrementOp,
         position: IncrementDecrementPosition,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let previous = scope.read_static(name, span)?;
+        let (place, previous) = self.read_increment_decrement_left(target, span, scope)?;
         let updated = Self::increment_decrement_value(previous.clone(), op, span)?;
-        scope.write_static(name, updated.clone());
+        self.write_compound_assignment_place(place, updated.clone(), span, scope)?;
 
         Ok(match position {
             IncrementDecrementPosition::Pre => updated,
             IncrementDecrementPosition::Post => previous,
         })
+    }
+
+    fn read_increment_decrement_left(
+        &mut self,
+        target: &AssignTarget,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(CompoundAssignmentPlace, Value)> {
+        match target {
+            AssignTarget::Variable { name, .. } => Ok((
+                CompoundAssignmentPlace::Variable(name.clone()),
+                scope.read_static(name, span)?,
+            )),
+            AssignTarget::Property {
+                object, property, ..
+            } => match scope.read_named(object) {
+                Some(Value::Object(value)) => {
+                    let left = value
+                        .read_public_property(property)
+                        .cloned()
+                        .map_err(|error| runtime_error(span, error))?;
+                    Ok((
+                        CompoundAssignmentPlace::ObjectProperty {
+                            object: object.clone(),
+                            property: property.clone(),
+                        },
+                        left,
+                    ))
+                }
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} from {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_variable(object),
+                )),
+            },
+            AssignTarget::ArrayIndex { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "array-offset targets are not implemented",
+                ),
+            )),
+        }
     }
 
     fn increment_decrement_value(
@@ -972,7 +1021,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "increment/decrement",
                         format!(
-                            "only int and float variables are implemented, got {}",
+                            "only int and float variables or object properties are implemented, got {}",
                             other.type_name()
                         ),
                     ),

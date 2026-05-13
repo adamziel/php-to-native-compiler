@@ -11371,3 +11371,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:22:59Z
 
 - Post-round 31 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:23:09Z
+
+- Starting round 32 at 20260513T012309Z from HEAD `bd05747`.
+
+## Loop Event 2026-05-13T01:23:18Z
+
+- Pre-round 32 test exit code: `0`.
+
+## Loop Event 2026-05-13T01:29:10Z
+
+- Task attempted: implemented direct public object-property pre/post increment
+  and decrement for existing declared public property slots whose current
+  values are integers or floats. Statement forms, expression forms, and
+  single C-style `for` initializer/increment actions update the object slot;
+  expression forms return the expected pre/post value. Missing properties,
+  non-public properties, non-object targets, and string property values keep
+  stable diagnostics, and native lowering still rejects increment/decrement.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/increment_decrement_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone141/object_property_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/object_property_unsupported_string_increment.*`,
+  existing increment/decrement diagnostic snapshots,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test increment_decrement`
+  passed; `cargo test -p phpc --test increment_decrement_cli` passed;
+  `cargo test -p phpc --test syntax_boundaries` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone141` passed;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone141`
+  passed with 1 system PHP comparison; `cargo run -p phpc -- test
+  tests/fixtures/runtime_errors` passed with 153 fixtures; `tools/run-tests.sh`
+  passed with 381 fixtures, 137 system PHP comparisons, and 244 skips.
+- Remaining semantic gaps: PHP string increment/decrement semantics,
+  dynamic property names, missing-property materialization, non-public
+  visibility context, nested properties/offsets, array-offset
+  increment/decrement, references/copy-on-write aliasing, exact native
+  warning/error behavior, broader PHP coercion recovery, and native lowering
+  remain unsupported.
+- Next concrete task: implement or tighten the explicit boundary for direct
+  array-offset pre/post increment and decrement (`++$array[$key]`,
+  `$array[$key]++`, `--$array[$key]`, `$array[$key]--`) over the current
+  ordered array model.
+- Checkpoint: pending `tools/checkpoint.sh "objects: add property increment decrement"`
+  after the full suite passes.

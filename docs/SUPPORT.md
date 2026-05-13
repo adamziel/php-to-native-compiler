@@ -39,6 +39,13 @@
   declared public property slots in statement position, expression position,
   and C-style `for` initializer/increment slots. In expressions, compound
   assignment returns the updated value.
+- direct public object-property pre/post increment and decrement in statement
+  position, expression position, and C-style `for` initializer/increment
+  slots: `++$object->property`, `$object->property++`,
+  `--$object->property`, and `$object->property--` for existing declared
+  public property slots whose current values are integers or floats. In
+  expressions, pre forms return the updated value and post forms return the
+  previous value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
@@ -298,7 +305,8 @@
   outside direct static variables, direct array offsets, and direct object
   properties
 - explicit parse diagnostics for unsupported increment/decrement targets
-  outside direct static variables and chained increment/decrement expressions
+  outside direct static variables and direct object properties, plus chained
+  increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -837,7 +845,7 @@
   multiple-operand unset, `for`, `do ... while`, `switch`, `foreach`, `break`,
   `continue`, class declarations, object instantiation, object property reads,
   object property writes, assignment expressions, compound assignment
-  expressions, global constants,
+  expressions, increment/decrement expressions, global constants,
   top-level `const` declarations,
   `get_class(...)`, `is_object(...)`, `get_debug_type(...)`,
   `class_exists(...)`, `interface_exists(...)`, `trait_exists(...)`,
@@ -1614,14 +1622,16 @@
   offsets/properties, dynamic property names, non-public visibility context,
   references/copy-on-write, PHP warning recovery, exact native error objects,
   and native lowering are not implemented.
-- Pre/post increment and decrement is limited to direct static variables whose
-  current values are integers or floats, either as standalone statements,
-  expressions, or single C-style `for` initializer/increment actions.
-  Expression pre forms return the updated value and expression post forms
-  return the previous value. Strings, arrays, objects, undefined variables,
-  array-offset targets, object-property targets, references, copy-on-write,
-  exact native warning/error behavior, PHP string increment semantics, broader
-  coercion recovery, and native lowering are not implemented.
+- Pre/post increment and decrement is limited to direct static variables and
+  direct public object properties whose current values are integers or floats,
+  either as standalone statements, expressions, or single C-style `for`
+  initializer/increment actions. Expression pre forms return the updated value
+  and expression post forms return the previous value. Strings, arrays,
+  objects, undefined variables, array-offset targets, dynamic property names,
+  non-public visibility context, missing-property materialization,
+  references, copy-on-write, exact native warning/error behavior, PHP string
+  increment semantics, broader coercion recovery, and native lowering are not
+  implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus
   direct-variable `$name ??= expr`, direct array-offset `$array[$key] ??=

@@ -2902,8 +2902,25 @@ Still fails:
   non-public visibility context, nested properties/offsets,
   references/copy-on-write aliasing, broader PHP warning recovery, exact native
   error objects, and native lowering remain unsupported.
+- Implemented direct public object-property pre/post increment and decrement
+  forms such as `++$object->property`, `$object->property++`,
+  `--$object->property`, and `$object->property--` over existing declared
+  public property slots whose current values are integers or floats. Statement
+  forms, expression forms, and single C-style `for` initializer/increment
+  actions share the current read-modify-write path, write the updated property
+  slot, and expression forms return the correct pre/post value. Fixture and
+  CLI snapshot coverage include the success path, missing-property,
+  non-public-property, non-object-target, and unsupported-string diagnostics,
+  and native emission rejects increment/decrement explicitly until lowering
+  exists. Dynamic property names, missing-property materialization, non-public
+  visibility context, nested properties/offsets, PHP string increment
+  semantics, references/copy-on-write aliasing, broader PHP warning recovery,
+  exact native error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest mutation/refinement task after direct object-property
-  compound assignment, keeping the current unsupported gaps explicit.
+- Add the next honest array-offset increment/decrement path for
+  `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
+  `$array[$key]--`, keeping append offsets, nested offsets, string increment,
+  missing-key behavior, references/copy-on-write, and native lowering gaps
+  explicit.
