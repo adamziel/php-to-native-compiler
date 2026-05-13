@@ -1408,10 +1408,19 @@ handled.
 
 ## Milestone 147: Chained Assignment Expression Boundary
 
-- [ ] Add the next honest path for chained assignment expressions such as
+- [x] Add the next honest path for chained assignment expressions such as
   `$left = $right = expr`: either executable right-to-left assignment result
   semantics for the current direct-variable/direct-offset/direct-property
   assignment-expression subset, or a tighter documented diagnostic boundary
   with fixture CLI coverage, native-codegen behavior, and named gaps for
   nested lvalues, append offsets, references/copy-on-write, exact native error
   objects, and native lowering.
+
+## Milestone 148: Assignment Expression Follow-up Boundaries
+
+- [ ] Add the next honest boundary or executable slice for chained compound
+  assignment and null coalescing assignment mixes such as `$left = ($right +=
+  expr)` and `$left = ($right ??= expr)`, including parser/runtime tests,
+  fixture CLI coverage, documentation, native-codegen behavior, and named gaps
+  for nested lvalues, append offsets, references/copy-on-write, exact native
+  error objects, and native lowering.

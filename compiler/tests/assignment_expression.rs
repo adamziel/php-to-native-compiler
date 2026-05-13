@@ -198,10 +198,47 @@ echo ($value->name = next_value());
 }
 
 #[test]
-fn chained_assignment_expressions_have_stable_parse_errors() {
+fn chained_assignment_expressions_assign_right_to_left() {
+    let execution = run_source(
+        r#"<?php
+$left = $right = 10;
+echo $left, ":", $right, "\n";
+
+echo ($outer = $inner = 20), ":", $outer, ":", $inner, "\n";
+
+$items = [];
+echo ($copy = $items["name"] = "Ada"), ":", $copy, ":", $items["name"], "\n";
+
+class Box {
+    public $value;
+}
+$box = new Box();
+echo ($same = $box->value = "stored"), ":", $same, ":", $box->value, "\n";
+
+function rhs_value() {
+    echo "rhs\n";
+    return 42;
+}
+echo ($a = $b = rhs_value()), ":", $a, ":", $b, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "10:10\n20:20:20\nAda:Ada:Ada\nstored:stored:stored\nrhs\n42:42:42\n"
+    );
+}
+
+#[test]
+fn chained_assignment_rejects_append_offset_targets() {
     let cases = [
-        ("<?php\n$value = $other = 1;\n", 2, 10),
-        ("<?php\necho ($value = ($other = 1));\n", 2, 28),
+        ("<?php\n$items = [];\n$value = $items[] = 1;\n", 3, 10),
+        (
+            "<?php\n$items = [];\necho ($items[] = $value = 1);\n",
+            3,
+            18,
+        ),
     ];
 
     for (source, line, column) in cases {
@@ -269,6 +306,19 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_chained_assignment_expressions_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$left = $right = 1;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 9);
     assert_eq!(
         error.message,
         "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"

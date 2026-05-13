@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_chained_append_assignment.php:3:10: unsupported assignment expression: chained assignment expressions are not implemented
+--- stderr end ---

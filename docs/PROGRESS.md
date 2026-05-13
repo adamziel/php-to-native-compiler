@@ -2986,9 +2986,21 @@ Still fails:
   lowering exists. Append-offset `??=`, nested lvalues, dynamic property
   names, non-public visibility context, magic methods, references/copy-on-write
   aliasing, exact native error objects, and native lowering remain unsupported.
+- Implemented chained `=` assignment expressions over the current
+  direct-variable, direct array-offset, and direct public object-property
+  assignment-expression subset. The parser now accepts right-to-left chains
+  such as `$left = $right = expr`, `$left = $array[$key] = expr`, and
+  `$left = $object->property = expr`; the interpreter reuses assignment result
+  values so the inner assignment writes first and the outer assignment stores
+  the same value. Fixture and CLI snapshot coverage include scalar, array
+  offset, and object-property chains with system PHP comparison, plus a
+  stable unsupported append-offset chain fixture. Native emission still
+  rejects assignment expressions explicitly until lowering exists.
+  Append-offset chained assignment, nested/complex lvalues,
+  chained compound/null-coalescing assignment mixes, references/copy-on-write
+  aliasing, exact native error objects, and native lowering remain
+  unsupported.
 
 Next:
 
-- Add the next honest path for chained assignment expressions such as
-  `$left = $right = expr`, either executable right-to-left assignment result
-  semantics for direct variables or a tighter documented diagnostic boundary.
+- Add the next small expression-semantics slice from `docs/NEXT_TASKS.md`.

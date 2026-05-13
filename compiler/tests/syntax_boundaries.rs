@@ -333,8 +333,8 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented",
         ),
         (
-            "<?php\n$value = $other = 1;\n",
-            2,
+            "<?php\n$items = [];\n$value = $items[] = 1;\n",
+            3,
             10,
             "unsupported assignment expression: chained assignment expressions are not implemented",
         ),

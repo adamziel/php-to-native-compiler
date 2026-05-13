@@ -11748,3 +11748,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:17:43Z
 
 - Post-round 37 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:18:01Z
+
+- Starting round 38 at 20260513T021801Z from HEAD `a155f39`.
+
+## Loop Event 2026-05-13T02:18:14Z
+
+- Pre-round 38 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:24:16Z
+
+- Task attempted: implemented chained `=` assignment expressions over the
+  current direct-variable, direct array-offset, and direct public
+  object-property assignment-expression subset. The parser now accepts
+  right-to-left chains such as `$left = $right = expr`, `$left =
+  $array[$key] = expr`, and `$left = $object->property = expr`; append-offset
+  chained assignment remains a stable unsupported parse boundary.
+- Files changed: `compiler/src/parser.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone147/chained_assignment_expression.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_chained_append_assignment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test assignment_expression --test
+  syntax_boundaries` passed; `cargo test -p phpc --test assignment_expression
+  --test syntax_boundaries --test assignment_expression_cli --test
+  unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone147` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone147` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  passed with 27 fixtures; `tools/run-tests.sh` passed with 392 fixtures, 143
+  system PHP comparisons, and 249 skips.
+- Remaining semantic gaps: append-offset chained assignment, nested/complex
+  lvalues, chained compound/null-coalescing assignment mixes, references,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
+- Next concrete task: add the next honest boundary or executable slice for
+  chained compound assignment and null coalescing assignment mixes such as
+  `$left = ($right += expr)` and `$left = ($right ??= expr)`.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "assignment expressions: add chained results"`
+  after the full suite passes.

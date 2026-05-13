@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+10:10
+20:20:20
+Ada:Ada:Ada
+stored:stored:stored--- stdout end ---
+stderr:
+--- stderr end ---

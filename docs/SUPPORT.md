@@ -20,19 +20,21 @@
   multiple supported operands and executes them left to right
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
-  `$array[$key] = expr`, direct append-offset assignment `$array[] = expr`,
-  and direct public object-property assignment `$object->property = expr` with
-  assignment result values over the current value model. Direct array-offset
+  `$array[$key] = expr`, and direct public object-property assignment
+  `$object->property = expr` with right-to-left chained assignment result
+  values over the current value model. Direct append-offset assignment
+  `$array[] = expr` is supported as a standalone assignment expression with an
+  assignment result value. Direct array-offset
   assignment expressions evaluate the key before the right-hand expression and
   materialize undefined or `null` target variables as arrays. Direct
   append-offset assignment expressions evaluate the right-hand expression,
   append to direct array variables, materialize undefined or `null` target
   variables as arrays, and return the appended value. Direct object-property
   assignment expressions evaluate the right-hand expression, then write
-  existing declared public property slots on direct object variables. Chained
-  assignment expressions, nested-offset assignment expressions, dynamic
-  property names, missing property materialization, references/copy-on-write,
-  and native lowering remain unsupported.
+  existing declared public property slots on direct object variables.
+  Append-offset chained assignment expressions, nested-offset assignment
+  expressions, dynamic property names, missing property materialization,
+  references/copy-on-write, and native lowering remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
   the current scalar value model in statement position, expression position,
@@ -318,8 +320,8 @@
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
 - explicit parse diagnostics for unsupported ternary conditional expressions
 - explicit parse diagnostics for unsupported assignment-expression forms
-  outside direct static-variable `$name = expr`, including chained
-  assignments and complex/nested targets
+  outside direct static-variable `$name = expr`, including append-offset
+  chained assignments and complex/nested targets
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables, direct array offsets, and direct object
   properties
@@ -1619,28 +1621,34 @@
   nesting/precedence, thrown expressions inside arms, exact native error
   objects, and native lowering are not implemented.
 - Assignment expressions are limited to direct static variables as
-  `$name = expr`, direct array offsets as `$array[$key] = expr`, direct append
-  offsets as `$array[] = expr`, direct public object properties as
-  `$object->property = expr`, and null coalescing assignment expressions
+  `$name = expr`, direct array offsets as `$array[$key] = expr`, direct public
+  object properties as `$object->property = expr`, direct append offsets as
+  `$array[] = expr`, and null coalescing assignment expressions
   `($name ??= expr)`, `($array[$key] ??= expr)`, and
   `($object->property ??= expr)`. They write the active scope's static
   variable, current ordered array offset, appended array slot, or existing
   declared public property slot and return the assigned or existing value.
-  Direct
-  array-offset assignment expressions evaluate the key before the right-hand
-  expression, materialize undefined or `null` target variables as arrays, and
-  reject existing non-array targets with a stable runtime diagnostic. Direct
+  Direct static-variable, direct array-offset, and direct public
+  object-property assignment expressions can be chained with right-to-left
+  result semantics, so `$left = $right = expr`, `$left = $array[$key] = expr`,
+  and `$left = $object->property = expr` assign the inner target first and
+  then store that result in the outer target. Direct array-offset assignment
+  expressions evaluate the key before the right-hand expression, materialize
+  undefined or `null` target variables as arrays, and reject existing
+  non-array targets with a stable runtime diagnostic. Direct
   append-offset assignment expressions evaluate the right-hand expression,
   append to direct array variables, materialize undefined or `null` target
   variables as arrays, and reject existing non-array targets with a stable
-  runtime diagnostic.
-  object-property assignment expressions evaluate the right-hand expression
+  runtime diagnostic; append offsets are not supported inside chained
+  assignment expressions.
+  Direct object-property assignment expressions evaluate the right-hand expression
   before validating/writing the direct object-variable target, reject
   undefined or non-object targets and missing/non-public properties with stable
   runtime diagnostics, and do not materialize missing properties. Direct
   null coalescing assignment expressions use the same lazy evaluation and
-  materialization behavior as the supported statement forms. Chained
-  assignment expressions, nested append/offset assignment expressions, dynamic
+  materialization behavior as the supported statement forms. Nested
+  append/offset assignment expressions, append-offset chained assignment
+  expressions, chained compound/null-coalescing assignment mixes, dynamic
   property names, append-offset `??=` targets, reference assignment,
   copy-on-write container aliasing, exact native error objects, and native
   lowering are not implemented.

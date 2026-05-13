@@ -1089,7 +1089,7 @@ impl Parser {
 
         let span = target.span();
         let expr = self.parse_expression()?;
-        if Self::expr_contains_assignment(&expr) {
+        if Self::expr_contains_unsupported_chained_assignment(&expr) {
             return Err(self.error_at(
                 expr.span(),
                 unsupported_chained_assignment_expression_message(),
@@ -1434,20 +1434,27 @@ impl Parser {
             .map_err(|message| self.error_at(operator_span, message))?;
         let span = target.span();
 
-        let value = self.parse_non_assignment_expression()?;
+        let value = self.parse_assignment_expression()?;
         if let Some(span) = Self::find_append_index_span(&value) {
             return Err(self.error_at(
                 span,
                 "cannot use [] for reading; append syntax is only supported in assignments",
             ));
         }
-        if Self::expr_contains_assignment(&value)
-            || self.check(|kind| matches!(kind, TokenKind::Equal))
-            || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
-                && matches!(self.peek_next().kind, TokenKind::Equal))
+        if matches!(target, AssignTarget::ArrayIndex { index: None, .. })
+            && Self::expr_contains_assignment(&value)
         {
             return Err(self.error_at(
-                self.peek().span,
+                value.span(),
+                unsupported_chained_assignment_expression_message(),
+            ));
+        }
+        if Self::expr_contains_unsupported_chained_assignment(&value)
+            || self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
+            || self.check_compound_assignment_operator()
+        {
+            return Err(self.error_at(
+                value.span(),
                 unsupported_chained_assignment_expression_message(),
             ));
         }
@@ -2306,6 +2313,60 @@ impl Parser {
                 Self::expr_contains_assignment(left) || Self::expr_contains_assignment(right)
             }
             Expr::Unary { expr, .. } => Self::expr_contains_assignment(expr),
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _)
+            | Expr::Variable(_, _)
+            | Expr::MagicLine { .. }
+            | Expr::MagicFile { .. }
+            | Expr::MagicDir { .. }
+            | Expr::MagicFunction { .. }
+            | Expr::GlobalConstant { .. }
+            | Expr::IncrementDecrement { .. } => false,
+        }
+    }
+
+    fn expr_contains_unsupported_chained_assignment(expr: &Expr) -> bool {
+        match expr {
+            Expr::Assign { target, expr, .. } => {
+                matches!(
+                    target.as_ref(),
+                    AssignTarget::ArrayIndex { index: None, .. }
+                ) || Self::expr_contains_unsupported_chained_assignment(expr)
+            }
+            Expr::CompoundAssign { .. } | Expr::NullCoalesceAssign { .. } => true,
+            Expr::Array { items, .. } => items.iter().any(|item| {
+                item.key
+                    .as_ref()
+                    .is_some_and(Self::expr_contains_unsupported_chained_assignment)
+                    || Self::expr_contains_unsupported_chained_assignment(&item.value)
+            }),
+            Expr::Index { target, index, .. } => {
+                Self::expr_contains_unsupported_chained_assignment(target)
+                    || Self::expr_contains_unsupported_chained_assignment(index)
+            }
+            Expr::AppendIndex { target, .. } => {
+                Self::expr_contains_unsupported_chained_assignment(target)
+            }
+            Expr::Property { target, .. } => {
+                Self::expr_contains_unsupported_chained_assignment(target)
+            }
+            Expr::Call { args, .. } | Expr::New { args, .. } => args
+                .iter()
+                .any(Self::expr_contains_unsupported_chained_assignment),
+            Expr::DynamicCall { callee, args, .. } => {
+                Self::expr_contains_unsupported_chained_assignment(callee)
+                    || args
+                        .iter()
+                        .any(Self::expr_contains_unsupported_chained_assignment)
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::expr_contains_unsupported_chained_assignment(left)
+                    || Self::expr_contains_unsupported_chained_assignment(right)
+            }
+            Expr::Unary { expr, .. } => Self::expr_contains_unsupported_chained_assignment(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)

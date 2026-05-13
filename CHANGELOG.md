@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Implemented chained `=` assignment expressions over the current
+  direct-variable, direct array-offset, and direct public object-property
+  assignment-expression subset, including right-to-left result semantics,
+  fixture/CLI coverage, system PHP comparison, stable unsupported append-chain
+  snapshots, documentation, and native-codegen rejection while append-offset
+  chained assignment, nested/complex lvalues, chained compound/null-coalescing
+  assignment mixes, references/copy-on-write, exact native error objects, and
+  native lowering remain explicit gaps.
 - Implemented expression-position null coalescing assignment
   `($name ??= expr)`, `($array[$key] ??= expr)`, and
   `($object->property ??= expr)` over the current direct-variable,
