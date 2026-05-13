@@ -12079,4 +12079,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   documentation, native-codegen behavior, and named gaps.
 - Known-good tag: not created; this is a narrow expression-coverage checkpoint,
   not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "ternary expressions: cover precedence mixes"`.
+- Checkpoint: `12482fd ternary expressions: cover precedence mixes`.
