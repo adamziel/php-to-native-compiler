@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  failure diagnostics. The Milestone 186 fixture runs as a lowerable scalar
+  echo/print program, while the assembly CLI test invokes `--emit-asm` with a
+  temporary PATH exposing a deterministic fake `clang` that passes discovery
+  and exits nonzero after accepting generated LLVM IR. The committed snapshot
+  pins the stable `clang failed to emit assembly` diagnostic shape without
+  depending on real toolchain stderr. Bundled toolchains, assembly
+  linking/execution, backend-specific stderr guarantees, exact native error
+  objects, and broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for the documented
   `cc -S` fallback path. The Milestone 185 fixture runs as a lowerable scalar
   echo/print program, and the assembly CLI test invokes `--emit-asm` with a

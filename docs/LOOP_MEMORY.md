@@ -14126,3 +14126,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:39:39Z
 
 - Post-round 76 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:39:52Z
+
+- Starting round 77 at 20260513T063952Z from HEAD `aa77bba`.
+
+## Loop Event 2026-05-13T06:40:06Z
+
+- Pre-round 77 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:43:01Z
+
+- Task attempted: added explicit `phpc compile --emit-asm` CLI coverage for
+  selected backend failure diagnostics. The new Milestone 186 fixture is a
+  lowerable scalar echo/print program, and the assembly CLI test invokes
+  `--emit-asm` with a temporary PATH exposing a deterministic fake `clang`
+  that passes discovery and exits nonzero after accepting generated LLVM IR.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone186/native_assembly_backend_failure.php`,
+  `tests/fixtures/milestone186/native_assembly_backend_failure.stdout`,
+  `tests/fixtures/milestone186/native_assembly_backend_failure_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli` passed with 5 tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone186` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone186` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 436 fixtures, 180 system PHP
+  comparisons, and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; real backend stderr remains
+  backend-specific and is not normalized beyond the deterministic fake-backend
+  snapshot; generated code still lacks exact native PHP error objects and
+  broader native lowering.
+- Next concrete task: add Milestone 187, explicit `phpc compile --emit-asm`
+  CLI coverage for the `llc` selected-backend path when `clang` is unavailable
+  but `llc` is available.
+- Known-good tag: not created; this is a narrow native CLI coverage checkpoint,
+  not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly backend failure CLI coverage"`
+  after the full suite passes.

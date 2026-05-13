@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone186/native_assembly_backend_failure.php:0:0: clang failed to emit assembly: fake clang backend failed after accepting LLVM IR
+--- stderr end ---

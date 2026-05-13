@@ -37,6 +37,9 @@ records the stable missing-backend diagnostic for environments without
 Another lowerable scalar snapshot hides `clang` and `llc` while exposing only a
 `cc` command, proving the documented `cc -S` fallback with normalized assembly
 output checks instead of backend-specific assembly text.
+A backend-failure snapshot exposes a deterministic fake `clang` that passes
+discovery and then exits nonzero, pinning the stable `--emit-asm` diagnostic
+shape without depending on toolchain-specific stderr.
 
 ## Current Status
 

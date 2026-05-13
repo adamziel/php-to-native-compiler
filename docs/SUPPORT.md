@@ -985,10 +985,13 @@
   `PATH`, proving the stable missing-backend diagnostic when `clang`, `llc`,
   and `cc` are unavailable. A further CLI snapshot runs a lowerable scalar
   program with a PATH exposing only `cc`, proving the documented `cc -S`
-  fallback path with normalized assembly-shape checks. Bundled toolchains,
-  assembly linking/execution, PHP zvals, native symbol-table storage,
-  references/copy-on-write, exact native error objects, and broader native
-  lowering remain unsupported.
+  fallback path with normalized assembly-shape checks. Another snapshot uses a
+  deterministic fake `clang` that passes backend discovery and exits nonzero
+  after accepting generated LLVM IR, proving the stable selected-backend
+  failure diagnostic shape without committing real toolchain stderr. Bundled
+  toolchains, assembly linking/execution, backend-specific stderr guarantees,
+  PHP zvals, native symbol-table storage, references/copy-on-write, exact
+  native error objects, and broader native lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to

@@ -101,6 +101,10 @@ after LLVM lowering has succeeded.
 The C fallback path has its own CLI snapshot that hides `clang` and `llc` while
 exposing only `cc`; it checks normalized success properties instead of exact
 assembly text.
+A selected-backend failure snapshot exposes a deterministic fake `clang` that
+passes discovery and then exits nonzero after accepting generated LLVM IR. That
+pins the CLI diagnostic shape for backend failure without committing real
+toolchain stderr.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

@@ -134,6 +134,40 @@ fn native_scalar_echo_emit_asm_cc_fallback_cli_summary_matches_committed_output(
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_backend_failure_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone186/native_assembly_backend_failure.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_failing_clang(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone186/native_assembly_backend_failure_emit_asm.cli"),
+    )
+    .expect("native assembly backend-failure CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -166,6 +200,40 @@ impl TempPath {
         fs::create_dir_all(&path).expect("temporary cc-only PATH directory can be created");
         std::os::unix::fs::symlink(cc_path, path.join("cc"))
             .expect("temporary cc symlink can be created");
+        Self { path }
+    }
+
+    fn with_failing_clang(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-clang-failure-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("temporary failing-clang PATH directory can be created");
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake clang 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' 'fake clang backend failed after accepting LLVM IR' >&2\n\
+exit 42\n",
+        )
+        .expect("temporary failing clang script can be written");
+        let mut permissions = fs::metadata(&clang)
+            .expect("temporary failing clang script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&clang, permissions)
+            .expect("temporary failing clang script can be made executable");
         Self { path }
     }
 
