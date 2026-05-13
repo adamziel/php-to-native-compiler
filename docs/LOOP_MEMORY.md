@@ -11735,5 +11735,4 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: add the next honest path for chained assignment
   expressions such as `$left = $right = expr`, either direct-target execution
   or a tighter documented diagnostic boundary.
-- Checkpoint: pending `tools/checkpoint.sh "assignment expressions: add null coalescing results"`
-  after the full suite passes.
+- Checkpoint: `01b9922 assignment expressions: add null coalescing results`.
