@@ -1037,13 +1037,15 @@
   output. Additional whitespace-with-stderr fallback snapshots expose
   deterministic fake `llc` and `cc` tools with the same invalid
   successful-output behavior, proving stdout validation wins and successful
-  backend stderr is not surfaced after fallback selection too. Bundled
-  toolchains, assembly linking/execution,
-  selected-backend stdin handoff for representative generated LLVM IR markers
-  is covered with a deterministic fake `clang`, and fallback stdin handoff for
+  backend stderr is not surfaced after fallback selection too.
+  Selected-backend stdin handoff for representative generated LLVM IR markers
+  is covered with a deterministic fake `clang`, fallback stdin handoff for
   representative generated LLVM IR and generated C markers is covered with
-  deterministic fake `llc` and `cc` tools, but full backend-specific IR/C
-  validation for every backend and every lowered construct,
+  deterministic fake `llc` and `cc` tools, and selected/fallback backend
+  argument vectors are covered with deterministic fake `clang`, `llc`, and
+  `cc` tools. Bundled toolchains, assembly linking/execution, full
+  backend-specific IR/C validation for every backend and every lowered
+  construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific
   stdout/stderr guarantees, backend-specific assembly text, PHP zvals, native
   symbol-table storage, references/copy-on-write, exact native error objects,

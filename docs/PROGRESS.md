@@ -3600,10 +3600,20 @@ Still fails:
   backend-specific IR/C validation across real tools and broader lowered
   constructs, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected and
+  fallback backend argument validation. The Milestone 204 fixture runs through
+  `phpc run` and system PHP as a lowerable scalar echo/print program, while
+  assembly CLI tests invoke `--emit-asm` with temporary PATHs exposing
+  deterministic fake `clang`, `llc`, and `cc` tools that pass discovery,
+  validate the expected assembly emission argument vectors, then accept stdin
+  and emit normalized assembly. The committed snapshots prove the current
+  selected `clang`, fallback `llc`, and `cc -S` fallback command-line
+  contracts. Bundled toolchains, assembly linking/execution, full
+  backend-specific command-line compatibility, exact native error objects, and
+  broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for selected and fallback
-  backend invocation arguments, using deterministic test doubles that validate
-  the expected `clang`, `llc`, and `cc` argument vectors before emitting
-  assembly.
+- Add explicit `phpc compile --emit-asm` CLI coverage for backend discovery
+  version-probe argument vectors using deterministic `clang`, `llc`, and `cc`
+  test doubles.

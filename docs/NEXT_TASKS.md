@@ -1916,9 +1916,18 @@ handled.
 
 ## Milestone 204: Native Assembly Backend Argument Validation
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for selected and
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for selected and
   fallback backend invocation arguments, using deterministic `clang`, `llc`,
   and `cc` test doubles that validate expected argument vectors before
   accepting stdin and emitting assembly, including normalized CLI output,
   documentation, and named gaps for backend-specific command-line compatibility,
+  bundled toolchains, exact native error objects, and broader native lowering.
+
+## Milestone 205: Native Assembly Backend Probe Argument Validation
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for assembly backend
+  discovery probe argument vectors, using deterministic `clang`, `llc`, and
+  `cc` test doubles that validate exact `--version` probe invocations before
+  selected/fallback assembly emission, including normalized CLI output,
+  documentation, and named gaps for backend-specific discovery semantics,
   bundled toolchains, exact native error objects, and broader native lowering.

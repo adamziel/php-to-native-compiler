@@ -171,6 +171,11 @@ markers on stdin before emitting normalized assembly. That pins the same stdin
 handoff after LLVM backend fallback selection and after the `cc -S` C fallback
 selection without treating the test doubles as backend-specific IR/C
 validation.
+Backend argument-validation snapshots expose deterministic fake `clang`,
+`llc`, and `cc` tools that validate the exact selected-backend and fallback
+assembly emission argument vectors before accepting stdin and emitting
+normalized assembly. That pins the current command-line contract without
+treating it as full backend-specific CLI compatibility.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

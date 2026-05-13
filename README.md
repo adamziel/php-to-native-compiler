@@ -100,6 +100,9 @@ tools that validate representative generated LLVM IR or generated C fallback
 markers arrive on stdin before emitting normalized assembly, proving the same
 stdin handoff after LLVM backend fallback selection and after `cc -S` C
 fallback selection.
+Backend argument-validation snapshots expose deterministic fake `clang`,
+`llc`, and `cc` tools that validate the expected assembly emission argument
+vectors before accepting stdin and emitting normalized assembly.
 
 ## Current Status
 
