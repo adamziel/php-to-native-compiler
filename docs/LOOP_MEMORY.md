@@ -16074,4 +16074,5 @@ injects this file into every prompt. Each Codex pass should update it with:
   unavailable before fallback selection or missing-backend diagnostics.
 - Known-good tag: not created; this is narrow backend discovery boundary
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot probe start-failure discovery"` after the full suite passes.
+- Checkpoint: `de8b73f` (`codegen: snapshot probe start-failure discovery`).
+  A follow-up docs checkpoint records this commit hash in durable loop memory.
