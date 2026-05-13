@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone212/native_assembly_selected_failure_precedence.php:0:0: clang failed to emit assembly: fake clang selected backend failed before fallback selection
+--- stderr end ---

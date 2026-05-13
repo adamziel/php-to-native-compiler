@@ -866,3 +866,10 @@
 - Added a Milestone 210 `phpc compile --emit-asm` backend-precedence snapshot
   with deterministic fake `clang`, `llc`, and `cc` commands all available,
   proving selected `clang` output is returned before fallback tools are used.
+- Added a Milestone 212 `phpc compile --emit-asm` selected-backend
+  failure-precedence snapshot with deterministic fake `clang`, `llc`, and `cc`
+  commands all available. The selected fake `clang` fails emission and the
+  fallback tools would fail loudly if invoked, proving the selected-backend
+  diagnostic is reported without fallback recovery. Bundled toolchains,
+  assembly linking/execution, exact native error objects, and broader native
+  lowering remain unsupported.

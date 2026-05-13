@@ -622,6 +622,10 @@ Implemented:
   with deterministic fake `llc` and `cc` commands available while `clang` is
   hidden, proving selected `llc` assembly emission is used before the `cc -S`
   C fallback.
+- Added a Milestone 212 `phpc compile --emit-asm` selected-backend
+  failure-precedence snapshot with deterministic fake `clang`, `llc`, and `cc`
+  commands available, proving a selected `clang` emission failure is reported
+  directly without falling through to fallback tools.
 - Added explicit stable parse diagnostics, fixture coverage, and `phpc run` CLI
   snapshots for unsupported long `array(...)` literal syntax before long array
   literals are implemented.

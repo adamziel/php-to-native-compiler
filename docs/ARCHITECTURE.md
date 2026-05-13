@@ -211,6 +211,11 @@ A fallback-precedence snapshot hides `clang` while exposing deterministic fake
 by proving successful `llc` assembly emission is used before the `cc -S` C
 fallback when both fallback candidates are available, without treating that as
 full backend-specific discovery semantics.
+A selected-backend failure-precedence snapshot exposes deterministic fake
+`clang`, `llc`, and `cc` commands together. It pins the current no-fallback
+failure boundary by proving a selected `clang` emission failure is reported
+directly instead of silently falling through to `llc` or `cc`, without treating
+that as full backend recovery semantics.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,
