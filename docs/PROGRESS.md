@@ -3792,11 +3792,21 @@ Still fails:
   Bundled toolchains, assembly linking/execution, full backend recovery
   semantics, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  permission-denied emission starts. The Milestone 221 fixture runs through
+  `phpc run` and system PHP as a lowerable scalar echo/print program, while
+  assembly CLI tests invoke `--emit-asm` with temporary PATHs exposing
+  deterministic fake `llc` and `cc` tools that remove their own execute
+  permission after successful `--version` probes. The committed snapshots
+  prove the stable `failed to start llc for assembly emission` and `failed to
+  start cc for assembly emission` diagnostics are reported for
+  permission-denied fallback starts, and the `llc` case does not silently fall
+  through to the `cc -S` C fallback. Bundled toolchains, assembly
+  linking/execution, full backend recovery semantics, exact native error
+  objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add Milestone 221, explicit `phpc compile --emit-asm` CLI coverage for a
-  fallback backend command that passes discovery but becomes non-executable
-  before actual assembly emission, proving the stable fallback-backend start
-  diagnostic is reported for permission-denied emission starts without
-  silently falling through to later fallbacks.
+- Add Milestone 222, a native-codegen CLI snapshot for lowerable scalar `print`
+  and mixed `echo`/`print` programs, documenting the current straight-line
+  scalar output boundary before adding broader runtime-backed native lowering.

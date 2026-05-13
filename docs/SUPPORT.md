@@ -1074,7 +1074,13 @@
   permission-denied starts after discovery. Fallback start-failure snapshots use
   deterministic fake `llc` and `cc` tools with the same behavior, proving the
   stable `failed to start llc for assembly emission` and `failed to start cc
-  for assembly emission` diagnostics after fallback selection. A
+  for assembly emission` diagnostics after fallback selection. Fallback
+  permission-denied emission snapshots use deterministic fake `llc` and `cc`
+  tools that pass discovery and then remove their own execute permission
+  before actual assembly emission, proving the same stable fallback backend
+  start diagnostics for permission-denied starts after discovery and proving a
+  selected `llc` permission-denied start is reported without falling through
+  to the `cc -S` C fallback. A
   backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
   `cc` commands together and proves successful `clang` emission is selected
   before fallback tools when all candidates are available. A
@@ -1109,8 +1115,7 @@
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed
   probe output/start-failure/permission-denied semantics, broader backend race-condition recovery beyond
-  command-start diagnostics including fallback permission-denied emission
-  starts, backend-specific stdout/stderr guarantees,
+  command-start diagnostics, backend-specific stdout/stderr guarantees,
   backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.

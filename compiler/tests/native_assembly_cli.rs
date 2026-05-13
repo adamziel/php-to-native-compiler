@@ -1986,6 +1986,78 @@ fn native_scalar_echo_emit_asm_selected_backend_permission_denied_after_probe_cl
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_llc_permission_denied_after_probe_without_cc_fallback_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join(
+        "tests/fixtures/milestone221/native_assembly_fallback_permission_denied_emission.php",
+    );
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_permission_denied_llc_after_successful_probe_and_available_cc(
+        workspace_root,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone221/native_assembly_fallback_permission_denied_emission_llc_emit_asm.cli",
+    ))
+    .expect("native assembly llc permission-denied emission CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_cc_permission_denied_after_probe_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join(
+        "tests/fixtures/milestone221/native_assembly_fallback_permission_denied_emission.php",
+    );
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_permission_denied_cc_after_successful_probe(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone221/native_assembly_fallback_permission_denied_emission_cc_emit_asm.cli",
+    ))
+    .expect("native assembly cc permission-denied emission CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -3974,6 +4046,120 @@ exit 108\n",
         std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
         fs::set_permissions(&cc, cc_permissions)
             .expect("temporary fallback-start-failure-precedence cc script can be made executable");
+
+        Self { path }
+    }
+
+    fn with_permission_denied_llc_after_successful_probe_and_available_cc(
+        workspace_root: &Path,
+    ) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-fallback-llc-permission-denied-emission-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect(
+            "temporary fallback-llc-permission-denied-emission PATH directory can be created",
+        );
+        let chmod = find_command_on_path("chmod")
+            .expect("host chmod command is available for permission-denied emission test");
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            format!(
+                "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  '{}' 0644 '{}'\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected llc backend invocation after permission removal' >&2\n\
+exit 112\n",
+                chmod.display(),
+                llc.display()
+            ),
+        )
+        .expect("temporary fallback-llc-permission-denied-emission llc script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect(
+                "temporary fallback-llc-permission-denied-emission llc script metadata is readable",
+            )
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions).expect(
+            "temporary fallback-llc-permission-denied-emission llc script can be made executable",
+        );
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected cc fallback invocation after selected llc permission-denied start' >&2\n\
+exit 113\n",
+        )
+        .expect("temporary fallback-llc-permission-denied-emission cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect(
+                "temporary fallback-llc-permission-denied-emission cc script metadata is readable",
+            )
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions).expect(
+            "temporary fallback-llc-permission-denied-emission cc script can be made executable",
+        );
+
+        Self { path }
+    }
+
+    fn with_permission_denied_cc_after_successful_probe(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-fallback-cc-permission-denied-emission-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect(
+            "temporary fallback-cc-permission-denied-emission PATH directory can be created",
+        );
+        let chmod = find_command_on_path("chmod")
+            .expect("host chmod command is available for permission-denied emission test");
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            format!(
+                "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  '{}' 0644 '{}'\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected cc backend invocation after permission removal' >&2\n\
+exit 114\n",
+                chmod.display(),
+                cc.display()
+            ),
+        )
+        .expect("temporary fallback-cc-permission-denied-emission cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect(
+                "temporary fallback-cc-permission-denied-emission cc script metadata is readable",
+            )
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions).expect(
+            "temporary fallback-cc-permission-denied-emission cc script can be made executable",
+        );
 
         Self { path }
     }

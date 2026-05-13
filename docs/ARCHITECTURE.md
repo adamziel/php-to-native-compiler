@@ -218,6 +218,12 @@ Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
 tools with the same race-like behavior. Those pin the current diagnostics for
 previously discovered fallback commands that cannot be started later, without
 treating that as full backend race-condition recovery semantics.
+Fallback permission-denied emission snapshots expose deterministic fake `llc`
+and `cc` tools that pass discovery and then remove their own execute
+permission before assembly emission. Those pin the same fallback backend start
+diagnostics for permission-denied starts after discovery, including the
+current no-recovery boundary where a selected `llc` start failure is reported
+without falling through to the `cc -S` C fallback.
 A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands together. It pins the current selection order by proving
 successful `clang` assembly emission is used before LLVM or C fallback tools

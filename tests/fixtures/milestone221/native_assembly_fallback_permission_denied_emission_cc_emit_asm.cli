@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone221/native_assembly_fallback_permission_denied_emission.php:0:0: failed to start cc for assembly emission: Permission denied (os error 13)
+--- stderr end ---

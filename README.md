@@ -136,6 +136,11 @@ Fallback start-failure snapshots expose deterministic fake `llc` and `cc`
 tools with the same race-like behavior, proving the stable fallback backend
 start diagnostics after LLVM fallback selection and after the `cc -S` C
 fallback selection.
+Fallback permission-denied emission snapshots expose deterministic fake `llc`
+and `cc` tools that pass discovery and then remove their own execute
+permission before assembly emission, proving the same stable fallback backend
+start diagnostics for permission-denied starts after discovery and that `llc`
+permission-denied starts do not fall through to the `cc -S` C fallback.
 A backend-precedence snapshot exposes deterministic fake `clang`, `llc`, and
 `cc` commands together, proving successful `clang` assembly emission is
 selected before fallback tools when all candidates are available.

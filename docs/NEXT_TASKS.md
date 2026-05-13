@@ -2079,10 +2079,18 @@ handled.
 
 ## Milestone 221: Native Assembly Fallback Backend Permission-Denied Emission Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a fallback
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for a fallback
   backend command that passes discovery but becomes non-executable before
   actual assembly emission, proving the stable fallback-backend start
   diagnostic is reported for permission-denied emission starts without
   silently falling through to later fallbacks, with deterministic test
   doubles, documentation, and named gaps for backend race conditions, bundled
   toolchains, exact native error objects, and broader native lowering.
+
+## Milestone 222: Native Scalar Print Assembly Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a lowerable
+  straight-line scalar program that mixes `echo` and `print`, including
+  fixture CLI coverage, documentation of the current native scalar output
+  boundary, and named gaps for control flow, runtime-backed output conversion,
+  exact native PHP errors, and broader native lowering.

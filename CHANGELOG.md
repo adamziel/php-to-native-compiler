@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  permission-denied emission starts. The Milestone 221 fixture runs as a
+  lowerable scalar echo/print program, while assembly CLI tests expose
+  deterministic fake `llc` and `cc` tools that pass discovery and become
+  non-executable before actual assembly emission. The committed snapshots
+  prove `phpc` reports stable `failed to start llc for assembly emission` and
+  `failed to start cc for assembly emission` diagnostics, and the selected
+  `llc` permission-denied start does not fall through to the `cc -S` fallback.
+  Bundled toolchains, assembly linking/execution, full backend recovery
+  semantics, exact native error objects, and broader native lowering remain
+  explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
   permission-denied emission starts where `clang` passes discovery but becomes
   non-executable before actual assembly emission. The Milestone 220 fixture
