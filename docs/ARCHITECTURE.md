@@ -128,6 +128,11 @@ An empty-stdout backend-success snapshot exposes a deterministic fake `clang`
 that passes discovery and exits successfully after accepting generated LLVM IR
 without producing assembly text. That pins the selected-backend diagnostic for
 empty stdout instead of treating an empty assembly artifact as success.
+A success-with-stderr backend snapshot exposes a deterministic fake `clang`
+that passes discovery, emits nonempty assembly stdout, writes a diagnostic to
+stderr, and exits successfully. That pins the current boundary: successful
+backend stderr is intentionally ignored by `phpc`, while assembly is taken only
+from stdout.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

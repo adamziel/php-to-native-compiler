@@ -411,7 +411,7 @@ fn clang_assembly_from_ir(ir: &str) -> CompileResult<String> {
         ));
     }
 
-    assembly_backend_success_output("clang", &output.stdout)
+    assembly_backend_success_output("clang", &output)
 }
 
 fn llc_assembly_from_ir(ir: &str) -> CompileResult<String> {
@@ -463,7 +463,7 @@ fn llc_assembly_from_ir(ir: &str) -> CompileResult<String> {
         ));
     }
 
-    assembly_backend_success_output("llc", &output.stdout)
+    assembly_backend_success_output("llc", &output)
 }
 
 fn cc_assembly_from_c(source: &str) -> CompileResult<String> {
@@ -515,7 +515,7 @@ fn cc_assembly_from_c(source: &str) -> CompileResult<String> {
         ));
     }
 
-    assembly_backend_success_output("cc", &output.stdout)
+    assembly_backend_success_output("cc", &output)
 }
 
 fn assembly_backend_failure_message(command: &str, stderr: &[u8]) -> String {
@@ -528,8 +528,11 @@ fn assembly_backend_failure_message(command: &str, stderr: &[u8]) -> String {
     }
 }
 
-fn assembly_backend_success_output(command: &str, stdout: &[u8]) -> CompileResult<String> {
-    if stdout.is_empty() {
+fn assembly_backend_success_output(
+    command: &str,
+    output: &std::process::Output,
+) -> CompileResult<String> {
+    if output.stdout.is_empty() {
         return Err(Diagnostic::new(
             Phase::Codegen,
             0,
@@ -538,7 +541,9 @@ fn assembly_backend_success_output(command: &str, stdout: &[u8]) -> CompileResul
         ));
     }
 
-    Ok(String::from_utf8_lossy(stdout).into_owned())
+    // Successful backends may emit warnings or notes to stderr; assembly is
+    // taken only from stdout and process stderr is not surfaced by phpc.
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn command_available(command: &str) -> bool {

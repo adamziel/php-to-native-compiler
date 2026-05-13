@@ -3482,9 +3482,20 @@ Still fails:
   Bundled toolchains, assembly linking/execution, backend-specific stdout and
   stderr guarantees, exact native error objects, and broader native lowering
   remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
+  success cases that also write stderr diagnostics. The Milestone 194 fixture
+  runs through `phpc run` and system PHP as a lowerable scalar echo/print
+  program, while the assembly CLI test invokes `--emit-asm` with a temporary
+  PATH exposing a deterministic fake `clang` that passes discovery, accepts
+  generated LLVM IR, emits nonempty assembly stdout, writes a stderr
+  diagnostic, and exits successfully. The shared assembly success helper now
+  makes the boundary explicit: successful backend stderr is not surfaced by
+  `phpc`, and assembly is taken only from stdout. Bundled toolchains, assembly
+  linking/execution, backend-specific stderr guarantees for every backend,
+  exact native error objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit CLI coverage for selected native assembly backends that exit
-  successfully while writing stderr diagnostics, documenting whether stderr is
-  ignored on success or promoted to a stable warning/error boundary.
+- Add explicit CLI coverage for the successful `llc` and `cc` backend paths
+  when they also write stderr diagnostics, proving the shared success helper
+  applies after fallback selection.

@@ -1011,11 +1011,15 @@
   diagnostic detail. An empty-stdout selected-backend snapshot exposes a
   deterministic fake `clang` that passes discovery and exits successfully
   without assembly stdout, proving the stable `clang emitted empty assembly
-  output` diagnostic instead of accepting an empty assembly artifact. Bundled
-  toolchains, assembly linking/execution, backend-specific discovery semantics
-  for every tool, backend-specific stderr guarantees, backend-specific assembly
-  text, PHP zvals, native symbol-table storage, references/copy-on-write,
-  exact native error objects, and broader native lowering remain unsupported.
+  output` diagnostic instead of accepting an empty assembly artifact. A
+  success-with-stderr selected-backend snapshot exposes a deterministic fake
+  `clang` that emits assembly stdout, writes stderr diagnostics, and exits
+  successfully, proving `phpc` returns the assembly and does not surface
+  backend stderr on successful emission. Bundled toolchains, assembly
+  linking/execution, backend-specific discovery semantics for every tool,
+  backend-specific stderr guarantees, backend-specific assembly text, PHP
+  zvals, native symbol-table storage, references/copy-on-write, exact native
+  error objects, and broader native lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to

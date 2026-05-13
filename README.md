@@ -61,6 +61,10 @@ stable fallback detail for selected backend failures that produce no stderr.
 An empty-stdout backend-success snapshot exposes a deterministic fake `clang`
 that passes discovery and exits successfully without assembly text, proving the
 stable rejection for selected backends that produce no stdout.
+A success-with-stderr backend snapshot exposes a deterministic fake `clang`
+that passes discovery, emits assembly stdout, writes a diagnostic to stderr,
+and exits successfully, proving `phpc` returns the assembly and does not surface
+backend stderr on successful assembly emission.
 
 ## Current Status
 
