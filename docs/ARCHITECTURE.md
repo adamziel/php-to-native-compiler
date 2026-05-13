@@ -123,6 +123,11 @@ constant reads, top-level `const` declarations, and
 `define()`/`constant()`/`defined()` before operand/argument lowering until
 generated code has native constant tables, source-order definitions,
 namespace-aware lookup, and exact native error behavior.
+Native lowering rejects class declarations, object instantiation, public
+property reads/writes, and object metadata builtins before body, operand, or
+argument lowering until generated code has native object layout, object
+handles, visibility checks, method dispatch, class metadata access, and exact
+native error behavior.
 
 ## Dynamic Features
 
@@ -264,8 +269,9 @@ through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
 with explicit parse diagnostics until static storage, dispatch, and class
 constants exist. Native lowering rejects class declarations, object
-instantiation, object property reads, and object property writes explicitly. See
-`docs/OBJECT_MODEL.md` for the named unsupported edge cases.
+instantiation, object property reads/writes, and object metadata builtins with a
+specific object/class codegen diagnostic. See `docs/OBJECT_MODEL.md` for the
+named unsupported edge cases.
 
 ## Include/Require Resolution Design
 

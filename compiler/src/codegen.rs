@@ -15,6 +15,8 @@ const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering reject
 const ASSEMBLY_MAGIC_CONSTANT_REJECTION: &str = "assembly magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, and __FUNCTION__ until native source mapping, path canonicalization, and function-context lowering exist; phpc run handles current magic constant behavior";
 const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constants, runtime-defined constants, bare constant reads, top-level const declarations, and define()/constant()/defined() until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constants, runtime-defined constants, bare constant reads, top-level const declarations, and define()/constant()/defined() until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
+const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, object instantiation, public property reads/writes, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, object instantiation, public property reads/writes, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -128,7 +130,7 @@ impl LlvmGenerator {
             )),
             Stmt::Class(class) => Err(self.unsupported(
                 class.span,
-                "class declarations are supported by phpc run metadata registration but not LLVM IR emission yet",
+                LLVM_OBJECT_CLASS_REJECTION,
             )),
             Stmt::If { span, .. } => Err(self.unsupported(
                 *span,
@@ -219,7 +221,7 @@ impl LlvmGenerator {
             )),
             Expr::Property { span, .. } => Err(self.unsupported(
                 *span,
-                "object property access is supported by phpc run but not LLVM IR emission yet",
+                LLVM_OBJECT_CLASS_REJECTION,
             )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
@@ -233,13 +235,16 @@ impl LlvmGenerator {
                     LLVM_GLOBAL_CONSTANT_REJECTION,
                 ))
             }
+            Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 LLVM_FUNCTION_CALL_REJECTION,
             )),
             Expr::New { span, .. } => Err(self.unsupported(
                 *span,
-                "object instantiation is supported by phpc run but not LLVM IR emission yet",
+                LLVM_OBJECT_CLASS_REJECTION,
             )),
             Expr::Unary { op, span, .. } => {
                 if matches!(op, UnaryOp::BitwiseNot) {
@@ -324,10 +329,9 @@ impl LlvmGenerator {
                 *span,
                 "array assignment is supported by phpc run but not LLVM IR emission yet",
             )),
-            AssignTarget::Property { span, .. } => Err(self.unsupported(
-                *span,
-                "object property assignment is supported by phpc run but not LLVM IR emission yet",
-            )),
+            AssignTarget::Property { span, .. } => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
         }
     }
 
@@ -827,7 +831,7 @@ impl CGenerator {
             )),
             Stmt::Class(class) => Err(self.unsupported(
                 class.span,
-                "class declarations are supported by phpc run metadata registration but not assembly emission yet",
+                ASSEMBLY_OBJECT_CLASS_REJECTION,
             )),
             Stmt::If { span, .. } => Err(self.unsupported(
                 *span,
@@ -918,7 +922,7 @@ impl CGenerator {
             )),
             Expr::Property { span, .. } => Err(self.unsupported(
                 *span,
-                "object property access is supported by phpc run but not assembly emission yet",
+                ASSEMBLY_OBJECT_CLASS_REJECTION,
             )),
             Expr::Variable(name, span) => self.variables.get(name).cloned().ok_or_else(|| {
                 self.unsupported(
@@ -929,13 +933,16 @@ impl CGenerator {
             Expr::Call { name, span, .. } if is_global_constant_builtin(name) => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }
+            Expr::Call { name, span, .. } if is_object_metadata_builtin(name) => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(self.unsupported(
                 *span,
                 ASSEMBLY_FUNCTION_CALL_REJECTION,
             )),
             Expr::New { span, .. } => Err(self.unsupported(
                 *span,
-                "object instantiation is supported by phpc run but not assembly emission yet",
+                ASSEMBLY_OBJECT_CLASS_REJECTION,
             )),
             Expr::Unary { op, span, .. } => {
                 if matches!(op, UnaryOp::BitwiseNot) {
@@ -1020,10 +1027,9 @@ impl CGenerator {
                 *span,
                 "array assignment is supported by phpc run but not assembly emission yet",
             )),
-            AssignTarget::Property { span, .. } => Err(self.unsupported(
-                *span,
-                "object property assignment is supported by phpc run but not assembly emission yet",
-            )),
+            AssignTarget::Property { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
         }
     }
 
@@ -1359,6 +1365,34 @@ fn is_global_constant_builtin(name: &str) -> bool {
     name.eq_ignore_ascii_case("define")
         || name.eq_ignore_ascii_case("constant")
         || name.eq_ignore_ascii_case("defined")
+}
+
+fn is_object_metadata_builtin(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "get_class"
+            | "is_object"
+            | "get_debug_type"
+            | "class_exists"
+            | "interface_exists"
+            | "trait_exists"
+            | "enum_exists"
+            | "get_declared_classes"
+            | "get_declared_interfaces"
+            | "get_declared_traits"
+            | "get_called_class"
+            | "spl_object_id"
+            | "spl_object_hash"
+            | "property_exists"
+            | "method_exists"
+            | "get_class_methods"
+            | "get_class_vars"
+            | "get_object_vars"
+            | "get_mangled_object_vars"
+            | "is_a"
+            | "is_subclass_of"
+            | "get_parent_class"
+    )
 }
 
 fn format_float_literal(value: f64) -> String {

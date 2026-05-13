@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added a native object/class boundary. LLVM IR emission now rejects class
+  declarations, object instantiation, public property reads/writes, and object
+  metadata builtins before lowering bodies, operands, or arguments, with a
+  specific codegen diagnostic until generated code has native object layout,
+  handles, visibility, method dispatch, and exact native error behavior; the C
+  assembly fallback carries the same boundary for consistency. A runtime
+  fixture still proves the current interpreter object/class subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  Constructors, `$this`, methods, object handles, references/copy-on-write,
+  exact native error objects, and broader native lowering remain explicit gaps.
 - Added a native global-constant boundary. LLVM IR emission now rejects
   built-in constants, runtime-defined constants, bare constant reads,
   top-level `const` declarations, and `define()`/`constant()`/`defined()`

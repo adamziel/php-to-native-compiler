@@ -1283,7 +1283,7 @@ fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1298,7 +1298,7 @@ fn emit_ir_rejects_is_object_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1313,7 +1313,7 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1325,7 +1325,7 @@ fn emit_ir_rejects_class_exists_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1338,7 +1338,7 @@ fn emit_ir_rejects_interface_exists_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1350,7 +1350,7 @@ fn emit_ir_rejects_trait_exists_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1362,7 +1362,7 @@ fn emit_ir_rejects_enum_exists_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1375,7 +1375,7 @@ fn emit_ir_rejects_property_exists_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1388,7 +1388,7 @@ fn emit_ir_rejects_method_exists_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1401,7 +1401,7 @@ fn emit_ir_rejects_get_class_methods_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1413,7 +1413,7 @@ fn emit_ir_rejects_get_class_vars_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1429,7 +1429,7 @@ fn emit_ir_rejects_get_object_vars_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1446,7 +1446,7 @@ fn emit_ir_rejects_get_mangled_object_vars_until_native_object_lowering_exists()
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1463,7 +1463,7 @@ fn emit_ir_rejects_object_property_empty_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls")
+            || error.message.contains("object metadata builtins")
             || error.message.contains("object property access"),
         "{}",
         error.message
@@ -1477,7 +1477,7 @@ fn emit_ir_rejects_is_a_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1491,7 +1491,7 @@ fn emit_ir_rejects_is_subclass_of_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1504,7 +1504,7 @@ fn emit_ir_rejects_get_parent_class_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1516,7 +1516,7 @@ fn emit_ir_rejects_get_declared_classes_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1529,7 +1529,7 @@ fn emit_ir_rejects_get_declared_interfaces_until_native_object_lowering_exists()
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1541,7 +1541,7 @@ fn emit_ir_rejects_get_declared_traits_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1553,7 +1553,7 @@ fn emit_ir_rejects_get_called_class_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("function calls"),
+        error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1569,7 +1569,7 @@ fn emit_ir_rejects_spl_object_id_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );
@@ -1585,7 +1585,7 @@ fn emit_ir_rejects_spl_object_hash_until_native_object_lowering_exists() {
     assert!(
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
-            || error.message.contains("function calls"),
+            || error.message.contains("object metadata builtins"),
         "{}",
         error.message
     );

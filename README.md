@@ -365,6 +365,10 @@ Built-in constants, runtime-defined constants, bare constant reads, top-level
 `const` declarations, and `define()`/`constant()`/`defined()` are rejected by
 native lowering until generated code has native constant tables, source-order
 definitions, namespace-aware lookup, and exact native error behavior.
+Class declarations, object instantiation, public property reads/writes, and
+object metadata builtins are rejected by native lowering until generated code
+has native object layout, handles, visibility, method dispatch, and exact
+native error behavior.
 Unsupported programs and broader PHP coercions are rejected with structured
 codegen errors.
 

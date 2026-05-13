@@ -1644,10 +1644,19 @@ handled.
 
 ## Milestone 173: Native Object/Class Boundary
 
-- [ ] Add the next honest native-codegen boundary for class declarations,
+- [x] Add the next honest native-codegen boundary for class declarations,
   object instantiation, public property reads/writes, and object metadata
   builtins, either by lowering a narrow object metadata subset or by tightening
   explicit diagnostics with fixture CLI coverage, documentation, and named
   gaps for object handles, constructors, `$this`, method dispatch, visibility,
   references/copy-on-write, exact native error objects, and broader native
   lowering.
+
+## Milestone 174: Native Array Boundary
+
+- [ ] Add the next honest native-codegen boundary for array literals, array
+  offset reads/writes, `foreach`/`unset` array operations, and array builtins,
+  either by lowering a narrow ordered-array subset or by tightening explicit
+  diagnostics with fixture CLI coverage, documentation, and named gaps for
+  array storage layout, key normalization, copy-on-write, references,
+  callbacks, exact native error objects, and broader native lowering.

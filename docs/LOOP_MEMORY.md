@@ -13326,3 +13326,58 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:17:55Z
 
 - Post-round 63 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:18:14Z
+
+- Starting round 64 at 20260513T051814Z from HEAD `6c3f340`.
+
+## Loop Event 2026-05-13T05:18:30Z
+
+- Pre-round 64 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:31:58Z
+
+- Task attempted: completed Milestone 173 by tightening the native codegen
+  boundary for class declarations, object instantiation, public property
+  reads/writes, and object metadata builtins. LLVM IR emission now rejects
+  those object/class features with a specific diagnostic before lowering
+  bodies, operands, or arguments until generated code has native object layout,
+  handles, visibility, method dispatch, class metadata access, and exact native
+  error behavior; the C assembly fallback carries the same boundary for
+  consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_object_class_boundary.rs`,
+  `compiler/tests/milestone1.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone173/native_object_class_boundary.php`,
+  `tests/fixtures/milestone173/native_object_class_boundary.stdout`,
+  `tests/fixtures/milestone173/native_object_class_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_object_class_boundary -- --nocapture` passed with 7 tests;
+  `cargo test -p phpc --test milestone1 emit_ir_rejects_object --
+  --nocapture` passed with 3 tests; `cargo test -p phpc --test object_model
+  emit_ir_rejects -- --nocapture` passed with 23 tests; `cargo run -p phpc --
+  test tests/fixtures/milestone173` passed with 1 fixture; `cargo run -p phpc
+  -- test --compare-php tests/fixtures/milestone173` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- compile
+  tests/fixtures/milestone173/native_object_class_boundary.php --emit-ir`
+  exited `1` with the expected explicit native object/class diagnostic;
+  `tools/run-tests.sh` initially exposed stale object-codegen assertions, then
+  passed after updating them with 423 fixtures, 168 system PHP comparisons, and
+  255 comparison skips.
+- Remaining semantic gaps: generated code still lacks native object layout,
+  object handles/identity, constructor execution, `$this` binding, method
+  dispatch, visibility enforcement, inheritance/interface/trait metadata,
+  class metadata access, references/copy-on-write side effects, exact native
+  error objects, and broader native lowering.
+- Next concrete task: add Milestone 174, the next honest native-codegen
+  boundary for array literals, array offset reads/writes, `foreach`/`unset`
+  array operations, and array builtins before native array storage layout, key
+  normalization, copy-on-write, references, callbacks, and exact native error
+  behavior exist.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native object/class boundary"`
+  after the full suite passes.

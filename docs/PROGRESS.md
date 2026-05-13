@@ -3255,10 +3255,20 @@ Still fails:
   `phpc compile --emit-ir` CLI snapshot pins the native rejection. Namespaces,
   class constants, references/copy-on-write side effects, and broader native
   lowering remain unsupported.
+- Added a native object/class boundary. LLVM IR emission now rejects class
+  declarations, object instantiation, public property reads/writes, and object
+  metadata builtins before lowering bodies, operands, or arguments, with a
+  specific codegen diagnostic until generated code has native object layout,
+  handles, visibility, method dispatch, and exact native error behavior. The C
+  assembly fallback carries the same boundary for consistency, `phpc run`
+  fixture coverage still proves the current interpreter object/class subset,
+  and a `phpc compile --emit-ir` CLI snapshot pins the native rejection.
+  Constructors, `$this`, methods, object handles, references/copy-on-write
+  side effects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for class declarations, object
-  instantiation, public property reads/writes, and object metadata builtins
-  before native object layout, handles, visibility, methods, and exact native
-  error behavior exist.
+- Add the next honest native-codegen boundary for array literals, array
+  offset reads/writes, `foreach`/`unset` array operations, and array builtins
+  before native array storage layout, key normalization, copy-on-write,
+  references, callbacks, and exact native error behavior exist.
