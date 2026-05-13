@@ -16253,5 +16253,6 @@ injects this file into every prompt. Each Codex pass should update it with:
   lowering.
 - Known-good tag: not created; this is narrow backend start-diagnostic
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot fallback permission-denied emission"`
-  after the full suite passes.
+- Checkpoint: `ad9d06d` (`codegen: snapshot fallback permission-denied
+  emission`). A follow-up docs checkpoint records this commit hash in durable
+  loop memory.
