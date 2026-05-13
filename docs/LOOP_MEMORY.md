@@ -11904,3 +11904,15 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Known-good tag: not created; this is a narrow coverage/documentation
   checkpoint, not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "assignment expressions: cover value contexts"`.
+
+## Loop Event 2026-05-13T02:38:46Z
+
+- Codex round 40 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T023309Z-40.log`.
+
+## Loop Event 2026-05-13T02:39:04Z
+
+- Post-round 40 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:39:04Z
+
+- Post-round 40 tests passed; running checkpoint for this round.
