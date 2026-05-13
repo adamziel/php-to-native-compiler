@@ -1,0 +1,2 @@
+runtime error at 4:13: unsupported call increment/decrement: only int and float variables are implemented, got string
+

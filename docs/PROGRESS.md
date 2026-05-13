@@ -2818,10 +2818,25 @@ Still fails:
   behavior, arrays, objects, references, copy-on-write, expression result
   values for pre/post forms, exact native warning/error behavior, broader
   coercion recovery, and native lowering remain unsupported.
+- Implemented direct static-variable pre/post increment and decrement in
+  C-style `for` initializer and increment slots for existing integer and float
+  variables. Header actions now reuse the same read-modify-write execution path
+  as statement-level `++`/`--`, so prefix and postfix forms update the variable
+  in place before the loop starts or after each body iteration as appropriate.
+  Undefined header operands fail with the existing stable undefined-variable
+  diagnostic, string operands fail with the stable unsupported
+  increment/decrement diagnostic, fixture and CLI snapshot coverage record the
+  success and runtime-error paths, system PHP comparison passes for the
+  supported header fixture, and native emission rejects the containing `for`
+  loop until lowering exists. Expression-position increment/decrement result
+  values, strings, array/object targets, references, copy-on-write, exact
+  native warning/error behavior, broader coercion recovery, and native lowering
+  remain unsupported.
 
 Next:
 
-- Implement direct static-variable increment/decrement in C-style `for`
-  initializer/increment slots for the same integer/float value subset, while
-  keeping strings, array/object targets, expression result values,
-  references/copy-on-write, and native lowering explicit gaps.
+- Implement expression-position direct static-variable pre/post
+  increment/decrement for the same integer/float value subset, including
+  pre-vs-post result values, while keeping strings, array/object targets,
+  references/copy-on-write, exact native warning/error behavior, broader
+  coercion recovery, and native lowering explicit gaps.

@@ -1,0 +1,1 @@
+phpc intentionally supports only int/float direct-variable increment in for headers.

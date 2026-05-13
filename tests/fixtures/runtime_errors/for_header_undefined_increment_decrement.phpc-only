@@ -1,0 +1,1 @@
+phpc emits a stable fatal diagnostic for undefined for-header increment operands.

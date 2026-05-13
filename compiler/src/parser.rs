@@ -599,9 +599,43 @@ impl Parser {
     }
 
     fn parse_for_action(&mut self) -> CompileResult<ForAction> {
+        let operator_span = self.peek().span;
+        if let Some(op) = self.match_increment_decrement_operator() {
+            if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+                return Err(self.error_at(
+                    operator_span,
+                    unsupported_increment_decrement_target_message(),
+                ));
+            }
+
+            let target = self.parse_assignment_target()?;
+            let AssignTarget::Variable { name, .. } = target else {
+                return Err(self.error_at(
+                    target.span(),
+                    unsupported_increment_decrement_target_message(),
+                ));
+            };
+
+            return Ok(ForAction::IncrementDecrement {
+                name,
+                op,
+                span: operator_span,
+            });
+        }
+
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             let saved = self.current;
             let target = self.parse_assignment_target()?;
+            if let Some(op) = self.match_increment_decrement_operator() {
+                let AssignTarget::Variable { name, span } = target else {
+                    return Err(self.error_at(
+                        target.span(),
+                        unsupported_increment_decrement_target_message(),
+                    ));
+                };
+
+                return Ok(ForAction::IncrementDecrement { name, op, span });
+            }
             if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                 let expr = self.parse_expression()?;
                 return Ok(ForAction::Assign { target, expr });

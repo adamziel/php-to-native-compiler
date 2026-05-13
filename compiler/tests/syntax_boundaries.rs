@@ -442,6 +442,32 @@ fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
 }
 
 #[test]
+fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$values = [1];\nfor (++$values[0]; false; ) {}\n",
+            3,
+            8,
+        ),
+        (
+            "<?php\n$values = [1];\nfor ($values[0]--; false; ) {}\n",
+            3,
+            6,
+        ),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported increment/decrement target: only direct static integer and float variables are implemented; array offsets and object properties are not implemented"
+        );
+    }
+}
+
+#[test]
 fn emit_ir_rejects_increment_decrement_at_parse_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$value = 1;\necho $value++;\n").unwrap_err();
 

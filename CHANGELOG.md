@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Implemented direct static-variable pre/post increment and decrement in
+  C-style `for` initializer and increment slots for existing integer and float
+  variables, including loop execution behavior, undefined-variable and
+  unsupported-string diagnostics, fixture/CLI coverage, system PHP comparison,
+  documentation, and native-codegen rejection through the existing `for`
+  lowering boundary.
 - Implemented statement-level direct static-variable pre/post increment and
   decrement for existing integer and float variables, including
   read-modify-write behavior, undefined-variable and unsupported-string

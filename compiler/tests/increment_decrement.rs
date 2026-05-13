@@ -34,11 +34,41 @@ echo $float, "\n";
 }
 
 #[test]
+fn for_headers_accept_direct_variable_increment_decrement_actions() {
+    let execution = run_source(
+        r#"<?php
+$sum = 0;
+for ($i = 0; $i < 4; $i++) {
+    $sum += $i;
+}
+echo $sum, "\n";
+
+for (++$sum; $sum > 3; --$sum) {
+    echo $sum, "\n";
+}
+echo "done:", $sum, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "6\n7\n6\n5\n4\ndone:3\n");
+}
+
+#[test]
 fn undefined_increment_decrement_left_side_is_runtime_error() {
     let error = runtime_error("<?php\n$missing++;\n");
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined variable '$missing'");
+}
+
+#[test]
+fn for_header_undefined_increment_decrement_left_side_is_runtime_error() {
+    let error = runtime_error("<?php\nfor ($missing++; false; ) {}\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
     assert_eq!(error.message, "undefined variable '$missing'");
 }
 
@@ -55,6 +85,20 @@ fn increment_decrement_rejects_non_numeric_current_gap() {
 }
 
 #[test]
+fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
+    let error = runtime_error(
+        "<?php\n$value = 'az';\n$go = true;\nfor (; $go; ++$value) {\n    $go = false;\n}\n",
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 13);
+    assert_eq!(
+        error.message,
+        "unsupported call increment/decrement: only int and float variables are implemented, got string"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_increment_decrement_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$value = 1;\n$value++;\n").unwrap_err();
 
@@ -64,5 +108,18 @@ fn emit_ir_rejects_increment_decrement_until_native_lowering_exists() {
     assert_eq!(
         error.message,
         "increment/decrement is supported by phpc run for direct static int/float variables but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_for_header_increment_decrement_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\nfor ($i = 0; $i < 3; $i++) {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "for loops are supported by phpc run but not LLVM IR emission yet"
     );
 }

@@ -21,9 +21,10 @@
 - assignment statements, including direct static-variable compound assignment
   `$name += expr`, `$name -= expr`, `$name *= expr`, `$name /= expr`, and
   `$name .= expr` over the current scalar value model
-- statement-level direct static-variable pre/post increment and decrement:
-  `++$name`, `$name++`, `--$name`, and `$name--` for existing integer and
-  float variables only
+- direct static-variable pre/post increment and decrement in statement
+  position and in C-style `for` initializer/increment slots: `++$name`,
+  `$name++`, `--$name`, and `$name--` for existing integer and float variables
+  only
 - arithmetic: `+`, `-`, `*`, `/` with scalar coercions for `null`, booleans,
   integers, floats, and well-formed numeric strings
 - unary `-` and `!`
@@ -37,7 +38,8 @@
 - `for (initializer; condition; increment)` loops where each header slot is
   optional and each initializer/increment slot contains at most one expression
   or assignment from the current assignment subset, including direct
-  static-variable compound assignment
+  static-variable compound assignment and direct static-variable
+  increment/decrement
 - `do ... while` loops with a block or single-statement body and a
   post-condition expression
 - `switch ($value) { case ...: ... default: ... }` statements over the current
@@ -1583,9 +1585,10 @@
   and object-property compound assignment targets, assignment result values,
   references/copy-on-write, PHP warning recovery, exact native error objects,
   and native lowering are not implemented.
-- Pre/post increment and decrement is limited to statement-level direct static
-  variables whose current values are integers or floats. Pre and post forms
-  both update the variable in place; expression result values are not exposed
+- Pre/post increment and decrement is limited to direct static variables whose
+  current values are integers or floats, either as standalone statements or as
+  single C-style `for` initializer/increment actions. Pre and post forms both
+  update the variable in place; expression result values are not exposed
   because expression-position increment/decrement remains unsupported.
   Strings, arrays, objects, undefined variables, array-offset targets,
   object-property targets, references, copy-on-write, exact native

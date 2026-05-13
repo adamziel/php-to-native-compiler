@@ -432,6 +432,9 @@ impl Interpreter {
                 expr,
                 span,
             } => self.execute_compound_assignment(name, *op, expr, *span, scope),
+            ForAction::IncrementDecrement { name, op, span } => {
+                self.execute_increment_decrement(name, *op, *span, scope)
+            }
             ForAction::Expr { expr } => {
                 self.evaluate(expr, scope)?;
                 Ok(())

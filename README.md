@@ -34,9 +34,10 @@ subset:
 - `echo`
 - integer, float, and string literals
 - static variables, assignment, direct static-variable compound assignment
-  (`+=`, `-=`, `*=`, `/=`, `.=`), statement-level direct static-variable
-  pre/post increment and decrement for integer and float variables, and
-  `unset($name)` through per-scope symbol tables
+  (`+=`, `-=`, `*=`, `/=`, `.=`), direct static-variable pre/post increment
+  and decrement for integer and float variables in statements and C-style
+  `for` initializer/increment slots, and `unset($name)` through per-scope
+  symbol tables
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow

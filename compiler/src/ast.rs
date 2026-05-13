@@ -170,6 +170,11 @@ pub enum ForAction {
         expr: Expr,
         span: Span,
     },
+    IncrementDecrement {
+        name: String,
+        op: IncrementDecrementOp,
+        span: Span,
+    },
     Expr {
         expr: Expr,
     },

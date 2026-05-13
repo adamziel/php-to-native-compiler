@@ -10978,3 +10978,59 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T00:26:20Z
 
 - Post-round 25 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T00:26:30Z
+
+- Starting round 26 at 20260513T002630Z from HEAD `b427ab2`.
+
+## Loop Event 2026-05-13T00:26:42Z
+
+- Pre-round 26 test exit code: `0`.
+
+## Loop Event 2026-05-13T00:31:26Z
+
+- Task attempted: implemented direct static-variable pre/post increment and
+  decrement in C-style `for` initializer and increment slots for existing
+  integer and float variables. Header actions now execute through the same
+  read-modify-write path as statement-level `++`/`--`, undefined header
+  operands keep the stable undefined-variable diagnostic, unsupported string
+  operands keep the stable unsupported increment/decrement diagnostic, and
+  native emission still rejects the containing `for` loop until lowering
+  exists.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/increment_decrement_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone135/for_header_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/for_header_undefined_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/for_header_unsupported_string_increment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test increment_decrement` passed
+  with 8 tests; `cargo test -p phpc --test increment_decrement_cli` passed;
+  `cargo test -p phpc --test syntax_boundaries unsupported_for_header_increment_decrement_targets_have_stable_parse_errors`
+  passed; `cargo run -p phpc -- test tests/fixtures/milestone135` passed with
+  1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone135` passed with 1 system PHP comparison;
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors` passed with 150
+  fixtures; `cargo run -p phpc -- compile
+  tests/fixtures/milestone135/for_header_increment_decrement.php --emit-ir`
+  exited `1` with the expected `for` codegen rejection.
+- Remaining semantic gaps: expression-position `++`/`--` result values,
+  string increment/decrement semantics, array/object targets, references,
+  copy-on-write, exact native warning/error behavior, broader coercion
+  recovery, and native lowering remain unsupported.
+- Next concrete task: implement expression-position direct static-variable
+  pre/post increment and decrement for the same integer/float subset,
+  including pre-vs-post result values.
+- Known-good tag: not created; this is a narrow follow-up checkpoint, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "syntax: add for header increment decrement"`
+  after the full suite passes.
+
+## Loop Event 2026-05-13T00:32:43Z
+
+- Full suite result: `tools/run-tests.sh` passed with 372 fixtures, 131 system
+  PHP comparisons, and 241 comparison skips.
+- Checkpoint remains pending through
+  `tools/checkpoint.sh "syntax: add for header increment decrement"`.

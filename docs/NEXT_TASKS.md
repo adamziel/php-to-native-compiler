@@ -1282,7 +1282,7 @@ handled.
 
 ## Milestone 135: For Header Increment/Decrement Slice
 
-- [ ] Implement direct static-variable pre/post increment and decrement in
+- [x] Implement direct static-variable pre/post increment and decrement in
   C-style `for` initializer/increment slots for integer and float variables,
   including loop execution behavior, undefined-variable and unsupported-type
   diagnostics, fixture CLI coverage, documentation, native-codegen rejection
@@ -1290,3 +1290,13 @@ handled.
   array/object targets, expression result values, references/copy-on-write,
   exact native warning/error behavior, broader coercion recovery, and native
   lowering.
+
+## Milestone 136: Increment/Decrement Expression Follow-up
+
+- [ ] Implement expression-position direct static-variable pre/post increment
+  and decrement for integer and float variables, including pre-vs-post result
+  values, read-modify-write behavior, undefined-variable and unsupported-type
+  diagnostics, fixture CLI coverage, documentation, native-codegen rejection
+  while lowering remains unsupported, and explicit gaps for strings,
+  array/object targets, references/copy-on-write, exact native warning/error
+  behavior, broader coercion recovery, and native lowering.
