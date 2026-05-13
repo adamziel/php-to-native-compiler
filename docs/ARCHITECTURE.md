@@ -198,6 +198,12 @@ started for `--version`. That pins the current boundary that probe start
 failures are treated as unavailable before fallback selection or
 missing-backend reporting, without treating that as full backend-specific
 discovery semantics.
+Backend discovery probe permission-denied snapshots expose deterministic fake
+`clang`, `llc`, and `cc` command names that exist on `PATH` but are not
+executable for `--version`. That pins the current boundary that permission
+denied probe starts are treated as unavailable before fallback selection or
+missing-backend reporting, without treating that as full backend-specific
+discovery semantics.
 A selected-backend start-failure snapshot exposes a deterministic fake `clang`
 that passes discovery and then rewrites itself to use a missing interpreter
 before assembly emission. That pins the current diagnostic for a race-like

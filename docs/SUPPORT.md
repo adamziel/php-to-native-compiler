@@ -1057,7 +1057,12 @@
   deterministic fake `clang`, `llc`, and `cc` command names that exist on
   `PATH` but cannot be started for `--version`, proving probe start failures
   are treated as unavailable before fallback selection and before the stable
-  missing-backend diagnostic when every candidate probe cannot start. A
+  missing-backend diagnostic when every candidate probe cannot start.
+  Discovery probe permission-denied snapshots use deterministic fake `clang`,
+  `llc`, and `cc` command names that exist on `PATH` but are not executable
+  for `--version`, proving permission-denied probe starts are treated as
+  unavailable before fallback selection and before the stable missing-backend
+  diagnostic when every candidate probe is non-executable. A
   selected-backend start-failure snapshot uses a
   deterministic fake `clang` that passes discovery and then rewrites itself to
   use a missing interpreter before actual assembly emission, proving the
@@ -1099,7 +1104,7 @@
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific failed
-  probe output/start-failure semantics, broader backend race-condition recovery beyond
+  probe output/start-failure/permission-denied semantics, broader backend race-condition recovery beyond
   command-start diagnostics, backend-specific stdout/stderr guarantees,
   backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native

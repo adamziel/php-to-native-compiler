@@ -3767,11 +3767,22 @@ Still fails:
   missing-backend diagnostic. Bundled toolchains, assembly linking/execution,
   backend-specific discovery semantics, exact native error objects, and
   broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for discovery probe
+  permission-denied cases where candidate backend command names exist on
+  `PATH` but are not executable for `--version`. The Milestone 219 fixture
+  runs through `phpc run` and system PHP as a lowerable scalar echo/print
+  program, while assembly CLI tests invoke `--emit-asm` with temporary PATHs
+  exposing deterministic non-executable fake `clang`, `llc`, and `cc` probe
+  commands. The committed snapshots prove a non-executable `clang` probe is
+  skipped before selecting `llc`, non-executable `clang` and `llc` probes are
+  skipped before the `cc -S` fallback, and all non-executable probes report
+  the stable missing-backend diagnostic. Bundled toolchains, assembly
+  linking/execution, backend-specific discovery semantics, exact native error
+  objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add Milestone 219, explicit `phpc compile --emit-asm` CLI coverage for
-  discovery probe permission-denied cases where candidate backend command
-  names exist on `PATH` but are not executable, proving those probe failures
-  are treated as unavailable before fallback selection or missing-backend
-  diagnostics.
+- Add Milestone 220, explicit `phpc compile --emit-asm` CLI coverage for a
+  selected backend command that passes discovery but becomes non-executable
+  before actual assembly emission, proving the stable selected-backend start
+  diagnostic is reported for permission-denied emission starts.

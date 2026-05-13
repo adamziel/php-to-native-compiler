@@ -16088,3 +16088,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T10:03:16Z
 
 - Post-round 109 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T10:03:37Z
+
+- Starting round 110 at 20260513T100337Z from HEAD `1a6f995`.
+
+## Loop Event 2026-05-13T10:03:59Z
+
+- Pre-round 110 test exit code: `0`.
+
+## Loop Event 2026-05-13T10:08:28Z
+
+- Task attempted: completed Milestone 219 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for discovery probe permission-denied cases where
+  candidate backend command names exist on `PATH` but are not executable for
+  `--version`. The new Milestone 219 fixture is a lowerable scalar echo/print
+  program, and the assembly CLI tests invoke `--emit-asm` with temporary PATHs
+  exposing deterministic non-executable fake `clang`, `llc`, and `cc` probe
+  commands.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone219/native_assembly_probe_permission_denied.php`,
+  `tests/fixtures/milestone219/native_assembly_probe_permission_denied.stdout`,
+  `tests/fixtures/milestone219/native_assembly_probe_permission_denied_clang_to_llc_emit_asm.cli`,
+  `tests/fixtures/milestone219/native_assembly_probe_permission_denied_llvm_to_cc_emit_asm.cli`,
+  `tests/fixtures/milestone219/native_assembly_probe_permission_denied_exhaustion_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone219` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone219` passed with 1 system PHP
+  comparison; `cargo test -p phpc --test native_assembly_cli permission_denied
+  -- --nocapture` passed with 3 focused tests; `cargo test -p phpc --test
+  native_assembly_cli -- --nocapture` passed with 57 tests;
+  `tools/run-tests.sh` passed with 469 fixtures, 213 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; discovery probe
+  permission-denied coverage is a deterministic test-double contract rather
+  than full backend-specific discovery semantics; generated code still lacks
+  exact native PHP error objects and broader native lowering.
+- Next concrete task: add Milestone 220 selected backend permission-denied
+  emission coverage for a backend command that passes discovery but becomes
+  non-executable before actual assembly emission, proving the stable
+  selected-backend start diagnostic is reported.
+- Known-good tag: not created; this is narrow backend discovery boundary
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot permission-denied probes"`
+  after the full suite passes.
