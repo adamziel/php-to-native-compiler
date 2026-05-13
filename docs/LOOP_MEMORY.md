@@ -15605,5 +15605,4 @@ injects this file into every prompt. Each Codex pass should update it with:
   unavailable and both `llc` and `cc` are available.
 - Known-good tag: not created; this is narrow assembly backend selection
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot backend precedence"`
-  after the full suite passes.
+- Checkpoint: `e32ba64` (`codegen: snapshot backend precedence`).
