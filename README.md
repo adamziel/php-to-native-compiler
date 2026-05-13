@@ -87,6 +87,10 @@ A selected-backend whitespace-with-stderr success snapshot exposes a
 deterministic fake `clang` that exits successfully with only whitespace on
 stdout and diagnostics on stderr, proving stdout validation wins and backend
 stderr remains unsurfaced on invalid successful output.
+Additional whitespace-with-stderr fallback snapshots expose deterministic fake
+`llc` and `cc` tools with the same invalid successful-output behavior, proving
+the same stdout-validation precedence after LLVM backend fallback selection and
+after the `cc -S` C fallback selection.
 
 ## Current Status
 

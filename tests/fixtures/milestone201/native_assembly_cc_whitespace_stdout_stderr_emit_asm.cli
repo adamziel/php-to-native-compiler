@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone201/native_assembly_fallback_whitespace_stdout_stderr.php:0:0: cc emitted whitespace-only assembly output
+--- stderr end ---

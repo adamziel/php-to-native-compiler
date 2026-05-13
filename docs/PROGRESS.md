@@ -3562,10 +3562,23 @@ Still fails:
   toolchains, assembly linking/execution, backend-specific assembly
   validation, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for fallback `llc` and
+  `cc` backend success cases that write stderr diagnostics while producing
+  only whitespace assembly stdout. The Milestone 201 fixture runs through
+  `phpc run` and system PHP as a lowerable scalar echo/print program, while
+  assembly CLI tests invoke `--emit-asm` with temporary PATHs exposing
+  deterministic fake `llc` and `cc` tools that pass discovery, accept
+  generated input, write stderr diagnostics, emit only whitespace on stdout,
+  and exit successfully. The committed snapshots prove stdout validation wins
+  with the stable `llc emitted whitespace-only assembly output` and `cc
+  emitted whitespace-only assembly output` diagnostics and do not surface
+  successful-backend stderr on invalid successful output after fallback
+  selection. Bundled toolchains, assembly linking/execution,
+  backend-specific assembly validation, exact native error objects, and broader
+  native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc` and
-  `cc` backend success cases that produce whitespace-only stdout and stderr
-  diagnostics, proving the same stdout-validation precedence after fallback
-  selection.
+- Add explicit `phpc compile --emit-asm` CLI coverage for selected `clang`
+  backend input validation, using a deterministic test double that inspects
+  stdin for representative LLVM IR markers before emitting assembly.

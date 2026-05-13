@@ -1888,10 +1888,19 @@ handled.
 
 ## Milestone 201: Native Assembly Invalid Fallback Output Stderr Precedence
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
   and `cc` backend success cases that write stderr diagnostics while producing
   whitespace-only assembly stdout, proving stdout validation wins and backend
   stderr remains unsurfaced on invalid successful output after fallback
   selection, including deterministic test doubles, documentation, and named
   gaps for backend-specific assembly validation, bundled toolchains, exact
   native error objects, and broader native lowering.
+
+## Milestone 202: Native Assembly Backend Input Validation
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
+  `clang` backend test double that validates the generated LLVM IR arrives on
+  stdin with representative `main` and `printf` markers before emitting
+  assembly, including deterministic test doubles, normalized CLI output,
+  documentation, and named gaps for backend-specific IR validation, bundled
+  toolchains, exact native error objects, and broader native lowering.

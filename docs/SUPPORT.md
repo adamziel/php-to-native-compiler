@@ -1034,7 +1034,11 @@
   snapshot exposes deterministic fake `clang` that exits successfully with
   whitespace-only stdout and stderr diagnostics, proving stdout validation
   wins and successful-backend stderr is not surfaced on invalid successful
-  output. Bundled toolchains, assembly linking/execution,
+  output. Additional whitespace-with-stderr fallback snapshots expose
+  deterministic fake `llc` and `cc` tools with the same invalid
+  successful-output behavior, proving stdout validation wins and successful
+  backend stderr is not surfaced after fallback selection too. Bundled
+  toolchains, assembly linking/execution,
   backend-specific discovery semantics for every tool, backend-specific
   stdout/stderr guarantees, backend-specific assembly text, PHP zvals, native
   symbol-table storage, references/copy-on-write, exact native error objects,

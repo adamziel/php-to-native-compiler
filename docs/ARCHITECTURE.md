@@ -156,6 +156,10 @@ deterministic fake `clang` that exits successfully with only whitespace on
 stdout while writing stderr diagnostics. That pins stdout validation as the
 reported failure and keeps successful-backend stderr unsurfaced even when the
 successful stdout artifact is invalid.
+Whitespace-with-stderr fallback snapshots expose deterministic fake `llc` and
+`cc` tools with the same invalid successful-output behavior. That pins the same
+stdout-validation precedence after LLVM fallback selection and after the
+`cc -S` C fallback selection.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,
