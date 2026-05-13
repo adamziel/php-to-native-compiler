@@ -591,6 +591,10 @@ impl Interpreter {
                 index,
                 span,
             } => self.evaluate_array_index(target, index, *span, scope),
+            Expr::AppendIndex { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("[]", "append offset reads are not implemented"),
+            )),
             Expr::Property {
                 target,
                 property,

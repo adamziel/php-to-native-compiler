@@ -65,6 +65,33 @@ echo ($nullable["slot"] = "materialized"), ":", $nullable["slot"], "\n";
 }
 
 #[test]
+fn direct_append_offset_assignment_expressions_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+echo ($items[] = "first"), ":", $items[0], "\n";
+echo ($items[] = 42), ":", $items[1], "\n";
+
+echo ($created[] = "made"), ":", $created[0], "\n";
+$nullable = null;
+echo ($nullable[] = "null-made"), ":", $nullable[0], "\n";
+
+function rhs_value() {
+    echo "rhs\n";
+    return "value";
+}
+echo ($items[] = rhs_value()), ":", $items[2], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first:first\n42:42\nmade:made\nnull-made:null-made\nrhs\nvalue:value\n"
+    );
+}
+
+#[test]
 fn array_offset_assignment_expression_evaluates_key_before_rhs() {
     let execution = run_source(
         r#"<?php
@@ -91,6 +118,29 @@ fn array_offset_assignment_expression_rejects_non_array_targets() {
 
     assert_eq!(error.phase, Phase::Runtime);
     assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot write offset on int"
+    );
+}
+
+#[test]
+fn append_offset_assignment_expression_rejects_non_array_targets() {
+    let error = run_source(
+        r#"<?php
+function rhs_value() {
+    echo "rhs\n";
+    return "value";
+}
+$value = 1;
+echo ($value[] = rhs_value());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 7);
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
@@ -188,7 +238,26 @@ fn assignment_expression_rejects_complex_targets() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported assignment expression target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented"
+            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented"
+        );
+    }
+}
+
+#[test]
+fn append_offsets_remain_unsupported_as_reads() {
+    let cases = [
+        ("<?php\n$items = [];\necho $items[];\n", 3, 6),
+        ("<?php\n$items = [];\necho ($target = $items[]);\n", 3, 17),
+    ];
+
+    for (source, line, column) in cases {
+        let error = run_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Parse);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "cannot use [] for reading; append syntax is only supported in assignments"
         );
     }
 }
@@ -202,7 +271,7 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 
@@ -216,7 +285,20 @@ fn emit_ir_rejects_array_offset_assignment_expressions_until_native_lowering_exi
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_append_offset_assignment_expressions_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$items = 1;\necho ($items[] = 'value');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 
@@ -229,6 +311,6 @@ fn emit_ir_rejects_object_property_assignment_expressions_until_native_lowering_
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
     );
 }

@@ -1387,10 +1387,21 @@ handled.
 
 ## Milestone 145: Append Offset Assignment Expression Boundary
 
-- [ ] Add the next honest path for expression-position array append
+- [x] Add the next honest path for expression-position array append
   assignment such as `($array[] = expr)`: either executable append assignment
   result semantics over the current ordered array value model, or a tightened
   explicit diagnostic boundary with fixture CLI coverage, documentation,
   native-codegen behavior, and named gaps for nested append offsets, object
   properties, references/copy-on-write, exact native error objects, lvalue
   evaluation order, and native lowering.
+
+## Milestone 146: Null Coalescing Assignment Expression Boundary
+
+- [ ] Add the next honest path for expression-position null coalescing
+  assignment such as `($name ??= expr)`, `($array[$key] ??= expr)`, and
+  `($object->property ??= expr)`: either executable assignment result
+  semantics over the current direct-variable/direct-offset/direct-property
+  value model, or a tightened explicit diagnostic boundary with fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps for nested
+  lvalues, append offsets, dynamic property names, references/copy-on-write,
+  lazy evaluation order, exact native error objects, and native lowering.

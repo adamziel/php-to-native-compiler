@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/append_assignment_expression_non_array.php:8:7: invalid array access: cannot write offset on int
+--- stderr end ---

@@ -11629,3 +11629,55 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:57:53Z
 
 - Post-round 35 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:58:04Z
+
+- Starting round 36 at 20260513T015804Z from HEAD `ada5e4f`.
+
+## Loop Event 2026-05-13T01:58:15Z
+
+- Pre-round 36 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:06:22Z
+
+- Task attempted: implemented expression-position direct append-offset
+  assignment `($array[] = expr)` over the current ordered array value model.
+  Assignment expressions append to direct array variables, materialize
+  undefined or `null` targets as arrays, return the appended value, keep
+  append-offset reads rejected, and keep native lowering on the explicit
+  assignment-expression rejection path.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone145/append_assignment_expression.*`,
+  `tests/fixtures/runtime_errors/append_assignment_expression_non_array.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_assignment_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  assignment_expression` passed; `cargo test -p phpc --test
+  syntax_boundaries` passed; `cargo test -p phpc --test
+  assignment_expression_cli` passed; `cargo test -p phpc --test
+  runtime_error_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone145` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone145` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 157 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 26 fixtures;
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass` passed;
+  `tools/run-tests.sh` passed with 389 fixtures, 141 system PHP comparisons,
+  and 248 comparison skips.
+- Remaining semantic gaps: nested append/offset/property assignment-expression
+  targets, chained assignment expressions, expression-position `??=`,
+  dynamic property names, references/copy-on-write aliasing, exact native error
+  objects, detailed lvalue ordering beyond the direct-variable subset, and
+  native lowering remain unsupported.
+- Next concrete task: add the next honest path for expression-position null
+  coalescing assignment such as `($name ??= expr)`, `($array[$key] ??= expr)`,
+  and `($object->property ??= expr)`.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add append assignment expressions"`
+  after the full suite passes.

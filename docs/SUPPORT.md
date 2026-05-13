@@ -20,15 +20,18 @@
   multiple supported operands and executes them left to right
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
-  `$array[$key] = expr` and direct public object-property assignment
-  `$object->property = expr` with assignment result values over the current
-  value model. Direct array-offset assignment expressions evaluate the key
-  before the right-hand expression and materialize undefined or `null` target
-  variables as arrays. Direct object-property assignment expressions evaluate
-  the right-hand expression, then write existing declared public property
-  slots on direct object variables. Chained assignment expressions,
-  append-offset assignment expressions, nested-offset assignment expressions,
-  dynamic property names, missing property materialization, references/copy-on-write,
+  `$array[$key] = expr`, direct append-offset assignment `$array[] = expr`,
+  and direct public object-property assignment `$object->property = expr` with
+  assignment result values over the current value model. Direct array-offset
+  assignment expressions evaluate the key before the right-hand expression and
+  materialize undefined or `null` target variables as arrays. Direct
+  append-offset assignment expressions evaluate the right-hand expression,
+  append to direct array variables, materialize undefined or `null` target
+  variables as arrays, and return the appended value. Direct object-property
+  assignment expressions evaluate the right-hand expression, then write
+  existing declared public property slots on direct object variables. Chained
+  assignment expressions, nested-offset assignment expressions, dynamic
+  property names, missing property materialization, references/copy-on-write,
   and native lowering remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
@@ -1614,21 +1617,26 @@
   nesting/precedence, thrown expressions inside arms, exact native error
   objects, and native lowering are not implemented.
 - Assignment expressions are limited to direct static variables as
-  `$name = expr`, direct array offsets as `$array[$key] = expr`, and direct
-  public object properties as `$object->property = expr`. They write the
-  active scope's static variable, current ordered array offset, or existing
-  declared public property slot and return the assigned value. Direct
+  `$name = expr`, direct array offsets as `$array[$key] = expr`, direct append
+  offsets as `$array[] = expr`, and direct public object properties as
+  `$object->property = expr`. They write the active scope's static variable,
+  current ordered array offset, appended array slot, or existing declared
+  public property slot and return the assigned value. Direct
   array-offset assignment expressions evaluate the key before the right-hand
   expression, materialize undefined or `null` target variables as arrays, and
   reject existing non-array targets with a stable runtime diagnostic. Direct
+  append-offset assignment expressions evaluate the right-hand expression,
+  append to direct array variables, materialize undefined or `null` target
+  variables as arrays, and reject existing non-array targets with a stable
+  runtime diagnostic.
   object-property assignment expressions evaluate the right-hand expression
   before validating/writing the direct object-variable target, reject
   undefined or non-object targets and missing/non-public properties with stable
   runtime diagnostics, and do not materialize missing properties. Chained
-  assignment expressions, append-offset assignment expressions, nested-offset
-  assignment expressions, dynamic property names, expression-position `??=`,
-  reference assignment, copy-on-write container aliasing, exact native error
-  objects, and native lowering are not implemented.
+  assignment expressions, nested append/offset assignment expressions, dynamic
+  property names, expression-position `??=`, reference assignment,
+  copy-on-write container aliasing, exact native error objects, and native
+  lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
   array-variable offsets, and direct public object properties over the current
   scalar/object value model. The

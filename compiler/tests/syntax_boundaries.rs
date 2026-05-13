@@ -324,7 +324,7 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "<?php\n$items = [];\necho ($items['outer']['inner'] = 'value');\n",
             3,
             32,
-            "unsupported assignment expression target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented",
+            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented",
         ),
         (
             "<?php\n$items = [];\necho ($items['key'] ??= 'value');\n",
@@ -356,7 +356,7 @@ fn emit_ir_rejects_assignment_expression_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet"
     );
 }
 

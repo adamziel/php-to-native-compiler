@@ -35,8 +35,9 @@ subset:
 - integer, float, and string literals
 - static variables, assignment, direct static-variable assignment expressions
   (`$name = expr`) and direct array-offset assignment expressions
-  (`$array[$key] = expr`) and direct public object-property assignment
-  expressions (`$object->property = expr`) with assignment result values,
+  (`$array[$key] = expr`) and direct append-offset assignment expressions
+  (`$array[] = expr`) and direct public object-property assignment expressions
+  (`$object->property = expr`) with assignment result values,
   direct static-variable compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`)
   in statements and
   expressions with assignment result values, direct array-offset compound

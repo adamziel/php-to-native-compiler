@@ -213,6 +213,10 @@ impl LlvmGenerator {
                 *span,
                 "array indexing is supported by phpc run but not LLVM IR emission yet",
             )),
+            Expr::AppendIndex { span, .. } => Err(self.unsupported(
+                *span,
+                "append-offset assignment expressions are supported by phpc run but not LLVM IR emission yet",
+            )),
             Expr::Property { span, .. } => Err(self.unsupported(
                 *span,
                 "object property access is supported by phpc run but not LLVM IR emission yet",
@@ -243,7 +247,7 @@ impl LlvmGenerator {
             )),
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
-                "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not LLVM IR emission yet",
+                "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not LLVM IR emission yet",
             )),
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
@@ -807,6 +811,10 @@ impl CGenerator {
                 *span,
                 "array indexing is supported by phpc run but not assembly emission yet",
             )),
+            Expr::AppendIndex { span, .. } => Err(self.unsupported(
+                *span,
+                "append-offset assignment expressions are supported by phpc run but not assembly emission yet",
+            )),
             Expr::Property { span, .. } => Err(self.unsupported(
                 *span,
                 "object property access is supported by phpc run but not assembly emission yet",
@@ -831,7 +839,7 @@ impl CGenerator {
             )),
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
-                "assignment expressions are supported by phpc run for direct static variables, direct array offsets, and direct object properties but not assembly emission yet",
+                "assignment expressions are supported by phpc run for direct static variables, direct array offsets, direct append offsets, and direct object properties but not assembly emission yet",
             )),
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,

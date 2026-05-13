@@ -287,6 +287,10 @@ pub enum Expr {
         index: Box<Expr>,
         span: Span,
     },
+    AppendIndex {
+        target: Box<Expr>,
+        span: Span,
+    },
     Property {
         target: Box<Expr>,
         property: String,
@@ -353,6 +357,7 @@ impl Expr {
             | Expr::GlobalConstant { span, .. }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
+            | Expr::AppendIndex { span, .. }
             | Expr::Property { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }

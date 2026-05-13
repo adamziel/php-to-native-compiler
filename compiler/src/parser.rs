@@ -1177,6 +1177,7 @@ impl Parser {
                 }),
                 _ => Err(unsupported_compound_assignment_target_message()),
             },
+            Expr::AppendIndex { .. } => Err(unsupported_compound_assignment_target_message()),
             Expr::Property {
                 target,
                 property,
@@ -1207,6 +1208,14 @@ impl Parser {
                 Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
                     name,
                     index: Some(*index),
+                    span,
+                }),
+                _ => Err(unsupported_assignment_expression_target_message()),
+            },
+            Expr::AppendIndex { target, span } => match *target {
+                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: None,
                     span,
                 }),
                 _ => Err(unsupported_assignment_expression_target_message()),
@@ -1312,6 +1321,12 @@ impl Parser {
             let span = target.span();
 
             let value = self.parse_non_assignment_expression()?;
+            if let Some(span) = Self::find_append_index_span(&value) {
+                return Err(self.error_at(
+                    span,
+                    "cannot use [] for reading; append syntax is only supported in assignments",
+                ));
+            }
             if Self::expr_contains_assignment(&value)
                 || self.check(|kind| matches!(kind, TokenKind::Equal))
                 || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
@@ -1333,6 +1348,12 @@ impl Parser {
         }
 
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            if let Some(span) = Self::find_append_index_span(&expr) {
+                return Err(self.error_at(
+                    span,
+                    "cannot use [] for reading; append syntax is only supported in assignments",
+                ));
+            }
             return Ok(expr);
         }
 
@@ -1343,6 +1364,12 @@ impl Parser {
         let span = target.span();
 
         let value = self.parse_non_assignment_expression()?;
+        if let Some(span) = Self::find_append_index_span(&value) {
+            return Err(self.error_at(
+                span,
+                "cannot use [] for reading; append syntax is only supported in assignments",
+            ));
+        }
         if Self::expr_contains_assignment(&value)
             || self.check(|kind| matches!(kind, TokenKind::Equal))
             || (self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
@@ -1606,12 +1633,14 @@ impl Parser {
 
         loop {
             if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-                let bracket_span = self.previous().span;
                 if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
-                    return Err(self.error_at(
-                        bracket_span,
-                        "cannot use [] for reading; append syntax is only supported in assignments",
-                    ));
+                    self.advance();
+                    let span = expr.span();
+                    expr = Expr::AppendIndex {
+                        target: Box::new(expr),
+                        span,
+                    };
+                    continue;
                 }
 
                 let index = self.parse_expression()?;
@@ -2111,6 +2140,7 @@ impl Parser {
             Expr::MagicFunction { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Index { .. }
+            | Expr::AppendIndex { .. }
             | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
@@ -2157,6 +2187,7 @@ impl Parser {
             Expr::MagicFunction { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Index { .. }
+            | Expr::AppendIndex { .. }
             | Expr::Property { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
@@ -2182,6 +2213,7 @@ impl Parser {
             Expr::Index { target, index, .. } => {
                 Self::expr_contains_assignment(target) || Self::expr_contains_assignment(index)
             }
+            Expr::AppendIndex { target, .. } => Self::expr_contains_assignment(target),
             Expr::Property { target, .. } => Self::expr_contains_assignment(target),
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
@@ -2206,6 +2238,46 @@ impl Parser {
             | Expr::MagicFunction { .. }
             | Expr::GlobalConstant { .. }
             | Expr::IncrementDecrement { .. } => false,
+        }
+    }
+
+    fn find_append_index_span(expr: &Expr) -> Option<Span> {
+        match expr {
+            Expr::AppendIndex { span, .. } => Some(*span),
+            Expr::Array { items, .. } => items.iter().find_map(|item| {
+                item.key
+                    .as_ref()
+                    .and_then(Self::find_append_index_span)
+                    .or_else(|| Self::find_append_index_span(&item.value))
+            }),
+            Expr::Index { target, index, .. } => {
+                Self::find_append_index_span(target).or_else(|| Self::find_append_index_span(index))
+            }
+            Expr::Property { target, .. } => Self::find_append_index_span(target),
+            Expr::Call { args, .. } | Expr::New { args, .. } => {
+                args.iter().find_map(Self::find_append_index_span)
+            }
+            Expr::DynamicCall { callee, args, .. } => Self::find_append_index_span(callee)
+                .or_else(|| args.iter().find_map(Self::find_append_index_span)),
+            Expr::Binary { left, right, .. } => {
+                Self::find_append_index_span(left).or_else(|| Self::find_append_index_span(right))
+            }
+            Expr::Unary { expr, .. } => Self::find_append_index_span(expr),
+            Expr::Assign { expr, .. } | Expr::CompoundAssign { expr, .. } => {
+                Self::find_append_index_span(expr)
+            }
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _)
+            | Expr::Variable(_, _)
+            | Expr::MagicLine { .. }
+            | Expr::MagicFile { .. }
+            | Expr::MagicDir { .. }
+            | Expr::MagicFunction { .. }
+            | Expr::GlobalConstant { .. }
+            | Expr::IncrementDecrement { .. } => None,
         }
     }
 
@@ -2628,7 +2700,7 @@ fn unsupported_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_assignment_expression_target_message() -> &'static str {
-    "unsupported assignment expression target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented"
+    "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented"
 }
 
 fn unsupported_chained_assignment_expression_message() -> &'static str {

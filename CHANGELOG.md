@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Implemented expression-position direct append-offset assignment
+  `($array[] = expr)` over the current ordered array value model, including
+  appended-value expression results, undefined/null target materialization,
+  non-array-target diagnostics, fixture/CLI coverage, system PHP comparison,
+  documentation, and native-codegen rejection while nested append/offset
+  targets, object properties, references/copy-on-write, exact native error
+  objects, broader lvalue ordering, and native lowering remain explicit gaps.
 - Implemented expression-position direct public object-property assignment
   `($object->property = expr)` over existing declared public property slots,
   including assigned-value expression results, RHS-before-target-error
