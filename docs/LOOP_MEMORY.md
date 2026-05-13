@@ -11681,3 +11681,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   checkpoint, not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "arrays: add append assignment expressions"`
   after the full suite passes.
+
+## Loop Event 2026-05-13T02:06:57Z
+
+- Codex round 36 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T015804Z-36.log`.
+
+## Loop Event 2026-05-13T02:07:07Z
+
+- Post-round 36 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:07:07Z
+
+- Post-round 36 tests passed; running checkpoint for this round.
