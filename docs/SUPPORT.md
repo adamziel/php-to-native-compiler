@@ -1632,7 +1632,10 @@
   object-property assignment expressions can be chained with right-to-left
   result semantics, so `$left = $right = expr`, `$left = $array[$key] = expr`,
   and `$left = $object->property = expr` assign the inner target first and
-  then store that result in the outer target. Direct array-offset assignment
+  then store that result in the outer target. The chained right-hand value may
+  also be a direct compound assignment such as `$left = ($right += expr)` or a
+  direct null coalescing assignment such as `$left = ($right ??= expr)`, reusing
+  the inner assignment expression result. Direct array-offset assignment
   expressions evaluate the key before the right-hand expression, materialize
   undefined or `null` target variables as arrays, and reject existing
   non-array targets with a stable runtime diagnostic. Direct
@@ -1648,10 +1651,9 @@
   null coalescing assignment expressions use the same lazy evaluation and
   materialization behavior as the supported statement forms. Nested
   append/offset assignment expressions, append-offset chained assignment
-  expressions, chained compound/null-coalescing assignment mixes, dynamic
-  property names, append-offset `??=` targets, reference assignment,
-  copy-on-write container aliasing, exact native error objects, and native
-  lowering are not implemented.
+  expressions, dynamic property names, append-offset `??=` targets, reference
+  assignment, copy-on-write container aliasing, exact native error objects, and
+  native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
   array-variable offsets, and direct public object properties over the current
   scalar/object value model. The

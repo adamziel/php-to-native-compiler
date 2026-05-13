@@ -1418,9 +1418,18 @@ handled.
 
 ## Milestone 148: Assignment Expression Follow-up Boundaries
 
-- [ ] Add the next honest boundary or executable slice for chained compound
+- [x] Add the next honest boundary or executable slice for chained compound
   assignment and null coalescing assignment mixes such as `$left = ($right +=
   expr)` and `$left = ($right ??= expr)`, including parser/runtime tests,
   fixture CLI coverage, documentation, native-codegen behavior, and named gaps
   for nested lvalues, append offsets, references/copy-on-write, exact native
   error objects, and native lowering.
+
+## Milestone 149: Assignment Expression Value Context Coverage
+
+- [ ] Add explicit executable coverage or tightened diagnostics for assignment
+  expressions used as values in non-echo expression contexts such as function
+  call arguments, array literal keys/values, `if`/loop conditions, and builtin
+  arguments, including fixture CLI coverage, documentation, native-codegen
+  behavior, and named gaps for nested lvalues, references/copy-on-write, exact
+  native error objects, and native lowering.

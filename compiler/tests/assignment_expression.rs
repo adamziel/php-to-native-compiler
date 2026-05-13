@@ -231,6 +231,45 @@ echo ($a = $b = rhs_value()), ":", $a, ":", $b, "\n";
 }
 
 #[test]
+fn chained_assignment_allows_compound_and_null_coalescing_rhs_values() {
+    let execution = run_source(
+        r#"<?php
+$value = 2;
+$copy = ($value += 3);
+echo $copy, ":", $value, "\n";
+
+$items = ["count" => 4];
+echo ($array_copy = ($items["count"] *= 2)), ":", $array_copy, ":", $items["count"], "\n";
+
+class Box {
+    public $count;
+}
+$box = new Box();
+$box->count = 5;
+echo ($property_copy = ($box->count -= 1)), ":", $property_copy, ":", $box->count, "\n";
+
+echo ($fallback_copy = ($missing ??= "fallback")), ":", $fallback_copy, ":", $missing, "\n";
+
+function should_not_run() {
+    echo "rhs\n";
+    return "new";
+}
+$kept = "old";
+echo ($kept_copy = ($kept ??= should_not_run())), ":", $kept_copy, ":", $kept, "\n";
+
+$slots = [];
+echo ($slot_copy = ($slots["name"] ??= "Ada")), ":", $slot_copy, ":", $slots["name"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "5:5\n8:8:8\n4:4:4\nfallback:fallback:fallback\nold:old:old\nAda:Ada:Ada\n"
+    );
+}
+
+#[test]
 fn chained_assignment_rejects_append_offset_targets() {
     let cases = [
         ("<?php\n$items = [];\n$value = $items[] = 1;\n", 3, 10),
@@ -248,7 +287,7 @@ fn chained_assignment_rejects_append_offset_targets() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported assignment expression: chained assignment expressions are not implemented"
+            "unsupported assignment expression: this chained assignment form is not implemented in the current subset"
         );
     }
 }

@@ -2,14 +2,22 @@
 
 ## Unreleased
 
+- Implemented chained assignment mixes where the right-hand value is a direct
+  compound assignment or direct null coalescing assignment expression, such as
+  `$left = ($right += expr)` and `$left = ($right ??= expr)`. The supported
+  slice covers current direct static variables, direct array offsets, and
+  direct public object properties, preserves lazy `??=` RHS evaluation, has
+  fixture/CLI coverage with system PHP comparison, and keeps native emission
+  on the existing explicit assignment-expression rejection path. Append-offset
+  chains, nested/complex lvalues, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit gaps.
 - Implemented chained `=` assignment expressions over the current
   direct-variable, direct array-offset, and direct public object-property
   assignment-expression subset, including right-to-left result semantics,
   fixture/CLI coverage, system PHP comparison, stable unsupported append-chain
   snapshots, documentation, and native-codegen rejection while append-offset
-  chained assignment, nested/complex lvalues, chained compound/null-coalescing
-  assignment mixes, references/copy-on-write, exact native error objects, and
-  native lowering remain explicit gaps.
+  chained assignment, nested/complex lvalues, references/copy-on-write, exact
+  native error objects, and native lowering remain explicit gaps.
 - Implemented expression-position null coalescing assignment
   `($name ??= expr)`, `($array[$key] ??= expr)`, and
   `($object->property ??= expr)` over the current direct-variable,

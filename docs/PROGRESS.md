@@ -2996,10 +2996,21 @@ Still fails:
   offset, and object-property chains with system PHP comparison, plus a
   stable unsupported append-offset chain fixture. Native emission still
   rejects assignment expressions explicitly until lowering exists.
-  Append-offset chained assignment, nested/complex lvalues,
-  chained compound/null-coalescing assignment mixes, references/copy-on-write
-  aliasing, exact native error objects, and native lowering remain
-  unsupported.
+  Append-offset chained assignment, nested/complex lvalues, references,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
+- Extended chained assignment expressions so the right-hand value can be a
+  direct compound assignment or direct null coalescing assignment expression,
+  for example `$left = ($right += expr)` and `$left = ($right ??= expr)`.
+  The parser now accepts those mixes over the current direct static-variable,
+  direct array-offset, and direct public object-property assignment subsets;
+  the interpreter reuses the inner assignment expression result for the outer
+  assignment. Fixture and CLI snapshot coverage include scalar, array-offset,
+  object-property, lazy `??=` preservation, and system PHP comparison. Native
+  emission still rejects assignment expressions explicitly until lowering
+  exists. Append-offset chained assignment, nested/complex lvalues, references,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
 
 Next:
 

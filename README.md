@@ -37,8 +37,10 @@ subset:
   (`$name = expr`) and direct array-offset assignment expressions
   (`$array[$key] = expr`) and direct public object-property assignment
   expressions (`$object->property = expr`) with right-to-left chained
-  assignment result values, direct append-offset assignment expressions
-  (`$array[] = expr`) with standalone assignment result values,
+  assignment result values, including compound-assignment and null-coalescing
+  assignment expressions as chained right-hand values, direct append-offset
+  assignment expressions (`$array[] = expr`) with standalone assignment result
+  values,
   direct static-variable compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`)
   in statements and
   expressions with assignment result values, direct array-offset compound
@@ -193,8 +195,8 @@ subset:
   arguments, unsupported exception syntax (`throw`, `try`, `catch`, and
   `finally`), unsupported PHP 8 `match` expressions, unsupported ternary
   conditional expressions, unsupported append-offset chained assignment
-  expressions, unsupported complex assignment-expression targets, unsupported
-  append-offset `??=`,
+  expressions, unsupported complex or nested assignment-expression targets,
+  unsupported append-offset `??=`,
   unsupported compound assignment targets outside direct static variables,
   direct array offsets, and direct public object properties,
   unsupported increment/decrement targets outside direct static variables,

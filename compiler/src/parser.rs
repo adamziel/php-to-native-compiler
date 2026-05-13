@@ -1089,7 +1089,7 @@ impl Parser {
 
         let span = target.span();
         let expr = self.parse_expression()?;
-        if Self::expr_contains_unsupported_chained_assignment(&expr) {
+        if Self::expr_contains_unsupported_assignment_rhs(&expr) {
             return Err(self.error_at(
                 expr.span(),
                 unsupported_chained_assignment_expression_message(),
@@ -1449,7 +1449,7 @@ impl Parser {
                 unsupported_chained_assignment_expression_message(),
             ));
         }
-        if Self::expr_contains_unsupported_chained_assignment(&value)
+        if Self::expr_contains_unsupported_assignment_rhs(&value)
             || self.check(|kind| matches!(kind, TokenKind::QuestionQuestion))
             || self.check_compound_assignment_operator()
         {
@@ -2328,45 +2328,45 @@ impl Parser {
         }
     }
 
-    fn expr_contains_unsupported_chained_assignment(expr: &Expr) -> bool {
+    fn expr_contains_unsupported_assignment_rhs(expr: &Expr) -> bool {
         match expr {
             Expr::Assign { target, expr, .. } => {
                 matches!(
                     target.as_ref(),
                     AssignTarget::ArrayIndex { index: None, .. }
-                ) || Self::expr_contains_unsupported_chained_assignment(expr)
+                ) || Self::expr_contains_unsupported_assignment_rhs(expr)
             }
-            Expr::CompoundAssign { .. } | Expr::NullCoalesceAssign { .. } => true,
+            Expr::CompoundAssign { expr, .. } | Expr::NullCoalesceAssign { expr, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(expr)
+            }
             Expr::Array { items, .. } => items.iter().any(|item| {
                 item.key
                     .as_ref()
-                    .is_some_and(Self::expr_contains_unsupported_chained_assignment)
-                    || Self::expr_contains_unsupported_chained_assignment(&item.value)
+                    .is_some_and(Self::expr_contains_unsupported_assignment_rhs)
+                    || Self::expr_contains_unsupported_assignment_rhs(&item.value)
             }),
             Expr::Index { target, index, .. } => {
-                Self::expr_contains_unsupported_chained_assignment(target)
-                    || Self::expr_contains_unsupported_chained_assignment(index)
+                Self::expr_contains_unsupported_assignment_rhs(target)
+                    || Self::expr_contains_unsupported_assignment_rhs(index)
             }
             Expr::AppendIndex { target, .. } => {
-                Self::expr_contains_unsupported_chained_assignment(target)
+                Self::expr_contains_unsupported_assignment_rhs(target)
             }
-            Expr::Property { target, .. } => {
-                Self::expr_contains_unsupported_chained_assignment(target)
-            }
+            Expr::Property { target, .. } => Self::expr_contains_unsupported_assignment_rhs(target),
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
-                .any(Self::expr_contains_unsupported_chained_assignment),
+                .any(Self::expr_contains_unsupported_assignment_rhs),
             Expr::DynamicCall { callee, args, .. } => {
-                Self::expr_contains_unsupported_chained_assignment(callee)
+                Self::expr_contains_unsupported_assignment_rhs(callee)
                     || args
                         .iter()
-                        .any(Self::expr_contains_unsupported_chained_assignment)
+                        .any(Self::expr_contains_unsupported_assignment_rhs)
             }
             Expr::Binary { left, right, .. } => {
-                Self::expr_contains_unsupported_chained_assignment(left)
-                    || Self::expr_contains_unsupported_chained_assignment(right)
+                Self::expr_contains_unsupported_assignment_rhs(left)
+                    || Self::expr_contains_unsupported_assignment_rhs(right)
             }
-            Expr::Unary { expr, .. } => Self::expr_contains_unsupported_chained_assignment(expr),
+            Expr::Unary { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -2845,7 +2845,7 @@ fn unsupported_assignment_expression_target_message() -> &'static str {
 }
 
 fn unsupported_chained_assignment_expression_message() -> &'static str {
-    "unsupported assignment expression: chained assignment expressions are not implemented"
+    "unsupported assignment expression: this chained assignment form is not implemented in the current subset"
 }
 
 fn unsupported_compound_assignment_target_message() -> &'static str {

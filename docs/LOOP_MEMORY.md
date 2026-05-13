@@ -11805,3 +11805,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:25:35Z
 
 - Post-round 38 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:25:44Z
+
+- Starting round 39 at 20260513T022544Z from HEAD `e719fc9`.
+
+## Loop Event 2026-05-13T02:25:53Z
+
+- Pre-round 39 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:36:20Z
+
+- Task attempted: implemented chained assignment mixes where the right-hand
+  value is a direct compound assignment or direct null coalescing assignment
+  expression, such as `$left = ($right += expr)` and
+  `$left = ($right ??= expr)`, over the current direct static-variable, direct
+  array-offset, and direct public object-property assignment-expression
+  subset.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone148/chained_assignment_mixed_rhs.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_chained_append_assignment.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt` passed; `cargo test -p phpc --test
+  assignment_expression --test syntax_boundaries --test
+  assignment_expression_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone148` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone148` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 27 fixtures;
+  `tools/run-tests.sh` passed with 393 fixtures, 144 system PHP comparisons,
+  and 249 comparison skips.
+- Remaining semantic gaps: append-offset chained assignment, nested/complex
+  lvalues, assignment-expression value-context coverage outside the current
+  exercised contexts, references, copy-on-write aliasing, exact native error
+  objects, and native lowering remain unsupported.
+- Next concrete task: add explicit executable coverage or tightened
+  diagnostics for assignment expressions used as values in non-echo expression
+  contexts such as function call arguments, array literal keys/values,
+  `if`/loop conditions, and builtin arguments.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "assignment expressions: allow mixed chained RHS"`.

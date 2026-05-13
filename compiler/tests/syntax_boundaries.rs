@@ -336,7 +336,7 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "<?php\n$items = [];\n$value = $items[] = 1;\n",
             3,
             10,
-            "unsupported assignment expression: chained assignment expressions are not implemented",
+            "unsupported assignment expression: this chained assignment form is not implemented in the current subset",
         ),
     ];
 
