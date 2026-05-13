@@ -2852,11 +2852,26 @@ Still fails:
   supported by the interpreter. Fixture and CLI snapshot coverage record
   returned assignment values, read/write behavior, RHS call ordering, system
   PHP comparison passes for the supported fixture, chained assignment
-  expressions and array/object assignment-expression targets fail with stable
-  parse diagnostics, expression-position `??=` remains unsupported, and native
-  emission rejects assignment expressions explicitly until lowering exists.
-  References, copy-on-write aliasing, exact native error objects, and native
-  lowering remain unsupported.
+  expressions fail with stable parse diagnostics, expression-position `??=`
+  remains unsupported, and native emission rejects assignment expressions
+  explicitly until lowering exists. Direct array-offset assignment expressions
+  were implemented in a later slice; object-property, nested-offset, and
+  append-offset assignment-expression targets remain unsupported. References,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
+- Implemented expression-position direct array-offset assignment
+  `$array[$key] = expr` over the current ordered array value model. Assignment
+  expressions evaluate the offset key before the right-hand expression, write
+  the direct array variable offset, materialize undefined or `null` target
+  variables as arrays, and return the assigned value. Fixture and CLI snapshot
+  coverage record result values, key/RHS ordering, undefined/null
+  materialization, system PHP comparison passes for the supported fixture,
+  existing non-array targets fail with a stable runtime diagnostic, object
+  property, nested-offset, and append-offset assignment-expression targets
+  remain explicit unsupported parse boundaries, and native emission rejects
+  assignment expressions explicitly until lowering exists. References,
+  copy-on-write aliasing, exact native error objects, and native lowering
+  remain unsupported.
 - Implemented expression-position direct static-variable compound assignment
   such as `($name += expr)` over the current scalar value model. Compound
   assignment expressions read the existing left-hand value, evaluate the

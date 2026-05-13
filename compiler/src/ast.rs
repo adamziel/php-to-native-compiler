@@ -319,7 +319,7 @@ pub enum Expr {
         span: Span,
     },
     Assign {
-        name: String,
+        target: Box<AssignTarget>,
         expr: Box<Expr>,
         span: Span,
     },

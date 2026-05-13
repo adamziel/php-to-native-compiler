@@ -43,6 +43,62 @@ if (($count = $count + 1) === 1) {
 }
 
 #[test]
+fn direct_array_offset_assignment_expressions_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+echo ($items["name"] = "Ada"), ":", $items["name"], "\n";
+echo ($items[2] = 99), ":", $items[2], "\n";
+
+$missing["created"] = "statement";
+echo ($dynamic["created"] = "expression"), ":", $dynamic["created"], "\n";
+$nullable = null;
+echo ($nullable["slot"] = "materialized"), ":", $nullable["slot"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Ada:Ada\n99:99\nexpression:expression\nmaterialized:materialized\n"
+    );
+}
+
+#[test]
+fn array_offset_assignment_expression_evaluates_key_before_rhs() {
+    let execution = run_source(
+        r#"<?php
+function key_name() {
+    echo "key\n";
+    return "slot";
+}
+function next_value() {
+    echo "rhs\n";
+    return "value";
+}
+$items = [];
+echo ($items[key_name()] = next_value()), ":", $items["slot"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "key\nrhs\nvalue:value\n");
+}
+
+#[test]
+fn array_offset_assignment_expression_rejects_non_array_targets() {
+    let error = run_source("<?php\n$value = 1;\necho ($value['key'] = 'x');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot write offset on int"
+    );
+}
+
+#[test]
 fn chained_assignment_expressions_have_stable_parse_errors() {
     let cases = [
         ("<?php\n$value = $other = 1;\n", 2, 10),
@@ -65,14 +121,14 @@ fn chained_assignment_expressions_have_stable_parse_errors() {
 fn assignment_expression_rejects_complex_targets() {
     let cases = [
         (
-            "<?php\n$items = [];\necho ($items['key'] = 'value');\n",
-            3,
-            21,
-        ),
-        (
             "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value = 2);\n",
             4,
             19,
+        ),
+        (
+            "<?php\n$items = [];\necho ($items['outer']['inner'] = 'value');\n",
+            3,
+            32,
         ),
     ];
 
@@ -83,7 +139,7 @@ fn assignment_expression_rejects_complex_targets() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented"
+            "unsupported assignment expression target: only direct static variables and direct array offsets are implemented; object properties, append offsets, and nested targets are not implemented"
         );
     }
 }
@@ -97,6 +153,20 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_array_offset_assignment_expressions_until_native_lowering_exists() {
+    let error =
+        emit_ir_source("<?php\n$items = 1;\necho ($items['key'] = 'value');\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
     );
 }

@@ -19,9 +19,14 @@
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
 - assignment statements, plus expression-position direct static-variable
-  assignment `$name = expr` with assignment result values over the current
-  value model. Chained assignment expressions and array/object assignment
-  expression targets remain unsupported.
+  assignment `$name = expr` and direct array-offset assignment
+  `$array[$key] = expr` with assignment result values over the current value
+  model. Direct array-offset assignment expressions evaluate the key before
+  the right-hand expression and materialize undefined or `null` target
+  variables as arrays. Chained assignment expressions, append-offset
+  assignment expressions, nested-offset assignment expressions, object-property
+  assignment expression targets, references/copy-on-write, and native lowering
+  remain unsupported.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, and `$name .= expr` over
   the current scalar value model in statement position, expression position,
@@ -1606,12 +1611,16 @@
   nesting/precedence, thrown expressions inside arms, exact native error
   objects, and native lowering are not implemented.
 - Assignment expressions are limited to direct static variables as
-  `$name = expr`. They evaluate the right-hand expression, write the active
-  scope's static variable, and return the assigned value. Chained assignment
-  expressions, array-offset and object-property assignment expression targets,
-  expression-position `??=`, reference assignment, copy-on-write container
-  aliasing, exact native error objects, and native lowering are not
-  implemented.
+  `$name = expr` and direct array offsets as `$array[$key] = expr`. They write
+  the active scope's static variable or current ordered array offset and return
+  the assigned value. Direct array-offset assignment expressions evaluate the
+  key before the right-hand expression, materialize undefined or `null` target
+  variables as arrays, and reject existing non-array targets with a stable
+  runtime diagnostic. Chained assignment expressions, append-offset assignment
+  expressions, nested-offset assignment expressions, object-property
+  assignment expression targets, expression-position `??=`, reference
+  assignment, copy-on-write container aliasing, exact native error objects, and
+  native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
   array-variable offsets, and direct public object properties over the current
   scalar/object value model. The

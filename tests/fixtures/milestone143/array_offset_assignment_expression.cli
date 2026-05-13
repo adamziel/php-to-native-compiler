@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+Ada:Ada
+99:99
+key
+rhs
+value:value
+made:made
+null-made:null-made--- stdout end ---
+stderr:
+--- stderr end ---

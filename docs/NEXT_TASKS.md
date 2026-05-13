@@ -1366,10 +1366,21 @@ handled.
 
 ## Milestone 143: Array Offset Assignment Expression Boundary
 
-- [ ] Add the next honest path for expression-position direct array-offset
+- [x] Add the next honest path for expression-position direct array-offset
   assignment such as `($array[$key] = expr)`: either executable assignment
   result semantics over the current ordered array value model, or a tightened
   explicit diagnostic boundary with fixture CLI coverage, documentation,
   native-codegen behavior, and named gaps for append offsets, nested offsets,
   object properties, references, copy-on-write, exact native error objects,
   lvalue evaluation order, and native lowering.
+
+## Milestone 144: Object Property Assignment Expression Boundary
+
+- [ ] Add the next honest path for expression-position direct public
+  object-property assignment such as `($object->property = expr)`: either
+  executable assignment result semantics over the current object value model,
+  or a tightened explicit diagnostic boundary with fixture CLI coverage,
+  documentation, native-codegen behavior, and named gaps for dynamic property
+  names, non-public visibility context, missing properties,
+  references/copy-on-write, exact native error objects, lvalue evaluation
+  order, and native lowering.

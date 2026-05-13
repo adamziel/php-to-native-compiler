@@ -1,2 +1,2 @@
-parse error at 3:21: unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented
+parse error at 4:19: unsupported assignment expression target: only direct static variables and direct array offsets are implemented; object properties, append offsets, and nested targets are not implemented
 

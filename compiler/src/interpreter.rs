@@ -609,11 +609,7 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
             }
-            Expr::Assign { name, expr, .. } => {
-                let value = self.evaluate(expr, scope)?;
-                scope.write_static(name, value.clone());
-                Ok(value)
-            }
+            Expr::Assign { target, expr, .. } => self.evaluate_assignment(target, expr, scope),
             Expr::CompoundAssign {
                 target,
                 op,
@@ -682,11 +678,21 @@ impl Interpreter {
         expr: &Expr,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        self.evaluate_assignment(target, expr, scope)?;
+        Ok(())
+    }
+
+    fn evaluate_assignment(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
         match target {
             AssignTarget::Variable { name, .. } => {
                 let value = self.evaluate(expr, scope)?;
-                scope.write_static(name, value);
-                Ok(())
+                scope.write_static(name, value.clone());
+                Ok(value)
             }
             AssignTarget::ArrayIndex { name, index, span } => {
                 let key = match index {
@@ -703,11 +709,11 @@ impl Interpreter {
                 match slot {
                     Value::Array(array) => match key {
                         Some(key) => {
-                            array.insert(key, value);
+                            array.insert(key, value.clone());
                         }
                         None => {
                             array
-                                .append(value)
+                                .append(value.clone())
                                 .map_err(|error| runtime_error(*span, error))?;
                         }
                     },
@@ -722,7 +728,7 @@ impl Interpreter {
                     }
                 }
 
-                Ok(())
+                Ok(value)
             }
             AssignTarget::Property {
                 object,
@@ -734,7 +740,8 @@ impl Interpreter {
 
                 match slot {
                     Value::Object(object) => object
-                        .write_public_property(property, value)
+                        .write_public_property(property, value.clone())
+                        .map(|()| value)
                         .map_err(|error| runtime_error(*span, error)),
                     other => Err(runtime_error(
                         *span,

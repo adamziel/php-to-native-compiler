@@ -321,10 +321,10 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "unsupported assignment expression: null coalescing assignment expressions are not implemented; use statement-level ??= assignment in the current subset",
         ),
         (
-            "<?php\n$items = [];\necho ($items['key'] = 'value');\n",
-            3,
-            21,
-            "unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented",
+            "<?php\nclass Box { public $value; }\n$box = new Box();\necho ($box->value = 2);\n",
+            4,
+            19,
+            "unsupported assignment expression target: only direct static variables and direct array offsets are implemented; object properties, append offsets, and nested targets are not implemented",
         ),
         (
             "<?php\n$items = [];\necho ($items['key'] ??= 'value');\n",
@@ -356,7 +356,7 @@ fn emit_ir_rejects_assignment_expression_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet"
+        "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet"
     );
 }
 

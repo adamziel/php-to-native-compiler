@@ -8,8 +8,10 @@ fn assignment_expression_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone137");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let mut fixtures = Vec::new();
+    for fixture_dir in ["tests/fixtures/milestone137", "tests/fixtures/milestone143"] {
+        fixtures.extend(cli_snapshot_fixtures(&workspace_root.join(fixture_dir)));
+    }
 
     fixtures.sort();
     assert!(
@@ -18,11 +20,13 @@ fn assignment_expression_cli_snapshots_match_committed_outputs() {
     );
 
     for fixture in fixtures {
-        let file_name = fixture
-            .file_name()
-            .and_then(|value| value.to_str())
-            .expect("assignment-expression fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone137/{file_name}");
+        let relative_fixture = fixture
+            .strip_prefix(workspace_root)
+            .expect("fixture lives under workspace root");
+        let fixture_arg = relative_fixture
+            .to_str()
+            .expect("fixture path is valid UTF-8")
+            .to_string();
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])

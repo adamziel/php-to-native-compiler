@@ -11500,3 +11500,57 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:42:34Z
 
 - Post-round 33 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:42:44Z
+
+- Starting round 34 at 20260513T014244Z from HEAD `5aa4397`.
+
+## Loop Event 2026-05-13T01:42:52Z
+
+- Pre-round 34 test exit code: `0`.
+
+## Loop Event 2026-05-13T01:49:12Z
+
+- Task attempted: implemented expression-position direct array-offset
+  assignment `($array[$key] = expr)` over the current ordered array value
+  model. The supported slice returns the assigned value, evaluates the key
+  before the right-hand expression, materializes undefined or `null` target
+  variables as arrays, rejects existing non-array targets with a stable
+  runtime diagnostic, and keeps object-property, nested-offset, and
+  append-offset assignment-expression targets explicitly unsupported.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone143/array_offset_assignment_expression.*`,
+  `tests/fixtures/runtime_errors/array_offset_assignment_expression_non_array.*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_assignment_expression.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test assignment_expression`
+  passed; `cargo test -p phpc --test assignment_expression_cli` passed;
+  `cargo test -p phpc --test syntax_boundaries` passed; `cargo test -p phpc
+  --test runtime_errors` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone143` passed; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone143` passed with 1 system PHP comparison; `cargo run
+  -p phpc -- test tests/fixtures/runtime_errors` passed with 155 fixtures;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo run -p phpc --
+  run tests/fixtures/milestone143/array_offset_assignment_expression.php`
+  printed the committed output; `cargo run -p phpc -- run
+  tests/fixtures/runtime_errors/array_offset_assignment_expression_non_array.php`
+  exited `1` with the expected stable diagnostic; `cargo test -p phpc --test
+  milestone1 milestone1_fixtures_pass` passed after fixture formatting was
+  corrected; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed; `tools/run-tests.sh`
+  passed with 385 fixtures, 139 system PHP comparisons, and 246 comparison
+  skips.
+- Remaining semantic gaps: append-offset assignment expressions, nested-offset
+  assignment expressions, object-property assignment expressions, chained
+  assignment expressions, expression-position `??=`, references,
+  copy-on-write aliasing, exact native error objects, and native lowering are
+  unsupported.
+- Next concrete task: add the next honest path for expression-position direct
+  public object-property assignment such as `($object->property = expr)`.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add offset assignment expressions"`
+  after the full suite passes.

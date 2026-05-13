@@ -34,7 +34,8 @@ subset:
 - `echo`
 - integer, float, and string literals
 - static variables, assignment, direct static-variable assignment expressions
-  (`$name = expr`) with assignment result values, direct static-variable
+  (`$name = expr`) and direct array-offset assignment expressions
+  (`$array[$key] = expr`) with assignment result values, direct static-variable
   compound assignment (`+=`, `-=`, `*=`, `/=`, `.=`) in statements and
   expressions with assignment result values, direct array-offset compound
   assignment (`$array[$key] += expr` and related operators) in statements,

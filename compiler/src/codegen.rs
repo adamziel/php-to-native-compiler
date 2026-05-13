@@ -243,7 +243,7 @@ impl LlvmGenerator {
             )),
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
-                "assignment expressions are supported by phpc run for direct static variables but not LLVM IR emission yet",
+                "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not LLVM IR emission yet",
             )),
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,
@@ -831,7 +831,7 @@ impl CGenerator {
             )),
             Expr::Assign { span, .. } => Err(self.unsupported(
                 *span,
-                "assignment expressions are supported by phpc run for direct static variables but not assembly emission yet",
+                "assignment expressions are supported by phpc run for direct static variables and direct array offsets but not assembly emission yet",
             )),
             Expr::CompoundAssign { span, .. } => Err(self.unsupported(
                 *span,

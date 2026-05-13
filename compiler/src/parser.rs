@@ -1193,6 +1193,28 @@ impl Parser {
         }
     }
 
+    fn assignment_expression_target_from_expr(
+        &self,
+        expr: Expr,
+    ) -> Result<AssignTarget, &'static str> {
+        match expr {
+            Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match *target {
+                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: Some(*index),
+                    span,
+                }),
+                _ => Err(unsupported_assignment_expression_target_message()),
+            },
+            _ => Err(unsupported_assignment_expression_target_message()),
+        }
+    }
+
     fn parse_expression_statement(&mut self) -> CompileResult<Stmt> {
         let expr = self.parse_expression()?;
         let span = expr.span();
@@ -1303,12 +1325,10 @@ impl Parser {
         }
 
         let operator_span = self.previous().span;
-        let Expr::Variable(name, span) = expr else {
-            return Err(self.error_at(
-                operator_span,
-                unsupported_assignment_expression_target_message(),
-            ));
-        };
+        let target = self
+            .assignment_expression_target_from_expr(expr)
+            .map_err(|message| self.error_at(operator_span, message))?;
+        let span = target.span();
 
         let value = self.parse_non_assignment_expression()?;
         if Self::expr_contains_assignment(&value)
@@ -1323,7 +1343,7 @@ impl Parser {
         }
 
         Ok(Expr::Assign {
-            name,
+            target: Box::new(target),
             expr: Box::new(value),
             span,
         })
@@ -2596,7 +2616,7 @@ fn unsupported_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_assignment_expression_target_message() -> &'static str {
-    "unsupported assignment expression target: only direct static variables are implemented; array offsets and object properties are not implemented"
+    "unsupported assignment expression target: only direct static variables and direct array offsets are implemented; object properties, append offsets, and nested targets are not implemented"
 }
 
 fn unsupported_chained_assignment_expression_message() -> &'static str {

@@ -1,3 +1,4 @@
 <?php
-$items = [];
-echo ($items['key'] = 'value');
+class Box { public $value; }
+$box = new Box();
+echo ($box->value = 2);
