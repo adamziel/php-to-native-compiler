@@ -14285,3 +14285,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:53:08Z
 
 - Post-round 79 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:53:22Z
+
+- Starting round 80 at 20260513T065322Z from HEAD `1afe3ca`.
+
+## Loop Event 2026-05-13T06:53:34Z
+
+- Pre-round 80 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:55:54Z
+
+- Task attempted: completed Milestone 189 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for `cc -S` fallback failure diagnostics. The new
+  Milestone 189 fixture is a lowerable scalar echo/print program, and the
+  assembly CLI test invokes `--emit-asm` with a temporary PATH exposing only a
+  deterministic fake `cc` that passes discovery and exits nonzero after
+  accepting generated C fallback source, proving the stable C fallback failure
+  diagnostic shape.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone189/native_assembly_cc_failure.php`,
+  `tests/fixtures/milestone189/native_assembly_cc_failure.stdout`,
+  `tests/fixtures/milestone189/native_assembly_cc_failure_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  native_assembly_cli
+  native_scalar_echo_emit_asm_cc_fallback_failure_cli_snapshot_matches_committed_output`
+  passed; `cargo test -p phpc --test native_assembly_cli` passed with 8 tests;
+  `cargo run -p phpc -- test tests/fixtures/milestone189` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone189` passed with 1 system PHP comparison;
+  `tools/run-tests.sh` passed with 439 fixtures, 183 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: backend-specific stderr guarantees are still not
+  provided; phpc does not bundle an assembly toolchain; assembly output is not
+  linked or executed; generated code still lacks exact native PHP error objects
+  and broader native lowering.
+- Next concrete task: add Milestone 190, explicit `phpc compile --emit-asm`
+  CLI coverage for backend discovery edge cases where a candidate backend
+  command exists but fails its `--version` probe before fallback selection.
+- Known-good tag: not created; this is narrow native CLI backend-failure
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly cc fallback failure CLI coverage"`
+  after the full suite passes.

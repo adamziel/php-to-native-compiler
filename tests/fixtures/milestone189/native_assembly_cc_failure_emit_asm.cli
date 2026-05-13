@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone189/native_assembly_cc_failure.php:0:0: cc failed to emit assembly: fake cc fallback failed after accepting C source
+--- stderr end ---

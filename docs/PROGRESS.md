@@ -3429,9 +3429,19 @@ Still fails:
   toolchain stderr. Bundled toolchains, assembly linking/execution,
   backend-specific stderr guarantees, exact native error objects, and broader
   native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for `cc -S` fallback
+  failure diagnostics. The Milestone 189 fixture runs through `phpc run` and
+  system PHP as a lowerable scalar echo/print program, while the assembly CLI
+  test invokes `--emit-asm` with a temporary PATH exposing only a deterministic
+  fake `cc` that passes discovery and exits nonzero after accepting generated C
+  fallback source. The committed snapshot records the stable `cc failed to emit
+  assembly` diagnostic shape without depending on real toolchain stderr.
+  Bundled toolchains, assembly linking/execution, backend-specific stderr
+  guarantees, exact native error objects, and broader native lowering remain
+  unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for `cc -S` fallback
-  failure diagnostics when `clang` and `llc` are unavailable and available
-  `cc` exits nonzero.
+- Add explicit CLI coverage for assembly backend discovery edge cases where a
+  candidate backend command exists but fails its `--version` probe before
+  fallback selection.

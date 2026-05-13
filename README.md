@@ -45,6 +45,9 @@ A deterministic fake-`llc` snapshot hides `clang` and `cc` while exposing only
 backend-specific assembly text.
 A failing fake-`llc` snapshot records the stable selected-`llc` failure
 diagnostic when `clang` is unavailable.
+A failing fake-`cc` snapshot records the stable C fallback failure diagnostic
+when both LLVM assembly backends are unavailable and the fallback compiler
+exits nonzero.
 
 ## Current Status
 

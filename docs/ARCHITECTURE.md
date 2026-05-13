@@ -112,6 +112,10 @@ A selected-`llc` failure snapshot exposes only a deterministic fake `llc` that
 passes discovery and then exits nonzero after accepting generated LLVM IR. That
 pins the CLI diagnostic shape for `llc` failure without committing real
 toolchain stderr.
+A C fallback failure snapshot exposes only a deterministic fake `cc` that passes
+discovery and then exits nonzero after accepting generated C fallback source.
+That pins the CLI diagnostic shape for `cc -S` fallback failure without
+committing real toolchain stderr.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

@@ -994,9 +994,13 @@
   with normalized assembly-shape checks. A selected-`llc` failure snapshot uses
   a deterministic fake `llc` that passes discovery and exits nonzero after
   accepting generated LLVM IR, proving the stable `llc failed to emit
-  assembly` diagnostic shape without committing real toolchain stderr. Bundled
-  toolchains, assembly linking/execution, backend-specific stderr guarantees,
-  backend-specific assembly text, PHP zvals, native symbol-table storage,
+  assembly` diagnostic shape without committing real toolchain stderr. A
+  C fallback failure snapshot exposes only a deterministic fake `cc` that
+  passes discovery and exits nonzero after accepting generated C fallback
+  source, proving the stable `cc failed to emit assembly` diagnostic shape
+  without committing real toolchain stderr. Bundled toolchains, assembly
+  linking/execution, backend-specific stderr guarantees, backend-specific
+  assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
