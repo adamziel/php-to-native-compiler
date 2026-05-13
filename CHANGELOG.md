@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for failed assembly
+  backend discovery probes that write stdout and stderr diagnostics. The
+  Milestone 207 fixture runs as a lowerable scalar echo/print program, while
+  assembly CLI tests invoke `--emit-asm` with temporary PATHs exposing
+  deterministic fake backends that fail `--version` probes before fallback to
+  `llc`, fallback to `cc`, or the stable missing-backend diagnostic. The
+  committed snapshots prove failed-probe output is ignored before fallback
+  selection and missing-backend reporting. Bundled toolchains,
+  assembly linking/execution, backend-specific failed-probe output semantics,
+  exact native error objects, and broader native lowering remain explicit
+  gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for successful
   selected and fallback backend discovery probes that write stdout and stderr
   diagnostics. The Milestone 206 fixture runs as a lowerable scalar echo/print

@@ -186,6 +186,12 @@ Backend discovery probe output snapshots expose deterministic fake `clang`,
 stderr diagnostics before selected or fallback assembly emission. That pins
 the current boundary that probe output is ignored after a successful probe,
 without treating that as full backend-specific discovery output semantics.
+Failed backend discovery probe output snapshots expose deterministic fake
+`clang`, `llc`, and `cc` tools whose failed `--version` probes write stdout and
+stderr diagnostics before fallback selection or missing-backend reporting.
+That pins the current boundary that failed-probe output is ignored and failed
+probes still behave like unavailable tools, without treating that as full
+backend-specific failed-probe output semantics.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

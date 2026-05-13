@@ -1259,6 +1259,108 @@ fn native_scalar_echo_emit_asm_cc_ignores_successful_probe_output_cli_summary_ma
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_skips_failed_clang_probe_output_cli_summary_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone207/native_assembly_failed_probe_output.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_failed_probe_output_clang_then_llc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone207/native_assembly_failed_probe_output_clang_to_llc_emit_asm.cli",
+    ))
+    .expect("native assembly failed-probe-output clang-to-llc CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_skips_failed_llvm_probe_output_before_cc_cli_summary_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone207/native_assembly_failed_probe_output.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_failed_probe_output_llvm_then_cc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone207/native_assembly_failed_probe_output_llvm_to_cc_emit_asm.cli",
+    ))
+    .expect("native assembly failed-probe-output llvm-to-cc CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_all_failed_probe_output_missing_backend_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone207/native_assembly_failed_probe_output.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_all_failed_probe_output(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone207/native_assembly_failed_probe_output_exhaustion_emit_asm.cli",
+    ))
+    .expect("native assembly failed-probe-output exhaustion CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -2382,6 +2484,184 @@ exit 0\n",
         std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
         fs::set_permissions(&cc, permissions)
             .expect("temporary probe-output cc script can be made executable");
+        Self { path }
+    }
+
+    fn with_failed_probe_output_clang_then_llc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-failed-clang-probe-output-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary failed-probe-output clang PATH directory can be created");
+
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake clang failed probe stdout'\n\
+  printf '%s\\n' 'fake clang failed probe stderr' >&2\n\
+  exit 80\n\
+fi\n\
+printf '%s\\n' 'unexpected clang backend invocation after failed probe' >&2\n\
+exit 81\n",
+        )
+        .expect("temporary failed-probe-output clang script can be written");
+        let mut clang_permissions = fs::metadata(&clang)
+            .expect("temporary failed-probe-output clang script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut clang_permissions, 0o755);
+        fs::set_permissions(&clang, clang_permissions)
+            .expect("temporary failed-probe-output clang script can be made executable");
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary failed-probe-output llc script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect("temporary failed-probe-output llc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions)
+            .expect("temporary failed-probe-output llc script can be made executable");
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+printf '%s\\n' 'unexpected cc fallback invocation' >&2\n\
+exit 82\n",
+        )
+        .expect("temporary failed-probe-output unused cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary failed-probe-output unused cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary failed-probe-output unused cc script can be made executable");
+
+        Self { path }
+    }
+
+    fn with_failed_probe_output_llvm_then_cc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-failed-llvm-probe-output-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary failed-probe-output llvm PATH directory can be created");
+
+        for (command, exit_code) in [("clang", 83), ("llc", 84)] {
+            let script = path.join(command);
+            fs::write(
+                &script,
+                format!(
+                    "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake {command} failed probe stdout'\n\
+  printf '%s\\n' 'fake {command} failed probe stderr' >&2\n\
+  exit {exit_code}\n\
+fi\n\
+printf '%s\\n' 'unexpected {command} backend invocation after failed probe' >&2\n\
+exit 85\n"
+                ),
+            )
+            .expect("temporary failed-probe-output LLVM script can be written");
+            let mut permissions = fs::metadata(&script)
+                .expect("temporary failed-probe-output LLVM script metadata is readable")
+                .permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+            fs::set_permissions(&script, permissions)
+                .expect("temporary failed-probe-output LLVM script can be made executable");
+        }
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary failed-probe-output cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary failed-probe-output cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary failed-probe-output cc script can be made executable");
+
+        Self { path }
+    }
+
+    fn with_all_failed_probe_output(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-all-failed-probe-output-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary all-failed-probe-output PATH directory can be created");
+
+        for (command, exit_code) in [("clang", 86), ("llc", 87), ("cc", 88)] {
+            let script = path.join(command);
+            fs::write(
+                &script,
+                format!(
+                    "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake {command} failed probe stdout'\n\
+  printf '%s\\n' 'fake {command} failed probe stderr' >&2\n\
+  exit {exit_code}\n\
+fi\n\
+printf '%s\\n' 'unexpected {command} backend invocation after failed probe' >&2\n\
+exit 89\n"
+                ),
+            )
+            .expect("temporary all-failed-probe-output script can be written");
+            let mut permissions = fs::metadata(&script)
+                .expect("temporary all-failed-probe-output script metadata is readable")
+                .permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+            fs::set_permissions(&script, permissions)
+                .expect("temporary all-failed-probe-output script can be made executable");
+        }
+
         Self { path }
     }
 

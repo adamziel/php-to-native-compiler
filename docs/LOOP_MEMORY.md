@@ -15385,3 +15385,54 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T08:16:51Z
 
 - Post-round 97 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T08:17:03Z
+
+- Starting round 98 at 20260513T081703Z from HEAD `6083da4`.
+
+## Loop Event 2026-05-13T08:17:28Z
+
+- Pre-round 98 test exit code: `0`.
+
+## Loop Event 2026-05-13T08:22:51Z
+
+- Task attempted: completed Milestone 207 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for failed assembly backend discovery probes that
+  write stdout and stderr diagnostics. The new Milestone 207 fixture is a
+  lowerable scalar echo/print program, and the assembly CLI tests invoke
+  `--emit-asm` with temporary PATHs exposing deterministic fake backends where
+  failed `clang` probe output is ignored before fallback to `llc`, failed
+  `clang` and `llc` probe output is ignored before the `cc -S` fallback, and
+  failed `clang`, `llc`, and `cc` probe output is ignored before the stable
+  missing-backend diagnostic.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone207/native_assembly_failed_probe_output.php`,
+  `tests/fixtures/milestone207/native_assembly_failed_probe_output.stdout`,
+  `tests/fixtures/milestone207/native_assembly_failed_probe_output_clang_to_llc_emit_asm.cli`,
+  `tests/fixtures/milestone207/native_assembly_failed_probe_output_llvm_to_cc_emit_asm.cli`,
+  `tests/fixtures/milestone207/native_assembly_failed_probe_output_exhaustion_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed;
+  `cargo run -p phpc -- test tests/fixtures/milestone207` passed with 1
+  fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone207` passed with 1 system PHP comparison;
+  `cargo test -p phpc --test native_assembly_cli failed_probe_output --
+  --nocapture` passed with 1 matching test; `cargo test -p phpc --test
+  native_assembly_cli probe_output -- --nocapture` passed with 6 matching
+  tests; `cargo test -p phpc --test native_assembly_cli -- --nocapture`
+  passed with 40 tests; `tools/run-tests.sh` passed with 457 fixtures, 201
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; failed-probe-output coverage is a
+  narrow test-double contract rather than full backend-specific failed-probe
+  semantics; generated code still lacks exact native PHP error objects and
+  broader native lowering.
+- Next concrete task: add Milestone 208, explicit `phpc compile --emit-asm`
+  CLI coverage for backend commands that pass discovery but cannot be started
+  for actual assembly emission.
+- Known-good tag: not created; this is narrow assembly backend discovery probe
+  output coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: ignore failed probe output"`
+  after the full suite passes.

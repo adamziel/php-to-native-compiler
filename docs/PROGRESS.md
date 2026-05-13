@@ -3633,9 +3633,22 @@ Still fails:
   assembly linking/execution, full backend-specific discovery output
   semantics, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for failed backend
+  discovery probes that write stdout and stderr diagnostics. The Milestone 207
+  fixture runs through `phpc run` and system PHP as a lowerable scalar
+  echo/print program, while assembly CLI tests invoke `--emit-asm` with
+  temporary PATHs exposing deterministic fake backends where failed `clang`
+  probe output is ignored before fallback to `llc`, failed `clang` and `llc`
+  probe output is ignored before the `cc -S` fallback, and failed `clang`,
+  `llc`, and `cc` probe output is ignored before the stable missing-backend
+  diagnostic. Bundled toolchains, assembly linking/execution, full
+  backend-specific failed-probe output semantics, exact native error objects,
+  and broader native lowering remain unsupported.
 
 Next:
 
-- Add Milestone 207, explicit `phpc compile --emit-asm` CLI coverage for
-  failed backend discovery probes that write stdout/stderr diagnostics before
-  fallback selection or missing-backend reporting.
+- Add Milestone 208, explicit `phpc compile --emit-asm` CLI coverage for
+  backend commands that pass discovery but cannot be started for assembly
+  emission, including deterministic test doubles, stable diagnostics,
+  documentation, and named gaps for backend race conditions, bundled
+  toolchains, exact native error objects, and broader native lowering.

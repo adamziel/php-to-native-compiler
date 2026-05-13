@@ -110,6 +110,11 @@ Backend discovery probe output snapshots expose deterministic fake `clang`,
 `llc`, and `cc` tools whose successful `--version` probes write stdout and
 stderr diagnostics, proving discovery output is ignored when the later
 selected or fallback assembly emission succeeds.
+Failed backend discovery probe output snapshots expose deterministic fake
+`clang`, `llc`, and `cc` tools whose failed `--version` probes write stdout
+and stderr diagnostics before fallback selection or missing-backend reporting,
+proving failed-probe output is ignored and the stable backend selection result
+is preserved.
 
 ## Current Status
 

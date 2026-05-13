@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone207/native_assembly_failed_probe_output.php:0:0: no assembly backend found; install clang, llc, or cc
+--- stderr end ---

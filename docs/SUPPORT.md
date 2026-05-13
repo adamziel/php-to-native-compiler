@@ -1049,13 +1049,18 @@
   emission proceeds. Successful discovery probes that write stdout and stderr
   diagnostics are covered with deterministic fake `clang`, `llc`, and `cc`
   tools, proving probe output is ignored when selected or fallback assembly
-  emission later succeeds. Bundled toolchains, assembly linking/execution, full
+  emission later succeeds. Failed discovery probes that write stdout and
+  stderr diagnostics are also covered with deterministic fake `clang`, `llc`,
+  and `cc` tools, proving failed-probe output is ignored before fallback
+  selection and before the stable missing-backend diagnostic when every
+  candidate probe fails. Bundled toolchains, assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
-  backend-specific discovery semantics for every tool, backend-specific
-  stdout/stderr guarantees, backend-specific assembly text, PHP zvals, native
-  symbol-table storage, references/copy-on-write, exact native error objects,
-  and broader native lowering remain unsupported.
+  backend-specific discovery semantics for every tool, backend-specific failed
+  probe output semantics, backend-specific stdout/stderr guarantees,
+  backend-specific assembly text, PHP zvals, native symbol-table storage,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
