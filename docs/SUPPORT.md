@@ -915,6 +915,10 @@
   `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
   PHP comparison coercions and non-scalar comparison diagnostics. Native
+  unary minus and logical not are rejected before operand lowering with a
+  specific codegen diagnostic until generated code has PHP numeric coercion,
+  truthiness conversion, references/copy-on-write side-effect behavior, and
+  exact native error objects. Native
   logical operators `&&`, `||`, `and`, `xor`, and `or` are rejected before
   operand lowering with a specific codegen diagnostic until generated code has
   PHP truthiness conversion, short-circuit side-effect ordering, and broader
@@ -1814,6 +1818,10 @@
   lowering branch operands, so generated code does not imply partial PHP
   truthiness, null-aware lookup, side-effect ordering, references/copy-on-write
   behavior, or exact native error objects.
+- Native lowering for unary minus and logical not is not implemented. LLVM
+  IR/assembly emission rejects those expression forms before lowering operands,
+  so generated code does not imply partial PHP numeric coercion, truthiness
+  conversion, references/copy-on-write behavior, or exact native error objects.
 - Logical operators are limited to `&&`, `||`, `and`, `xor`, and `or` over the
   current truthiness rules. `&&`, `||`, `and`, and `or` short-circuit, `xor`
   evaluates both operands, all return booleans, and fixture coverage exercises

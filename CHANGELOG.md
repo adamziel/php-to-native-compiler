@@ -529,3 +529,10 @@
   native-codegen rejection. Operator-overloaded extension values, exact native
   error objects, references/copy-on-write, and native lowering remain explicit
   gaps.
+- Added a native unary boundary. LLVM IR emission now rejects unary minus and
+  logical not before lowering operands with a specific diagnostic, the C
+  assembly fallback has the same boundary, and a Milestone 177 fixture plus
+  `phpc compile --emit-ir` CLI snapshot pin both the current interpreter unary
+  behavior and the native rejection. Native PHP numeric coercion, truthiness
+  conversion, references/copy-on-write side effects, exact native error
+  objects, and broader native unary lowering remain explicit gaps.

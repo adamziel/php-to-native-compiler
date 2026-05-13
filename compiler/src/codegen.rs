@@ -23,6 +23,8 @@ const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if
 const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unary minus and logical not until native PHP numeric coercion, truthiness conversion, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
+const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unary minus and logical not until native PHP numeric coercion, truthiness conversion, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
 
 pub fn emit_llvm_ir(program: &Program) -> CompileResult<String> {
     let mut generator = LlvmGenerator::default();
@@ -203,10 +205,7 @@ impl LlvmGenerator {
                         "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
                     ));
                 }
-                Err(self.unsupported(
-                    *span,
-                    "unary expressions are supported by phpc run but not LLVM IR emission yet",
-                ))
+                Err(self.unsupported(*span, LLVM_UNARY_REJECTION))
             }
             Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
@@ -841,10 +840,7 @@ impl CGenerator {
                         "assembly bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior",
                     ));
                 }
-                Err(self.unsupported(
-                    *span,
-                    "unary expressions are supported by phpc run but not assembly emission yet",
-                ))
+                Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION))
             }
             Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }

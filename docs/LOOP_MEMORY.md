@@ -13595,3 +13595,51 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T05:48:39Z
 
 - Post-round 67 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T05:49:00Z
+
+- Starting round 68 at 20260513T054900Z from HEAD `adddd72`.
+
+## Loop Event 2026-05-13T05:49:19Z
+
+- Pre-round 68 test exit code: `0`.
+
+## Loop Event 2026-05-13T05:52:47Z
+
+- Task attempted: completed Milestone 177 by tightening the native codegen
+  boundary for unary minus and logical not. LLVM IR emission now rejects
+  unary minus and logical not with a specific diagnostic before lowering
+  operands until generated code has PHP numeric coercion, truthiness
+  conversion, references/copy-on-write behavior, and exact native error
+  behavior; the C assembly fallback carries the same boundary for consistency.
+- Files changed: `compiler/src/codegen.rs`,
+  `compiler/tests/native_unary_boundary.rs`,
+  `tests/fixtures/milestone177/native_unary_boundary.php`,
+  `tests/fixtures/milestone177/native_unary_boundary.stdout`,
+  `tests/fixtures/milestone177/native_unary_boundary_emit_ir.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_unary_boundary -- --nocapture` passed with 5 tests; `cargo
+  test -p phpc --test milestone1 emit_ir_rejects -- --nocapture` passed with
+  22 filtered codegen rejection tests; `cargo run -p phpc -- test
+  tests/fixtures/milestone177` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone177` passed with 1 system PHP
+  comparison; `./target/debug/phpc compile
+  tests/fixtures/milestone177/native_unary_boundary.php --emit-ir` exited `1`
+  with the expected explicit native unary diagnostic; `tools/run-tests.sh`
+  passed with 427 fixtures, 172 system PHP comparisons, and 255 comparison
+  skips.
+- Remaining semantic gaps: generated code still lacks native PHP numeric
+  coercion for unary expressions, truthiness conversion, references/copy-on-write
+  side effects, exact native error objects, and broader native lowering for
+  unary forms.
+- Next concrete task: add Milestone 178, the next honest native-codegen
+  boundary for binary arithmetic operators before generated code claims PHP
+  numeric coercion, dynamic division/modulo zero checks, modulo coercions,
+  references/copy-on-write side effects, or exact native error behavior.
+- Known-good tag: not created; this is a narrow native-codegen boundary
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native unary boundary"`
+  after the full suite passes.

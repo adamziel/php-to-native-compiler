@@ -1684,8 +1684,17 @@ handled.
 
 ## Milestone 177: Native Unary Boundary
 
-- [ ] Add the next honest native-codegen boundary for unary minus and logical
+- [x] Add the next honest native-codegen boundary for unary minus and logical
   not, either by lowering a narrow scalar subset or by tightening explicit
   diagnostics with fixture CLI coverage, documentation, and named gaps for PHP
   numeric coercion, truthiness conversion, references/copy-on-write, exact
   native error objects, and broader native lowering.
+
+## Milestone 178: Native Arithmetic Boundary
+
+- [ ] Add the next honest native-codegen boundary for binary arithmetic
+  operators `+`, `-`, `*`, `/`, and `%`, either by broadening a narrow native
+  scalar subset or by tightening explicit diagnostics with fixture CLI
+  coverage, documentation, and named gaps for PHP numeric coercion, dynamic
+  division/modulo zero checks, modulo coercions, references/copy-on-write,
+  exact native error objects, and broader native lowering.

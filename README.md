@@ -348,9 +348,12 @@ LLVM IR or fallback C; dynamic zero checks and PHP-shaped native
 rejects string operands explicitly until numeric-string coercion exists in
 generated code. Native comparison operators are rejected with a specific
 codegen diagnostic until generated code has PHP comparison coercions and
-non-scalar comparison diagnostics. Native logical operators are rejected before
-operand lowering until generated code has PHP truthiness and short-circuit
-semantics. Native bitwise and shift operators are rejected before operand
+non-scalar comparison diagnostics. Native unary minus and logical not are
+rejected before operand lowering until generated code has PHP numeric coercion,
+truthiness conversion, references/copy-on-write behavior, and exact native
+error behavior. Native logical operators are rejected before operand lowering
+until generated code has PHP truthiness and short-circuit semantics. Native
+bitwise and shift operators are rejected before operand
 lowering until generated code has PHP bytewise string behavior,
 scalar-to-int coercion, and shift diagnostics. Native ternary and null
 coalescing expressions are rejected before branch/operand lowering until

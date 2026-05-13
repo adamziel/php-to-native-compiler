@@ -3301,9 +3301,20 @@ Still fails:
   pins the native rejection. Native read-modify-write ordering, null-aware
   mutation, unset symbol-table effects, references/copy-on-write side effects,
   exact native error objects, and broader native lowering remain unsupported.
+- Added a native unary boundary. LLVM IR emission now rejects unary minus and
+  logical not before lowering operands, with a specific codegen diagnostic
+  until generated code has PHP numeric coercion, truthiness conversion,
+  references/copy-on-write behavior, and exact native error behavior. The C
+  assembly fallback carries the same boundary for consistency, `phpc run`
+  fixture coverage still proves the current interpreter unary subset, and a
+  `phpc compile --emit-ir` CLI snapshot pins the native rejection. Native PHP
+  numeric coercion for unary expressions, truthiness conversion,
+  references/copy-on-write side effects, exact native error objects, and
+  broader native lowering remain unsupported.
 
 Next:
 
-- Add the next honest native-codegen boundary for unary minus and logical not
-  before generated code claims PHP numeric coercion, truthiness conversion, or
-  exact native error behavior for those operators.
+- Add the next honest native-codegen boundary for binary arithmetic operators
+  before generated code claims PHP numeric coercion, dynamic zero checks,
+  modulo coercions, references/copy-on-write side effects, or exact native
+  error behavior.
