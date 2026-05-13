@@ -270,6 +270,58 @@ echo ($slot_copy = ($slots["name"] ??= "Ada")), ":", $slot_copy, ":", $slots["na
 }
 
 #[test]
+fn assignment_expressions_work_in_non_echo_value_contexts() {
+    let execution = run_source(
+        r#"<?php
+function capture($left, $right) {
+    echo "capture:", $left, ":", $right, "\n";
+    return $left . "|" . $right;
+}
+
+$arg = "start";
+echo capture(($arg = "call"), ($arg .= "-arg")), ":", $arg, "\n";
+
+$array = [
+    ($key = "name") => ($value = "Ada"),
+    ($next = 2) => ($value = $value . "-Lovelace"),
+];
+echo "array:", $key, ":", $next, ":", $array["name"], ":", $array[2], ":", $value, "\n";
+
+if (($condition = strlen(($text = "php"))) === 3) {
+    echo "if:", $condition, ":", $text, "\n";
+}
+
+echo "coalesce:", strlen(($maybe ??= "seed")), ":", $maybe, "\n";
+
+$loop = 0;
+while (($loop += 1) < 3) {
+    echo "while:", $loop, "\n";
+}
+echo "after-while:", $loop, "\n";
+
+for ($i = 0; ($gate = $i < 2); $i = $i + 1) {
+    echo "for:", $i, ":", $gate, "\n";
+}
+
+$items = [];
+echo "builtin:",
+    array_key_exists(($lookup = "slot"), ($items = ["slot" => "yes"])),
+    ":", $lookup,
+    ":", $items["slot"],
+    ":", count(($copy = [1, 2, 3])),
+    ":", count($copy),
+    "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "capture:call:call-arg\ncall|call-arg:call-arg\narray:name:2:Ada:Ada-Lovelace:Ada-Lovelace\nif:3:php\ncoalesce:4:seed\nwhile:1\nwhile:2\nafter-while:3\nfor:0:1\nfor:1:1\nbuiltin:1:slot:yes:3:3\n"
+    );
+}
+
+#[test]
 fn chained_assignment_rejects_append_offset_targets() {
     let cases = [
         ("<?php\n$items = [];\n$value = $items[] = 1;\n", 3, 10),

@@ -1649,7 +1649,13 @@
   undefined or non-object targets and missing/non-public properties with stable
   runtime diagnostics, and do not materialize missing properties. Direct
   null coalescing assignment expressions use the same lazy evaluation and
-  materialization behavior as the supported statement forms. Nested
+  materialization behavior as the supported statement forms. The supported
+  assignment-expression values are executable in ordinary expression positions
+  covered by the current parser, including function-call arguments, array
+  literal keys and values, `if`/`while`/`for` conditions, and builtin
+  arguments; native codegen still rejects assignment expressions explicitly, and
+  enclosing unsupported constructs may reject before lowering nested
+  assignment values. Nested
   append/offset assignment expressions, append-offset chained assignment
   expressions, dynamic property names, append-offset `??=` targets, reference
   assignment, copy-on-write container aliasing, exact native error objects, and

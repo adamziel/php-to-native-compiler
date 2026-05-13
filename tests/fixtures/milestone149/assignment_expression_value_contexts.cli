@@ -1,0 +1,15 @@
+exit: 0
+stdout:
+capture:call:call-arg
+call|call-arg:call-arg
+array:name:2:Ada:Ada-Lovelace:Ada-Lovelace
+if:3:php
+coalesce:4:seed
+while:1
+while:2
+after-while:3
+for:0:1
+for:1:1
+builtin:1:slot:yes:3:3--- stdout end ---
+stderr:
+--- stderr end ---

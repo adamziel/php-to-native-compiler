@@ -1427,9 +1427,19 @@ handled.
 
 ## Milestone 149: Assignment Expression Value Context Coverage
 
-- [ ] Add explicit executable coverage or tightened diagnostics for assignment
+- [x] Add explicit executable coverage or tightened diagnostics for assignment
   expressions used as values in non-echo expression contexts such as function
   call arguments, array literal keys/values, `if`/loop conditions, and builtin
   arguments, including fixture CLI coverage, documentation, native-codegen
   behavior, and named gaps for nested lvalues, references/copy-on-write, exact
   native error objects, and native lowering.
+
+## Milestone 150: Ternary Conditional Expression Slice
+
+- [ ] Implement full ternary conditional expressions
+  `$condition ? $if_true : $if_false` over the current expression/value subset,
+  including truthiness, lazy branch evaluation, nesting/precedence coverage,
+  fixture CLI coverage, documentation, native-codegen rejection while lowering
+  remains unsupported, and explicit gaps for short ternary `$value ?: $fallback`,
+  throw expressions inside arms, references/copy-on-write, exact native error
+  objects, and native lowering.

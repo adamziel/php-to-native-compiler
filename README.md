@@ -57,7 +57,10 @@ subset:
   static-variable pre/post increment and decrement for integer and float
   variables in statements, expressions, and C-style `for`
   initializer/increment slots, and
-  `unset($name)` through per-scope symbol tables
+  `unset($name)` through per-scope symbol tables. Assignment-expression values
+  have executable coverage in function call arguments, array literal
+  keys/values, `if`/loop conditions, and builtin arguments for the documented
+  direct-target subset
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow

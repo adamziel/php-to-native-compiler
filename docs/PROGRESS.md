@@ -3011,7 +3011,18 @@ Still fails:
   exists. Append-offset chained assignment, nested/complex lvalues, references,
   copy-on-write aliasing, exact native error objects, and native lowering
   remain unsupported.
+- Added explicit executable coverage for assignment expressions used as values
+  in non-echo expression contexts. The covered slice exercises direct
+  assignment, compound assignment, and null coalescing assignment values inside
+  function-call arguments, array literal keys and values, `if`/`while`/`for`
+  conditions, and builtin arguments, with fixture CLI snapshots and system PHP
+  comparison. This confirms the existing interpreter expression path rather
+  than widening the supported lvalue set. Nested lvalues, append-offset chained
+  assignment, append-offset `??=`, references, copy-on-write aliasing, exact
+  native error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next small expression-semantics slice from `docs/NEXT_TASKS.md`.
+- Implement full ternary conditional expressions
+  `$condition ? $if_true : $if_false` over the current expression/value subset,
+  while keeping short ternary and throw-expression arms outside the slice.

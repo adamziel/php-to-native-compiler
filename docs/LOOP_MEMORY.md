@@ -11862,3 +11862,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T02:32:52Z
 
 - Post-round 39 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T02:33:10Z
+
+- Starting round 40 at 20260513T023309Z from HEAD `4f9dad6`.
+
+## Loop Event 2026-05-13T02:33:24Z
+
+- Pre-round 40 test exit code: `0`.
+
+## Loop Event 2026-05-13T02:47:10Z
+
+- Task attempted: added explicit executable coverage for assignment expressions
+  used as values in non-echo expression contexts. The covered slice exercises
+  direct assignment, compound assignment, and null coalescing assignment values
+  inside function-call arguments, array literal keys and values,
+  `if`/`while`/`for` conditions, and builtin arguments.
+- Files changed so far: `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `tests/fixtures/milestone149/assignment_expression_value_contexts.php`,
+  `tests/fixtures/milestone149/assignment_expression_value_contexts.stdout`,
+  `tests/fixtures/milestone149/assignment_expression_value_contexts.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt` passed; `cargo test -p phpc --test
+  assignment_expression --test assignment_expression_cli` passed; `cargo run
+  -p phpc -- run
+  tests/fixtures/milestone149/assignment_expression_value_contexts.php`
+  printed the committed CLI exercise output; `cargo run -p phpc -- test
+  tests/fixtures/milestone149` passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone149` passed with 1 system PHP
+  comparison; `tools/run-tests.sh` passed with 394 fixtures, 145 system PHP
+  comparisons, and 249 comparison skips.
+- Remaining semantic gaps: nested lvalues, append-offset chained assignment,
+  append-offset `??=`, references, copy-on-write aliasing, exact native error
+  objects, and native lowering remain unsupported. The task queue now carries
+  the next expression-semantics slice for full ternary conditionals; short
+  ternary and throw-expression arms remain outside that planned slice.
+- Next concrete task: implement full ternary conditional expressions
+  `$condition ? $if_true : $if_false` over the current expression/value subset.
+- Known-good tag: not created; this is a narrow coverage/documentation
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "assignment expressions: cover value contexts"`.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Added Milestone 149 executable coverage for assignment-expression values in
+  non-echo expression contexts: function-call arguments, array literal
+  keys/values, `if`/`while`/`for` conditions, and builtin arguments. The
+  covered slice proves direct assignment, compound assignment, and null
+  coalescing assignment values through fixture/CLI coverage with system PHP
+  comparison while keeping nested lvalues, append-offset chained assignment,
+  append-offset `??=`, references/copy-on-write, exact native error objects,
+  and native lowering as explicit gaps.
 - Implemented chained assignment mixes where the right-hand value is a direct
   compound assignment or direct null coalescing assignment expression, such as
   `$left = ($right += expr)` and `$left = ($right ??= expr)`. The supported
