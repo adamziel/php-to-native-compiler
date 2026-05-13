@@ -16193,4 +16193,6 @@ injects this file into every prompt. Each Codex pass should update it with:
   later fallbacks.
 - Known-good tag: not created; this is narrow backend start-diagnostic
   coverage, not a major verified stable state.
-- Checkpoint: pending `tools/checkpoint.sh "codegen: snapshot selected permission-denied emission"`.
+- Checkpoint: `6734b65` (`codegen: snapshot selected permission-denied
+  emission`). A follow-up docs checkpoint records this commit hash in durable
+  loop memory.
