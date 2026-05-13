@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+11
+11:12
+11:11
+11:10
+1.5:2.5
+1.5:1.5
+side:2
+side:3
+3:3--- stdout end ---
+stderr:
+--- stderr end ---

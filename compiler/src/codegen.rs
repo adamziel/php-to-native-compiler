@@ -101,7 +101,7 @@ impl LlvmGenerator {
             )),
             Stmt::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
-                "increment/decrement is supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet",
+                "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet",
             )),
             Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
                 *span,
@@ -251,7 +251,7 @@ impl LlvmGenerator {
             )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
-                "increment/decrement expressions are supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet",
+                "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet",
             )),
             Expr::Binary {
                 left,
@@ -695,7 +695,7 @@ impl CGenerator {
             )),
             Stmt::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
-                "increment/decrement is supported by phpc run for direct static int/float variables and direct object int/float properties but not assembly emission yet",
+                "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not assembly emission yet",
             )),
             Stmt::NullCoalesceAssign { span, .. } => Err(self.unsupported(
                 *span,
@@ -839,7 +839,7 @@ impl CGenerator {
             )),
             Expr::IncrementDecrement { span, .. } => Err(self.unsupported(
                 *span,
-                "increment/decrement expressions are supported by phpc run for direct static int/float variables and direct object int/float properties but not assembly emission yet",
+                "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not assembly emission yet",
             )),
             Expr::Binary {
                 left,

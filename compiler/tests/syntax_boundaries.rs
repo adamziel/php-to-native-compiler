@@ -404,28 +404,28 @@ fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
 fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$values = [1];\n++$values[0];\n",
+            "<?php\n$values = [[1]];\n++$values[0][0];\n",
             3,
             3,
-            "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented",
         ),
         (
-            "<?php\n$values = [1];\n$values[0]--;\n",
+            "<?php\n$values = [[1]];\n$values[0][0]--;\n",
             3,
             1,
-            "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented",
         ),
         (
-            "<?php\n$values = [1];\necho ++$values[0];\n",
+            "<?php\n$values = [[1]];\necho ++$values[0][0];\n",
             3,
             8,
-            "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented",
         ),
         (
-            "<?php\n$values = [1];\necho $values[0]--;\n",
+            "<?php\n$values = [[1]];\necho $values[0][0]--;\n",
             3,
             6,
-            "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented",
+            "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented",
         ),
         (
             "<?php\n$value = 1;\necho ++$value++;\n",
@@ -447,12 +447,12 @@ fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
 fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$values = [1];\nfor (++$values[0]; false; ) {}\n",
+            "<?php\n$values = [[1]];\nfor (++$values[0][0]; false; ) {}\n",
             3,
             8,
         ),
         (
-            "<?php\n$values = [1];\nfor ($values[0]--; false; ) {}\n",
+            "<?php\n$values = [[1]];\nfor ($values[0][0]--; false; ) {}\n",
             3,
             6,
         ),
@@ -464,7 +464,7 @@ fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors()
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented"
+            "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented"
         );
     }
 }
@@ -476,7 +476,7 @@ fn emit_ir_rejects_increment_decrement_expressions_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "increment/decrement expressions are supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
+        "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet"
     );
 }
 

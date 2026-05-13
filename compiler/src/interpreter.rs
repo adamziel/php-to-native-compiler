@@ -963,6 +963,45 @@ impl Interpreter {
                 CompoundAssignmentPlace::Variable(name.clone()),
                 scope.read_static(name, span)?,
             )),
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } => {
+                let key = self.evaluate_array_key(index, scope)?;
+                match scope.read_named(name) {
+                    Some(Value::Array(array)) => {
+                        let value = array.get(key.clone()).cloned().ok_or_else(|| {
+                            runtime_error(
+                                span,
+                                RuntimeError::undefined_array_key(key.diagnostic_key()),
+                            )
+                        })?;
+                        Ok((
+                            CompoundAssignmentPlace::ArrayIndex {
+                                name: name.clone(),
+                                key,
+                            },
+                            value,
+                        ))
+                    }
+                    Some(other) => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot read offset from {}",
+                            other.type_name()
+                        )),
+                    )),
+                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+                }
+            }
+            AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "append-offset targets are not implemented",
+                ),
+            )),
             AssignTarget::Property {
                 object, property, ..
             } => match scope.read_named(object) {
@@ -991,13 +1030,6 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
-            AssignTarget::ArrayIndex { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "increment/decrement",
-                    "array-offset targets are not implemented",
-                ),
-            )),
         }
     }
 
@@ -1021,7 +1053,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "increment/decrement",
                         format!(
-                            "only int and float variables or object properties are implemented, got {}",
+                            "only int and float variables, array offsets, or object properties are implemented, got {}",
                             other.type_name()
                         ),
                     ),

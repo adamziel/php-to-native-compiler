@@ -39,6 +39,12 @@
   declared public property slots in statement position, expression position,
   and C-style `for` initializer/increment slots. In expressions, compound
   assignment returns the updated value.
+- direct array-offset pre/post increment and decrement in statement position,
+  expression position, and C-style `for` initializer/increment slots:
+  `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
+  `$array[$key]--` for existing integer/string keyed entries whose current
+  values are integers or floats. In expressions, pre forms return the updated
+  value and post forms return the previous value.
 - direct public object-property pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$object->property`, `$object->property++`,
@@ -305,8 +311,8 @@
   outside direct static variables, direct array offsets, and direct object
   properties
 - explicit parse diagnostics for unsupported increment/decrement targets
-  outside direct static variables and direct object properties, plus chained
-  increment/decrement expressions
+  outside direct static variables, direct array offsets, and direct object
+  properties, plus chained increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -1622,15 +1628,17 @@
   offsets/properties, dynamic property names, non-public visibility context,
   references/copy-on-write, PHP warning recovery, exact native error objects,
   and native lowering are not implemented.
-- Pre/post increment and decrement is limited to direct static variables and
-  direct public object properties whose current values are integers or floats,
-  either as standalone statements, expressions, or single C-style `for`
-  initializer/increment actions. Expression pre forms return the updated value
-  and expression post forms return the previous value. Strings, arrays,
-  objects, undefined variables, array-offset targets, dynamic property names,
-  non-public visibility context, missing-property materialization,
-  references, copy-on-write, exact native warning/error behavior, PHP string
-  increment semantics, broader coercion recovery, and native lowering are not
+- Pre/post increment and decrement is limited to direct static variables,
+  direct array offsets, and direct public object properties whose current
+  values are integers or floats, either as standalone statements,
+  expressions, or single C-style `for` initializer/increment actions.
+  Expression pre forms return the updated value and expression post forms
+  return the previous value. Strings, arrays/objects as current values,
+  undefined variables, missing array keys, non-array offset targets, append
+  offsets, nested offsets/properties, dynamic property names, non-public
+  visibility context, missing-property materialization, references,
+  copy-on-write, exact native warning/error behavior, PHP string increment
+  semantics, broader coercion recovery, and native lowering are not
   implemented.
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus

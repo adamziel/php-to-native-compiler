@@ -11432,3 +11432,59 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T01:32:17Z
 
 - Post-round 32 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T01:32:26Z
+
+- Starting round 33 at 20260513T013226Z from HEAD `9967c8c`.
+
+## Loop Event 2026-05-13T01:32:37Z
+
+- Pre-round 33 test exit code: `0`.
+
+## Loop Event 2026-05-13T01:41:44Z
+
+- Task attempted: implemented direct array-offset pre/post increment and
+  decrement (`++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
+  `$array[$key]--`) over existing integer/string keyed array entries whose
+  current values are integers or floats. Statement forms, expression forms,
+  and single C-style `for` initializer/increment actions now update the array
+  offset in place and expression forms return the expected pre/post value.
+- Files changed: `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/increment_decrement_cli.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone142/array_offset_increment_decrement.*`,
+  `tests/fixtures/runtime_errors/array_offset_unsupported_string_increment.*`,
+  updated string increment/decrement runtime-error snapshots, updated nested
+  increment/decrement unsupported syntax snapshots, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo test -p phpc --test increment_decrement`
+  passed with 23 tests; `cargo test -p phpc --test increment_decrement_cli`
+  passed; `cargo test -p phpc --test syntax_boundaries increment` passed;
+  `cargo test -p phpc --test runtime_error_cli` passed; `cargo test -p phpc
+  --test unsupported_syntax_features_cli` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone142` passed with 1 fixture; `cargo run -p phpc --
+  test --compare-php tests/fixtures/milestone142` passed with 1 system PHP
+  comparison; `cargo run -p phpc -- test tests/fixtures/runtime_errors`
+  passed with 154 fixtures; `cargo run -p phpc -- test
+  tests/fixtures/unsupported_syntax_features` passed with 26 fixtures; `cargo
+  run -p phpc -- run
+  tests/fixtures/milestone142/array_offset_increment_decrement.php` printed
+  the committed output; `cargo run -p phpc -- compile
+  tests/fixtures/milestone142/array_offset_increment_decrement.php --emit-ir`
+  exited `1` at the existing array-literal native-lowering boundary;
+  `tools/run-tests.sh` passed with 383 fixtures, 138 system PHP comparisons,
+  and 245 skips.
+- Remaining semantic gaps: append-offset increment/decrement, nested offsets,
+  PHP string increment/decrement semantics, references/copy-on-write aliasing,
+  exact native warning/error behavior, broader PHP coercion recovery, and
+  native lowering remain unsupported.
+- Next concrete task: add the next honest assignment-expression path for
+  direct array offsets such as `($array[$key] = expr)`, either executable
+  assignment result semantics or a tightened diagnostic boundary with fixture
+  CLI coverage and documentation.
+- Known-good tag: not created; this is a narrow mutation checkpoint, not a
+  major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "arrays: add offset increment decrement"`
+  after the full suite passes.

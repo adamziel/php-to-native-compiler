@@ -13,6 +13,7 @@ fn increment_decrement_cli_snapshots_match_committed_outputs() {
         "milestone135",
         "milestone136",
         "milestone141",
+        "milestone142",
     ];
     let mut fixtures = fixture_dirs
         .iter()

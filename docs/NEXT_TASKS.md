@@ -1355,7 +1355,7 @@ handled.
 
 ## Milestone 142: Array Offset Increment Boundary
 
-- [ ] Add the next honest path for `++$array[$key]`, `$array[$key]++`,
+- [x] Add the next honest path for `++$array[$key]`, `$array[$key]++`,
   `--$array[$key]`, and `$array[$key]--`: either executable direct
   array-offset increment/decrement semantics over the current ordered array
   value model, or a tightened explicit diagnostic boundary with fixture CLI
@@ -1363,3 +1363,13 @@ handled.
   offsets, nested offsets, string increment semantics, missing keys,
   references, copy-on-write, exact native warning/error behavior, broader PHP
   coercion recovery, and native lowering.
+
+## Milestone 143: Array Offset Assignment Expression Boundary
+
+- [ ] Add the next honest path for expression-position direct array-offset
+  assignment such as `($array[$key] = expr)`: either executable assignment
+  result semantics over the current ordered array value model, or a tightened
+  explicit diagnostic boundary with fixture CLI coverage, documentation,
+  native-codegen behavior, and named gaps for append offsets, nested offsets,
+  object properties, references, copy-on-write, exact native error objects,
+  lvalue evaluation order, and native lowering.

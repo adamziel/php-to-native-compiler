@@ -2839,10 +2839,10 @@ Still fails:
   undefined-variable diagnostic, string operands fail with the stable
   unsupported increment/decrement diagnostic, fixture and CLI snapshot coverage
   record success and runtime-error paths, system PHP comparison passes for the
-  supported expression fixture, array/object targets remain parse-boundary
-  gaps, chained increment/decrement expressions retain a stable parse
-  diagnostic, and native emission rejects increment/decrement expressions
-  explicitly until lowering exists. PHP string increment behavior, arrays,
+  supported expression fixture, array-offset and object-property targets were
+  implemented in later slices, chained increment/decrement expressions retain
+  a stable parse diagnostic, and native emission rejects increment/decrement
+  expressions explicitly until lowering exists. PHP string increment behavior, arrays,
   objects, references, copy-on-write, exact native warning/error behavior,
   broader coercion recovery, and native lowering remain unsupported.
 - Implemented expression-position direct static-variable assignment
@@ -2916,11 +2916,23 @@ Still fails:
   visibility context, nested properties/offsets, PHP string increment
   semantics, references/copy-on-write aliasing, broader PHP warning recovery,
   exact native error objects, and native lowering remain unsupported.
+- Implemented direct array-offset pre/post increment and decrement forms such
+  as `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
+  `$array[$key]--` over existing integer/string keyed array entries whose
+  current values are integers or floats. Statement forms, expression forms,
+  and single C-style `for` initializer/increment actions share the current
+  read-modify-write path, evaluate the key once, write the updated offset, and
+  expression forms return the correct pre/post value. Fixture and CLI snapshot
+  coverage include the success path and unsupported-string diagnostics, system
+  PHP comparison passes for the supported fixture, missing-key and non-array
+  diagnostics have unit coverage, nested offset syntax remains a stable parse
+  boundary, and native emission rejects increment/decrement explicitly until
+  lowering exists. Append offsets, nested offsets, PHP string increment
+  semantics, references/copy-on-write aliasing, broader PHP warning recovery,
+  exact native error objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest array-offset increment/decrement path for
-  `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
-  `$array[$key]--`, keeping append offsets, nested offsets, string increment,
-  missing-key behavior, references/copy-on-write, and native lowering gaps
-  explicit.
+- Add the next honest assignment-expression path for direct array offsets such
+  as `($array[$key] = expr)`, either executable assignment result semantics or
+  a tightened diagnostic boundary with fixture CLI coverage and documentation.

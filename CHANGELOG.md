@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Implemented direct array-offset pre/post increment and decrement
+  `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
+  `$array[$key]--` over existing integer/string keyed entries whose current
+  values are integers or floats, including statement, expression, and C-style
+  `for` header forms, pre/post expression result values, missing-key,
+  non-array-target, and unsupported-string diagnostics, fixture/CLI coverage,
+  system PHP comparison, documentation, and native-codegen rejection while
+  append offsets, nested offsets, PHP string increment semantics,
+  references/copy-on-write, exact native warning/error behavior, broader PHP
+  coercion recovery, and native lowering remain explicit gaps.
 - Implemented direct public object-property pre/post increment and decrement
   `++$object->property`, `$object->property++`, `--$object->property`, and
   `$object->property--` over existing declared public integer/float property

@@ -41,7 +41,10 @@ subset:
   expressions, and C-style `for` initializer/increment slots, direct
   public object-property compound assignment (`$object->property += expr` and
   related operators) in statements, expressions, and C-style `for`
-  initializer/increment slots, direct public object-property pre/post
+  initializer/increment slots, direct array-offset pre/post increment and
+  decrement for integer and float offset values in statements, expressions,
+  and C-style `for` initializer/increment slots, direct public
+  object-property pre/post
   increment and decrement for integer and float property values in statements,
   expressions, and C-style `for` initializer/increment slots, direct
   static-variable pre/post increment and decrement for integer and float
@@ -187,9 +190,9 @@ subset:
   expression-position `??=`,
   unsupported compound assignment targets outside direct static variables,
   direct array offsets, and direct public object properties,
-  unsupported increment/decrement targets outside direct static variables and
-  direct public object properties, and chained increment/decrement
-  expressions,
+  unsupported increment/decrement targets outside direct static variables,
+  direct array offsets, and direct public object properties, and chained
+  increment/decrement expressions,
   unsupported chained coalescing and unsupported append-offset null
   coalescing assignment forms, object
   method calls, dynamic property names, anonymous classes,

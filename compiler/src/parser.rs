@@ -610,6 +610,12 @@ impl Parser {
             }
 
             let target = self.parse_assignment_target()?;
+            if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
+                return Err(self.error_at(
+                    target.span(),
+                    unsupported_increment_decrement_target_message(),
+                ));
+            }
             Self::ensure_supported_increment_decrement_target(&target)
                 .map_err(|message| self.error_at(target.span(), message))?;
 
@@ -975,7 +981,9 @@ impl Parser {
         if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
             if matches!(
                 target,
-                AssignTarget::Variable { .. } | AssignTarget::Property { .. }
+                AssignTarget::Variable { .. }
+                    | AssignTarget::ArrayIndex { index: Some(_), .. }
+                    | AssignTarget::Property { .. }
             ) {
                 self.current = saved;
                 return Ok(None);
@@ -1012,7 +1020,9 @@ impl Parser {
                 if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
                     if matches!(
                         target,
-                        AssignTarget::Variable { .. } | AssignTarget::Property { .. }
+                        AssignTarget::Variable { .. }
+                            | AssignTarget::ArrayIndex { index: Some(_), .. }
+                            | AssignTarget::Property { .. }
                     ) {
                         self.current = saved;
                         return Ok(None);
@@ -1140,8 +1150,10 @@ impl Parser {
         target: &AssignTarget,
     ) -> Result<(), &'static str> {
         match target {
-            AssignTarget::Variable { .. } | AssignTarget::Property { .. } => Ok(()),
-            AssignTarget::ArrayIndex { .. } => {
+            AssignTarget::Variable { .. }
+            | AssignTarget::ArrayIndex { index: Some(_), .. }
+            | AssignTarget::Property { .. } => Ok(()),
+            AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
         }
@@ -1510,6 +1522,12 @@ impl Parser {
             }
 
             let target = self.parse_assignment_target()?;
+            if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
+                return Err(self.error_at(
+                    target.span(),
+                    unsupported_increment_decrement_target_message(),
+                ));
+            }
             Self::ensure_supported_increment_decrement_target(&target)
                 .map_err(|message| self.error_at(target.span(), message))?;
 
@@ -1605,6 +1623,21 @@ impl Parser {
             if self.check_increment_decrement_operator() {
                 let target = match expr {
                     Expr::Variable(name, span) => AssignTarget::Variable { name, span },
+                    Expr::Index {
+                        target,
+                        index,
+                        span,
+                    } => match *target {
+                        Expr::Variable(name, _) => AssignTarget::ArrayIndex {
+                            name,
+                            index: Some(*index),
+                            span,
+                        },
+                        _ => {
+                            return Err(self
+                                .error_at(span, unsupported_increment_decrement_target_message()));
+                        }
+                    },
                     Expr::Property {
                         target,
                         property,
@@ -2579,7 +2612,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static variables and direct object properties are implemented for integer and float values; array offsets and nested targets are not implemented"
+    "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

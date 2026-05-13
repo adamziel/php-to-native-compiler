@@ -133,6 +133,40 @@ echo $box->sum, ":", $box->i, "\n";
 }
 
 #[test]
+fn array_offset_increment_decrement_updates_values_and_returns_pre_or_post_values() {
+    let execution = run_source(
+        r#"<?php
+$items = ["value" => 10, "float" => 1.5, "i" => 0, "sum" => 0];
+++$items["value"];
+echo $items["value"], "\n";
+echo $items["value"]++, ":", $items["value"], "\n";
+echo --$items["value"], ":", $items["value"], "\n";
+echo $items["value"]--, ":", $items["value"], "\n";
+
+echo $items["float"]++, ":", $items["float"], "\n";
+echo --$items["float"], ":", $items["float"], "\n";
+
+$items["value"] = 1;
+++$items["value"] + 10;
+echo "side:", $items["value"], "\n";
+$items["value"]++ + 10;
+echo "side:", $items["value"], "\n";
+
+for ($items["i"] = 0; $items["i"] < 3; $items["i"]++) {
+    $items["sum"] += $items["i"];
+}
+echo $items["sum"], ":", $items["i"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "11\n11:12\n11:11\n11:10\n1.5:2.5\n1.5:1.5\nside:2\nside:3\n3:3\n"
+    );
+}
+
+#[test]
 fn undefined_increment_decrement_left_side_is_runtime_error() {
     let error = runtime_error("<?php\n$missing++;\n");
 
@@ -196,6 +230,39 @@ fn object_property_increment_decrement_reports_non_object_targets() {
 }
 
 #[test]
+fn array_offset_increment_decrement_reports_missing_keys() {
+    let error = runtime_error("<?php\n$items = [];\n$items['missing']++;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined array key \"missing\"");
+}
+
+#[test]
+fn array_offset_increment_decrement_reports_non_array_targets() {
+    let error = runtime_error("<?php\n$items = 1;\n$items[0]++;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot read offset from int"
+    );
+}
+
+#[test]
+fn array_offset_increment_decrement_rejects_non_numeric_current_gap() {
+    let error = runtime_error("<?php\n$items = ['value' => 'az'];\n$items['value']++;\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call increment/decrement: only int and float variables, array offsets, or object properties are implemented, got string"
+    );
+}
+
+#[test]
 fn object_property_increment_decrement_rejects_non_numeric_current_gap() {
     let error = runtime_error(
         "<?php\nclass Box { public $value; }\n$box = new Box();\n$box->value = 'az';\n$box->value++;\n",
@@ -205,7 +272,7 @@ fn object_property_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array offsets, or object properties are implemented, got string"
     );
 }
 
@@ -217,7 +284,7 @@ fn increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array offsets, or object properties are implemented, got string"
     );
 }
 
@@ -229,7 +296,7 @@ fn expression_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array offsets, or object properties are implemented, got string"
     );
 }
 
@@ -243,7 +310,7 @@ fn for_header_increment_decrement_rejects_non_numeric_current_gap() {
     assert_eq!(error.column, 13);
     assert_eq!(
         error.message,
-        "unsupported call increment/decrement: only int and float variables or object properties are implemented, got string"
+        "unsupported call increment/decrement: only int and float variables, array offsets, or object properties are implemented, got string"
     );
 }
 
@@ -256,7 +323,7 @@ fn emit_ir_rejects_increment_decrement_expressions_until_native_lowering_exists(
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "increment/decrement expressions are supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
+        "increment/decrement expressions are supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet"
     );
 }
 
@@ -269,7 +336,7 @@ fn emit_ir_rejects_increment_decrement_until_native_lowering_exists() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "increment/decrement is supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
+        "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet"
     );
 }
 
@@ -282,7 +349,20 @@ fn emit_ir_rejects_object_property_increment_decrement_until_native_lowering_exi
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "increment/decrement is supported by phpc run for direct static int/float variables and direct object int/float properties but not LLVM IR emission yet"
+        "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_array_offset_increment_decrement_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$items[0]++;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "increment/decrement is supported by phpc run for direct static int/float variables, direct array int/float offsets, and direct object int/float properties but not LLVM IR emission yet"
     );
 }
 
