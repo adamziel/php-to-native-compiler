@@ -988,10 +988,14 @@
   fallback path with normalized assembly-shape checks. Another snapshot uses a
   deterministic fake `clang` that passes backend discovery and exits nonzero
   after accepting generated LLVM IR, proving the stable selected-backend
-  failure diagnostic shape without committing real toolchain stderr. Bundled
-  toolchains, assembly linking/execution, backend-specific stderr guarantees,
-  PHP zvals, native symbol-table storage, references/copy-on-write, exact
-  native error objects, and broader native lowering remain unsupported.
+  failure diagnostic shape without committing real toolchain stderr. A
+  selected-`llc` snapshot hides `clang` and `cc` while exposing only a
+  deterministic fake `llc`, proving the documented LLVM backend selection order
+  with normalized assembly-shape checks. Bundled toolchains, assembly
+  linking/execution, backend-specific stderr guarantees, backend-specific
+  assembly text, PHP zvals, native symbol-table storage,
+  references/copy-on-write, exact native error objects, and broader native
+  lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to

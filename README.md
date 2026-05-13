@@ -40,6 +40,9 @@ output checks instead of backend-specific assembly text.
 A backend-failure snapshot exposes a deterministic fake `clang` that passes
 discovery and then exits nonzero, pinning the stable `--emit-asm` diagnostic
 shape without depending on toolchain-specific stderr.
+A deterministic fake-`llc` snapshot hides `clang` and `cc` while exposing only
+`llc`, proving the documented LLVM backend selection order without committing
+backend-specific assembly text.
 
 ## Current Status
 

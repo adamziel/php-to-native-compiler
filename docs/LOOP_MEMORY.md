@@ -14179,3 +14179,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T06:43:59Z
 
 - Post-round 77 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T06:44:10Z
+
+- Starting round 78 at 20260513T064410Z from HEAD `78a9147`.
+
+## Loop Event 2026-05-13T06:44:21Z
+
+- Pre-round 78 test exit code: `0`.
+
+## Loop Event 2026-05-13T06:53:30Z
+
+- Task attempted: completed Milestone 187 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for the selected `llc` backend path. The new
+  Milestone 187 fixture is a lowerable scalar echo/print program, and the
+  assembly CLI test invokes `--emit-asm` with a temporary PATH exposing only a
+  deterministic fake `llc`, proving `llc` is selected when `clang` is
+  unavailable and before the `cc -S` fallback.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone187/native_assembly_llc.php`,
+  `tests/fixtures/milestone187/native_assembly_llc.stdout`,
+  `tests/fixtures/milestone187/native_assembly_llc_emit_asm.cli`, `README.md`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt --check` passed; `cargo test -p phpc
+  --test native_assembly_cli -- --nocapture` passed with 6 tests; `cargo run
+  -p phpc -- test tests/fixtures/milestone187` passed with 1 fixture; `cargo
+  run -p phpc -- test --compare-php tests/fixtures/milestone187` passed with 1
+  system PHP comparison; `tools/run-tests.sh` passed with 437 fixtures, 181
+  system PHP comparisons, and 256 comparison skips.
+- Remaining semantic gaps: backend-specific assembly text is still not
+  snapshotted; phpc does not bundle an assembly toolchain; assembly output is
+  not linked or executed; generated code still lacks exact native PHP error
+  objects and broader native lowering.
+- Next concrete task: add Milestone 188, explicit `phpc compile --emit-asm`
+  CLI coverage for selected `llc` backend failure diagnostics when `clang` is
+  unavailable and available `llc` exits nonzero.
+- Known-good tag: not created; this is narrow native CLI backend-selection
+  coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: add native assembly llc selection CLI coverage"`
+  after the full suite passes.

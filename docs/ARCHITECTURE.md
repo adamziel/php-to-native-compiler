@@ -105,6 +105,9 @@ A selected-backend failure snapshot exposes a deterministic fake `clang` that
 passes discovery and then exits nonzero after accepting generated LLVM IR. That
 pins the CLI diagnostic shape for backend failure without committing real
 toolchain stderr.
+A selected-`llc` snapshot exposes only a deterministic fake `llc` while hiding
+`clang` and `cc`; it pins backend selection order with normalized assembly
+properties instead of backend-specific assembly text.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for the `llc`
+  selected-backend path. The Milestone 187 fixture runs as a lowerable scalar
+  echo/print program, while the assembly CLI test invokes `--emit-asm` with a
+  temporary PATH exposing only a deterministic fake `llc`. The committed
+  snapshot checks a normalized success summary rather than exact assembly text,
+  proving `llc` is selected when `clang` is unavailable and before the `cc -S`
+  fallback is considered. Backend-specific assembly, bundled toolchains,
+  assembly linking/execution, exact native error objects, and broader native
+  lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for selected backend
   failure diagnostics. The Milestone 186 fixture runs as a lowerable scalar
   echo/print program, while the assembly CLI test invokes `--emit-asm` with a

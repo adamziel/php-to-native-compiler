@@ -3410,8 +3410,18 @@ Still fails:
   Bundled toolchains, assembly linking/execution, backend-specific stderr
   guarantees, exact native error objects, and broader native lowering remain
   unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for the selected `llc`
+  backend path. The Milestone 187 fixture runs through `phpc run` and system
+  PHP as a lowerable scalar echo/print program, while the assembly CLI test
+  invokes `--emit-asm` with a temporary PATH exposing only a deterministic fake
+  `llc`. The committed snapshot compares a normalized success summary, proving
+  `llc` is selected when `clang` is unavailable without committing
+  backend-specific assembly text. Backend-specific assembly, bundled
+  toolchains, assembly linking/execution, exact native error objects, and
+  broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for the `llc`
-  selected-backend path when `clang` is unavailable.
+- Add explicit `phpc compile --emit-asm` CLI coverage for selected `llc`
+  backend failure diagnostics when `clang` is unavailable and available `llc`
+  exits nonzero.
