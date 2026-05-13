@@ -1898,9 +1898,18 @@ handled.
 
 ## Milestone 202: Native Assembly Backend Input Validation
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for a selected
   `clang` backend test double that validates the generated LLVM IR arrives on
   stdin with representative `main` and `printf` markers before emitting
   assembly, including deterministic test doubles, normalized CLI output,
   documentation, and named gaps for backend-specific IR validation, bundled
   toolchains, exact native error objects, and broader native lowering.
+
+## Milestone 203: Native Assembly Fallback Input Validation
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback `llc`
+  and `cc` backend test doubles that validate generated input arrives on stdin
+  with representative LLVM IR or generated C markers before emitting assembly,
+  including deterministic test doubles, normalized CLI output, documentation,
+  and named gaps for backend-specific IR/C validation, bundled toolchains,
+  exact native error objects, and broader native lowering.

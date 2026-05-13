@@ -91,6 +91,10 @@ Additional whitespace-with-stderr fallback snapshots expose deterministic fake
 `llc` and `cc` tools with the same invalid successful-output behavior, proving
 the same stdout-validation precedence after LLVM backend fallback selection and
 after the `cc -S` C fallback selection.
+A selected-backend input-validation snapshot exposes a deterministic fake
+`clang` that validates representative generated LLVM IR markers arrive on
+stdin before emitting normalized assembly, proving `phpc` feeds the selected
+backend through stdin for the current lowerable scalar subset.
 
 ## Current Status
 

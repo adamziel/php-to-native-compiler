@@ -1039,6 +1039,9 @@
   successful-output behavior, proving stdout validation wins and successful
   backend stderr is not surfaced after fallback selection too. Bundled
   toolchains, assembly linking/execution,
+  selected-backend stdin handoff for representative generated LLVM IR markers
+  is covered with a deterministic fake `clang`, but full backend-specific IR
+  validation for every backend and every lowered construct,
   backend-specific discovery semantics for every tool, backend-specific
   stdout/stderr guarantees, backend-specific assembly text, PHP zvals, native
   symbol-table storage, references/copy-on-write, exact native error objects,

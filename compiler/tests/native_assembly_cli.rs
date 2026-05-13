@@ -850,6 +850,40 @@ fn native_scalar_echo_emit_asm_cc_whitespace_stdout_with_stderr_success_cli_snap
     assert_eq!(actual, expected);
 }
 
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_clang_validates_ir_stdin_cli_summary_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone202/native_assembly_validating_clang.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_ir_validating_successful_clang(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone202/native_assembly_validating_clang_emit_asm.cli"),
+    )
+    .expect("native assembly IR-validating clang CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()
@@ -1382,6 +1416,66 @@ exit 0\n",
         std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
         fs::set_permissions(&cc, permissions)
             .expect("temporary whitespace-stdout-with-stderr cc script can be made executable");
+        Self { path }
+    }
+
+    fn with_ir_validating_successful_clang(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-clang-validate-ir-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary IR-validating clang PATH directory can be created");
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake clang 0.0'\n\
+  exit 0\n\
+fi\n\
+ir=''\n\
+while IFS= read -r line; do\n\
+  ir=\"${ir}${line}\"\n\
+done\n\
+case \"$ir\" in\n\
+  *'declare i32 @printf(ptr, ...)'*) : ;;\n\
+  *)\n\
+  printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
+  exit 60\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
+  *'define i32 @main()'*) : ;;\n\
+  *)\n\
+  printf '%s\\n' 'fake clang missing main definition on stdin' >&2\n\
+  exit 61\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
+  *'call i32 (ptr, ...) @printf'*) : ;;\n\
+  *)\n\
+  printf '%s\\n' 'fake clang missing printf call on stdin' >&2\n\
+  exit 62\n\
+  ;;\n\
+esac\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary IR-validating clang script can be written");
+        let mut permissions = fs::metadata(&clang)
+            .expect("temporary IR-validating clang script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&clang, permissions)
+            .expect("temporary IR-validating clang script can be made executable");
         Self { path }
     }
 

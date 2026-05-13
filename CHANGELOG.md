@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected `clang`
+  backend input validation. The Milestone 202 fixture runs as a lowerable
+  scalar echo/print program, while the assembly CLI test invokes `--emit-asm`
+  with a temporary PATH exposing deterministic fake `clang` that passes
+  discovery, validates generated LLVM IR arrives on stdin with representative
+  `printf`, `main`, and `printf` call markers, then emits normalized assembly.
+  The committed snapshot proves selected-backend stdin handoff for the current
+  lowerable scalar subset. Bundled toolchains, assembly linking/execution,
+  backend-specific IR validation across real tools and broader lowered
+  constructs, exact native error objects, and broader native lowering remain
+  explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI coverage for fallback `llc` and
   `cc` backend success cases that write stderr diagnostics while producing
   only whitespace assembly stdout. The Milestone 201 fixture runs as a

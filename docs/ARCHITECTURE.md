@@ -160,6 +160,11 @@ Whitespace-with-stderr fallback snapshots expose deterministic fake `llc` and
 `cc` tools with the same invalid successful-output behavior. That pins the same
 stdout-validation precedence after LLVM fallback selection and after the
 `cc -S` C fallback selection.
+A selected-backend input-validation snapshot exposes a deterministic fake
+`clang` that validates representative generated LLVM IR markers on stdin before
+emitting normalized assembly. That pins the selected-backend stdin handoff for
+the current lowerable scalar subset without treating the test double as
+backend-specific IR validation.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,
