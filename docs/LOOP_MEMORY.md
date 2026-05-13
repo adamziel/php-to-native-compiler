@@ -15001,3 +15001,15 @@ injects this file into every prompt. Each Codex pass should update it with:
   invalid-output precedence coverage, not a major verified stable state.
 - Checkpoint: pending `tools/checkpoint.sh "codegen: cover selected backend invalid-output precedence"`
   after the full suite passes.
+
+## Loop Event 2026-05-13T07:49:13Z
+
+- Codex round 91 exit code: `0`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T074605Z-91.log`.
+
+## Loop Event 2026-05-13T07:49:34Z
+
+- Post-round 91 test exit code: `0`.
+
+## Loop Event 2026-05-13T07:49:34Z
+
+- Post-round 91 tests passed; running checkpoint for this round.
