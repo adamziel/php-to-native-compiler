@@ -1359,13 +1359,28 @@ impl Parser {
     }
 
     fn parse_low_precedence_logical_or(&mut self) -> CompileResult<Expr> {
-        let mut expr = self.parse_low_precedence_logical_and()?;
+        let mut expr = self.parse_low_precedence_logical_xor()?;
         while self.match_identifier("or") {
-            let right = self.parse_low_precedence_logical_and()?;
+            let right = self.parse_low_precedence_logical_xor()?;
             let span = expr.span();
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: BinaryOp::LogicalOr,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_low_precedence_logical_xor(&mut self) -> CompileResult<Expr> {
+        let mut expr = self.parse_low_precedence_logical_and()?;
+        while self.match_identifier("xor") {
+            let right = self.parse_low_precedence_logical_and()?;
+            let span = expr.span();
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalXor,
                 right: Box::new(right),
                 span,
             };
@@ -2749,7 +2764,9 @@ impl Parser {
         matches!(
             &self.peek().kind,
             TokenKind::Identifier(name)
-                if name.eq_ignore_ascii_case("and") || name.eq_ignore_ascii_case("or")
+                if name.eq_ignore_ascii_case("and")
+                    || name.eq_ignore_ascii_case("xor")
+                    || name.eq_ignore_ascii_case("or")
         )
     }
 

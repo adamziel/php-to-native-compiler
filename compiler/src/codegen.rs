@@ -277,7 +277,10 @@ impl LlvmGenerator {
                         "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet",
                     ));
                 }
-                if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+                if matches!(
+                    op,
+                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor
+                ) {
                     return Err(self.unsupported(
                         *span,
                         "logical operators are supported by phpc run but not LLVM IR emission yet",
@@ -345,7 +348,7 @@ impl LlvmGenerator {
                 span,
                 "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not LLVM IR emission yet",
             )),
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(self.unsupported(
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => Err(self.unsupported(
                 span,
                 "logical operators are supported by phpc run but not LLVM IR emission yet",
             )),
@@ -902,7 +905,10 @@ impl CGenerator {
                         "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not assembly emission yet",
                     ));
                 }
-                if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+                if matches!(
+                    op,
+                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor
+                ) {
                     return Err(self.unsupported(
                         *span,
                         "logical operators are supported by phpc run but not assembly emission yet",
@@ -970,7 +976,7 @@ impl CGenerator {
                 span,
                 "null coalescing expressions are supported by phpc run for the current direct variable/array-offset/object-property subset but not assembly emission yet",
             )),
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(self.unsupported(
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => Err(self.unsupported(
                 span,
                 "logical operators are supported by phpc run but not assembly emission yet",
             )),

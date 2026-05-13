@@ -414,6 +414,7 @@ pub enum BinaryOp {
     NullCoalesce,
     LogicalAnd,
     LogicalOr,
+    LogicalXor,
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,

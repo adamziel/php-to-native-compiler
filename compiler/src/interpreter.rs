@@ -676,6 +676,11 @@ impl Interpreter {
                     }
                     return Ok(Value::Bool(self.evaluate(right, scope)?.is_truthy()));
                 }
+                if matches!(op, BinaryOp::LogicalXor) {
+                    let left = self.evaluate(left, scope)?.is_truthy();
+                    let right = self.evaluate(right, scope)?.is_truthy();
+                    return Ok(Value::Bool(left ^ right));
+                }
                 let left = self.evaluate(left, scope)?;
                 let right = self.evaluate(right, scope)?;
                 self.apply_binary(*op, left, right, *span)
@@ -3774,8 +3779,8 @@ impl Interpreter {
                 .php_identical_checked(&right)
                 .map(|identical| Value::Bool(!identical)),
             BinaryOp::NullCoalesce => unreachable!("null coalescing is evaluated lazily"),
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
-                unreachable!("logical operators are evaluated lazily")
+            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
+                unreachable!("logical operators are evaluated before binary application")
             }
             BinaryOp::BitwiseAnd => left.php_bitwise_and(&right),
             BinaryOp::BitwiseOr => left.php_bitwise_or(&right),

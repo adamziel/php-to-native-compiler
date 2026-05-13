@@ -12212,3 +12212,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T03:15:48Z
 
 - Post-round 45 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T03:16:00Z
+
+- Starting round 46 at 20260513T031600Z from HEAD `7b7bc3f`.
+
+## Loop Event 2026-05-13T03:16:12Z
+
+- Pre-round 46 test exit code: `0`.
+
+## Loop Event 2026-05-13T03:21:32Z
+
+- Task attempted: implemented Milestone 155 logical `xor` over the current
+  value model. The parser now gives word `xor` PHP-style precedence below
+  `and`, above `or`, and below assignment; the interpreter evaluates both
+  operands with current truthiness rules and returns a boolean exclusive-or
+  result. Native codegen rejects logical `xor` through the existing logical
+  operator boundary until lowering exists.
+- Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/logical_xor.rs`, `compiler/tests/logical_xor_cli.rs`,
+  `tests/fixtures/milestone155/logical_xor.php`,
+  `tests/fixtures/milestone155/logical_xor.stdout`,
+  `tests/fixtures/milestone155/logical_xor.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`,
+  `CHANGELOG.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo test -p phpc --test
+  logical_xor --test logical_xor_cli` passed; `cargo run -p phpc -- run
+  tests/fixtures/milestone155/logical_xor.php` printed the committed CLI
+  exercise output; `cargo run -p phpc -- test tests/fixtures/milestone155`
+  passed with 1 fixture; `cargo run -p phpc -- test --compare-php
+  tests/fixtures/milestone155` passed with 1 system PHP comparison;
+  `tools/run-tests.sh` passed with 400 fixtures, 151 system PHP comparisons,
+  and 249 comparison skips.
+- Remaining semantic gaps: operator-overloaded extension values,
+  references/copy-on-write side effects, exact native error objects, and
+  native lowering remain unsupported for logical operators.
+- Next concrete task: add the next honest boundary or executable slice for
+  unary bitwise not `~`, including parser/runtime behavior, fixture CLI
+  coverage, documentation, native-codegen behavior, and named gaps.
+- Known-good tag: not created; this is a narrow expression-semantics
+  checkpoint, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "logical operators: add xor execution"`.

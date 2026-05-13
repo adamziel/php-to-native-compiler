@@ -1,0 +1,23 @@
+exit: 0
+stdout:
+bool(false)
+bool(true)
+bool(true)
+bool(false)
+bool(false)
+bool(true)
+bool(false)
+bool(false)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(true)
+bool(false)
+trace:rhs-true
+bool(true)
+trace:rhs-true-again
+bool(false)
+--- stdout end ---
+stderr:
+--- stderr end ---

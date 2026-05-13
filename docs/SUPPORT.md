@@ -78,11 +78,12 @@
   scalar values (`null`, booleans, integers, floats, and strings)
 - strict identity comparisons: `===` and `!==` across the current scalar
   values only (`null`, booleans, integers, floats, and strings)
-- logical operators `&&`, `||`, `and`, and `or` over the current value model:
-  operands use PHP-style truthiness, results are booleans, right operands are
-  evaluated lazily, `&&` binds tighter than `||`, and word operators `and` and
-  `or` bind lower than assignment in the current expression and statement
-  parser subset
+- logical operators `&&`, `||`, `and`, `xor`, and `or` over the current value
+  model: operands use PHP-style truthiness, results are booleans, `&&`, `||`,
+  `and`, and `or` evaluate right operands lazily, `xor` evaluates both
+  operands, `&&` binds tighter than `||`, and word operators bind lower than
+  assignment with `and` tighter than `xor` and `xor` tighter than `or` in the
+  current expression and statement parser subset
 - bitwise operators `&`, `|`, and `^` over the current integer/string subset:
   integer-like operands produce integer results after current scalar-to-int
   coercion, string-string operands use bytewise PHP behavior for `&`, `|`, and
@@ -1727,12 +1728,13 @@
   unparenthesized chained coalescing, precedence interactions beyond the
   current single-operator expression slice, references/copy-on-write, exact
   native error objects, and native lowering are not implemented.
-- Logical operators are limited to `&&`, `||`, `and`, and `or` over the
-  current truthiness rules. They short-circuit and return booleans, and fixture
-  coverage exercises symbolic precedence plus word-operator precedence around
-  direct assignment expressions. Logical `xor`, operator-overloaded extension
-  values, references/copy-on-write side effects, exact native error objects,
-  and native lowering are not implemented.
+- Logical operators are limited to `&&`, `||`, `and`, `xor`, and `or` over the
+  current truthiness rules. `&&`, `||`, `and`, and `or` short-circuit, `xor`
+  evaluates both operands, all return booleans, and fixture coverage exercises
+  symbolic precedence plus word-operator precedence around direct assignment
+  expressions. Operator-overloaded extension values, references/copy-on-write
+  side effects, exact native error objects, and native lowering are not
+  implemented.
 - Bitwise operators are limited to `&`, `|`, and `^` over the current
   integer/string subset. Mixed operands use the current scalar-to-int coercion
   path; string-string operands use bytewise operations but still store results

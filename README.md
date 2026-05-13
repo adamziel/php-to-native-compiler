@@ -64,10 +64,11 @@ subset:
 - `+`, `-`, `*`, `/`, `.`
 - loose scalar comparisons and scalar strict identity comparisons used by
   control flow
-- logical `&&`, `||`, `and`, and `or` over the current truthiness rules, with
-  short-circuit evaluation, boolean result values, PHP-style `&&`/`||`
-  precedence, and lower-than-assignment `and`/`or` precedence in the current
-  expression and statement parser subset
+- logical `&&`, `||`, `and`, `xor`, and `or` over the current truthiness
+  rules, with boolean result values, short-circuit evaluation for `&&`, `||`,
+  `and`, and `or`, PHP-style `&&`/`||` precedence, and lower-than-assignment
+  word-operator precedence in the current expression and statement parser
+  subset
 - bitwise `&`, `|`, and `^` over the current integer/string subset, including
   PHP-style precedence, integer results for non-string-string operands after
   current scalar-to-int coercion, and bytewise string results for string-string

@@ -3072,9 +3072,18 @@ Still fails:
   unary bitwise not, shifts, PHP warning/deprecation recovery for float-to-int
   precision loss, references/copy-on-write side effects, exact native error
   objects, and native lowering remain unsupported.
+- Implemented logical `xor` over the current value model. The parser now gives
+  `xor` PHP-style word-operator precedence below `and`, above `or`, and below
+  assignment. The interpreter evaluates both operands, converts them through
+  current truthiness rules, and returns a boolean exclusive-or result. Fixture,
+  CLI snapshot, unit, and system PHP comparison coverage exercise truthiness,
+  both-operand evaluation, word-operator precedence, assignment-expression
+  operands, and explicit native-codegen rejection. Operator-overloaded
+  extension values, references/copy-on-write side effects, exact native error
+  objects, and native lowering remain unsupported.
 
 Next:
 
-- Add the next honest boundary or executable slice for logical `xor`, including
-  parser/runtime behavior, fixture CLI coverage, documentation, native-codegen
-  behavior, and named gaps.
+- Add the next honest boundary or executable slice for unary bitwise not `~`,
+  including parser/runtime behavior, fixture CLI coverage, documentation,
+  native-codegen behavior, and named gaps.

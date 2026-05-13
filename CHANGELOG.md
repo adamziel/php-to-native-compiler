@@ -328,3 +328,10 @@
   rejection. Arbitrary binary strings outside UTF-8, arrays/objects, bitwise
   compound assignment, unary `~`, shifts, exact PHP warning/error objects,
   references/copy-on-write, and native lowering remain explicit gaps.
+- Implemented logical `xor` over current PHP-shaped truthiness, with boolean
+  results, both-operand evaluation, PHP-style word precedence between `and`
+  and `or`, lower-than-assignment behavior, assignment-expression operand
+  coverage, fixture/CLI coverage, system PHP comparison, and explicit
+  native-codegen rejection. Operator-overloaded extension values, exact native
+  error objects, references/copy-on-write, and native lowering remain explicit
+  gaps.
