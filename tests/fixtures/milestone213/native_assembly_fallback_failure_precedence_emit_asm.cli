@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone213/native_assembly_fallback_failure_precedence.php:0:0: llc failed to emit assembly: fake llc fallback backend failed before cc fallback selection
+--- stderr end ---

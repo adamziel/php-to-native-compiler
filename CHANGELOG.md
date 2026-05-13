@@ -873,3 +873,10 @@
   diagnostic is reported without fallback recovery. Bundled toolchains,
   assembly linking/execution, exact native error objects, and broader native
   lowering remain unsupported.
+- Added a Milestone 213 `phpc compile --emit-asm` fallback failure-precedence
+  snapshot with deterministic fake `llc` and `cc` commands available while
+  `clang` is hidden. The selected fake `llc` fails emission and fake `cc`
+  would fail loudly if invoked, proving the `llc` diagnostic is reported
+  without falling through to the `cc -S` C fallback. Bundled toolchains,
+  assembly linking/execution, exact native error objects, and broader native
+  lowering remain unsupported.

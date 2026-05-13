@@ -1998,10 +1998,20 @@ handled.
 
 ## Milestone 213: Native Assembly Fallback Failure Precedence
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for fallback backend
   failure precedence when `clang` is unavailable, `llc` passes discovery but
   fails assembly emission, and `cc` is also available, proving the selected
   `llc` failure is reported without silently falling through to the `cc -S`
   fallback, with deterministic test doubles, documentation, and named gaps for
   full backend recovery semantics, bundled toolchains, exact native error
   objects, and broader native lowering.
+
+## Milestone 214: Native Assembly Empty-Stderr Fallback Failure Precedence
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for fallback backend
+  failure precedence when `clang` is unavailable, selected `llc` passes
+  discovery but exits nonzero without stderr, and `cc` is also available,
+  proving the stable empty-stderr `llc` diagnostic is reported without
+  silently falling through to the `cc -S` fallback, with deterministic test
+  doubles, documentation, and named gaps for full backend recovery semantics,
+  bundled toolchains, exact native error objects, and broader native lowering.
