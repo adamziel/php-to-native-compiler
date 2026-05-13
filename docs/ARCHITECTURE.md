@@ -95,6 +95,9 @@ platform- and toolchain-specific output.
 Assembly rejection CLI coverage also runs a representative unsupported array
 program with backend tools removed from `PATH`; this pins that LLVM lowering
 diagnostics are returned before backend discovery or invocation.
+A separate backend-absence CLI snapshot runs a lowerable scalar program with
+backend tools removed from `PATH`; this pins the missing-backend diagnostic
+after LLVM lowering has succeeded.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

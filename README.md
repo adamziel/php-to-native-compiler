@@ -31,6 +31,9 @@ than snapshotting platform-specific assembly text.
 It also snapshots a representative unsupported array program with backend tools
 removed from `PATH`, proving `--emit-asm` reports the LLVM lowering rejection
 before attempting assembly backend discovery.
+A separate lowerable scalar snapshot removes backend tools from `PATH` and
+records the stable missing-backend diagnostic for environments without
+`clang`, `llc`, or `cc`.
 
 ## Current Status
 

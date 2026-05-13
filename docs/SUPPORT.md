@@ -980,10 +980,12 @@
   scalar echo/assignment fixture instead of exact assembly text, because
   emitted assembly varies by platform and backend. A separate CLI snapshot runs
   an unsupported array program with backend tools removed from `PATH`, proving
-  array lowering rejects before assembly backend discovery. Assembly
-  linking/execution, PHP zvals, native symbol-table storage,
-  references/copy-on-write, exact native error objects, and broader native
-  lowering remain unsupported.
+  array lowering rejects before assembly backend discovery. Another CLI
+  snapshot runs a lowerable scalar program with backend tools removed from
+  `PATH`, proving the stable missing-backend diagnostic when `clang`, `llc`,
+  and `cc` are unavailable. Bundled toolchains, assembly linking/execution,
+  PHP zvals, native symbol-table storage, references/copy-on-write, exact
+  native error objects, and broader native lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to

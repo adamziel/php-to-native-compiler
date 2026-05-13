@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added explicit `phpc compile --emit-asm` CLI coverage for the current
+  lowerable scalar subset when no assembly backend tools are available. The
+  Milestone 184 fixture runs as a scalar echo/print program, while the assembly
+  snapshot invokes `--emit-asm` with backend tools removed from `PATH` and
+  records the stable missing-backend diagnostic after LLVM lowering succeeds.
+  Bundled toolchains, assembly linking/execution, exact native error objects,
+  and broader native lowering remain explicit gaps.
 - Added explicit `phpc compile --emit-asm` CLI rejection coverage for a
   representative unsupported native boundary. The Milestone 183 fixture runs
   as a small array/count program, while the assembly snapshot invokes

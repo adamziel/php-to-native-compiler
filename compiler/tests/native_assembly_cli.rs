@@ -66,6 +66,36 @@ fn native_array_emit_asm_rejection_cli_snapshot_matches_committed_output_without
     assert_eq!(actual, expected);
 }
 
+#[test]
+fn native_scalar_echo_emit_asm_missing_backend_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join("tests/fixtures/milestone184/native_assembly_no_backend.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", "/nonexistent")
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone184/native_assembly_no_backend_emit_asm.cli"),
+    )
+    .expect("native assembly missing-backend CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
 fn has_assembly_backend() -> bool {
     ["clang", "llc", "cc"]
         .iter()

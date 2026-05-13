@@ -1742,8 +1742,17 @@ handled.
 
 ## Milestone 184: Native Assembly Backend Absence CLI Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for the lowerable
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for the lowerable
   scalar subset when no assembly backend tools are available, including a
   stable missing-backend diagnostic snapshot, documentation, and named gaps for
   bundled toolchains, linking/execution, exact native error objects, and
   broader native lowering.
+
+## Milestone 185: Native Assembly C Fallback CLI Coverage
+
+- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for the documented
+  `cc -S` fallback path when LLVM assembly tools are unavailable but a C
+  compiler backend exists, including normalized output rather than
+  platform-specific assembly text, documentation, and named gaps for bundled
+  toolchains, linking/execution, exact native error objects, and broader native
+  lowering.
