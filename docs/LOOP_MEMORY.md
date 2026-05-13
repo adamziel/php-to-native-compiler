@@ -15264,3 +15264,52 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T08:07:47Z
 
 - Post-round 95 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T08:07:58Z
+
+- Starting round 96 at 20260513T080758Z from HEAD `087a5f2`.
+
+## Loop Event 2026-05-13T08:08:09Z
+
+- Pre-round 96 test exit code: `0`.
+
+## Loop Event 2026-05-13T08:15:37Z
+
+- Task attempted: completed Milestone 205 by adding explicit `phpc compile
+  --emit-asm` CLI coverage for assembly backend discovery probe argument
+  validation. The new Milestone 205 fixture is a lowerable scalar echo/print
+  program, and the assembly CLI tests invoke `--emit-asm` with temporary PATHs
+  exposing deterministic fake `clang`, `llc`, and `cc` tools that require an
+  exact single-argument `--version` probe before accepting selected or
+  fallback assembly emission.
+- Files changed: `compiler/tests/native_assembly_cli.rs`,
+  `tests/fixtures/milestone205/native_assembly_probe_argument_validation.php`,
+  `tests/fixtures/milestone205/native_assembly_probe_argument_validation.stdout`,
+  `tests/fixtures/milestone205/native_assembly_probe_argument_validating_clang_emit_asm.cli`,
+  `tests/fixtures/milestone205/native_assembly_probe_argument_validating_llc_emit_asm.cli`,
+  `tests/fixtures/milestone205/native_assembly_probe_argument_validating_cc_emit_asm.cli`,
+  `README.md`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `CHANGELOG.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run this round: `cargo fmt` passed; `cargo run -p phpc -- test
+  tests/fixtures/milestone205` passed with 1 fixture; focused `cargo test -p
+  phpc --test native_assembly_cli` filters for the new `clang`, `llc`, and
+  `cc` probe-argument snapshots passed; `cargo run -p phpc -- test
+  --compare-php tests/fixtures/milestone205` passed with 1 system PHP
+  comparison; `cargo fmt --check` passed; `cargo test -p phpc --test
+  native_assembly_cli -- --nocapture` passed with 34 tests;
+  `tools/run-tests.sh` passed with 455 fixtures, 199 system PHP comparisons,
+  and 256 comparison skips.
+- Remaining semantic gaps: phpc does not bundle an assembly toolchain;
+  assembly output is not linked or executed; probe-argument coverage is a
+  narrow test-double contract rather than full backend-specific discovery
+  semantics; generated code still lacks exact native PHP error objects and
+  broader native lowering.
+- Next concrete task: add Milestone 206, explicit `phpc compile --emit-asm`
+  CLI coverage for successful backend discovery probes that write stdout/stderr
+  diagnostics while still passing discovery, using deterministic selected and
+  fallback test doubles.
+- Known-good tag: not created; this is narrow assembly backend discovery probe
+  argument coverage, not a major verified stable state.
+- Checkpoint: pending `tools/checkpoint.sh "codegen: validate backend probe arguments"`
+  after the full suite passes.

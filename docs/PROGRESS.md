@@ -3611,9 +3611,20 @@ Still fails:
   contracts. Bundled toolchains, assembly linking/execution, full
   backend-specific command-line compatibility, exact native error objects, and
   broader native lowering remain unsupported.
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected and
+  fallback backend discovery probe argument validation. The Milestone 205
+  fixture runs through `phpc run` and system PHP as a lowerable scalar
+  echo/print program, while assembly CLI tests invoke `--emit-asm` with
+  temporary PATHs exposing deterministic fake `clang`, `llc`, and `cc` tools
+  that require an exact single-argument `--version` probe before accepting
+  selected or fallback assembly emission. The committed snapshots prove the
+  current backend discovery probe argument contract. Bundled toolchains,
+  assembly linking/execution, full backend-specific discovery semantics, exact
+  native error objects, and broader native lowering remain unsupported.
 
 Next:
 
-- Add explicit `phpc compile --emit-asm` CLI coverage for backend discovery
-  version-probe argument vectors using deterministic `clang`, `llc`, and `cc`
+- Add Milestone 206, explicit `phpc compile --emit-asm` CLI coverage for
+  successful backend discovery probes that write stdout/stderr diagnostics
+  while still passing discovery, using deterministic selected and fallback
   test doubles.

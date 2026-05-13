@@ -1043,7 +1043,10 @@
   representative generated LLVM IR and generated C markers is covered with
   deterministic fake `llc` and `cc` tools, and selected/fallback backend
   argument vectors are covered with deterministic fake `clang`, `llc`, and
-  `cc` tools. Bundled toolchains, assembly linking/execution, full
+  `cc` tools. Backend discovery probe argument vectors are covered with
+  deterministic fake `clang`, `llc`, and `cc` tools that require an exact
+  single-argument `--version` probe before selected or fallback assembly
+  emission proceeds. Bundled toolchains, assembly linking/execution, full
   backend-specific IR/C validation for every backend and every lowered
   construct, full backend-specific command-line compatibility,
   backend-specific discovery semantics for every tool, backend-specific

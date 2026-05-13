@@ -103,6 +103,9 @@ fallback selection.
 Backend argument-validation snapshots expose deterministic fake `clang`,
 `llc`, and `cc` tools that validate the expected assembly emission argument
 vectors before accepting stdin and emitting normalized assembly.
+Backend discovery probe argument-validation snapshots expose deterministic fake
+`clang`, `llc`, and `cc` tools that require an exact single-argument
+`--version` probe before selected or fallback assembly emission proceeds.
 
 ## Current Status
 

@@ -176,6 +176,11 @@ Backend argument-validation snapshots expose deterministic fake `clang`,
 assembly emission argument vectors before accepting stdin and emitting
 normalized assembly. That pins the current command-line contract without
 treating it as full backend-specific CLI compatibility.
+Backend discovery probe argument-validation snapshots expose deterministic fake
+`clang`, `llc`, and `cc` tools that require an exact single-argument
+`--version` probe before selected or fallback assembly emission. That pins the
+current discovery probe contract without treating it as full backend-specific
+discovery semantics.
 
 Current native lowering rejects PHP comparison operators before operand
 lowering. That keeps generated code from implying PHP comparison coercions,

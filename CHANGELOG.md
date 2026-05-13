@@ -3,6 +3,16 @@
 ## Unreleased
 
 - Added explicit `phpc compile --emit-asm` CLI coverage for selected and
+  fallback backend discovery probe argument validation. The Milestone 205
+  fixture runs as a lowerable scalar echo/print program, while assembly CLI
+  tests invoke `--emit-asm` with temporary PATHs exposing deterministic fake
+  `clang`, `llc`, and `cc` tools that require an exact single-argument
+  `--version` probe before accepting selected or fallback assembly emission.
+  The committed snapshots prove the current backend discovery probe argument
+  contract. Bundled toolchains, assembly linking/execution, full
+  backend-specific discovery semantics, exact native error objects, and
+  broader native lowering remain explicit gaps.
+- Added explicit `phpc compile --emit-asm` CLI coverage for selected and
   fallback backend argument validation. The Milestone 204 fixture runs as a
   lowerable scalar echo/print program, while assembly CLI tests invoke
   `--emit-asm` with temporary PATHs exposing deterministic fake `clang`,
