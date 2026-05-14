@@ -1492,6 +1492,35 @@ impl Parser {
     }
 
     fn try_parse_assignment_statement(&mut self) -> CompileResult<Option<Stmt>> {
+        if self.check(
+            |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list")),
+        ) && matches!(self.peek_next().kind, TokenKind::LParen)
+        {
+            let target = self.parse_list_assignment_target()?;
+            if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                return Err(self.error_at(
+                    target.span(),
+                    unsupported_array_destructuring_assignment_message(),
+                ));
+            }
+            let span = target.span();
+            let expr = self.parse_assignment_expression()?;
+            if self.check_low_precedence_logical_operator() {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_chained_assignment_expression_message(),
+                ));
+            }
+            if Self::expr_contains_unsupported_assignment_rhs(&expr) {
+                return Err(self.error_at(
+                    expr.span(),
+                    unsupported_chained_assignment_expression_message(),
+                ));
+            }
+            self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
+            return Ok(Some(Stmt::Assign { target, expr, span }));
+        }
+
         if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             return Ok(None);
         }
@@ -1554,6 +1583,7 @@ impl Parser {
                 let span = target.span();
                 match &target {
                     AssignTarget::Variable { .. }
+                    | AssignTarget::List { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
                     | AssignTarget::Property { .. }
                     | AssignTarget::StaticProperty { .. }
@@ -1596,6 +1626,50 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
         Ok(Some(Stmt::Assign { target, expr, span }))
+    }
+
+    fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
+        let span = self.advance().span;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
+        let mut names = Vec::new();
+
+        if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+            return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
+        }
+
+        loop {
+            match self.peek().kind.clone() {
+                TokenKind::Variable(name) => {
+                    self.advance();
+                    if !self.check(|kind| matches!(kind, TokenKind::Comma | TokenKind::RParen)) {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            unsupported_array_destructuring_assignment_message(),
+                        ));
+                    }
+                    names.push(name);
+                }
+                _ => {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_array_destructuring_assignment_message(),
+                    ));
+                }
+            }
+
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                break;
+            }
+        }
+
+        self.consume_keyword(
+            TokenKind::RParen,
+            "expected ')' after list assignment target",
+        )?;
+        Ok(AssignTarget::List { names, span })
     }
 
     fn parse_assignment_target(&mut self) -> CompileResult<AssignTarget> {
@@ -1643,6 +1717,7 @@ impl Parser {
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
+            AssignTarget::List { .. } => Err(unsupported_compound_assignment_target_message()),
             AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
@@ -1660,6 +1735,7 @@ impl Parser {
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
+            AssignTarget::List { .. } => Err(unsupported_increment_decrement_target_message()),
             AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
@@ -4384,7 +4460,7 @@ fn unsupported_array_reference_element_message() -> &'static str {
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
-    "unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments"
+    "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

@@ -38,8 +38,11 @@ implemented.
 The parser is handwritten recursive descent. This keeps the early grammar easy
 to audit while avoiding regex-based parsing. Unsupported syntax boundaries use
 stable diagnostics before AST construction when accepting the syntax would
-imply runtime or native semantics that do not exist yet, such as current
-array/list destructuring assignment targets.
+imply runtime or native semantics that do not exist yet. Simple statement-form
+`list($a, $b) = expr;` now has an AST/runtime path for direct variable targets,
+while short `[...]` destructuring, expression-position `list(...)`,
+nested/keyed/skipped/reference targets, and non-variable targets remain parser
+boundaries.
 
 ## Runtime Crate
 

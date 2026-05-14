@@ -1461,6 +1461,9 @@ impl Interpreter {
                 scope.write_static(name, value.clone());
                 Ok(value)
             }
+            AssignTarget::List { names, span } => {
+                self.evaluate_list_assignment(names, expr, *span, scope)
+            }
             AssignTarget::ArrayIndex { name, index, span } => {
                 let key = match index {
                     Some(index) => Some(self.evaluate_array_key(index, scope)?),
@@ -1549,6 +1552,46 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_list_assignment(
+        &mut self,
+        names: &[String],
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = self.evaluate(expr, scope)?;
+        let array = match &value {
+            Value::Array(array) => array,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "list()",
+                        format!("right-hand side must be array, got {}", other.type_name()),
+                    ),
+                ));
+            }
+        };
+
+        let assignments: Vec<(String, Value)> = names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let element = array
+                    .get(ArrayKey::Int(index as i64))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                (name.clone(), element)
+            })
+            .collect();
+
+        for (name, element) in assignments {
+            scope.write_static(&name, element);
+        }
+
+        Ok(value)
+    }
+
     fn execute_compound_assignment(
         &mut self,
         target: &AssignTarget,
@@ -1586,6 +1629,13 @@ impl Interpreter {
             AssignTarget::Variable { name, .. } => Ok((
                 CompoundAssignmentPlace::Variable(name.clone()),
                 scope.read_static(name, span)?,
+            )),
+            AssignTarget::List { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "list destructuring targets are not implemented",
+                ),
             )),
             AssignTarget::ArrayIndex {
                 name,
@@ -1804,6 +1854,13 @@ impl Interpreter {
                 CompoundAssignmentPlace::Variable(name.clone()),
                 scope.read_static(name, span)?,
             )),
+            AssignTarget::List { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "list destructuring targets are not implemented",
+                ),
+            )),
             AssignTarget::ArrayIndex {
                 name,
                 index: Some(index),
@@ -1939,6 +1996,13 @@ impl Interpreter {
                 scope.write_static(name, value.clone());
                 Ok(value)
             }
+            AssignTarget::List { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "??=",
+                    "list destructuring targets are not implemented",
+                ),
+            )),
             AssignTarget::ArrayIndex {
                 name,
                 index: Some(index),

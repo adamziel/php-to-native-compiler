@@ -175,6 +175,10 @@ pub enum AssignTarget {
         name: String,
         span: Span,
     },
+    List {
+        names: Vec<String>,
+        span: Span,
+    },
     ArrayIndex {
         name: String,
         index: Option<Expr>,
@@ -295,6 +299,7 @@ impl AssignTarget {
     pub fn span(&self) -> Span {
         match self {
             AssignTarget::Variable { span, .. }
+            | AssignTarget::List { span, .. }
             | AssignTarget::ArrayIndex { span, .. }
             | AssignTarget::Property { span, .. }
             | AssignTarget::StaticProperty { span, .. }

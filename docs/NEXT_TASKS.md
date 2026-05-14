@@ -6388,16 +6388,25 @@ handled.
 
 ## Milestone 700: WordPress Bridge Continuation
 
-- [ ] Runtime/assignment lane: implement or explicitly bound the next WordPress
+- [x] Runtime/assignment lane: implement or explicitly bound the next WordPress
   bootstrap array destructuring assignment blocker, with tests, CLI coverage,
   docs, and named unsupported edges for list assignment semantics,
   references/copy-on-write, nested destructuring, missing-key notices,
   exact PHP diagnostics, partial-output behavior, and native lowering.
 
+## Milestone 701: WordPress Bridge Continuation
+
+- [ ] Runtime/cast lane: implement or explicitly bound the next WordPress
+  bootstrap cast-expression blocker, `(bool)` at
+  `wp-includes/sodium_compat/src/Compat.php:572`, with tests, CLI coverage,
+  docs, and named unsupported edges for scalar/array/object/resource boolean
+  cast behavior, exact PHP diagnostics, partial-output behavior, and native
+  lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 699 work, the latest committed checkpoint is
-  `c51f25f runtime: add bounded try blocks`, covering Milestone 698.
+- Before the current Milestone 700 work, the latest committed checkpoint is
+  `97c8875 runtime: add bounded int casts`, covering Milestone 699.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

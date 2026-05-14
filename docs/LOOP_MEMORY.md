@@ -18025,3 +18025,39 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "runtime: add bounded int casts"` if the full gate
   passes. Milestone 700 should bound the next WordPress array destructuring
   assignment blocker.
+
+## Loop Event 2026-05-14T07:30:00Z
+
+- Checkpoint before this task: `97c8875 runtime: add bounded int casts`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 700, simple positional statement-form
+  `list($a, $b) = expr;` assignment for WordPress's sodium compat class.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/list_assignment.rs`, `compiler/tests/native_array_boundary.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `tests/fixtures/milestone700/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.*`,
+  `README.md`, `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test list_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test native_array_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone700`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone700`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo build -p phpc`,
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: short `[...]` destructuring, expression-position
+  `list(...)`, keyed/nested/skipped/reference/non-variable targets, exact PHP
+  warnings/notices for missing offsets and non-array right-hand sides,
+  references/copy-on-write, WordPress bootstrap environment, exact native
+  errors, and native lowering remain explicit.
+- Next concrete task: run the full checkpoint gate with
+  `tools/checkpoint.sh "runtime: add simple list assignment"` if no unrelated
+  work is present. Milestone 701 should bound the next WordPress `(bool)` cast
+  blocker at `wp-includes/sodium_compat/src/Compat.php:572`.

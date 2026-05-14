@@ -117,8 +117,11 @@ The first bootstrap probe is expected to fail. Known blockers include:
   blocker is covered only by the bounded Milestone 698 try-block runtime
   boundary, not by real PHP exception execution. The previous unsupported
   `(int)` cast syntax blocker is covered by the bounded Milestone 699
-  scalar/null integer-cast slice. The shim probe now reaches unsupported array
-  destructuring assignment at `<bootstrap-shim>:419:9`.
+  scalar/null integer-cast slice. The previous unsupported simple positional
+  `list(...)` assignment blocker at `<bootstrap-shim>:419:9` is covered by
+  Milestone 700. The shim probe now reaches unsupported `(bool)` cast syntax
+  at `<bootstrap-shim>:572:16`, corresponding to
+  `wp-includes/sodium_compat/src/Compat.php:572`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

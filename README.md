@@ -96,7 +96,8 @@ incorrect native code.
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements; function-scope `global` imports remain unsupported
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
-  append writes, offset removal, and array iteration
+  append writes, offset removal, array iteration, and simple positional
+  statement-form `list($a, $b) = expr;` assignment over numeric keys
 - top-level constants, selected built-in constants, runtime-defined constants,
   and executable magic constants documented in the support matrix
 - statement-form `throw expr;` as a bounded exception boundary: guarded throws
@@ -144,6 +145,7 @@ generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)` and `(int)` scalar/null slices,
 interfaces, traits, enums,
 try/catch/finally exception execution, exception objects and stack unwinding,
+array destructuring beyond simple positional statement-form `list(...)`,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
@@ -172,9 +174,9 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-Native lowering rejects arrays, objects, user functions, include/require,
-broad control flow, exception boundaries, scalar casts, mutation forms that require symbol-table
-effects, dynamic calls, runtime constant tables, PHP-wide coercions,
+Native lowering rejects arrays, array destructuring, objects, user functions,
+include/require, broad control flow, exception boundaries, scalar casts,
+mutation forms that require symbol-table effects, dynamic calls, runtime constant tables, PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code.
 

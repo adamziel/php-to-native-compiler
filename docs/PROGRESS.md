@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 700, simple positional statement-form `list($a, $b) = expr;`
+  assignment through `phpc run`. The parser accepts only direct variable
+  targets in statement position, the interpreter evaluates the right-hand side
+  once, requires a current array value, reads numeric keys `0..n`, assigns
+  targets left to right, preserves duplicate-target overwrite behavior, and
+  assigns `null` for missing numeric offsets while leaving PHP warning/notice
+  emission explicit. Short `[...]` destructuring, expression-position
+  `list(...)`, keyed, nested, skipped-slot, reference, array-offset,
+  object-property, static-property, and dynamic targets remain parser
+  boundaries, and native lowering rejects list destructuring before right-hand
+  side lowering. Focused verification: `cargo fmt --check`,
+  `cargo check -p phpc`, `cargo test -p phpc --test list_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test native_array_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone700`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone700`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo build -p phpc`, `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`,
+  and `git diff --check` passed. The WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:572:16: unsupported cast expression: only (string) and (int) casts are implemented`,
+  corresponding to `wp-includes/sodium_compat/src/Compat.php:572`.
 - Added Milestone 636, a deterministic compiler-side LLVM IR probe for the
   native scalar echo runtime helpers. The probe snapshot declares
   `phpc_native_scalar_echo_len` and `phpc_native_scalar_echo_write`, includes one

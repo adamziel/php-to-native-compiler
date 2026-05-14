@@ -34,7 +34,12 @@
   existing declared public property slots on direct object variables.
   Append-offset chained assignment expressions, nested-offset assignment
   expressions, dynamic property names, missing property materialization,
-  references/copy-on-write, and native lowering remain unsupported.
+  references/copy-on-write, and native lowering remain unsupported. Simple
+  positional statement-form array destructuring `list($a, $b) = expr;` is
+  supported for direct variable targets when the right-hand side evaluates to a
+  current ordered array. It reads numeric keys `0..n`, evaluates the right-hand
+  side once before writes, assigns targets left to right, and assigns `null` for
+  missing numeric offsets without emitting PHP's warning/notice yet.
 - direct static-variable compound assignment `$name += expr`,
   `$name -= expr`, `$name *= expr`, `$name /= expr`, `$name %= expr`,
   `$name .= expr`, `$name &= expr`, `$name |= expr`, `$name ^= expr`,
@@ -506,8 +511,10 @@
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
-- explicit parse diagnostics for unsupported array/list destructuring
-  assignment targets such as `[$name] = $array` and `list($name) = $array`
+- explicit parse diagnostics for unsupported array/list destructuring beyond
+  the current simple positional `list($a, $b) = expr;` statement slice, such as
+  `[$name] = $array`, expression-position `list(...)`, nested/keyed/skipped
+  targets, references, and non-variable targets
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
 - explicit parse diagnostics for unsupported `unset($object->property)` before
@@ -1660,8 +1667,9 @@
   with a specific codegen diagnostic until generated code has native object
   layout, handles, visibility, method dispatch, class metadata tables,
   inheritance, autoload interaction, and exact native error objects.
-  Native arrays, array literals, array indexing, array assignment, `foreach`
-  array iteration, array offset unset, and array builtin function calls are
+  Native arrays, array literals, array indexing, array assignment, list
+  destructuring assignment, `foreach` array iteration, array offset unset, and
+  array builtin function calls are
   rejected before body, operand, argument, or callback lowering with a specific
   codegen diagnostic until generated code has native array storage layout, key
   normalization, copy-on-write containers, references, callback dispatch, and
@@ -2684,9 +2692,13 @@
   runtime diagnostics. Float identity currently follows Rust/PHP-style `f64`
   equality for representable literals and does not claim broader `NAN`/`INF`
   precision edge-case coverage.
-- Array gaps: array spread elements, array reference elements, and
-  `list(...)`/`[...]` destructuring assignment targets are rejected with
-  stable parse diagnostics. `unset(...)` forms outside direct variables,
+- Array gaps: array spread elements, array reference elements, short
+  `[...]` destructuring assignment targets, expression-position `list(...)`,
+  and keyed, nested, skipped-slot, reference, or non-variable list targets are
+  rejected with stable parse diagnostics. Simple positional statement-form
+  `list($a, $b) = expr;` is supported for direct variable targets only; exact
+  PHP warning/notice emission for missing offsets and non-array right-hand
+  sides is not implemented. `unset(...)` forms outside direct variables,
   direct array-offset operands, and static-property diagnostic operands,
   comma-separated `for` header expression lists,
   expression-form `do ... while`, expression-form `switch`, malformed
@@ -2698,8 +2710,8 @@
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
   targets, array destructuring assignments with keyed, nested, reference,
-  skipped-slot, or by-value unpacking semantics, references, copy-on-write
-  containers, and
+  skipped-slot, short-syntax, expression-position, or non-variable target
+  semantics, references, copy-on-write containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full
   mutation/aliasing behavior while the iterated array is modified. Array keys
