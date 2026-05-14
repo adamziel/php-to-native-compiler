@@ -1026,7 +1026,7 @@ class/ancestor protected access for plain read/write, `isset`/`empty`,
 read-modify-write, and null-coalescing forms, or full constructor visibility.
 Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
-property override compatibility, broader inheritance/constructor semantics, or exact PHP
+shared-slot property override layout, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
 Static member syntax
 through `::`, including

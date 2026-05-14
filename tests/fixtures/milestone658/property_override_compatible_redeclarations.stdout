@@ -1,0 +1,6 @@
+Child Object
+(
+    [privateValue:Base:private] => 
+    [privateValue] => child-private
+)
+done

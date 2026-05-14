@@ -266,7 +266,7 @@ cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call
 slices, constructor behavior beyond public/inherited public instance
 `__construct` and explicit parent calls, constructor arguments for classes without constructors,
-property override compatibility,
+shared-slot layout for compatible non-private property redeclarations,
 non-public property access outside the current private/protected method context,
 non-public constructor access beyond the current constructor slice, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,

@@ -1,0 +1,1 @@
+phpc rejects compatible non-private property redeclarations until shared inherited slot layout is implemented; system PHP accepts this class.

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone658/property_override_visibility_reduction.php:7:15: unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name
+--- stderr end ---

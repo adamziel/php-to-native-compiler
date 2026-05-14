@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+Child Object
+(
+    [privateValue:Base:private] => 
+    [privateValue] => child-private
+)
+done--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1,0 +1,1 @@
+phpc uses a stable project runtime diagnostic for inherited property visibility reduction; system PHP reports a fatal engine error.

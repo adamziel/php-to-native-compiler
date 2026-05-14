@@ -2612,6 +2612,79 @@ class Packet {
 }
 
 #[test]
+fn inherited_property_redeclarations_validate_current_compatibility_rules() {
+    let valid = run_source(
+        r#"<?php
+class Base {
+    private $privateValue;
+}
+
+class Child extends Base {
+    public $privateValue;
+}
+
+echo "ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid.stdout, "ok");
+
+    let visibility_error = runtime_error(
+        r#"<?php
+class Base {
+    public $name;
+}
+
+class Child extends Base {
+    protected $name;
+}
+"#,
+    );
+    assert_eq!(visibility_error.line, 7);
+    assert_eq!(visibility_error.column, 15);
+    assert_eq!(
+        visibility_error.message,
+        "unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name"
+    );
+
+    let static_error = runtime_error(
+        r#"<?php
+class Base {
+    public static $name;
+}
+
+class Child extends Base {
+    public $name;
+}
+"#,
+    );
+    assert_eq!(static_error.line, 7);
+    assert_eq!(static_error.column, 12);
+    assert_eq!(
+        static_error.message,
+        "unsupported class inheritance for Child: cannot redeclare static property Base::$name as non static Child::$name"
+    );
+
+    let compatible_error = runtime_error(
+        r#"<?php
+class Base {
+    protected $name;
+}
+
+class Child extends Base {
+    public $name;
+}
+"#,
+    );
+    assert_eq!(compatible_error.line, 7);
+    assert_eq!(compatible_error.column, 12);
+    assert_eq!(
+        compatible_error.message,
+        "unsupported class inheritance for Child: property Child::$name compatible redeclarations require shared inherited slot layout, which is not implemented"
+    );
+}
+
+#[test]
 fn protected_constructors_execute_from_child_method_context() {
     let execution = run_source(
         r#"<?php

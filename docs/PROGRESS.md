@@ -259,6 +259,20 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone657`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone657`,
   and `git diff --check` passed.
+- Added Milestone 658, inherited property redeclaration diagnostics for the
+  current untyped property subset. Private parent properties can be redeclared
+  as separate child slots, inherited public/protected properties now reject
+  staticness changes and visibility reduction with stable class-inheritance
+  diagnostics, and otherwise-compatible non-private redeclarations now fail
+  with a stable blocker until shared inherited slot layout is implemented.
+  Shared-slot property override layout, static properties, class constants,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model inherited_property_redeclarations_validate_current_compatibility_rules -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone658`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone658`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -270,10 +284,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 658 should take the next object compatibility slice: property
-  override compatibility/conflict diagnostics, duplicate inherited
-  public/protected slot behavior, or a documented blocker if exact PHP
-  property layout requires a broader class-declaration validation pass.
+- Milestone 659 should take the next object layout slice: shared-slot layout
+  for compatible non-private property redeclarations, static property storage
+  diagnostics/execution, or a documented blocker if typed/default property
+  metadata must land first.
 
 ## 2026-05-12
 

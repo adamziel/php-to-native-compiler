@@ -83,6 +83,31 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "objects: allow child protected property access"` if
   the full gate passes.
 
+## Loop Event 2026-05-14T19:15:00Z
+
+- Checkpoint before this task: `d442e9f objects: allow child protected
+  property access`, pushed to `origin/master`.
+- Task attempted: Milestone 658, inherited property redeclaration diagnostics
+  for the current untyped property subset.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone658/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model inherited_property_redeclarations_validate_current_compatibility_rules -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone658`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone658`
+  passed after fixing expected stderr fixture newlines.
+- Remaining semantic gaps: shared-slot layout for compatible non-private
+  property redeclarations, static properties, class constants, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit.
+- Next concrete task: run full object-model focused checks and `git diff
+  --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: diagnose inherited property redeclarations"`
+  if the full gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

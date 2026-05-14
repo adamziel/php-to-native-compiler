@@ -2392,7 +2392,7 @@
 - Object/class gaps: nested and conditional class declarations, constructor
   behavior beyond public/inherited public instance `__construct` and explicit
   parent calls,
-  property override compatibility,
+  shared-slot layout for compatible non-private property redeclarations,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware

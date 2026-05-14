@@ -9,9 +9,9 @@ use php_runtime::{
 };
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassVisibility, CompoundAssignOp,
-    Expr, ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, Program, Span,
-    Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassPropertyDecl, ClassVisibility,
+    CompoundAssignOp, Expr, ForAction, FunctionDecl, IncrementDecrementOp,
+    IncrementDecrementPosition, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -4747,20 +4747,21 @@ fn register_class_members(
             .map_err(|error| runtime_error(class.span, error))?;
     }
 
-    let metadata = classes
-        .get_mut(id)
-        .expect("declared class id should resolve to class metadata");
-
     for member in &class.members {
         match member {
             ClassMember::Property(property) => {
                 let visibility = runtime_visibility(property.visibility);
+                validate_inherited_property_compatibility(classes, id, &class.name, property)
+                    .map_err(|error| runtime_error(property.span, error))?;
+
                 let metadata_property = if property.is_static {
                     PhpPropertyMetadata::static_property(&property.name, visibility)
                 } else {
                     PhpPropertyMetadata::instance(&property.name, visibility)
                 };
-                metadata
+                classes
+                    .get_mut(id)
+                    .expect("declared class id should resolve to class metadata")
                     .add_property(metadata_property)
                     .map_err(|error| runtime_error(property.span, error))?;
             }
@@ -4771,7 +4772,9 @@ fn register_class_members(
                 } else {
                     PhpMethodMetadata::instance(&method.function.name, visibility)
                 };
-                metadata
+                classes
+                    .get_mut(id)
+                    .expect("declared class id should resolve to class metadata")
                     .add_method(metadata_method)
                     .map_err(|error| runtime_error(method.span, error))?;
             }
@@ -4779,6 +4782,101 @@ fn register_class_members(
     }
 
     Ok(id)
+}
+
+fn validate_inherited_property_compatibility(
+    classes: &PhpClassTable,
+    class_id: ClassId,
+    class_name: &str,
+    property: &ClassPropertyDecl,
+) -> RuntimeResult<()> {
+    let visibility = runtime_visibility(property.visibility);
+    let mut current = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata")
+        .parent_id();
+
+    while let Some(parent_id) = current {
+        let parent = classes
+            .get(parent_id)
+            .expect("parent class id should resolve to class metadata");
+
+        if let Some(parent_property) = parent.property(&property.name) {
+            if parent_property.visibility() == Visibility::Private {
+                current = parent.parent_id();
+                continue;
+            }
+
+            if parent_property.is_static() != property.is_static {
+                let parent_static = if parent_property.is_static() {
+                    "static"
+                } else {
+                    "non static"
+                };
+                let child_static = if property.is_static {
+                    "static"
+                } else {
+                    "non static"
+                };
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "cannot redeclare {parent_static} property {}::${} as {child_static} {}::${}",
+                        parent.name(),
+                        property.name,
+                        class_name,
+                        property.name
+                    ),
+                ));
+            }
+
+            if property_visibility_is_more_restrictive(visibility, parent_property.visibility()) {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "property {}::${} cannot reduce visibility of inherited {} property {}::${}",
+                        class_name,
+                        property.name,
+                        visibility_name(parent_property.visibility()),
+                        parent.name(),
+                        property.name
+                    ),
+                ));
+            }
+
+            return Err(RuntimeError::unsupported_class_inheritance(
+                class_name,
+                format!(
+                    "property {}::${} compatible redeclarations require shared inherited slot layout, which is not implemented",
+                    class_name, property.name
+                ),
+            ));
+        }
+
+        current = parent.parent_id();
+    }
+
+    Ok(())
+}
+
+fn property_visibility_is_more_restrictive(child: Visibility, parent: Visibility) -> bool {
+    visibility_rank(child) > visibility_rank(parent)
+}
+
+fn visibility_rank(visibility: Visibility) -> u8 {
+    match visibility {
+        Visibility::Public => 0,
+        Visibility::Protected => 1,
+        Visibility::Private => 2,
+    }
+}
+
+fn visibility_name(visibility: Visibility) -> &'static str {
+    match visibility {
+        Visibility::Public => "public",
+        Visibility::Protected => "protected",
+        Visibility::Private => "private",
+    }
 }
 
 fn runtime_visibility(visibility: ClassVisibility) -> Visibility {

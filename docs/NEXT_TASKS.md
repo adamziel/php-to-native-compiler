@@ -5948,13 +5948,28 @@ handled.
 
 ## Milestone 658: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next object compatibility slice:
+- [x] Runtime/object lane: choose the next object compatibility slice:
   property override compatibility/conflict diagnostics, duplicate inherited
   public/protected slot behavior, or a documented blocker if exact PHP
-  property layout requires a broader class-declaration validation pass. Keep
-  static properties, class constants, trait composition, magic methods,
+  property layout requires a broader class-declaration validation pass.
+  Implemented inherited property redeclaration validation for the current
+  untyped property subset: private parent properties may be redeclared as
+  separate child slots, inherited public/protected properties reject staticness
+  changes and visibility reduction, and otherwise-compatible non-private
+  redeclarations now fail with a stable blocker until shared inherited slot
+  layout is implemented. Kept shared-slot property override layout, static
+  properties, class constants, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
+
+## Milestone 659: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next object layout slice: implement
+  shared-slot layout for compatible non-private property redeclarations,
+  static property storage diagnostics/execution, or a documented blocker if
+  typed/default property metadata must land first. Keep class constants, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 
