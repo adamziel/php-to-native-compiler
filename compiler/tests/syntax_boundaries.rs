@@ -231,23 +231,43 @@ fn unsupported_exception_syntax_has_stable_parse_errors() {
             "unsupported throw: exception objects and stack unwinding are not implemented",
         ),
         (
-            "<?php\ntry {\n    echo 'work';\n} catch (Exception $e) {\n    echo 'caught';\n} finally {\n    echo 'done';\n}\n",
-            2,
-            1,
-            "unsupported try/catch/finally: exception handling and stack unwinding are not implemented",
-        ),
-        (
             "<?php\nCATCH (Exception $e) {\n    echo 'caught';\n}\n",
             2,
             1,
-            "unsupported try/catch/finally: exception handling and stack unwinding are not implemented",
+            "unexpected catch: catch must follow a try block",
         ),
         (
             "<?php\nFINALLY {\n    echo 'done';\n}\n",
             2,
             1,
-            "unsupported try/catch/finally: exception handling and stack unwinding are not implemented",
+            "unexpected finally: finally must follow a try block",
         ),
+        (
+            "<?php\ntry {\n    echo 'work';\n}\n",
+            2,
+            1,
+            "expected catch or finally after try block",
+        ),
+        ("<?php\ntry echo 'work';\n", 2, 5, "expected try block"),
+        (
+            "<?php\ntry {\n} catch () {\n}\n",
+            3,
+            10,
+            "expected catch type name",
+        ),
+        (
+            "<?php\ntry {\n} catch (Exception| $e) {\n}\n",
+            3,
+            21,
+            "expected catch type name",
+        ),
+        (
+            "<?php\ntry {\n} catch (Exception $e)\n",
+            4,
+            1,
+            "expected catch block",
+        ),
+        ("<?php\ntry {\n} finally\n", 4, 1, "expected finally block"),
     ];
 
     for (source, line, column, message) in cases {
@@ -265,7 +285,7 @@ fn emit_ir_rejects_throw_statement_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "LLVM exception lowering rejects throw statements until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current throw statement boundary"
+        "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary"
     );
 }
 

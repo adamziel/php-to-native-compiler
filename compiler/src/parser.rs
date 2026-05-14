@@ -1,9 +1,9 @@
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
-    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
-    ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
-    IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TypeDecl,
-    UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, CatchType, ClassConstantDecl,
+    ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
+    CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam,
+    IncrementDecrementOp, IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt,
+    SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -72,9 +72,9 @@ impl Parser {
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
             TokenKind::Throw => self.parse_throw(),
-            TokenKind::Try | TokenKind::Catch | TokenKind::Finally => {
-                self.parse_unsupported_try_catch_finally()
-            }
+            TokenKind::Try => self.parse_try(),
+            TokenKind::Catch => self.parse_unexpected_catch(),
+            TokenKind::Finally => self.parse_unexpected_finally(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Global => self.parse_global(),
             TokenKind::Static
@@ -100,13 +100,14 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("throw") => self.parse_throw(),
             TokenKind::Identifier(name)
-                if matches!(
-                    name.to_ascii_lowercase().as_str(),
-                    "try" | "catch" | "finally"
-                ) =>
+                if matches!(name.to_ascii_lowercase().as_str(), "catch") =>
             {
-                self.parse_unsupported_try_catch_finally()
+                self.parse_unexpected_catch()
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("finally") => {
+                self.parse_unexpected_finally()
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("try") => self.parse_try(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("yield") => {
                 Err(self.error_at(self.peek().span, unsupported_yield_message()))
             }
@@ -513,9 +514,91 @@ impl Parser {
         Ok(Stmt::Throw { expr, span })
     }
 
-    fn parse_unsupported_try_catch_finally(&mut self) -> CompileResult<Stmt> {
+    fn parse_try(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
-        Err(self.error_at(span, unsupported_try_catch_finally_message()))
+        let body = self.parse_required_block("expected try block")?;
+        let mut catches = Vec::new();
+
+        while self.check_exception_keyword("catch") {
+            catches.push(self.parse_catch_clause()?);
+        }
+
+        let finally_body = if self.match_exception_keyword("finally").is_some() {
+            Some(self.parse_required_block("expected finally block")?)
+        } else {
+            None
+        };
+
+        if catches.is_empty() && finally_body.is_none() {
+            return Err(self.error_at(span, "expected catch or finally after try block"));
+        }
+
+        Ok(Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            span,
+        })
+    }
+
+    fn parse_catch_clause(&mut self) -> CompileResult<CatchClause> {
+        let span = self.advance().span;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after catch")?;
+        let types = self.parse_catch_type_list()?;
+        let variable = if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+            None
+        } else {
+            Some(self.consume_variable("expected catch variable")?)
+        };
+        self.consume_keyword(TokenKind::RParen, "expected ')' after catch clause")?;
+        let body = self.parse_required_block("expected catch block")?;
+
+        Ok(CatchClause {
+            types,
+            variable,
+            body,
+            span,
+        })
+    }
+
+    fn parse_catch_type_list(&mut self) -> CompileResult<Vec<CatchType>> {
+        let mut types = vec![self.parse_catch_type_name()?];
+
+        while self.match_token(|kind| matches!(kind, TokenKind::Pipe)) {
+            types.push(self.parse_catch_type_name()?);
+        }
+
+        Ok(types)
+    }
+
+    fn parse_catch_type_name(&mut self) -> CompileResult<CatchType> {
+        let span = self.peek().span;
+        let mut name = String::new();
+
+        if self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            name.push('\\');
+        }
+
+        let (first, _) = self.consume_identifier_with_span("expected catch type name")?;
+        name.push_str(&first);
+
+        while self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            name.push('\\');
+            let (segment, _) = self.consume_identifier_with_span("expected catch type name")?;
+            name.push_str(&segment);
+        }
+
+        Ok(CatchType { name, span })
+    }
+
+    fn parse_unexpected_catch(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, "unexpected catch: catch must follow a try block"))
+    }
+
+    fn parse_unexpected_finally(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, "unexpected finally: finally must follow a try block"))
     }
 
     fn parse_unsupported_match_expression(&mut self) -> CompileResult<Stmt> {
@@ -3804,6 +3887,24 @@ impl Parser {
         self.match_token(|kind| {
             matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
         })
+    }
+
+    fn match_exception_keyword(&mut self, expected: &str) -> Option<Span> {
+        if self.check_exception_keyword(expected) {
+            Some(self.advance().span)
+        } else {
+            None
+        }
+    }
+
+    fn check_exception_keyword(&self, expected: &str) -> bool {
+        match (&self.peek().kind, expected) {
+            (TokenKind::Try, "try")
+            | (TokenKind::Catch, "catch")
+            | (TokenKind::Finally, "finally") => true,
+            (TokenKind::Identifier(name), _) => name.eq_ignore_ascii_case(expected),
+            _ => false,
+        }
     }
 
     fn check(&self, predicate: impl FnOnce(&TokenKind) -> bool) -> bool {

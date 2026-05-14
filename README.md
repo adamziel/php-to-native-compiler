@@ -102,6 +102,10 @@ incorrect native code.
 - statement-form `throw expr;` as a bounded exception boundary: guarded throws
   can parse and be skipped, while reached throws report a stable runtime
   diagnostic without constructing exception objects or unwinding the stack
+- statement-form `try`/`catch`/`finally` blocks as a bounded exception
+  boundary: guarded or declaration-contained blocks can parse and be skipped,
+  while reached try blocks report a stable runtime diagnostic without executing
+  exception control flow
 - narrow `require`, `require_once`, `include`, and `include_once` statement
   execution for local string paths, including constant/string-concatenated
   paths resolved relative to the current source file, included files executing
@@ -138,7 +142,7 @@ the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)` scalar/null slice, interfaces, traits, enums,
-try/catch/finally exception control flow, exception objects and stack unwinding,
+try/catch/finally exception execution, exception objects and stack unwinding,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and

@@ -1,0 +1,1 @@
+Project-specific exception boundary: phpc parses try/catch/finally blocks but reports a stable runtime boundary instead of executing PHP exception control flow.

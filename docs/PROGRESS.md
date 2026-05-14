@@ -974,13 +974,36 @@ Implemented:
   `PHPC_BIN=/tmp/phpc-target-697/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
 
+- Added Milestone 698, bounded `try`/`catch`/`finally` statement parsing for
+  the current exception boundary. Try blocks now build AST nodes with parsed
+  catch type lists, optional catch variables, catch bodies, and optional
+  finally bodies, so guarded or declaration-contained WordPress exception
+  blocks can parse and be skipped by existing control flow. If execution
+  reaches a try block, `phpc run` reports the stable runtime boundary
+  `unsupported call try: exception handling and stack unwinding are not
+  implemented` without executing the try, catch, or finally bodies. Throw
+  expressions, malformed try syntax, standalone catch/finally forms,
+  `Throwable`/`Exception` objects, stack unwinding, catch matching, catch
+  variable binding, finally execution, stack traces, exact PHP diagnostics,
+  partial-output behavior, and native exception lowering remain explicit. The
+  real WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `<bootstrap-shim>:319:20`, unsupported cast syntax beyond the current
+  `(string)` slice. Focused verification so far:
+  `cargo test -p phpc --test exception_boundaries`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_exception`,
+  `cargo run -p phpc -- test tests/fixtures/milestone698`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone698`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli`, and
+  `PHPC_BIN=/tmp/phpc-target-698/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+
 Next:
 
-- Milestone 698 should implement or explicitly bound `try`/`catch`/`finally`
-  syntax for WordPress's sodium compat class, while keeping exception object
-  modeling, stack unwinding, catch matching, finally execution, stack traces,
-  exact PHP diagnostics, partial-output behavior, and native lowering explicit
-  unless proven.
+- Milestone 699 should implement or explicitly bound the next WordPress
+  bootstrap cast blocker at `<bootstrap-shim>:319:20`, while keeping exact PHP
+  scalar cast warnings, object/array/resource behavior, source mapping,
+  partial-output behavior, and native lowering explicit unless proven.
 
 ## 2026-05-12
 

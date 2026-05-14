@@ -1167,17 +1167,19 @@ exists yet.
 ## Exception Boundary
 
 Exception syntax is reserved by the lexer/parser today, but the boundary is no
-longer a single parse-only category. Statement-form `throw expr;` builds an AST
-node so guarded WordPress compatibility code can parse and be skipped by normal
-control flow. If execution reaches a throw statement, the interpreter reports a
-stable unsupported runtime boundary without evaluating the throw operand,
-because it cannot construct PHP exception objects or unwind the stack.
+longer a single parse-only category. Statement-form `throw expr;` and
+`try`/`catch`/`finally` blocks build AST nodes so guarded WordPress
+compatibility code can parse and be skipped by normal control flow. If
+execution reaches a throw statement, the interpreter reports a stable
+unsupported runtime boundary without evaluating the throw operand. If execution
+reaches a try block, the interpreter reports a stable unsupported runtime
+boundary without executing any try, catch, or finally body.
 
-Throw expressions and `try`/`catch`/`finally` blocks still fail at parse time.
-Native lowering rejects throw statements before emitting LLVM IR or assembly
-until `Throwable`/`Exception` objects, stack unwinding, catch matching,
-`finally` execution, stack traces, and exact native error behavior have
-explicit runtime and IR semantics.
+Throw expressions, malformed try blocks, and standalone `catch`/`finally`
+remain parse boundaries. Native lowering rejects exception statements before
+emitting LLVM IR or assembly until `Throwable`/`Exception` objects, stack
+unwinding, catch matching, `finally` execution, stack traces, and exact native
+error behavior have explicit runtime and IR semantics.
 
 ## Match Expression Boundary
 

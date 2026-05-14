@@ -17963,3 +17963,37 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo check -p phpc`, the focused gates, then checkpoint with
   `tools/checkpoint.sh "runtime: add bounded throw statements"` if the full
   gate passes. Milestone 698 should bound `try`/`catch`/`finally`.
+
+## Loop Event 2026-05-14T06:10:00Z
+
+- Checkpoint before this task: `7beacfa runtime: add bounded throw statements`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 698, bounded `try`/`catch`/`finally` statement
+  parsing for WordPress's sodium compat class.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/exception_boundaries.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `tests/fixtures/milestone698/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_try_catch_finally.*`,
+  `README.md`, `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test exception_boundaries`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_exception`,
+  `cargo run -p phpc -- test tests/fixtures/milestone698`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone698`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli`, and
+  `PHPC_BIN=/tmp/phpc-target-698/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed after recreating the throwaway WordPress 6.9.4 checkout in `/tmp`.
+- Remaining semantic gaps: try-body execution, throw operand evaluation,
+  `Throwable`/`Exception` objects, custom exception classes, stack unwinding,
+  catch matching, catch variable binding, `finally` execution, stack traces,
+  exact PHP diagnostics, partial-output behavior, WordPress bootstrap
+  environment, exact native errors, and native exception lowering remain
+  explicit.
+- Next concrete task: run `git diff --check`, `cargo check -p phpc`, the
+  focused gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded try blocks"` if the full gate
+  passes. Milestone 699 should bound the next WordPress cast blocker.

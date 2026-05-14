@@ -147,6 +147,12 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    Try {
+        body: Vec<Stmt>,
+        catches: Vec<CatchClause>,
+        finally_body: Option<Vec<Stmt>>,
+        span: Span,
+    },
     Break {
         span: Span,
     },
@@ -268,6 +274,20 @@ pub enum ForAction {
 pub struct SwitchCase {
     pub condition: Option<Expr>,
     pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub types: Vec<CatchType>,
+    pub variable: Option<String>,
+    pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchType {
+    pub name: String,
     pub span: Span,
 }
 
