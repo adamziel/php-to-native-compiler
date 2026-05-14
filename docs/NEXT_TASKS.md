@@ -6095,12 +6095,19 @@ handled.
 
 ## Milestone 669: Object Static Continuation
 
+- [x] Runtime/object lane: implement untyped static property defaults for the
+  current constant-expression subset. Declared static properties can now use
+  default values such as scalars and constant-expression arithmetic, with
+  class-level storage initialized before execution; instance property defaults
+  and typed static properties remain explicit unsupported boundaries.
+
+## Milestone 670: Object Static Continuation
+
 - [ ] Runtime/object lane: choose the next object storage/static slice:
-  late-bound `static::method(...)` diagnostics/execution prerequisites,
-  typed/default static property metadata, broader class constant semantics, or
-  a documented blocker. Keep trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  explicit.
+  late-bound `static::method(...)` diagnostics/execution prerequisites, typed
+  static property metadata, broader class constant semantics, or a documented
+  blocker. Keep trait composition, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

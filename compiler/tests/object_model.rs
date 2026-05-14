@@ -2489,6 +2489,32 @@ echo Root::$missing;
 }
 
 #[test]
+fn static_properties_support_current_default_value_subset() {
+    let execution = run_source(
+        r#"<?php
+class Defaults {
+    public static $name = "Ada";
+    public static $count = 2 + 3;
+    protected static $secret = "ok";
+
+    public static function read() {
+        return self::$name . ":" . self::$count . ":" . self::$secret;
+    }
+}
+
+echo Defaults::$name, "\n";
+echo Defaults::$count, "\n";
+Defaults::$count += 4;
+echo Defaults::read();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Ada\n5\nAda:9:ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn static_properties_support_current_mutation_subset() {
     let execution = run_source(
         r#"<?php
@@ -3627,7 +3653,7 @@ class Box {
 "#,
             3,
             18,
-            "unsupported property default: property default values are not implemented",
+            "unsupported property default: instance property default values are not implemented",
         ),
         (
             r#"<?php

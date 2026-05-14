@@ -239,7 +239,8 @@ Static properties are recorded as metadata and stored per declaring class, but
 are not stored in object values. `ClassName::$prop`, `self::$prop`, and
 `parent::$prop` support direct reads and writes, compound assignment, pre/post
 increment/decrement, `isset`, `empty`, `??`, and `??=` for the current
-untyped/no-default static property slice. `unset(ClassName::$prop)`,
+untyped static property slice. Static property storage is initialized from the
+current constant-expression default subset or `null`. `unset(ClassName::$prop)`,
 `unset(self::$prop)`, and `unset(parent::$prop)` are parsed and report a
 stable runtime diagnostic because PHP forbids unsetting static properties; they
 do not remove static storage. Named static method expressions such as
@@ -256,9 +257,8 @@ Class constants are accepted as `const NAME = value;` or
 multiple constants in one declaration, `static::CONST`, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
 outside the current slice.
-Static property defaults, typed static properties, dynamic property names,
-storage-removing static-property unset, and `static::$prop` are outside the
-current slice.
+Typed static properties, dynamic property names, storage-removing
+static-property unset, and `static::$prop` are outside the current slice.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
 static identifier naming a declared or inherited public instance method, a
@@ -313,9 +313,9 @@ object handle hash behavior has native support.
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interfaces, traits,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
-default property values, multiple properties in one declaration, typed or
-multi-declarator class constants, static property defaults, typed static
-properties, late static binding, magic methods, namespaces,
+instance property default values, multiple properties in one declaration, typed
+or multi-declarator class constants, typed static properties, late static
+binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, broader visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call,

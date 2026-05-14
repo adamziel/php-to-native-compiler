@@ -460,6 +460,24 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 669, untyped static property defaults for the current
+  constant-expression subset. Static property declarations can now initialize
+  class-level storage from scalar and supported constant-expression defaults
+  before program execution, while no-default static properties still start as
+  `null`. Instance property defaults, typed static properties, dynamic static
+  property names, late-bound `static::$prop`, storage-removing static-property
+  unset, traits, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties_support_current_default_value_subset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone669`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone669`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 

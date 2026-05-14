@@ -1047,12 +1047,13 @@ and `parent::CONST` resolve declared or inherited class constants through
 runtime class metadata in the interpreter; typed constants, multiple constants
 in one declaration, `static::CONST`, and dynamic class-constant string lookup
 remain unsupported. Direct `ClassName::$prop`, `self::$prop`, and
-`parent::$prop` resolve untyped/no-default static properties through
-interpreter-owned class-level storage and support direct reads/writes,
-compound assignment, pre/post increment/decrement, `isset`, `empty`, `??`,
-`??=`, and stable runtime diagnostics for PHP-forbidden static-property
-`unset(...)`; defaults, typed static properties, dynamic names,
-storage-removing static-property unset, and `static::$prop` remain unsupported.
+`parent::$prop` resolve untyped static properties through interpreter-owned
+class-level storage, initialize from the current constant-expression default
+subset or `null`, and support direct reads/writes, compound assignment,
+pre/post increment/decrement, `isset`, `empty`, `??`, `??=`, and stable runtime
+diagnostics for PHP-forbidden static-property `unset(...)`; typed static
+properties, dynamic names, storage-removing static-property unset, and
+`static::$prop` remain unsupported.
 `static::method(...)`,
 `static::CONST`, and `static::class` stop at distinct parse diagnostics until
 late static binding is modeled. Native lowering

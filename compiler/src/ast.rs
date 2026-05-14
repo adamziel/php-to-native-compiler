@@ -267,6 +267,7 @@ pub struct ClassPropertyDecl {
     pub name: String,
     pub visibility: ClassVisibility,
     pub is_static: bool,
+    pub default: Option<Expr>,
     pub span: Span,
 }
 

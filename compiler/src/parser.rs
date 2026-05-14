@@ -337,12 +337,19 @@ impl Parser {
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             let (name, span) = self.consume_variable_with_span("expected property name")?;
-            if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-                return Err(self.error_at(
-                    self.previous().span,
-                    "unsupported property default: property default values are not implemented",
-                ));
-            }
+            let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                if !is_static {
+                    return Err(self.error_at(
+                        self.previous().span,
+                        "unsupported property default: instance property default values are not implemented",
+                    ));
+                }
+                let expr = self.parse_expression()?;
+                self.ensure_supported_static_property_default_expr(&expr)?;
+                Some(expr)
+            } else {
+                None
+            };
             if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 return Err(self.error_at(
                     self.previous().span,
@@ -357,6 +364,7 @@ impl Parser {
                 name,
                 visibility,
                 is_static,
+                default,
                 span,
             }));
         }
@@ -2969,6 +2977,16 @@ impl Parser {
                 "const declaration values only support constant expressions in the current subset",
             )),
         }
+    }
+
+    fn ensure_supported_static_property_default_expr(&self, expr: &Expr) -> CompileResult<()> {
+        self.ensure_supported_const_declaration_expr(expr)
+            .map_err(|_error| {
+                self.error_at(
+                    expr.span(),
+                    "static property default values only support constant expressions in the current subset",
+                )
+            })
     }
 
     fn expr_contains_assignment(expr: &Expr) -> bool {

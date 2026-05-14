@@ -152,7 +152,8 @@
   single-parent metadata, property names, class constant names, method names,
   visibility, and static flags for the documented subset, including compatible
   public/protected inherited property redeclarations sharing one runtime slot
-  and untyped/no-default static properties initialized to `null`
+  and untyped static properties initialized from the current
+  constant-expression default subset or `null`
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
   Declared or inherited public instance `__construct` methods execute with
@@ -502,7 +503,7 @@
   trait use inside classes, enum declarations,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
-  typed property declarations, property default values, multiple property
+  typed property declarations, instance property default values, multiple property
   declarations, unsupported class constant declaration forms such as typed,
   static, or multi-declarator class constants,
   unsupported `clone` expressions, unsupported
@@ -546,7 +547,7 @@
   target variables as arrays; existing non-array targets fail with the current
   stable invalid-array-access diagnostic. Direct object-property `??=` writes
   only existing declared public properties on existing object values. Supported
-  static-property `??=` writes only declared untyped/no-default static
+  static-property `??=` writes only declared untyped static
   properties through `ClassName::$prop`, `self::$prop`, and `parent::$prop`
   after current visibility checks. Missing properties, undefined target
   variables, non-object target variables, and unsupported static-property
@@ -750,10 +751,10 @@
   increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
   for PHP-forbidden `unset(...)` through
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` use class-level
-  storage initialized to `null`, resolve inherited properties
-  case-sensitively, and enforce current visibility checks; defaults, typed
-  properties, dynamic names, storage-removing static-property unset, and
-  `static::$prop` remain unsupported.
+  storage initialized from the current constant-expression default subset or
+  `null`, resolve inherited properties case-sensitively, and enforce current
+  visibility checks; typed properties, dynamic names, storage-removing
+  static-property unset, and `static::$prop` remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices for visible non-static or static method dispatch from active
   class context; non-static methods still require current `$this`.
@@ -2474,11 +2475,11 @@
   `abstract`/`final`/`readonly` class modifiers,
   `abstract`/`final`/`readonly` class member modifiers, abstract methods, final
   methods, readonly properties, typed property storage and enforcement,
-  property initialization rules, inheritance interactions, property defaults,
+  property initialization rules, inheritance interactions, instance property defaults,
   multiple properties in one declaration, per-property defaults in
   multi-property declarations, typed/multiple/final/interface/trait/enum class
-  constants, static property defaults, typed static properties, static property
-  storage removal, late static binding, magic methods, namespaces,
+  constants, typed static properties, static property storage removal, late
+  static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
@@ -2637,10 +2638,10 @@
   signatures, interface inheritance, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
-  typed property storage/enforcement, property defaults, multiple properties in
+  typed property storage/enforcement, instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  typed/static/multi-declarator class constants, static property defaults,
-  typed static properties, late-bound static properties, storage-removing
+  typed/static/multi-declarator class constants, typed static properties,
+  late-bound static properties, storage-removing
   static-property unset,
   and anonymous classes
 - static method dispatch through `self::`, `parent::`, object receivers, and

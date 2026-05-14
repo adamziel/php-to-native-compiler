@@ -253,7 +253,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Self {
+        let mut interpreter = Self {
             functions,
             methods,
             class_constants,
@@ -266,7 +266,40 @@ impl Interpreter {
             function_context: Vec::new(),
             class_context: Vec::new(),
             stdout: String::new(),
-        })
+        };
+        interpreter.initialize_static_property_defaults(program)?;
+        Ok(interpreter)
+    }
+
+    fn initialize_static_property_defaults(&mut self, program: &Program) -> CompileResult<()> {
+        for stmt in &program.statements {
+            let Stmt::Class(class) = stmt else {
+                continue;
+            };
+            let class_id = self
+                .classes
+                .lookup_class_id(&class.name)
+                .expect("class registration should declare class id");
+
+            for member in &class.members {
+                let ClassMember::Property(property) = member else {
+                    continue;
+                };
+                if !property.is_static {
+                    continue;
+                }
+                let Some(default) = &property.default else {
+                    continue;
+                };
+
+                let mut default_scope = SymbolTable::new();
+                let value = self.evaluate(default, &mut default_scope)?;
+                self.static_properties
+                    .insert((class_id, property.name.clone()), value);
+            }
+        }
+
+        Ok(())
     }
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {

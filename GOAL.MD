@@ -209,7 +209,7 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   through `static::`, broader static member semantics,
   broader class constant semantics, cloning, magic methods, dynamic
   method/property names, broader `parent::`/`self::`/`static::`,
-  typed/default property compatibility,
+  typed property compatibility and instance property defaults,
   broader constructor/inheritance rules, and native object lowering are still
   missing.
   The interpreter object-handle identity slice covers assignment,
