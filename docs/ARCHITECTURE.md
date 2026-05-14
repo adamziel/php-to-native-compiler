@@ -55,7 +55,8 @@ Implemented now:
 - ordered PHP arrays with integer/string keys
 - class metadata, object-shape descriptors, and minimal object values for
   `new ClassName(...)` over declared classes, process-local object handles,
-  public instance properties, public and same-class private instance method
+  public instance properties, single-parent metadata, inherited method lookup,
+  public/same-class private/protected same-class and child instance method
   dispatch, and public instance `__construct` dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
@@ -69,9 +70,10 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
-- inheritance, dynamic method/property names, visibility enforcement for
-  non-public members, static members, magic methods, broader constructor
-  semantics, and exact PHP object lifecycle behavior
+- inherited properties, dynamic method/property names, visibility enforcement
+  for non-public properties/constructors, static members, magic methods,
+  broader inheritance and constructor semantics, and exact PHP object lifecycle
+  behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -827,7 +829,7 @@ false when both arguments are already lowerable strings, because class
 declarations still reject and there is no native class member table.
 Direct string/string `is_a` and `is_subclass_of` calls with optional lowerable
 boolean `allow_string` flags fold to false for the same no-native-class-table
-and no-inheritance boundary.
+and no-native-inheritance boundary.
 Broader object/class lowering remains rejected until generated code has native
 object layout, object handles, visibility checks, method dispatch, class
 metadata access, inheritance, autoload interaction, and exact native error
@@ -974,15 +976,15 @@ instance property names with their current slot values in declaration order.
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
 and private names as `\0ClassName\0name`. Dynamic properties, property
-defaults, inheritance/trait/interface properties, and visibility-context
-behavior remain outside the current object model.
-`is_a($object_or_class, $class_name[, $allow_string])` performs exact-class
-identity checks against the current metadata table. `is_subclass_of(...)`
-shares the same argument boundary, but because inheritance metadata is not
-represented yet it returns false for exact-class and no-parent cases.
+defaults, inherited/trait/interface properties, and non-public property
+visibility-context behavior remain outside the current object model.
+`is_a($object_or_class, $class_name[, $allow_string])` checks exact-class and
+single-parent ancestor relationships against the current metadata table.
+`is_subclass_of(...)` shares the same argument boundary and walks the current
+single-parent chain while keeping exact-class and missing-class cases false.
 `get_parent_class($object_or_class)` accepts current object values or declared
-string class names and returns false for all supported inputs because parent
-metadata is not represented yet.
+string class names and returns the immediate parent class name when one is
+recorded, otherwise false.
 `get_declared_classes()` lists classes declared in the current parsed program;
 `get_declared_interfaces()` returns an empty list because interface metadata is
 not represented yet; `get_declared_traits()` returns an empty list because
@@ -998,16 +1000,17 @@ current-subset hash derived from the handle id; exact system PHP hash formatting
 is not claimed yet, and non-object inputs fail with the current stable
 type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
-stable runtime diagnostics for normal reads/writes. Public instance methods can
-execute through `phpc run` with `$this` bound to the receiver object handle.
-Objects do not enforce protected visibility or non-public property/constructor
-visibility, expose reflection, implement dynamic method/property names,
-inheritance, broader constructor semantics, or exact PHP lifecycle behavior.
+stable runtime diagnostics for normal reads/writes. Public, same-class private,
+and protected same-class/child instance methods can execute through `phpc run`
+with `$this` bound to the receiver object handle. Objects do not enforce
+non-public property/constructor visibility, expose reflection, implement
+dynamic method/property names, inherited properties, `parent::`/`self::`/`static::`,
+broader inheritance/constructor semantics, or exact PHP lifecycle behavior.
 Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
 with explicit parse diagnostics until static storage, dispatch, and class
-constants exist. Native lowering rejects class declarations, object
+constants exist. Native lowering rejects class declarations, inheritance metadata, object
 instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct

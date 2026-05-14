@@ -145,7 +145,8 @@
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
 - top-level class declarations registered into the runtime metadata table:
-  `class Name { ... }` with property names, method names, visibility, and static
+  `class Name { ... }` and `class Child extends Parent { ... }` with
+  single-parent metadata, property names, method names, visibility, and static
   flags for the documented subset
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
@@ -153,14 +154,17 @@
   positional arguments, and the current default-parameter subset.
 - public instance property reads and direct-variable writes by static property
   name: `$object->name` and `$object->name = ...`
-- public and same-class private instance method calls by static method name:
+- public, same-class private, and protected same-class/child instance method
+  calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
-  instance method case-insensitively, evaluates positional arguments
-  left-to-right, executes the method body in a fresh local scope, and binds
-  `$this` to the current object handle so `$this->property` reads/writes share
-  the caller-visible object slots. Private methods are callable only while
-  executing a method on the same declaring class. Current method calls reuse the
-  existing user-function parameter/default/return subset.
+  or inherited instance method case-insensitively, evaluates positional
+  arguments left-to-right, executes the method body in a fresh local scope, and
+  binds `$this` to the current object handle so `$this->property` reads/writes
+  share the caller-visible object slots. Private methods are callable only
+  while executing a method on the same declaring class. Protected methods are
+  callable while executing a method on the same declaring class or a child
+  class. Current method calls reuse the existing user-function
+  parameter/default/return subset.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
@@ -277,22 +281,24 @@
   metadata model without autoloading,
   `property_exists` checks
   case-sensitive declared property metadata for current object values or
-  string class names, `method_exists` checks case-insensitive declared method
-  metadata for current object values or string class names, `get_class_methods`
-  returns public declared method names in declaration order for current object
-  values or declared string class names, `get_class_vars` returns public
+  string class names, `method_exists` checks case-insensitive declared and
+  inherited method metadata for current object values or string class names,
+  `get_class_methods` returns public declared and inherited method names in
+  child-to-parent declaration order for current object values or declared
+  string class names, `get_class_vars` returns public
   declared property names in declaration order with `null` values for declared
   string class names, `get_object_vars` returns public instance property names
   with their current values in declaration order for current object values,
   `get_mangled_object_vars` currently returns the same public instance
   property slice for current object values,
   `is_a` checks
-  exact class identity over current object values or string class names when
-  `allow_string` is true, `is_subclass_of` returns false for the current
-  no-inheritance metadata model after validating the supported object/string
-  and class-name argument boundary, `get_parent_class` returns false for
-  supported object/declared-string inputs because parent metadata is not
-  represented, `get_declared_classes` returns a zero-indexed array of classes
+  exact class identity and single-parent ancestor relationships over current
+  object values or string class names when `allow_string` is true,
+  `is_subclass_of` walks the current single-parent metadata chain after
+  validating the supported object/string and class-name argument boundary,
+  `get_parent_class` returns the immediate parent class name for supported
+  object/declared-string inputs with parent metadata and false otherwise,
+  `get_declared_classes` returns a zero-indexed array of classes
   declared in the current program in declaration order,
   `get_declared_interfaces` returns an empty zero-indexed array because
   interface declarations and internal interface metadata are not represented,
@@ -600,22 +606,23 @@
   visibility-context behavior are not represented yet. It is available through
   string-valued dynamic function calls.
   `is_a($object_or_class, $class_name)` accepts current object values and
-  checks exact class identity against the current declared class metadata using
-  case-insensitive class-name lookup. `is_a($object_or_class, $class_name,
-  true)` also accepts a string first argument and checks whether both string
-  names resolve to the same declared class. A false or omitted `allow_string`
+  checks exact class identity or a single-parent ancestor relationship against
+  the current declared class metadata using case-insensitive class-name lookup.
+  `is_a($object_or_class, $class_name, true)` also accepts a string first
+  argument and checks the same relationship. A false or omitted `allow_string`
   flag makes string first arguments return false. Missing source or target
   class names return false, and string-valued dynamic calls to `is_a` use the
   same path.
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts the
   current object/string first-argument subset and string class names, considers
-  string first arguments only when `allow_string` is true, returns false for
-  exact-class, missing-class, and no-parent cases because inheritance metadata
-  is not represented yet, and is available through string-valued dynamic calls.
+  two-argument string first arguments and three-argument string first arguments
+  only when `allow_string` is true, returns false for exact-class,
+  missing-class, and no-parent cases, and is available through string-valued
+  dynamic calls.
   `get_parent_class($object_or_class)` accepts current object values or
-  declared string class names, returns false for all supported inputs because
-  parent metadata is not represented yet, and is available through
-  string-valued dynamic calls.
+  declared string class names, returns the immediate parent class name when
+  one is recorded and false otherwise, and is available through string-valued
+  dynamic calls.
   `get_declared_classes()` returns a zero-indexed array of classes declared in
   the current parsed program in declaration order and is available through
   string-valued dynamic calls.
@@ -635,11 +642,12 @@
   class-name constant resolution exists. Magic static receivers such as
   `self::`, `parent::`, and `static::` fail with a stable parse diagnostic
   before class-context, parent-class, or late-static-binding resolution exists.
-  Public and same-class private instance method dispatch supports static method
-  names and scoped `$this` binding. Dynamic method names, dynamic property
-  names, protected method lookup, non-public property/constructor visibility
-  context, static storage, class constants, shallow/deep clone property
-  copying, `__clone`, inheritance/interface relationship checks,
+  Public, same-class private, and protected same-class/child instance method
+  dispatch supports static method names, inherited method lookup, and scoped
+  `$this` binding. Dynamic method names, dynamic property names, non-public
+  property/constructor visibility context, static storage, class constants,
+  shallow/deep clone property copying, `__clone`, inherited properties,
+  `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
@@ -1433,8 +1441,8 @@
   lowering with a specific codegen diagnostic until generated code has native
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
-  Native class declarations, object instantiation, constructor dispatch, public
-  property reads/writes, instance method calls, and object metadata
+  Native class declarations, inheritance metadata, object instantiation,
+  constructor dispatch, public property reads/writes, instance method calls, and object metadata
   builtins beyond scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
   false folding, including string/string `property_exists` and
@@ -1827,14 +1835,14 @@
   variables, and non-object target variables as empty in the current
   direct-object-variable subset.
   `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
-  identity over current object values, and over string class names only when
-  `allow_string` is true.
+  identity and single-parent ancestor relationships over current object
+  values, and over string class names only when `allow_string` is true.
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` validates
-  current object/string relationship-check arguments and returns false for the
-  current no-inheritance metadata model.
+  current object/string relationship-check arguments and walks the current
+  single-parent metadata chain.
   `get_parent_class($object_or_class)` accepts current object values or
-  declared string class names and returns false because parent class metadata
-  is not represented.
+  declared string class names and returns the immediate parent class name when
+  one is recorded, otherwise false.
   `get_declared_classes()` returns a zero-indexed array containing only the
   current parsed program's declared class names in declaration order.
   `get_declared_interfaces()` returns an empty zero-indexed array because
@@ -2321,7 +2329,8 @@
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
 - Object/class gaps: nested and conditional class declarations, constructor
-  behavior beyond public instance `__construct`, inheritance,
+  behavior beyond public instance `__construct`, inherited properties, parent
+  constructors, `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
   interfaces, trait declarations, trait use inside classes,
@@ -2337,9 +2346,9 @@
   multi-property declarations, class constant declarations, constants, static
   property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
-  dynamic property names, dynamic method names, protected method lookup,
-  non-public property/constructor visibility context, static member execution
-  through `::`, `::class` class-name constant resolution, property assignment
+  dynamic property names, dynamic method names, protected visibility outside
+  same-class/child method contexts, non-public property/constructor visibility
+  context, static member execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
   object handle identity/aliasing,
@@ -2470,10 +2479,10 @@
   imports exist
 - dynamic method names and dynamic property names; `$object->$name` and
   `$object->$method()` currently fail with stable parse diagnostics
-- private instance method dispatch outside same-class method context, protected
-  instance method dispatch, static methods called through object receivers, and
-  `$this` outside instance method execution currently fail with stable runtime
-  diagnostics
+- private instance method dispatch outside same-class method context,
+  protected instance method dispatch outside same-class/child method context,
+  static methods called through object receivers, and `$this` outside instance
+  method execution currently fail with stable runtime diagnostics
 - non-public object property access and property writes to lvalues other than a
   direct variable
 - constructor arguments for classes without a declared constructor, non-public
@@ -3067,12 +3076,12 @@
 - `array_map` array/object callables, closures, first-class callables, method
   calls, reference/copy-on-write behavior, object handle identity preservation,
   resource values, exact native `TypeError` objects, and native lowering
-- `method_exists` method dispatch, inheritance, traits, interfaces,
-  aliases/imports, namespace-aware names, autoloading, visibility behavior
+- `method_exists` method dispatch beyond current declared/inherited lookup,
+  traits, interfaces, aliases/imports, namespace-aware names, autoloading, visibility behavior
   beyond metadata reporting, exact native `TypeError` objects, object operands,
   and native lowering beyond direct string/string false folding
-- `get_class_methods` inheritance, traits, interfaces, aliases/imports,
-  namespace-aware names, autoloading, non-public/context-sensitive visibility
+- `get_class_methods` inheritance beyond current single-parent chain, traits,
+  interfaces, aliases/imports, namespace-aware names, autoloading, non-public/context-sensitive visibility
   listing, exact native ordering and `TypeError` behavior, and native lowering
 - `get_class_vars` property defaults, inheritance, traits, interfaces,
   aliases/imports, namespace-aware names, autoloading,
@@ -3097,15 +3106,15 @@
   property behavior, dynamic property names, non-public visibility context,
   magic `__unset` behavior, references/copy-on-write, exact native error
   behavior, and native lowering
-- `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
-  names, autoloading, exact native `TypeError` behavior, object handle
+- `is_a` inheritance beyond current single-parent class chain, interfaces,
+  traits, aliases/imports, namespace-aware names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, object operands, and native lowering
   beyond direct string/string false folding
-- `is_subclass_of` inheritance, interfaces, traits, aliases/imports,
-  namespace-aware names, autoloading, exact native `TypeError` behavior, object
+- `is_subclass_of` inheritance beyond current single-parent class chain,
+  interfaces, traits, aliases/imports, namespace-aware names, autoloading, exact native `TypeError` behavior, object
   operands, and native lowering beyond direct string/string false folding
-- `get_parent_class` inheritance lookup, interfaces, aliases/imports,
-  namespace-aware names, autoloading, default `$this` behavior, exact native
+- `get_parent_class` inheritance lookup beyond immediate declared parents,
+  interfaces, aliases/imports, namespace-aware names, autoloading, default `$this` behavior, exact native
   `TypeError` behavior, and native lowering
 - `get_called_class` method/static class context, late static binding,
   inheritance, aliases/imports, namespace-aware names, exact native `Error`

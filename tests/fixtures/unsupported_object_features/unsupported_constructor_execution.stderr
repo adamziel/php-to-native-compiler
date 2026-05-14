@@ -1,2 +1,2 @@
-runtime error at 6:8: unsupported object instantiation for Box: non-public constructors require same-class method context; protected constructor lookup and inheritance are not implemented
+runtime error at 6:8: unsupported object instantiation for Box: non-public constructors require same-class construction context; protected constructor visibility and inherited constructor dispatch are not implemented
 

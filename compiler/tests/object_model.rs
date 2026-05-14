@@ -59,6 +59,39 @@ echo "ready\n";
 }
 
 #[test]
+fn class_declarations_record_single_parent_metadata() {
+    let source = r#"<?php
+class Base {}
+class Child extends Base {}
+echo "ready";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "ready");
+
+    let classes = class_metadata_source(source).unwrap();
+    let base = classes.lookup_class("base").unwrap();
+    let child = classes.lookup_class("CHILD").unwrap();
+    assert_eq!(child.parent_id(), Some(base.id()));
+}
+
+#[test]
+fn class_inheritance_metadata_reports_unsupported_boundaries() {
+    let missing_parent = runtime_error("<?php\nclass Child extends Missing {}\n");
+    assert_eq!(missing_parent.line, 2);
+    assert_eq!(missing_parent.column, 1);
+    assert_eq!(missing_parent.message, "undefined class Missing");
+
+    let self_parent = runtime_error("<?php\nclass Box extends Box {}\n");
+    assert_eq!(self_parent.line, 2);
+    assert_eq!(self_parent.column, 1);
+    assert_eq!(
+        self_parent.message,
+        "unsupported class inheritance for Box: cyclic inheritance is not implemented"
+    );
+}
+
+#[test]
 fn new_class_name_instantiates_minimal_object_values() {
     let source = r#"<?php
 class Box {
@@ -948,14 +981,19 @@ fn get_mangled_object_vars_requires_object_argument() {
 }
 
 #[test]
-fn is_a_checks_exact_current_class_relationships() {
+fn is_a_checks_current_single_parent_relationships() {
     let source = r#"<?php
 class Box {}
+class Child extends Box {}
 class Crate {}
 
 $box = new box();
+$child = new Child();
 if (is_a($box, "Box")) {
     echo "object:box\n";
+}
+if (is_a($child, "Box")) {
+    echo "object:child-is-box\n";
 }
 if (is_a($box, "box")) {
     echo "object:case-insensitive\n";
@@ -966,8 +1004,8 @@ if (!is_a($box, "Crate")) {
 if (!is_a("Box", "Box")) {
     echo "string:default-false\n";
 }
-if (is_a("BOX", "box", true)) {
-    echo "string:allowed\n";
+if (is_a("CHILD", "box", true)) {
+    echo "string:allowed-child\n";
 }
 if (!is_a("Missing", "Box", true)) {
     echo "missing-source:false\n";
@@ -984,7 +1022,7 @@ if ($call($box, "BOX")) {
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "object:box\nobject:case-insensitive\nobject:not-crate\nstring:default-false\nstring:allowed\nmissing-source:false\nmissing-target:false\ndynamic:object\n"
+        "object:box\nobject:child-is-box\nobject:case-insensitive\nobject:not-crate\nstring:default-false\nstring:allowed-child\nmissing-source:false\nmissing-target:false\ndynamic:object\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1012,12 +1050,17 @@ fn is_a_requires_string_class_name_and_bool_allow_string_arguments() {
 }
 
 #[test]
-fn is_subclass_of_reports_false_without_inheritance_metadata() {
+fn is_subclass_of_checks_current_single_parent_metadata() {
     let source = r#"<?php
 class Box {}
+class Child extends Box {}
 class Crate {}
 
 $box = new box();
+$child = new Child();
+if (is_subclass_of($child, "Box")) {
+    echo "object:child-true\n";
+}
 if (!is_subclass_of($box, "Box")) {
     echo "object:exact-false\n";
 }
@@ -1027,8 +1070,14 @@ if (!is_subclass_of($box, "Crate")) {
 if (!is_subclass_of("Box", "Box")) {
     echo "string:default-false\n";
 }
-if (!is_subclass_of("BOX", "box", true)) {
-    echo "string:allowed-exact-false\n";
+if (is_subclass_of("CHILD", "box")) {
+    echo "string:default-child-true\n";
+}
+if (!is_subclass_of("CHILD", "box", false)) {
+    echo "string:disallowed-child-false\n";
+}
+if (is_subclass_of("CHILD", "box", true)) {
+    echo "string:allowed-child-true\n";
 }
 if (!is_subclass_of("Missing", "Box", true)) {
     echo "missing-source:false\n";
@@ -1037,15 +1086,15 @@ if (!is_subclass_of($box, "Missing")) {
     echo "missing-target:false\n";
 }
 $call = "is_subclass_of";
-if (!$call($box, "BOX")) {
-    echo "dynamic:false\n";
+if ($call($child, "BOX")) {
+    echo "dynamic:true\n";
 }
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "object:exact-false\nobject:other-false\nstring:default-false\nstring:allowed-exact-false\nmissing-source:false\nmissing-target:false\ndynamic:false\n"
+        "object:child-true\nobject:exact-false\nobject:other-false\nstring:default-false\nstring:default-child-true\nstring:disallowed-child-false\nstring:allowed-child-true\nmissing-source:false\nmissing-target:false\ndynamic:true\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1084,27 +1133,35 @@ fn is_subclass_of_requires_supported_argument_types() {
 }
 
 #[test]
-fn get_parent_class_reports_false_without_inheritance_metadata() {
+fn get_parent_class_reports_current_single_parent_metadata() {
     let source = r#"<?php
 class Box {}
+class Child extends Box {}
 
 $box = new box();
+$child = new Child();
+if (get_parent_class($child) === "Box") {
+    echo "object:child-parent\n";
+}
 if (!get_parent_class($box)) {
     echo "object:false\n";
+}
+if (get_parent_class("CHILD") === "Box") {
+    echo "string:child-parent\n";
 }
 if (!get_parent_class("BOX")) {
     echo "string:false\n";
 }
 $call = "get_parent_class";
-if (!$call($box)) {
-    echo "dynamic:false";
+if ($call($child) === "Box") {
+    echo "dynamic:child-parent";
 }
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "object:false\nstring:false\ndynamic:false"
+        "object:child-parent\nobject:false\nstring:child-parent\nstring:false\ndynamic:child-parent"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1867,7 +1924,7 @@ $box = new Box();
     assert_eq!(private_constructor.column, 8);
     assert_eq!(
         private_constructor.message,
-        "unsupported object instantiation for Box: non-public constructors require same-class method context; protected constructor lookup and inheritance are not implemented"
+        "unsupported object instantiation for Box: non-public constructors require same-class construction context; protected constructor visibility and inherited constructor dispatch are not implemented"
     );
 
     let static_constructor = runtime_error(
@@ -2070,14 +2127,6 @@ if (true) {
             3,
             5,
             "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
-        ),
-        (
-            r#"<?php
-class Child extends Base {}
-"#,
-            2,
-            13,
-            "unsupported class inheritance: extends is not implemented",
         ),
         (
             r#"<?php
@@ -2393,6 +2442,47 @@ echo $left->labelOther($right);
 }
 
 #[test]
+fn inherited_public_and_protected_instance_methods_execute_from_child_context() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public function inherited($other) {
+        return "inherited:" . $other->seal();
+    }
+
+    public function sameBase($other) {
+        return "base:" . $other->seal();
+    }
+
+    protected function seal() {
+        return "sealed";
+    }
+}
+
+class Child extends Base {
+    public function childCall($other) {
+        return "child:" . $other->seal();
+    }
+}
+
+$base = new Base();
+$child = new Child();
+echo $base->sameBase($base), "\n";
+echo $child->inherited($base), "\n";
+echo $child->childCall($base), "\n";
+echo $child->childCall($child);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:sealed\ninherited:sealed\nchild:sealed\nchild:sealed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn instance_method_dispatch_reports_current_unsupported_boundaries() {
     let non_object = runtime_error(
         r#"<?php
@@ -2437,23 +2527,42 @@ $box->secret();
     let protected_method = runtime_error(
         r#"<?php
 class Box {
-    public function callSeal() {
-        return $this->seal();
-    }
-
     protected function seal() {
         return "sealed";
     }
 }
 $box = new Box();
-$box->callSeal();
+$box->seal();
 "#,
     );
-    assert_eq!(protected_method.line, 4);
-    assert_eq!(protected_method.column, 16);
+    assert_eq!(protected_method.line, 8);
+    assert_eq!(protected_method.column, 1);
     assert_eq!(
         protected_method.message,
-        "unsupported call Box::seal(): protected method dispatch requires inheritance-aware visibility enforcement, which is not implemented"
+        "unsupported call Box::seal(): protected method dispatch requires same-class or child method context"
+    );
+
+    let parent_private_from_child = runtime_error(
+        r#"<?php
+class Base {
+    private function secret() {
+        return "base";
+    }
+}
+class Child extends Base {
+    public function reveal() {
+        return $this->secret();
+    }
+}
+$child = new Child();
+$child->reveal();
+"#,
+    );
+    assert_eq!(parent_private_from_child.line, 9);
+    assert_eq!(parent_private_from_child.column, 16);
+    assert_eq!(
+        parent_private_from_child.message,
+        "unsupported call Base::secret(): private method dispatch requires same-class method context"
     );
 
     let static_method = runtime_error(

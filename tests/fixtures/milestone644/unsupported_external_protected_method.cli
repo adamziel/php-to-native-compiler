@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone644/unsupported_external_protected_method.php:9:1: unsupported call Base::seal(): protected method dispatch requires same-class or child method context
+--- stderr end ---

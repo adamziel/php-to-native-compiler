@@ -50,6 +50,17 @@ Implemented:
   leaves private constructors without an in-class construction surface,
   inheritance/protected lookup, traits, magic methods, references/copy-on-write,
   exact native error objects, and native object lowering explicit.
+- Added Milestone 644, single-parent inheritance metadata and protected
+  same-class/child instance method dispatch. The parser now accepts
+  `class Child extends Parent {}` for declared classes, the runtime records
+  parent class ids, `phpc run` walks inherited instance methods, protected
+  methods execute from same-class or child method contexts, and `is_a`,
+  `is_subclass_of`, `get_parent_class`, `method_exists`, and
+  `get_class_methods` use the current single-parent method/relationship
+  metadata. Inherited properties, parent constructors, `parent::`/`self::`/
+  `static::`, override compatibility, interfaces, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native object
+  lowering remain explicit.
 
 Next:
 
@@ -61,10 +72,9 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 644 should take the next protected-visibility prerequisite:
-  single-parent inheritance metadata and protected same-class/child method
-  lookup if feasible, or a documented blocker if inheritance context needs a
-  sharper design first.
+- Milestone 645 should take the next object inheritance slice: inherited
+  public property slots and property metadata lookup if feasible, or document
+  the property-layout blocker before parent constructors and `parent::` calls.
 
 ## 2026-05-12
 

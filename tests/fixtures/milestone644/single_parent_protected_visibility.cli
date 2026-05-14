@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+Base
+Base
+object-subclass
+string-subclass
+object-is-a
+inherited:sealed
+child:sealed--- stdout end ---
+stderr:
+--- stderr end ---

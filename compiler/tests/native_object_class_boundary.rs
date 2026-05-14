@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 #[test]
 fn phpc_run_still_handles_current_object_class_subset() {
@@ -45,6 +45,16 @@ echo "done";
 fn emit_ir_rejects_class_declarations_with_specific_boundary() {
     let error =
         emit_ir_source("<?php\nclass Box { public $name; }\necho \"after\";\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_inherited_class_declarations_with_specific_boundary() {
+    let error = emit_ir_source("<?php\nclass Base {}\nclass Child extends Base {}\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
@@ -115,6 +125,14 @@ fn emit_ir_rejects_object_metadata_builtins_before_lowering_arguments() {
 #[test]
 fn emit_asm_rejects_object_class_features_before_backend_execution() {
     let error = emit_asm_source("<?php\nclass Box { public $name; }\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_inherited_class_declarations_before_backend_execution() {
+    let error = emit_asm_source("<?php\nclass Base {}\nclass Child extends Base {}\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);

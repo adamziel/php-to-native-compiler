@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_class_inheritance.php:2:13: unsupported class inheritance: extends is not implemented
---- stderr end ---

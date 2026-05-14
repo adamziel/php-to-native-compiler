@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ptr;
 use std::rc::Rc;
@@ -173,6 +173,16 @@ impl RuntimeError {
         })
     }
 
+    pub fn unsupported_class_inheritance(
+        class_name: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::UnsupportedClassInheritance {
+            class_name: class_name.into(),
+            reason: reason.into(),
+        })
+    }
+
     pub fn unsupported_object_instantiation(
         class_name: impl Into<String>,
         reason: impl Into<String>,
@@ -333,6 +343,10 @@ pub enum RuntimeErrorKind {
     UndefinedClass {
         class_name: String,
     },
+    UnsupportedClassInheritance {
+        class_name: String,
+        reason: String,
+    },
     UnsupportedObjectInstantiation {
         class_name: String,
         reason: String,
@@ -465,6 +479,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         }
         RuntimeErrorKind::UndefinedClass { class_name } => {
             format!("undefined class {class_name}")
+        }
+        RuntimeErrorKind::UnsupportedClassInheritance { class_name, reason } => {
+            format!("unsupported class inheritance for {class_name}: {reason}")
         }
         RuntimeErrorKind::UnsupportedObjectInstantiation { class_name, reason } => {
             format!("unsupported object instantiation for {class_name}: {reason}")
@@ -1690,8 +1707,46 @@ impl PhpClassTable {
         self.get(*id)
     }
 
+    pub fn lookup_class_id(&self, name: &str) -> Option<ClassId> {
+        self.lookup.get(&normalize_class_lookup_name(name)).copied()
+    }
+
     pub fn classes(&self) -> &[PhpClassMetadata] {
         &self.classes
+    }
+
+    pub fn set_parent(&mut self, child_id: ClassId, parent_id: ClassId) -> RuntimeResult<()> {
+        if child_id == parent_id || self.is_subclass_of(parent_id, child_id) {
+            let child_name = self
+                .get(child_id)
+                .map(|class| class.name().to_string())
+                .unwrap_or_else(|| format!("#{}", child_id.index()));
+            return Err(RuntimeError::unsupported_class_inheritance(
+                child_name,
+                "cyclic inheritance is not implemented",
+            ));
+        }
+
+        let child = self
+            .get_mut(child_id)
+            .expect("declared child class id should resolve to metadata");
+        child.parent_id = Some(parent_id);
+        Ok(())
+    }
+
+    pub fn is_subclass_of(&self, child_id: ClassId, ancestor_id: ClassId) -> bool {
+        let mut current = self.get(child_id).and_then(|class| class.parent_id());
+        let mut visited = HashSet::new();
+        while let Some(class_id) = current {
+            if class_id == ancestor_id {
+                return true;
+            }
+            if !visited.insert(class_id) {
+                return false;
+            }
+            current = self.get(class_id).and_then(|class| class.parent_id());
+        }
+        false
     }
 }
 
@@ -1699,6 +1754,7 @@ impl PhpClassTable {
 pub struct PhpClassMetadata {
     id: ClassId,
     name: String,
+    parent_id: Option<ClassId>,
     properties: Vec<PhpPropertyMetadata>,
     property_lookup: HashMap<String, usize>,
     methods: Vec<PhpMethodMetadata>,
@@ -1710,6 +1766,7 @@ impl PhpClassMetadata {
         Self {
             id,
             name,
+            parent_id: None,
             properties: Vec::new(),
             property_lookup: HashMap::new(),
             methods: Vec::new(),
@@ -1723,6 +1780,10 @@ impl PhpClassMetadata {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn parent_id(&self) -> Option<ClassId> {
+        self.parent_id
     }
 
     pub fn properties(&self) -> &[PhpPropertyMetadata] {

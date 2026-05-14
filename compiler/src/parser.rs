@@ -225,12 +225,11 @@ impl Parser {
             .span;
         let name = self.consume_identifier("expected class name")?;
 
-        if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
-            return Err(self.error_at(
-                self.previous().span,
-                "unsupported class inheritance: extends is not implemented",
-            ));
-        }
+        let parent = if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
+            Some(self.consume_identifier("expected parent class name after 'extends'")?)
+        } else {
+            None
+        };
         if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
             return Err(self.error_at(
                 self.previous().span,
@@ -247,6 +246,7 @@ impl Parser {
 
         Ok(Stmt::Class(ClassDecl {
             name,
+            parent,
             members,
             span,
         }))

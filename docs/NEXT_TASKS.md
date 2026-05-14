@@ -5750,12 +5750,26 @@ handled.
 
 ## Milestone 644: Protected Visibility and Inheritance Prerequisite
 
-- [ ] Runtime/object lane: choose the next smallest honest visibility step:
+- [x] Runtime/object lane: choose the next smallest honest visibility step:
   implement single-parent `extends` metadata and protected same-class/child
   method lookup, or document the exact inheritance/call-context blocker with
-  sharper diagnostics. Keep property visibility, trait composition, static
-  dispatch, magic methods, references/copy-on-write, exact native error
-  objects, and native lowering explicit.
+  sharper diagnostics. Implemented single-parent class metadata, inherited
+  instance method lookup, protected same-class/child method dispatch, and
+  parent-aware `is_a`, `is_subclass_of`, `get_parent_class`, `method_exists`,
+  and `get_class_methods`. Kept inherited properties, parent constructors,
+  property visibility, trait composition, static dispatch, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
+
+## Milestone 645: Inherited Property Layout Boundary
+
+- [ ] Runtime/object lane: add the next honest inheritance slice for inherited
+  public property slots and property metadata lookup on child objects, or
+  document the object-layout blocker before parent constructors and `parent::`
+  calls. Keep non-public property visibility, constructor inheritance,
+  property overrides/conflicts, trait composition, static dispatch, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering explicit.
 
 ## Latest Checkpoint
 

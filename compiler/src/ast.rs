@@ -200,6 +200,7 @@ impl AssignTarget {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
+    pub parent: Option<String>,
     pub members: Vec<ClassMember>,
     pub span: Span,
 }

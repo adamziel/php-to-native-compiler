@@ -1,0 +1,2 @@
+runtime error at 9:1: unsupported call Base::seal(): protected method dispatch requires same-class or child method context
+

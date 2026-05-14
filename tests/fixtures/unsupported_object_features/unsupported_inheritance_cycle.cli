@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/unsupported_object_features/unsupported_inheritance_cycle.php:2:1: unsupported class inheritance for Box: cyclic inheritance is not implemented
+--- stderr end ---

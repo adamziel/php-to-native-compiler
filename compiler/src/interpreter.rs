@@ -206,17 +206,23 @@ impl Interpreter {
                     functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) => {
-                    let class_id = register_class(&mut classes, class)?;
-                    for member in &class.members {
-                        if let ClassMember::Method(method) = member {
-                            methods.insert(
-                                (class_id, method.function.name.to_ascii_lowercase()),
-                                Rc::new(method.function.clone()),
-                            );
-                        }
-                    }
+                    register_class_name(&mut classes, class)?;
                 }
                 _ => {}
+            }
+        }
+
+        for stmt in &program.statements {
+            if let Stmt::Class(class) = stmt {
+                let class_id = register_class_members(&mut classes, class)?;
+                for member in &class.members {
+                    if let ClassMember::Method(method) = member {
+                        methods.insert(
+                            (class_id, method.function.name.to_ascii_lowercase()),
+                            Rc::new(method.function.clone()),
+                        );
+                    }
+                }
             }
         }
 
@@ -809,7 +815,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     declared_class_name,
-                    "non-public constructors require same-class method context; protected constructor lookup and inheritance are not implemented",
+                    "non-public constructors require same-class construction context; protected constructor visibility and inherited constructor dispatch are not implemented",
                 ),
             ));
         }
@@ -1564,23 +1570,20 @@ impl Interpreter {
         };
 
         let (class_id, class_name, resolved_method_name, visibility, is_static) = {
-            let class = self
+            let receiver_class = self
                 .classes
                 .get(object.class_id())
                 .expect("object class id should resolve to class metadata");
-            let Some(method) = class.method(method_name) else {
+            let Some(method) = self.resolve_instance_method(object.class_id(), method_name) else {
                 return Err(runtime_error(
                     span,
-                    RuntimeError::undefined_function(format!("{}::{method_name}()", class.name())),
+                    RuntimeError::undefined_function(format!(
+                        "{}::{method_name}()",
+                        receiver_class.name()
+                    )),
                 ));
             };
-            (
-                class.id(),
-                class.name().to_string(),
-                method.name().to_string(),
-                method.visibility(),
-                method.is_static(),
-            )
+            method
         };
 
         if is_static {
@@ -1612,6 +1615,31 @@ impl Interpreter {
         self.call_user_function_with_this(function, object, values, Some(class_id))
     }
 
+    fn resolve_instance_method(
+        &self,
+        class_id: ClassId,
+        method_name: &str,
+    ) -> Option<(ClassId, String, String, Visibility, bool)> {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(method) = class.method(method_name) {
+                return Some((
+                    class.id(),
+                    class.name().to_string(),
+                    method.name().to_string(),
+                    method.visibility(),
+                    method.is_static(),
+                ));
+            }
+            current = class.parent_id();
+        }
+        None
+    }
+
     fn can_call_constructor(&self, class_id: ClassId, visibility: Visibility) -> bool {
         match visibility {
             Visibility::Public => true,
@@ -1631,6 +1659,18 @@ impl Interpreter {
         match visibility {
             Visibility::Public => Ok(()),
             Visibility::Private if self.class_context.last().copied() == Some(class_id) => Ok(()),
+            Visibility::Protected
+                if self
+                    .class_context
+                    .last()
+                    .copied()
+                    .is_some_and(|current_class_id| {
+                        current_class_id == class_id
+                            || self.classes.is_subclass_of(current_class_id, class_id)
+                    }) =>
+            {
+                Ok(())
+            }
             Visibility::Private => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -1642,7 +1682,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     format!("{class_name}::{method_name}()"),
-                    "protected method dispatch requires inheritance-aware visibility enforcement, which is not implemented",
+                    "protected method dispatch requires same-class or child method context",
                 ),
             )),
         }
@@ -1868,7 +1908,27 @@ impl Interpreter {
         Ok(())
     }
 
-    fn value_is_exact_class(
+    fn value_class_id(&self, object_or_class: &Value, allow_string: bool) -> Option<ClassId> {
+        match object_or_class {
+            Value::Object(object) => Some(object.class_id()),
+            Value::String(candidate) if allow_string => self.classes.lookup_class_id(candidate),
+            _ => None,
+        }
+    }
+
+    fn value_is_a(&self, object_or_class: &Value, class_name: &str, allow_string: bool) -> bool {
+        let Some(target_class) = self.classes.lookup_class(class_name) else {
+            return false;
+        };
+        let Some(candidate_id) = self.value_class_id(object_or_class, allow_string) else {
+            return false;
+        };
+
+        candidate_id == target_class.id()
+            || self.classes.is_subclass_of(candidate_id, target_class.id())
+    }
+
+    fn value_is_subclass_of(
         &self,
         object_or_class: &Value,
         class_name: &str,
@@ -1877,15 +1937,17 @@ impl Interpreter {
         let Some(target_class) = self.classes.lookup_class(class_name) else {
             return false;
         };
+        let Some(candidate_id) = self.value_class_id(object_or_class, allow_string) else {
+            return false;
+        };
 
-        match object_or_class {
-            Value::Object(object) => object.class_id() == target_class.id(),
-            Value::String(candidate) if allow_string => self
-                .classes
-                .lookup_class(candidate)
-                .is_some_and(|candidate_class| candidate_class.id() == target_class.id()),
-            _ => false,
-        }
+        self.classes.is_subclass_of(candidate_id, target_class.id())
+    }
+
+    fn parent_class_name(&self, class_id: ClassId) -> Option<String> {
+        let class = self.classes.get(class_id)?;
+        let parent_id = class.parent_id()?;
+        Some(self.classes.get(parent_id)?.name().to_string())
     }
 
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -3287,13 +3349,14 @@ impl Interpreter {
                 [object_or_class, Value::String(method_name)] => {
                     let exists = match object_or_class {
                         Value::Object(object) => self
-                            .classes
-                            .get(object.class_id())
-                            .is_some_and(|class| class.method(method_name).is_some()),
+                            .resolve_instance_method(object.class_id(), method_name)
+                            .is_some(),
                         Value::String(class_name) => self
                             .classes
-                            .lookup_class(class_name)
-                            .is_some_and(|class| class.method(method_name).is_some()),
+                            .lookup_class_id(class_name)
+                            .is_some_and(|class_id| {
+                                self.resolve_instance_method(class_id, method_name).is_some()
+                            }),
                         other => {
                             return Err(runtime_error(
                                 span,
@@ -3357,12 +3420,20 @@ impl Interpreter {
                     };
 
                     let mut methods = PhpArray::new();
-                    for method in class.methods() {
-                        if method.visibility() == Visibility::Public {
-                            methods
-                                .append(Value::String(method.name().to_string()))
-                                .expect("method count fits in array keys");
+                    let mut current = Some(class.id());
+                    while let Some(class_id) = current {
+                        let current_class = self
+                            .classes
+                            .get(class_id)
+                            .expect("class id should resolve to metadata");
+                        for method in current_class.methods() {
+                            if method.visibility() == Visibility::Public {
+                                methods
+                                    .append(Value::String(method.name().to_string()))
+                                    .expect("method count fits in array keys");
+                            }
                         }
+                        current = current_class.parent_id();
                     }
                     Ok(Value::Array(methods))
                 }
@@ -3469,10 +3540,10 @@ impl Interpreter {
             },
             "is_a" => match args.as_slice() {
                 [object_or_class, Value::String(class_name)] => {
-                    Ok(Value::Bool(self.value_is_exact_class(object_or_class, class_name, false)))
+                    Ok(Value::Bool(self.value_is_a(object_or_class, class_name, false)))
                 }
                 [object_or_class, Value::String(class_name), Value::Bool(allow_string)] => Ok(
-                    Value::Bool(self.value_is_exact_class(object_or_class, class_name, *allow_string)),
+                    Value::Bool(self.value_is_a(object_or_class, class_name, *allow_string)),
                 ),
                 [_, other] => Err(runtime_error(
                     span,
@@ -3504,14 +3575,18 @@ impl Interpreter {
                 )),
             },
             "is_subclass_of" => match args.as_slice() {
-                [Value::Object(_), Value::String(_class_name)] => Ok(Value::Bool(false)),
-                [Value::String(_object_or_class), Value::String(_class_name)] => {
-                    Ok(Value::Bool(false))
-                }
-                [Value::Object(_), Value::String(_class_name), Value::Bool(_allow_string)] => {
-                    Ok(Value::Bool(false))
-                }
-                [Value::String(_object_or_class), Value::String(_class_name), Value::Bool(_allow_string)] => Ok(Value::Bool(false)),
+                [object_or_class @ Value::Object(_), Value::String(class_name)] => Ok(Value::Bool(
+                    self.value_is_subclass_of(object_or_class, class_name, false),
+                )),
+                [object_or_class @ Value::String(_), Value::String(class_name)] => Ok(Value::Bool(
+                    self.value_is_subclass_of(object_or_class, class_name, true),
+                )),
+                [object_or_class @ Value::Object(_), Value::String(class_name), Value::Bool(allow_string)] => Ok(Value::Bool(
+                    self.value_is_subclass_of(object_or_class, class_name, *allow_string),
+                )),
+                [object_or_class @ Value::String(_), Value::String(class_name), Value::Bool(allow_string)] => Ok(Value::Bool(
+                    self.value_is_subclass_of(object_or_class, class_name, *allow_string),
+                )),
                 [other, Value::String(_), Value::Bool(_)] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -3572,19 +3647,24 @@ impl Interpreter {
                 )),
             },
             "get_parent_class" => match args.as_slice() {
-                [Value::Object(_)] => Ok(Value::Bool(false)),
+                [Value::Object(object)] => Ok(self
+                    .parent_class_name(object.class_id())
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false))),
                 [Value::String(class_name)] => {
-                    if self.classes.lookup_class(class_name).is_some() {
-                        Ok(Value::Bool(false))
-                    } else {
-                        Err(runtime_error(
+                    let Some(class) = self.classes.lookup_class(class_name) else {
+                        return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
                                 "get_parent_class()",
                                 "string argument must name a declared class in the current subset",
                             ),
-                        ))
-                    }
+                        ));
+                    };
+                    Ok(self
+                        .parent_class_name(class.id())
+                        .map(Value::String)
+                        .unwrap_or(Value::Bool(false)))
                 }
                 [other] => Err(runtime_error(
                     span,
@@ -4297,10 +4377,29 @@ impl Interpreter {
     }
 }
 
-fn register_class(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
-    let id = classes
+fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
+    classes
         .declare_class(&class.name)
-        .map_err(|error| runtime_error(class.span, error))?;
+        .map_err(|error| runtime_error(class.span, error))
+}
+
+fn register_class_members(
+    classes: &mut PhpClassTable,
+    class: &ClassDecl,
+) -> CompileResult<ClassId> {
+    let id = classes
+        .lookup_class_id(&class.name)
+        .expect("class name pass should declare class id");
+
+    if let Some(parent_name) = &class.parent {
+        let parent_id = classes
+            .lookup_class_id(parent_name)
+            .ok_or_else(|| runtime_error(class.span, RuntimeError::undefined_class(parent_name)))?;
+        classes
+            .set_parent(id, parent_id)
+            .map_err(|error| runtime_error(class.span, error))?;
+    }
+
     let metadata = classes
         .get_mut(id)
         .expect("declared class id should resolve to class metadata");

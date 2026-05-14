@@ -1,0 +1,1 @@
+phpc currently reports stable runtime diagnostics for unsupported protected method calls; system PHP emits native fatal error text.

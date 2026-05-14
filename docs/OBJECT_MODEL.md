@@ -3,30 +3,33 @@
 This document records the current object/class boundary. It is a narrow
 instantiation slice, not full PHP object execution.
 
-The current implementation parses top-level class declarations into metadata and
-can evaluate `new ClassName(...)` for declared classes, including public
-instance `__construct` execution. It stores class identity plus `null`
-instance-property slots and can read/write public instance properties by static
-property name and check direct public property operands with
+The current implementation parses top-level class declarations into metadata,
+including a single `extends Parent` link between declared classes, and can
+evaluate `new ClassName(...)` for declared classes, including public instance
+`__construct` execution. It stores class identity plus `null`
+instance-property slots for the exact class and can read/write public instance
+properties by static property name and check direct public property operands with
 `isset($object->name)` and
 `empty($object->name)`. Objects are now represented as process-local handles, so
 assignment, function argument/return binding, array storage, and foreach
 by-value over object values preserve object identity and shared property slots.
-It can also dispatch public and same-class private instance methods by static
-method name through `$object->method(...)`; method bodies run in a fresh local
-scope with `$this` bound to the current object handle. Dynamic method/property
+It can also dispatch public, same-class private, and protected same-class/child
+instance methods by static method name through `$object->method(...)`; method
+bodies run in a fresh local scope with `$this` bound to the current object
+handle. Inherited method lookup walks the current single-parent chain from the
+receiver class to ancestors. Dynamic method/property
 names still fail with explicit parse diagnostics. Static
 member access through `::` also fails with explicit parse diagnostics until
 static property storage, static method dispatch, and class constants exist.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
-$allow_string])` as an exact-class metadata check, without inheritance or
-interface relationship traversal. `is_subclass_of($object_or_class,
-$class_name[, $allow_string])` now validates the same relationship-check
-boundary and returns false for the current no-inheritance metadata model.
-`get_parent_class($object_or_class)` validates current object/declared-string
-inputs and returns false because no parent-class metadata is recorded yet.
+$allow_string])` as an exact-class or single-parent ancestor metadata check,
+without interface relationship traversal. `is_subclass_of($object_or_class,
+$class_name[, $allow_string])` validates the same relationship-check boundary
+and walks the current single-parent metadata chain. `get_parent_class($object_or_class)`
+validates current object/declared-string inputs and returns the immediate
+parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared properties with `null` values because property defaults are not
 represented yet.
@@ -77,18 +80,20 @@ The model follows the PHP lookup rules needed by the first object slice:
   and false for null or missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
   missing slots, undefined target variables, and non-object target variables;
-- public and same-class private instance method calls use case-insensitive
-  declared method lookup, evaluate arguments left to right, bind `$this` to the
-  receiver object handle, and reuse the current user-function
-  parameter/default/return subset. Private methods require an active
-  same-class method context;
+- public, same-class private, and protected same-class/child instance method
+  calls use case-insensitive declared-or-inherited method lookup, evaluate
+  arguments left to right, bind `$this` to the receiver object handle, and
+  reuse the current user-function parameter/default/return subset. Private
+  methods require an active same-class method context. Protected methods
+  require an active same-class or child method context;
 - direct `unset($object->name)` is reserved with an explicit parse diagnostic
   until property uninitialization semantics are modeled;
-- `method_exists($object_or_class, $method)` checks declared method metadata
-  using case-insensitive method lookup for current object values or string
-  class names;
-- `get_class_methods($object_or_class)` returns public declared method names in
-  declaration order for current object values or declared string class names;
+- `method_exists($object_or_class, $method)` checks declared and inherited
+  method metadata using case-insensitive method lookup for current object
+  values or string class names;
+- `get_class_methods($object_or_class)` returns public declared and inherited
+  method names in child-to-parent declaration order for current object values
+  or declared string class names;
 - `get_class_vars($class_name)` returns public declared property names in
   declaration order with `null` values for declared string class names;
 - `get_object_vars($object)` returns public instance property names in
@@ -155,13 +160,15 @@ not stored in object values. Static member expressions such as
 by the parser instead of falling through to generic expression errors.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
-static identifier naming a declared public instance method or a private method
-called from a same-class method context. The receiver is evaluated first,
+static identifier naming a declared or inherited public instance method, a
+private method called from a same-class method context, or a protected method
+called from a same-class/child method context. The receiver is evaluated first,
 arguments are evaluated left to right after metadata checks, and the method
 body runs with `$this` bound to the receiver object handle. Missing methods,
 non-object receivers, private methods outside same-class method context,
-protected methods, static methods called through an object receiver, and
-`$this` outside instance method execution report stable runtime diagnostics.
+protected methods outside same-class/child context, static methods called
+through an object receiver, and `$this` outside instance method execution
+report stable runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
 property reads/writes, and instance method calls until metadata, object
@@ -199,7 +206,7 @@ object handle hash behavior has native support.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, inheritance, interfaces, traits,
+conditional class declarations, interfaces, traits,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 default property values, multiple properties in one declaration, constants,
 static property storage, late static binding, magic methods, namespaces,
@@ -207,7 +214,7 @@ autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static`, constructor behavior beyond public instance
 `__construct`, constructor arguments for classes without constructors,
-protected method lookup, non-public property/constructor access, dynamic method/property names,
+inherited properties, non-public property/constructor access, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
@@ -216,9 +223,8 @@ operands, complex object-property `isset` operands, dynamic property-name
 object-property `empty` operands, magic `__isset`/`__get` behavior for
 `empty`, object-property `unset`, property uninitialization,
 typed/uninitialized property behavior, magic `__unset` behavior,
-static member execution through `::`, `::class`, `method_exists` inheritance, `is_a` inheritance,
-`is_subclass_of` inheritance/interface traversal, `get_parent_class`
-inheritance lookup, default `$this` behavior for `get_parent_class()`,
+static member execution through `::`, `::class`, interface traversal for
+`is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,
 `spl_object_id` handle reuse after destruction, clone semantics, destructors,
 `spl_object_hash` exact system PHP hash formatting, handle reuse after

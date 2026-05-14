@@ -1,0 +1,1 @@
+phpc rejects cyclic inheritance with a stable current-subset runtime diagnostic.
