@@ -62,6 +62,7 @@ Implemented now:
   public instance properties including inherited public slots, inherited
   non-public instance slots with declaring-class ownership, single-parent
   metadata, execution-time registration for reached nested class declarations,
+  a metadata-only core `Exception` class seed,
   inherited method lookup, public/same-class private/protected same-class and
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`
@@ -1180,13 +1181,18 @@ and native cast lowering remain explicit boundaries.
 ## Exception Boundary
 
 Exception syntax is reserved by the lexer/parser today, but the boundary is no
-longer a single parse-only category. Statement-form `throw expr;` and
-`try`/`catch`/`finally` blocks build AST nodes so guarded WordPress
-compatibility code can parse and be skipped by normal control flow. If
-execution reaches a throw statement, the interpreter reports a stable
-unsupported runtime boundary without evaluating the throw operand. If execution
-reaches a try block, the interpreter reports a stable unsupported runtime
-boundary without executing any try, catch, or finally body.
+longer a single parse-only category. The runtime seeds a metadata-only
+`Exception` class so class lookup, no-argument instantiation, and user classes
+extending `Exception` use the same object metadata table as declared classes.
+It does not model `Throwable`, constructor state, exception methods, stack
+traces, or unwinding.
+
+Statement-form `throw expr;` and `try`/`catch`/`finally` blocks build AST nodes
+so guarded WordPress compatibility code can parse and be skipped by normal
+control flow. If execution reaches a throw statement, the interpreter reports a
+stable unsupported runtime boundary without evaluating the throw operand. If
+execution reaches a try block, the interpreter reports a stable unsupported
+runtime boundary without executing any try, catch, or finally body.
 
 Throw expressions, malformed try blocks, and standalone `catch`/`finally`
 remain parse boundaries. Native lowering rejects exception statements before

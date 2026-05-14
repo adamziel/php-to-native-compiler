@@ -1681,6 +1681,14 @@ impl PhpClassTable {
         Self::default()
     }
 
+    pub fn with_core_classes() -> Self {
+        let mut classes = Self::new();
+        classes
+            .declare_class("Exception")
+            .expect("core class table should start empty");
+        classes
+    }
+
     pub fn declare_class(&mut self, name: impl Into<String>) -> RuntimeResult<ClassId> {
         let name = name.into();
         let lookup_name = normalize_class_lookup_name(&name);
@@ -6634,6 +6642,18 @@ mod tests {
             }
         );
         assert_eq!(error.message(), "class widget is already defined");
+    }
+
+    #[test]
+    fn class_table_can_bootstrap_core_exception_metadata() {
+        let classes = PhpClassTable::with_core_classes();
+
+        let exception = classes.lookup_class("exception").unwrap();
+        assert_eq!(exception.name(), "Exception");
+        assert_eq!(exception.id().index(), 0);
+        assert!(exception.parent_id().is_none());
+        assert!(exception.properties().is_empty());
+        assert!(exception.methods().is_empty());
     }
 
     #[test]

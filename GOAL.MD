@@ -251,7 +251,8 @@ The repository already has a working Rust workspace with:
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
   probe currently advances through early compatibility includes and now stops
-  at the next named blocker, undefined built-in `Exception` class metadata.
+  at the next named blocker, namespace declarations/import-aware name
+  resolution.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

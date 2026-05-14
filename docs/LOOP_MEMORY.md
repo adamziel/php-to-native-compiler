@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T09:55:00Z
+
+- Checkpoint before this task: `46b32f2 runtime: add bounded nested class
+  declarations`, pushed to `origin/master`.
+- Task attempted: Milestone 704, metadata-only built-in `Exception` class.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/builtin_exception_class.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone704/*`,
+  `tests/fixtures/milestone106/get_declared_classes.*`, `README.md`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test builtin_exception_class -- --test-threads=1`,
+  `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_classes_returns_current_program_classes_in_declaration_order -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone704`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone704`,
+  `cargo run -p phpc -- test tests/fixtures/milestone106`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone106`, and
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: `Throwable`, `Exception` constructor state and
+  methods, stack traces, catch matching/binding, exact PHP fatal wording,
+  partial-output behavior, full internal class catalogs, namespace/autoload
+  class resolution, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: seed exception class metadata"` if the full
+  gate passes. The next WordPress bootstrap blocker is
+  `parse error at <bootstrap-shim>:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented`.
+
 ## Loop Event 2026-05-14T09:20:00Z
 
 - Checkpoint before this task: `2b59863 functions: allow self constants in

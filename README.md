@@ -120,6 +120,8 @@ incorrect native code.
   redeclarations sharing one runtime slot,
   braced nested class declarations that register only when execution reaches
   the `class` statement,
+  a metadata-only built-in `Exception` class seed with no-argument
+  instantiation and user subclasses,
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
@@ -153,7 +155,9 @@ constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
 static-property slices,
-exact PHP nested class declaration timing and fatal behavior,
+exact PHP nested class declaration timing and fatal behavior, real
+`Exception` constructor state/methods, `Throwable`, stack traces, exception
+throw/catch execution,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and

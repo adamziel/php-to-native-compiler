@@ -729,6 +729,9 @@ impl LlvmGenerator {
         if !matches!(name, IrValue::String(_) | IrValue::StringPtr(_)) {
             return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
         }
+        if self.ir_value_mentions_builtin_class(&name) {
+            return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+        }
 
         if let Some(autoload) = args.get(1) {
             let autoload = self.emit_expr(autoload)?;
@@ -756,6 +759,9 @@ impl LlvmGenerator {
         {
             return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
         }
+        if self.ir_value_mentions_builtin_class(&object_or_class) {
+            return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+        }
 
         Ok(IrValue::Bool(false))
     }
@@ -776,6 +782,11 @@ impl LlvmGenerator {
         {
             return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
         }
+        if self.ir_value_mentions_builtin_class(&object_or_class)
+            || self.ir_value_mentions_builtin_class(&class_name)
+        {
+            return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+        }
 
         if let Some(allow_string) = args.get(2) {
             let allow_string = self.emit_expr(allow_string)?;
@@ -785,6 +796,17 @@ impl LlvmGenerator {
         }
 
         Ok(IrValue::Bool(false))
+    }
+
+    fn ir_value_mentions_builtin_class(&self, value: &IrValue) -> bool {
+        self.known_string_values_for_value(value)
+            .map(|values| {
+                values
+                    .values()
+                    .iter()
+                    .any(|value| is_builtin_class_name(value))
+            })
+            .unwrap_or(false)
     }
 
     fn is_numeric_result_for_value(&self, value: &IrValue) -> Option<bool> {
@@ -3466,6 +3488,9 @@ impl CGenerator {
         if !matches!(name, CValue::String(_) | CValue::StringExpr(_)) {
             return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
         }
+        if self.c_value_mentions_builtin_class(&name) {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
 
         if let Some(autoload) = args.get(1) {
             let autoload = self.emit_expr(autoload)?;
@@ -3493,6 +3518,9 @@ impl CGenerator {
         {
             return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
         }
+        if self.c_value_mentions_builtin_class(&object_or_class) {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
 
         Ok(CValue::Bool(false))
     }
@@ -3513,6 +3541,11 @@ impl CGenerator {
         {
             return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
         }
+        if self.c_value_mentions_builtin_class(&object_or_class)
+            || self.c_value_mentions_builtin_class(&class_name)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
 
         if let Some(allow_string) = args.get(2) {
             let allow_string = self.emit_expr(allow_string)?;
@@ -3522,6 +3555,17 @@ impl CGenerator {
         }
 
         Ok(CValue::Bool(false))
+    }
+
+    fn c_value_mentions_builtin_class(&self, value: &CValue) -> bool {
+        self.known_string_values_for_value(value)
+            .map(|values| {
+                values
+                    .values()
+                    .iter()
+                    .any(|value| is_builtin_class_name(value))
+            })
+            .unwrap_or(false)
     }
 
     fn is_numeric_result_for_value(&self, value: &CValue) -> Option<bool> {
@@ -5999,6 +6043,10 @@ fn is_native_relationship_metadata_builtin(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "is_a" | "is_subclass_of"
     )
+}
+
+fn is_builtin_class_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("Exception")
 }
 
 fn known_strings_have_uniform_function_exists_result(values: &KnownString) -> Option<bool> {

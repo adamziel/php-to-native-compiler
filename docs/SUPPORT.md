@@ -859,7 +859,8 @@
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
-  names, built-in/internal/extension class entries for `get_declared_classes`,
+  names, built-in/internal/extension class entries beyond the current
+  metadata-only `Exception` seed for `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
   declared/built-in/internal trait entries for `get_declared_traits`,
   anonymous classes, exact native class/interface/trait ordering, exact PHP
@@ -2877,10 +2878,14 @@
   evaluating the operand, and reached `try` blocks fail before executing try,
   catch, or finally bodies. Throw expressions, malformed try syntax, and
   standalone `catch`/`finally` still fail with stable parse diagnostics.
-  `Throwable`, `Exception`, custom exception classes, stack unwinding, catch
-  matching, catch variable binding, multi-catch semantics beyond parsed type
-  lists, `finally` execution, stack traces, exact native error objects, and
-  native lowering do not exist yet.
+  `Exception` is seeded as a metadata-only built-in class: `class_exists`,
+  `get_declared_classes`, no-argument `new Exception()`, and user classes
+  extending `Exception` work through the current object metadata model.
+  `Throwable` interface metadata, `Exception` constructor state (`message`,
+  `code`, previous exception), `Exception` methods such as `getMessage()`,
+  stack unwinding, catch matching, catch variable binding, multi-catch
+  semantics beyond parsed type lists, `finally` execution, stack traces, exact
+  native error objects, and native lowering do not exist yet.
 - PHP 8 `match` expressions currently fail with a stable parse diagnostic
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
@@ -3436,7 +3441,8 @@
   declaring-class slot ownership, references/copy-on-write, exact native
   ordering and `TypeError` behavior, and native lowering
 - `property_exists` native true results, native declared property tables,
-  object operands, built-in/internal/extension classes, autoloading,
+  object operands, built-in/internal/extension classes including `Exception`,
+  autoloading,
   namespaces/import aliases, exact native `TypeError` behavior, and native
   lowering beyond direct string/string false folding
 - `empty($object->name)` dynamic property names, non-public visibility

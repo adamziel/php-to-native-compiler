@@ -128,7 +128,7 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `wp-includes/sodium_compat/src/Compat.php:1714`, is covered by Milestone 702.
   The previous nested class declaration blocker at `<bootstrap-shim>:7:5` is
   covered by Milestone 703. The shim probe now reaches
-  `runtime error at <bootstrap-shim>:7:5: undefined class Exception`.
+  `parse error at <bootstrap-shim>:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

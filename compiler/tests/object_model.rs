@@ -34,7 +34,8 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 1);
+    assert_eq!(classes.classes().len(), 2);
+    assert_eq!(classes.classes()[0].name(), "Exception");
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -1474,17 +1475,17 @@ class Profile {}
 
 $declared = get_declared_classes();
 print_r($declared);
-echo count($declared), "|", $declared[0], "|", $declared[1], "\n";
+echo count($declared), "|", $declared[0], "|", $declared[1], "|", $declared[2], "\n";
 
 $call = "get_declared_classes";
 $dynamic = $call();
-echo $dynamic[0], "|", $dynamic[1];
+echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Box\n    [1] => Profile\n)\n2|Box|Profile\nBox|Profile"
+        "Array\n(\n    [0] => Exception\n    [1] => Box\n    [2] => Profile\n)\n3|Exception|Box|Profile\nException|Box|Profile"
     );
     assert_eq!(execution.exit_code, 0);
 }

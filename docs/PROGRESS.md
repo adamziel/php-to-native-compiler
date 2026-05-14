@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 704, a metadata-only built-in `Exception` class seed through
+  `phpc run`. `PhpClassTable::with_core_classes()` now reserves canonical
+  `Exception` metadata before user class registration, so `class_exists`,
+  `get_declared_classes`, no-argument `new Exception()`, duplicate
+  `class Exception {}` diagnostics, user classes extending `Exception`,
+  `get_parent_class`, `is_a`, and `is_subclass_of` use the normal object
+  metadata path. `new Exception(...)` with constructor arguments remains an
+  explicit object-instantiation boundary, reached `throw` still fails before
+  evaluating its operand, reached `try` still fails before executing handlers,
+  and native metadata folds now reject `Exception` class queries instead of
+  emitting misleading false answers. `Throwable`, `Exception` constructor
+  state and methods, stack traces, catch matching/binding, exact PHP fatal
+  wording, partial-output behavior, full internal class catalogs,
+  namespace/autoload-aware class resolution, and native lowering remain
+  explicit. Focused verification: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1`,
+  `cargo test -p phpc --test builtin_exception_class -- --test-threads=1`,
+  `cargo test -p phpc --test object_model class_declarations_register_metadata_without_object_execution -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_declared_classes_returns_current_program_classes_in_declaration_order -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone704`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone704`,
+  `cargo run -p phpc -- test tests/fixtures/milestone106`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone106`,
+  and
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed. The WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented`.
 - Added Milestone 703, bounded nested class declaration execution through
   `phpc run`. The parser now accepts braced nested `class` declarations in
   statement bodies while preserving an explicit unbraced nested-class parse

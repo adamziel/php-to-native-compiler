@@ -1,0 +1,1 @@
+Project-specific bounded Exception metadata: phpc supports no-argument Exception instantiation but does not implement PHP's Exception constructor state yet.

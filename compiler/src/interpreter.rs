@@ -232,7 +232,7 @@ impl Interpreter {
         let mut methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
-        let mut classes = PhpClassTable::new();
+        let mut classes = PhpClassTable::with_core_classes();
         for stmt in &program.statements {
             match stmt {
                 Stmt::Function(function) => {
