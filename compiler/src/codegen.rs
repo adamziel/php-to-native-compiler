@@ -388,7 +388,10 @@ impl LlvmGenerator {
             }
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
-            | Expr::ParentClassNameConstant { span } => {
+            | Expr::ParentClassNameConstant { span }
+            | Expr::ClassConstant { span, .. }
+            | Expr::SelfClassConstant { span, .. }
+            | Expr::ParentClassConstant { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
@@ -3069,7 +3072,10 @@ impl CGenerator {
             }
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
-            | Expr::ParentClassNameConstant { span } => {
+            | Expr::ParentClassNameConstant { span }
+            | Expr::ClassConstant { span, .. }
+            | Expr::SelfClassConstant { span, .. }
+            | Expr::ParentClassConstant { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),

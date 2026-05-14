@@ -1757,6 +1757,8 @@ pub struct PhpClassMetadata {
     parent_id: Option<ClassId>,
     properties: Vec<PhpPropertyMetadata>,
     property_lookup: HashMap<String, usize>,
+    constants: Vec<PhpClassConstantMetadata>,
+    constant_lookup: HashMap<String, usize>,
     methods: Vec<PhpMethodMetadata>,
     method_lookup: HashMap<String, usize>,
 }
@@ -1769,6 +1771,8 @@ impl PhpClassMetadata {
             parent_id: None,
             properties: Vec::new(),
             property_lookup: HashMap::new(),
+            constants: Vec::new(),
+            constant_lookup: HashMap::new(),
             methods: Vec::new(),
             method_lookup: HashMap::new(),
         }
@@ -1790,6 +1794,10 @@ impl PhpClassMetadata {
         &self.properties
     }
 
+    pub fn constants(&self) -> &[PhpClassConstantMetadata] {
+        &self.constants
+    }
+
     pub fn methods(&self) -> &[PhpMethodMetadata] {
         &self.methods
     }
@@ -1806,6 +1814,21 @@ impl PhpClassMetadata {
 
         self.property_lookup.insert(name, self.properties.len());
         self.properties.push(property);
+        Ok(())
+    }
+
+    pub fn add_constant(&mut self, constant: PhpClassConstantMetadata) -> RuntimeResult<()> {
+        let name = constant.name.clone();
+        if self.constant_lookup.contains_key(&name) {
+            return Err(RuntimeError::duplicate_class_member(
+                self.name.clone(),
+                ClassMemberKind::Constant,
+                name,
+            ));
+        }
+
+        self.constant_lookup.insert(name, self.constants.len());
+        self.constants.push(constant);
         Ok(())
     }
 
@@ -1828,6 +1851,11 @@ impl PhpClassMetadata {
     pub fn property(&self, name: &str) -> Option<&PhpPropertyMetadata> {
         let index = self.property_lookup.get(name)?;
         self.properties.get(*index)
+    }
+
+    pub fn constant(&self, name: &str) -> Option<&PhpClassConstantMetadata> {
+        let index = self.constant_lookup.get(name)?;
+        self.constants.get(*index)
     }
 
     pub fn method(&self, name: &str) -> Option<&PhpMethodMetadata> {
@@ -1860,6 +1888,7 @@ pub enum Visibility {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClassMemberKind {
     Property,
+    Constant,
     Method,
 }
 
@@ -1867,8 +1896,32 @@ impl fmt::Display for ClassMemberKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ClassMemberKind::Property => write!(f, "property"),
+            ClassMemberKind::Constant => write!(f, "constant"),
             ClassMemberKind::Method => write!(f, "method"),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpClassConstantMetadata {
+    name: String,
+    visibility: Visibility,
+}
+
+impl PhpClassConstantMetadata {
+    pub fn new(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
     }
 }
 

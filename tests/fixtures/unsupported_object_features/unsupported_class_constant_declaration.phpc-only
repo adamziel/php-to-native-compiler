@@ -1,1 +1,1 @@
-phpc intentionally rejects class constant declarations before constant metadata and lookup exist.
+phpc intentionally rejects typed class constant declarations before typed class constant metadata and enforcement exist.

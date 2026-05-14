@@ -1,1 +1,1 @@
-phpc intentionally rejects class constant syntax before constant storage exists.
+phpc intentionally rejects late-bound static:: class constant syntax before late static binding exists.

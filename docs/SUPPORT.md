@@ -149,9 +149,9 @@
   assignments can shadow global names without mutating them
 - top-level class declarations registered into the runtime metadata table:
   `class Name { ... }` and `class Child extends Parent { ... }` with
-  single-parent metadata, property names, method names, visibility, and static
-  flags for the documented subset, including compatible public/protected
-  inherited property redeclarations sharing one runtime slot
+  single-parent metadata, property names, class constant names, method names,
+  visibility, and static flags for the documented subset, including compatible
+  public/protected inherited property redeclarations sharing one runtime slot
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
   Declared or inherited public instance `__construct` methods execute with
@@ -188,6 +188,12 @@
   The call reuses the current `$this` object, evaluates positional arguments
   left-to-right, and executes the resolved method body with the declaring class
   as the active method context.
+- class constants declared as `const NAME = value;` or
+  `public|protected|private const NAME = value;` with values from the current
+  constant-expression subset. `ClassName::CONST`, `self::CONST`, and
+  `parent::CONST` resolve declared or inherited constants case-sensitively,
+  enforce public/protected/private visibility in the current class context,
+  and return null, bool, int, float, string, or array values.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class and protected property operands owned by the active class or
@@ -475,13 +481,14 @@
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
-  declarations, class constant declarations,
+  declarations, unsupported class constant declaration forms such as typed,
+  static, or multi-declarator class constants,
   unsupported `clone` expressions, unsupported
   `instanceof` expressions,
   unsupported magic static receiver forms such as `static::`,
-  unsupported parent static property/constant access, anonymous class
-  expressions, dynamic property names, static property access, static method
-  calls, and class constant access
+  unsupported parent static property access, anonymous class expressions,
+  dynamic property names, static property access, static method calls, and
+  `static::CONST` late-bound class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 - explicit lex diagnostics for unsupported PHP attribute syntax beginning with
@@ -552,8 +559,9 @@
 - Object/class model: `php_runtime` has a small metadata and object-value model
   for the first object slice. It records an ordered class table with stable
   `ClassId` handles, declared class names with case-insensitive class lookup,
-  ordered property metadata with case-sensitive property lookup, ordered method
-  metadata with case-insensitive method lookup, visibility flags,
+  ordered property metadata with case-sensitive property lookup, ordered class
+  constant metadata with case-sensitive lookup, ordered method metadata with
+  case-insensitive method lookup, visibility flags,
   static/instance flags, object-shape derivation for instance properties,
   initialized object values, and structured duplicate class/member diagnostics.
   `phpc run` registers top-level class declarations into this metadata table.
@@ -572,6 +580,9 @@
   instance method/constructor context against the current single-parent chain.
   `self::method(...)` calls execute in active instance method/constructor
   context against the current class and inherited method chain.
+  `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve declared or
+  inherited class constants with case-sensitive names and current
+  public/protected/private visibility checks.
   Protected constructors are callable from same-class or child-class method
   context through ordinary `new ClassName(...)` expressions.
   Undefined classes, constructor arguments for classes without constructors,
@@ -684,9 +695,9 @@
   `get_declared_traits()` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented yet, and is
   available through string-valued dynamic calls.
-  Static member expressions through `::`,
-  including `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`,
-  fail with stable parse diagnostics. `clone $object` expressions fail with a
+  Static property and method expressions through `::`, including
+  `ClassName::$prop` and `ClassName::method()`, fail with stable parse
+  diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
@@ -697,15 +708,22 @@
   contexts they fail with stable runtime diagnostics. `static::$prop`,
   `static::method(...)`, `static::CONST`, and `static::class` fail with
   distinct stable parse diagnostics before late-static-binding resolution,
-  static storage, static dispatch, or class constants exist.
+  static storage, static dispatch, or late-bound class constants exist.
+  Class constant declarations accept the current constant-expression value
+  subset, and `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve
+  declared or inherited class constants case-sensitively through `phpc run`
+  with public/protected/private visibility checks in the current active class
+  context. Typed constants, multiple constants in one class declaration,
+  `static::CONST`, dynamic `constant("Class::CONST")`/`defined("Class::CONST")`
+  lookup, and native lowering remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
-  receiver slices; self/parent static property access, self/parent class
-  constants, and real class constants fail with stable parse diagnostics.
+  receiver slices; self/parent static property access still fails with stable
+  parse diagnostics.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context beyond the current slice, static
-  storage, class constants, shallow/deep clone property copying, `__clone`,
+  storage, broader class constant semantics, shallow/deep clone property copying, `__clone`,
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
@@ -2414,14 +2432,15 @@
   methods, readonly properties, typed property storage and enforcement,
   property initialization rules, inheritance interactions, property defaults,
   multiple properties in one declaration, per-property defaults in
-  multi-property declarations, class constant declarations, constants, static
-  property storage, late static binding, magic methods, namespaces,
+  multi-property declarations, typed/multiple/final/interface/trait/enum class
+  constants, static property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
   current private/protected method context, broader
   constructor visibility context, static member
-  execution through `::` except the current class-name constant slice, property assignment
+  execution through `::` except the current class-name and class-constant
+  slices, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
   object handle identity/aliasing,
@@ -2574,11 +2593,11 @@
   implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  class constant declarations, constants, parent static properties/constants,
+  typed/static/multi-declarator class constants, parent static properties,
   and anonymous classes
-- static property access, static method calls, class constant access,
-  unsupported self/parent static property/constant forms, late-bound
-  `static::class`, and broader `static::` through `::`
+- static property access, static method calls, unsupported self/parent static
+  property forms, late-bound `static::class`, `static::CONST`, and broader
+  `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

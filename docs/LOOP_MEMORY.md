@@ -163,6 +163,36 @@ injects this file into every prompt. Each Codex pass should update it with:
   with `tools/checkpoint.sh "objects: add class name constants"` if the full
   gate passes.
 
+## Loop Event 2026-05-14T20:45:00Z
+
+- Checkpoint before this task: `0ef17e2 objects: add class name constants`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 661, narrow class constant declarations and lookup.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `runtime/src/lib.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone661/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_constant.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_constant_declaration.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model class_constants -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone661`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone661`, and
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed.
+- Remaining semantic gaps: typed constants, multiple class constants in one
+  declaration, `static::CONST`, static properties, static methods, late static
+  binding, namespace/alias-aware class-constant lookup, dynamic
+  `constant("Class::CONST")`/`defined("Class::CONST")`, trait composition,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering remain explicit.
+- Next concrete task: run format/diff checks and checkpoint with
+  `tools/checkpoint.sh "objects: add class constants"` if the full gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

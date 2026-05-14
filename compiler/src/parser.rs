@@ -1,8 +1,8 @@
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl,
-    ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl,
-    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program, Span, Stmt,
-    SwitchCase, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl,
+    ClassPropertyDecl, ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction,
+    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program, Span,
+    Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -281,11 +281,43 @@ impl Parser {
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
         let (visibility, is_static) = self.parse_class_member_modifiers()?;
 
-        if self.check_unsupported_class_constant_declaration() {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_class_constant_declaration_message(),
-            ));
+        if self.match_identifier("const") {
+            let span = self.previous().span;
+            if is_static {
+                return Err(self.error_at(
+                    span,
+                    "unsupported class constant declaration: static class constants are not implemented",
+                ));
+            }
+            if matches!(self.peek().kind, TokenKind::Identifier(_))
+                && matches!(self.peek_next().kind, TokenKind::Identifier(_))
+            {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "unsupported class constant declaration: typed class constants are not implemented",
+                ));
+            }
+            let (name, name_span) =
+                self.consume_identifier_with_span("expected class constant name after const")?;
+            self.consume_keyword(TokenKind::Equal, "expected '=' after class constant name")?;
+            let value = self.parse_expression()?;
+            self.ensure_supported_const_declaration_expr(&value)?;
+            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
+                ));
+            }
+            self.consume_keyword(
+                TokenKind::Semicolon,
+                "expected ';' after class constant declaration",
+            )?;
+            return Ok(ClassMember::Constant(ClassConstantDecl {
+                name,
+                visibility,
+                value,
+                span: name_span,
+            }));
         }
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
@@ -2357,10 +2389,13 @@ impl Parser {
                         span: operator_span,
                     })
                 }
-                TokenKind::Identifier(_) => Err(self.error_at(
-                    operator_span,
-                    "unsupported parent class constant access: class constants are not implemented",
-                )),
+                TokenKind::Identifier(constant) => {
+                    self.advance();
+                    Ok(Expr::ParentClassConstant {
+                        constant,
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Class => {
                     self.advance();
                     Ok(Expr::ParentClassNameConstant {
@@ -2399,10 +2434,13 @@ impl Parser {
                         span: operator_span,
                     })
                 }
-                TokenKind::Identifier(_) => Err(self.error_at(
-                    operator_span,
-                    "unsupported self class constant access: class constants are not implemented",
-                )),
+                TokenKind::Identifier(constant) => {
+                    self.advance();
+                    Ok(Expr::SelfClassConstant {
+                        constant,
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Class => {
                     self.advance();
                     Ok(Expr::SelfClassNameConstant {
@@ -2453,8 +2491,8 @@ impl Parser {
                 )),
             };
         }
-        let member = self.peek();
-        match &member.kind {
+        let member = self.peek().clone();
+        match member.kind {
             TokenKind::Variable(_) => Err(self.error_at(
                 operator_span,
                 "unsupported static property access: static property storage is not implemented",
@@ -2474,10 +2512,16 @@ impl Parser {
                     "unsupported static method call: static method dispatch is not implemented",
                 ))
             }
-            TokenKind::Identifier(_) => Err(self.error_at(
-                operator_span,
-                "unsupported class constant access: class constants are not implemented",
-            )),
+            TokenKind::Identifier(constant) => {
+                self.advance();
+                Ok(Expr::ClassConstant {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    constant,
+                    span: operator_span,
+                })
+            }
             TokenKind::Class => {
                 self.advance();
                 Ok(Expr::ClassNameConstant {
@@ -2679,6 +2723,9 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2736,6 +2783,9 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2820,6 +2870,9 @@ impl Parser {
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -2907,6 +2960,9 @@ impl Parser {
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -2970,6 +3026,9 @@ impl Parser {
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
             | Expr::IncrementDecrement { .. } => None,
         }
     }
@@ -3633,10 +3692,6 @@ fn unsupported_class_member_modifier_message() -> &'static str {
     "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented"
 }
 
-fn unsupported_class_constant_declaration_message() -> &'static str {
-    "unsupported class constant declaration: class constant metadata and lookup are not implemented"
-}
-
 fn unsupported_trait_use_message() -> &'static str {
     "unsupported trait use: trait composition inside classes is not implemented"
 }
@@ -3660,9 +3715,5 @@ impl Parser {
             .iter()
             .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
             .any(|token| matches!(token.kind, TokenKind::Variable(_)))
-    }
-
-    fn check_unsupported_class_constant_declaration(&self) -> bool {
-        matches!(&self.peek().kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
     }
 }

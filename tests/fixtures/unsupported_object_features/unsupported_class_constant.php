@@ -1,2 +1,2 @@
 <?php
-Box::VERSION;
+static::VERSION;

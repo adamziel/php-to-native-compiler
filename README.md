@@ -105,8 +105,10 @@ incorrect native code.
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
   `self::method()` calls in instance context, narrow `ClassName::class`,
-  `self::class`, and `parent::class` resolution, single-parent metadata,
-  object `isset` and `empty`, and selected metadata builtins
+  `self::class`, and `parent::class` resolution, narrow class constants
+  through `ClassName::CONST`, `self::CONST`, and `parent::CONST`,
+  single-parent metadata, object `isset` and `empty`, and selected metadata
+  builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
@@ -117,8 +119,9 @@ constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`, all `static::` execution and late
 static binding, visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
-and constructor slice, typed/default property compatibility, dynamic
-method/property names, resources, and native extension integration.
+constructor, and class-constant slice, typed/default property compatibility,
+typed or multi-declarator class constants, dynamic method/property names,
+resources, and native extension integration.
 
 ### Native Path
 

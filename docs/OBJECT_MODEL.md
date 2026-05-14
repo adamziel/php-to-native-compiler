@@ -29,16 +29,19 @@ chain while reusing the current `$this` object. Explicit `self::method(...)`
 calls are supported from active instance method/constructor context and
 dispatch against the current class and inherited method chain while reusing
 the current `$this` object. Dynamic method/property
-names still fail with explicit parse diagnostics. Static
-member access through `::` outside the current parent/self method-call and
-class-name constant slices also fails with explicit parse diagnostics until
-static property storage, static method dispatch, and class constants exist.
+names still fail with explicit parse diagnostics. Static member access through
+`::` outside the current parent/self method-call, class-name constant, and
+class-constant slices also fails with explicit parse diagnostics until static
+property storage, static method dispatch, and late-bound static constants exist.
 `ClassName::class` resolves to the
 source-spelled class string without requiring class metadata. `self::class`
 and `parent::class` resolve from active instance method/constructor context.
-Parent static property access and parent class constants have distinct
-unsupported diagnostics, as do self static properties and self class
-constants. Static receiver forms through `static::$prop`,
+Class constants declared with the current constant-expression value subset are
+stored in class metadata and resolve case-sensitively through
+`ClassName::CONST`, `self::CONST`, and `parent::CONST` with current
+public/protected/private visibility checks. Parent and self static property
+access have distinct unsupported diagnostics. Static receiver forms through
+`static::$prop`,
 `static::method(...)`, `static::CONST`, and `static::class` also have distinct
 unsupported diagnostics until late static binding is modeled.
 The current introspection slice can check declared methods with
@@ -76,8 +79,9 @@ are not claimed yet.
 - `PhpClassTable`: ordered class declarations plus case-insensitive class-name
   lookup.
 - `ClassId`: stable numeric handle for one class entry in a class table.
-- `PhpClassMetadata`: declared class name plus ordered property and method
-  metadata.
+- `PhpClassMetadata`: declared class name plus ordered property, class
+  constant, and method metadata.
+- `PhpClassConstantMetadata`: class constant name and visibility.
 - `PhpPropertyMetadata`: property name, visibility, and static/instance flag.
 - `PhpMethodMetadata`: method name, visibility, and static/instance flag.
 - `PhpObjectShape`: the instance-property layout derived from class metadata.
@@ -92,6 +96,7 @@ The model follows the PHP lookup rules needed by the first object slice:
   spelling;
 - method names are looked up case-insensitively;
 - property names are looked up case-sensitively;
+- class constant names are looked up case-sensitively;
 - instance object shapes preserve exact-class instance-property declaration
   order and skip static properties;
 - object values initialize inherited and exact-class non-static instance
@@ -137,6 +142,12 @@ The model follows the PHP lookup rules needed by the first object slice:
   method chain. They evaluate arguments left to right, reuse the current
   `$this` object, and execute the resolved method with the declaring class as
   the active method context;
+- `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve declared or
+  inherited class constants from the named, active, or parent class context.
+  Constant values use the current constant-expression subset and evaluate to
+  null, bool, int, float, string, or array values. Public constants are visible
+  everywhere, private constants require the declaring class context, and
+  protected constants require the declaring class or a child-class context;
 - direct `unset($object->name)` is reserved with an explicit parse diagnostic
   until property uninitialization semantics are modeled;
 - `method_exists($object_or_class, $method)` checks declared and inherited
@@ -218,10 +229,16 @@ target variables, while `empty` returns true for falsey slots, missing
 property names, undefined target variables, and non-object target variables.
 Static properties are recorded as metadata but are
 not stored in object values. Static member expressions such as
-`ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST` are rejected
-by the parser instead of falling through to generic expression errors.
+`ClassName::$prop` and `ClassName::method()` are rejected by the parser instead
+of falling through to generic expression errors.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
+Class constants are accepted as `const NAME = value;` or
+`public|protected|private const NAME = value;` and resolve through
+`ClassName::CONST`, `self::CONST`, and `parent::CONST`. Typed constants,
+multiple constants in one declaration, `static::CONST`, namespace/alias-aware
+constant lookup, and dynamic string lookup through `constant()`/`defined()` are
+outside the current slice.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
 static identifier naming a declared or inherited public instance method, a
@@ -235,9 +252,10 @@ through an object receiver, and `$this` outside instance method execution
 report stable runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
-property reads/writes, parent method calls, and instance method calls until metadata, object
-allocation, property slots, object handles, method dispatch, and diagnostics
-have explicit lowering support.
+property reads/writes, class-name constants, class constants, parent method
+calls, and instance method calls until metadata, object allocation, property
+slots, object handles, method dispatch, and diagnostics have explicit lowering
+support.
 Native lowering also rejects `method_exists` through the current function-call
 boundary until class metadata lookup has native support. `get_class_methods`
 is rejected through the same function-call boundary until method-list metadata
@@ -272,13 +290,14 @@ object handle hash behavior has native support.
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interfaces, traits,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
-default property values, multiple properties in one declaration, constants,
-static property storage, late static binding, magic methods, namespaces,
+default property values, multiple properties in one declaration, typed or
+multi-declarator class constants, static property storage, late static binding,
+magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
-cloning, destructors, serialization hooks, visibility enforcement,
+cloning, destructors, serialization hooks, broader visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call
-slices, constructor behavior beyond public/inherited public instance
-`__construct` and explicit parent calls, constructor arguments for classes without constructors,
+and class-constant slices, constructor behavior beyond public/inherited public
+instance `__construct` and explicit parent calls, constructor arguments for classes without constructors,
 typed/default property compatibility,
 non-public property access outside the current private/protected method context,
 non-public constructor access beyond the current constructor slice, dynamic method/property names,

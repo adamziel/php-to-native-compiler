@@ -905,9 +905,12 @@ implemented dynamic-call subset. Constant names that are lexed as language keywo
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
 declarations, dynamic `const` values, class constants through
-`constant(...)`/unsupported `defined(...)` forms, references/copy-on-write for
-constant values, and broader constant lowering are still outside the
-implemented constant subset. Native lowering currently folds only direct
+`constant(...)`/unsupported `defined(...)` forms, typed and multi-declarator
+class constants, `static::CONST`, references/copy-on-write for constant values,
+and broader constant lowering are still outside the implemented constant
+subset. Direct `ClassName::CONST`, `self::CONST`, and `parent::CONST`
+execution use class metadata instead of the global constant table. Native
+lowering currently folds only direct
 supported-string-name `defined($name)` checks and otherwise rejects the
 global-constant slice explicitly rather than emitting partial constant-table
 code.
@@ -1032,17 +1035,21 @@ Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
-Static member syntax
+Static property and method syntax
 through `::`, including
-`ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
-with explicit parse diagnostics until static storage, dispatch, and class
-constants exist. `ClassName::class` returns the source-spelled class string,
+`ClassName::$prop` and `ClassName::method()`, is rejected
+with explicit parse diagnostics until static storage and dispatch exist.
+`ClassName::class` returns the source-spelled class string,
 while `self::class` and `parent::class` resolve from the active class context
-in current instance method execution. Unsupported parent/self static property
-and class constant forms stop at distinct parse diagnostics. `static::$prop`,
-`static::method(...)`, `static::CONST`, and `static::class` also stop at
-distinct parse diagnostics until late static binding is modeled. Native lowering
-rejects class declarations, inheritance metadata, class-name constants,
+in current instance method execution. Direct `ClassName::CONST`, `self::CONST`,
+and `parent::CONST` resolve declared or inherited class constants through
+runtime class metadata in the interpreter; typed constants, multiple constants
+in one declaration, `static::CONST`, and dynamic class-constant string lookup
+remain unsupported. Unsupported parent/self static property forms stop at
+distinct parse diagnostics. `static::$prop`, `static::method(...)`,
+`static::CONST`, and `static::class` also stop at distinct parse diagnostics
+until late static binding is modeled. Native lowering rejects class
+declarations, inheritance metadata, class-name constants, class constants,
 parent/self method calls, object instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct

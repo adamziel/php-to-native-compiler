@@ -5992,12 +5992,26 @@ handled.
 
 ## Milestone 661: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next object storage slice: static
-  property storage diagnostics/execution, real class constants, or a
-  documented blocker if typed/default property metadata must land first. Keep
-  `static::class`, late static binding, trait composition, magic methods,
+- [x] Runtime/object lane: add narrow class constant declarations and lookup.
+  Implemented class metadata for constants, `const NAME = value;` and
+  `public|protected|private const NAME = value;` for the current
+  constant-expression subset, inherited case-sensitive lookup through
+  `ClassName::CONST`, `self::CONST`, and `parent::CONST`, visibility checks,
+  CLI fixtures, and native codegen rejection. Kept typed constants, multiple
+  constants in one declaration, `static::CONST`, dynamic
+  `constant("Class::CONST")`/`defined("Class::CONST")`, static properties,
+  static methods, late static binding, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
+
+## Milestone 662: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next object storage/static slice: static
+  property storage diagnostics/execution, static method boundaries, broader
+  class constant semantics, or a documented blocker if typed/default property
+  metadata must land first. Keep late static binding, trait composition, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering explicit.
 
 ## Latest Checkpoint
 

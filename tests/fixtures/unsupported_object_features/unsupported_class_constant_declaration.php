@@ -1,4 +1,4 @@
 <?php
 class Box {
-    public const VERSION = 1;
+    public const string VERSION = "1";
 }

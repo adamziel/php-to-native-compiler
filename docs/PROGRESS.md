@@ -306,6 +306,25 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 661, narrow class constant declarations and lookup. Class
+  metadata now records class constants with visibility; `phpc run` accepts
+  `const NAME = value;` and `public|protected|private const NAME = value;`
+  for the current constant-expression value subset, resolves inherited
+  constants case-sensitively through `ClassName::CONST`, `self::CONST`, and
+  `parent::CONST`, and enforces public/protected/private visibility in the
+  active class context. Typed constants, multiple constants in one
+  declaration, `static::CONST`, static properties, static methods,
+  namespace/alias-aware class-constant lookup, dynamic
+  `constant("Class::CONST")`/`defined("Class::CONST")`, traits, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering remain explicit. Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model class_constants -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone661`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone661`, and
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
+  passed.
 
 Next:
 
@@ -317,9 +336,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 661 should take the next object storage slice: static property
-  storage diagnostics/execution, real class constants, or a documented blocker
-  if typed/default property metadata must land first.
+- Milestone 662 should take the next object storage/static slice: static
+  property storage diagnostics/execution, static method boundaries, broader
+  class constant semantics, or a documented blocker if typed/default property
+  metadata must land first.
 
 ## 2026-05-12
 

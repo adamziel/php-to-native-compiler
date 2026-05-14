@@ -208,7 +208,16 @@ pub struct ClassDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClassMember {
     Property(ClassPropertyDecl),
+    Constant(ClassConstantDecl),
     Method(ClassMethodDecl),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassConstantDecl {
+    pub name: String,
+    pub visibility: ClassVisibility,
+    pub value: Expr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,6 +296,19 @@ pub enum Expr {
         span: Span,
     },
     ParentClassNameConstant {
+        span: Span,
+    },
+    ClassConstant {
+        class_name: String,
+        constant: String,
+        span: Span,
+    },
+    SelfClassConstant {
+        constant: String,
+        span: Span,
+    },
+    ParentClassConstant {
+        constant: String,
         span: Span,
     },
     Array {
@@ -401,6 +423,9 @@ impl Expr {
             | Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
+            | Expr::ClassConstant { span, .. }
+            | Expr::SelfClassConstant { span, .. }
+            | Expr::ParentClassConstant { span, .. }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
             | Expr::AppendIndex { span, .. }

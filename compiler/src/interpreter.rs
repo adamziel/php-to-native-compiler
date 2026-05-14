@@ -4,14 +4,16 @@ use std::rc::Rc;
 
 use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
-    PhpArray, PhpClassTable, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
-    PhpPropertyMetadata, RuntimeError, RuntimeResult, Value, Visibility,
+    PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpMethodMetadata, PhpObject,
+    PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError, RuntimeResult, Value,
+    Visibility,
 };
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassDecl, ClassMember, ClassPropertyDecl, ClassVisibility,
-    CompoundAssignOp, Expr, ForAction, FunctionDecl, IncrementDecrementOp,
-    IncrementDecrementPosition, Program, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, ClassConstantDecl, ClassDecl, ClassMember,
+    ClassPropertyDecl, ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl,
+    IncrementDecrementOp, IncrementDecrementPosition, Program, Span, Stmt, SwitchCase, UnaryOp,
+    UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 
@@ -44,6 +46,7 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     classes: PhpClassTable,
     constants: ConstantTable,
     source_file: Option<String>,
@@ -192,6 +195,7 @@ impl Interpreter {
     fn from_program(program: &Program, source_file: Option<String>) -> CompileResult<Self> {
         let mut functions = HashMap::new();
         let mut methods = HashMap::new();
+        let mut class_constants = HashMap::new();
         let mut classes = PhpClassTable::new();
         for stmt in &program.statements {
             match stmt {
@@ -216,11 +220,18 @@ impl Interpreter {
             if let Stmt::Class(class) = stmt {
                 let class_id = register_class_members(&mut classes, class)?;
                 for member in &class.members {
-                    if let ClassMember::Method(method) = member {
-                        methods.insert(
-                            (class_id, method.function.name.to_ascii_lowercase()),
-                            Rc::new(method.function.clone()),
-                        );
+                    match member {
+                        ClassMember::Constant(constant) => {
+                            class_constants
+                                .insert((class_id, constant.name.clone()), constant.clone());
+                        }
+                        ClassMember::Method(method) => {
+                            methods.insert(
+                                (class_id, method.function.name.to_ascii_lowercase()),
+                                Rc::new(method.function.clone()),
+                            );
+                        }
+                        ClassMember::Property(_) => {}
                     }
                 }
             }
@@ -229,6 +240,7 @@ impl Interpreter {
         Ok(Self {
             functions,
             methods,
+            class_constants,
             classes,
             constants: ConstantTable::new(),
             source_file,
@@ -644,6 +656,17 @@ impl Interpreter {
             Expr::SelfClassNameConstant { span } => self.evaluate_self_class_name_constant(*span),
             Expr::ParentClassNameConstant { span } => {
                 self.evaluate_parent_class_name_constant(*span)
+            }
+            Expr::ClassConstant {
+                class_name,
+                constant,
+                span,
+            } => self.evaluate_named_class_constant(class_name, constant, *span),
+            Expr::SelfClassConstant { constant, span } => {
+                self.evaluate_self_class_constant(constant, *span)
+            }
+            Expr::ParentClassConstant { constant, span } => {
+                self.evaluate_parent_class_constant(constant, *span)
             }
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
@@ -1869,6 +1892,193 @@ impl Interpreter {
             .get(parent_class_id)
             .expect("parent class id should resolve to class metadata");
         Ok(Value::String(parent_class.name().to_string()))
+    }
+
+    fn evaluate_named_class_constant(
+        &mut self,
+        class_name: &str,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        self.evaluate_resolved_class_constant(class_id, class_name, constant, span)
+    }
+
+    fn evaluate_self_class_constant(&mut self, constant: &str, span: Span) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("self::{constant}"),
+                    "self class constant access requires instance method context",
+                ),
+            ));
+        };
+
+        let class_name = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata")
+            .name()
+            .to_string();
+        self.evaluate_resolved_class_constant(current_class_id, &class_name, constant, span)
+    }
+
+    fn evaluate_parent_class_constant(
+        &mut self,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("parent::{constant}"),
+                    "parent class constant access requires instance method context",
+                ),
+            ));
+        };
+
+        let current_class = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata");
+        let Some(parent_class_id) = current_class.parent_id() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("parent::{constant}"),
+                    "parent class constant access requires a parent class",
+                ),
+            ));
+        };
+
+        let parent_class_name = self
+            .classes
+            .get(parent_class_id)
+            .expect("parent class id should resolve to class metadata")
+            .name()
+            .to_string();
+        self.evaluate_resolved_class_constant(parent_class_id, &parent_class_name, constant, span)
+    }
+
+    fn evaluate_resolved_class_constant(
+        &mut self,
+        class_id: ClassId,
+        class_name: &str,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((declaring_class_id, declaring_class_name, visibility, value)) =
+            self.resolve_class_constant(class_id, constant)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+            ));
+        };
+
+        self.ensure_class_constant_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            constant,
+            visibility,
+            span,
+        )?;
+
+        let mut constant_scope = SymbolTable::new();
+        let value = self.evaluate(&value, &mut constant_scope)?;
+        if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{constant}"),
+                    format!(
+                        "class constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                    ),
+                ),
+            ));
+        }
+
+        Ok(value)
+    }
+
+    fn resolve_class_constant(
+        &self,
+        class_id: ClassId,
+        constant: &str,
+    ) -> Option<(ClassId, String, Visibility, Expr)> {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(metadata) = class.constant(constant) {
+                let value = self
+                    .class_constants
+                    .get(&(current_id, metadata.name().to_string()))
+                    .expect("class constant metadata should have stored value")
+                    .value
+                    .clone();
+                return Some((
+                    current_id,
+                    class.name().to_string(),
+                    metadata.visibility(),
+                    value,
+                ));
+            }
+            current = class.parent_id();
+        }
+
+        None
+    }
+
+    fn ensure_class_constant_visible(
+        &self,
+        declaring_class_id: ClassId,
+        declaring_class_name: &str,
+        constant: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> CompileResult<()> {
+        match visibility {
+            Visibility::Public => Ok(()),
+            Visibility::Private
+                if self.class_context.last().copied() == Some(declaring_class_id) =>
+            {
+                Ok(())
+            }
+            Visibility::Protected
+                if self
+                    .class_context
+                    .last()
+                    .copied()
+                    .is_some_and(|current_id| {
+                        current_id == declaring_class_id
+                            || self.classes.is_subclass_of(current_id, declaring_class_id)
+                    }) =>
+            {
+                Ok(())
+            }
+            Visibility::Private => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{constant}"),
+                    "private class constant is not visible from the current class context",
+                ),
+            )),
+            Visibility::Protected => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{constant}"),
+                    "protected class constant is not visible from the current class context",
+                ),
+            )),
+        }
     }
 
     fn call_self_method(
@@ -4819,6 +5029,15 @@ fn register_class_members(
                     .expect("declared class id should resolve to class metadata")
                     .add_property(metadata_property)
                     .map_err(|error| runtime_error(property.span, error))?;
+            }
+            ClassMember::Constant(constant) => {
+                let visibility = runtime_visibility(constant.visibility);
+                let metadata_constant = PhpClassConstantMetadata::new(&constant.name, visibility);
+                classes
+                    .get_mut(id)
+                    .expect("declared class id should resolve to class metadata")
+                    .add_constant(metadata_constant)
+                    .map_err(|error| runtime_error(constant.span, error))?;
             }
             ClassMember::Method(method) => {
                 let visibility = runtime_visibility(method.visibility);

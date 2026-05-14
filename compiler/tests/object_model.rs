@@ -2237,6 +2237,137 @@ fn emit_ir_rejects_class_name_constants_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn class_constants_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+const GLOBAL_SUFFIX = "global";
+class Box {}
+class Root {
+    public const ROOT = "root";
+    protected const PROTECTED_NAME = "protected";
+    private const SECRET = "secret";
+    public const LABEL = Box::class;
+    public const SUM = 7 + 5;
+    public const FROM_GLOBAL = GLOBAL_SUFFIX;
+
+    public function rootNames() {
+        return self::ROOT . ":" . self::SECRET;
+    }
+}
+class Base extends Root {
+    public const BASE = "base";
+
+    public function baseNames() {
+        return self::BASE . ":" . parent::ROOT . ":" . parent::PROTECTED_NAME;
+    }
+}
+class Child extends Base {
+    public function childNames() {
+        return self::BASE . ":" . parent::BASE . ":" . Root::ROOT . ":" . Root::LABEL . ":" . Root::SUM . ":" . Root::FROM_GLOBAL;
+    }
+}
+
+$child = new Child();
+echo Root::ROOT, "\n";
+echo $child->rootNames(), "\n";
+echo $child->baseNames(), "\n";
+echo $child->childNames();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "root\nroot:secret\nbase:root:protected\nbase:base:root:Box:12:global"
+    );
+
+    let self_error = runtime_error("<?php\nself::VERSION;\n");
+    assert_eq!(
+        self_error.message,
+        "unsupported call self::VERSION: self class constant access requires instance method context"
+    );
+
+    let parent_error = runtime_error("<?php\nparent::VERSION;\n");
+    assert_eq!(
+        parent_error.message,
+        "unsupported call parent::VERSION: parent class constant access requires instance method context"
+    );
+
+    let missing_parent_error = runtime_error(
+        r#"<?php
+class Root {
+    public function name() {
+        return parent::VERSION;
+    }
+}
+$root = new Root();
+echo $root->name();
+"#,
+    );
+    assert_eq!(
+        missing_parent_error.message,
+        "unsupported call parent::VERSION: parent class constant access requires a parent class"
+    );
+
+    let visibility_error = runtime_error(
+        r#"<?php
+class Root {
+    protected const NAME = "root";
+}
+echo Root::NAME;
+"#,
+    );
+    assert_eq!(
+        visibility_error.message,
+        "unsupported call Root::NAME: protected class constant is not visible from the current class context"
+    );
+
+    let private_error = runtime_error(
+        r#"<?php
+class Root {
+    private const NAME = "root";
+}
+echo Root::NAME;
+"#,
+    );
+    assert_eq!(
+        private_error.message,
+        "unsupported call Root::NAME: private class constant is not visible from the current class context"
+    );
+
+    let undefined_class = runtime_error("<?php\necho Missing::VALUE;\n");
+    assert_eq!(undefined_class.message, "undefined class Missing");
+
+    let undefined_constant = runtime_error(
+        r#"<?php
+class Root {}
+echo Root::MISSING;
+"#,
+    );
+    assert_eq!(
+        undefined_constant.message,
+        "undefined constant Root::MISSING"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
+    for source in [
+        "<?php\necho Box::VERSION;\n",
+        "<?php\nself::VERSION;\n",
+        "<?php\nparent::VERSION;\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("object/class lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -3042,16 +3173,6 @@ class Box {
         (
             r#"<?php
 class Box {
-    public const VERSION = 1;
-}
-"#,
-            3,
-            12,
-            "unsupported class constant declaration: class constant metadata and lookup are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
     use Labels;
 }
 "#,
@@ -3066,8 +3187,28 @@ class Box {
 }
 "#,
             3,
-            13,
-            "unsupported class constant declaration: class constant metadata and lookup are not implemented",
+            19,
+            "unsupported class constant declaration: typed class constants are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static const VERSION = 1;
+}
+"#,
+            3,
+            19,
+            "unsupported class constant declaration: static class constants are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    public const VERSION = 1, NAME = "box";
+}
+"#,
+            3,
+            29,
+            "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
         ),
         (
             r#"<?php
@@ -3119,27 +3260,11 @@ self::$value;
         ),
         (
             r#"<?php
-self::VERSION;
-"#,
-            2,
-            5,
-            "unsupported self class constant access: class constants are not implemented",
-        ),
-        (
-            r#"<?php
 parent::$value;
 "#,
             2,
             7,
             "unsupported parent static property access: static property storage is not implemented",
-        ),
-        (
-            r#"<?php
-parent::VERSION;
-"#,
-            2,
-            7,
-            "unsupported parent class constant access: class constants are not implemented",
         ),
         (
             r#"<?php
@@ -3188,14 +3313,6 @@ Box::make();
             2,
             4,
             "unsupported static method call: static method dispatch is not implemented",
-        ),
-        (
-            r#"<?php
-Box::VERSION;
-"#,
-            2,
-            4,
-            "unsupported class constant access: class constants are not implemented",
         ),
     ];
 
