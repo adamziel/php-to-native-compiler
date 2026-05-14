@@ -196,6 +196,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: push checkpoint `f4f8b9a`, clean the dedicated target
   dirs, then continue with Milestone 662.
 
+## Loop Event 2026-05-14T21:25:00Z
+
+- Checkpoint before this task: `0d0263b docs: record class constant
+  checkpoint`, pushed to `origin/master`.
+- Task attempted: Milestone 662, narrow static property storage and access.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone662/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_property.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_magic_static_receiver.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_parent_static_member.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone662`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone662`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: `static::$prop`, static methods, typed/default
+  static properties, compound assignment, increment/decrement, `??=`, dynamic
+  static property names, late static binding, trait composition, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering remain explicit.
+- Next concrete task: push the resulting checkpoint, clean the dedicated target
+  dirs, then continue with Milestone 663.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

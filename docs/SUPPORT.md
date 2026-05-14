@@ -152,6 +152,7 @@
   single-parent metadata, property names, class constant names, method names,
   visibility, and static flags for the documented subset, including compatible
   public/protected inherited property redeclarations sharing one runtime slot
+  and untyped/no-default static properties initialized to `null`
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
   Declared or inherited public instance `__construct` methods execute with
@@ -194,6 +195,12 @@
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
   and return null, bool, int, float, string, or array values.
+- static property reads and direct writes for untyped/no-default declared
+  static properties through `ClassName::$name`, `self::$name`, and
+  `parent::$name`. Storage is class-level, initialized to `null`, inherited
+  static properties share the declaring class slot unless redeclared, names
+  are case-sensitive, and current public/protected/private visibility checks
+  apply in active class context.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class and protected property operands owned by the active class or
@@ -486,9 +493,9 @@
   unsupported `clone` expressions, unsupported
   `instanceof` expressions,
   unsupported magic static receiver forms such as `static::`,
-  unsupported parent static property access, anonymous class expressions,
-  dynamic property names, static property access, static method calls, and
-  `static::CONST` late-bound class constant access
+  anonymous class expressions, dynamic property names, static method calls,
+  `static::$prop` late-bound static property access, and `static::CONST`
+  late-bound class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 - explicit lex diagnostics for unsupported PHP attribute syntax beginning with
@@ -695,9 +702,8 @@
   `get_declared_traits()` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented yet, and is
   available through string-valued dynamic calls.
-  Static property and method expressions through `::`, including
-  `ClassName::$prop` and `ClassName::method()`, fail with stable parse
-  diagnostics. `clone $object` expressions fail with a
+  Static method expressions through `::`, including `ClassName::method()`,
+  fail with stable parse diagnostics. `clone $object` expressions fail with a
   stable parse diagnostic before object handle copying or `__clone` dispatch is
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
@@ -708,7 +714,8 @@
   contexts they fail with stable runtime diagnostics. `static::$prop`,
   `static::method(...)`, `static::CONST`, and `static::class` fail with
   distinct stable parse diagnostics before late-static-binding resolution,
-  static storage, static dispatch, or late-bound class constants exist.
+  late-bound static property storage, static dispatch, or late-bound class
+  constants exist.
   Class constant declarations accept the current constant-expression value
   subset, and `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve
   declared or inherited class constants case-sensitively through `phpc run`
@@ -716,14 +723,20 @@
   context. Typed constants, multiple constants in one class declaration,
   `static::CONST`, dynamic `constant("Class::CONST")`/`defined("Class::CONST")`
   lookup, and native lowering remain unsupported.
+  Static property reads and direct writes through `ClassName::$prop`,
+  `self::$prop`, and `parent::$prop` use class-level storage initialized to
+  `null`, resolve inherited properties case-sensitively, and enforce current
+  visibility checks; compound assignment, increment/decrement, `??=`,
+  defaults, typed properties, dynamic names, and `static::$prop` remain
+  unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
-  receiver slices; self/parent static property access still fails with stable
-  parse diagnostics.
+  receiver slices.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context beyond the current slice, static
-  storage, broader class constant semantics, shallow/deep clone property copying, `__clone`,
+  storage beyond direct static property reads/writes, broader class constant
+  semantics, shallow/deep clone property copying, `__clone`,
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
@@ -2433,14 +2446,15 @@
   property initialization rules, inheritance interactions, property defaults,
   multiple properties in one declaration, per-property defaults in
   multi-property declarations, typed/multiple/final/interface/trait/enum class
-  constants, static property storage, late static binding, magic methods, namespaces,
+  constants, static property defaults, typed static properties, static property
+  compound/null-coalescing mutation, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
   current private/protected method context, broader
   constructor visibility context, static member
-  execution through `::` except the current class-name and class-constant
-  slices, property assignment
+  execution through `::` except the current class-name, class-constant, and
+  static-property slices, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
   object handle identity/aliasing,
@@ -2593,11 +2607,11 @@
   implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  typed/static/multi-declarator class constants, parent static properties,
+  typed/static/multi-declarator class constants, static property defaults,
+  typed static properties, late-bound static properties,
   and anonymous classes
-- static property access, static method calls, unsupported self/parent static
-  property forms, late-bound `static::class`, `static::CONST`, and broader
-  `static::` through `::`
+- static method calls, late-bound `static::class`, `static::$prop`,
+  `static::CONST`, and broader `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

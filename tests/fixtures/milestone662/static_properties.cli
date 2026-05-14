@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+1
+5
+base:child
+base
+done--- stdout end ---
+stderr:
+--- stderr end ---

@@ -136,6 +136,19 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+    StaticProperty {
+        class_name: String,
+        property: String,
+        span: Span,
+    },
+    SelfStaticProperty {
+        property: String,
+        span: Span,
+    },
+    ParentStaticProperty {
+        property: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -192,7 +205,10 @@ impl AssignTarget {
         match self {
             AssignTarget::Variable { span, .. }
             | AssignTarget::ArrayIndex { span, .. }
-            | AssignTarget::Property { span, .. } => *span,
+            | AssignTarget::Property { span, .. }
+            | AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::SelfStaticProperty { span, .. }
+            | AssignTarget::ParentStaticProperty { span, .. } => *span,
         }
     }
 }
@@ -329,6 +345,19 @@ pub enum Expr {
         property: String,
         span: Span,
     },
+    StaticProperty {
+        class_name: String,
+        property: String,
+        span: Span,
+    },
+    SelfStaticProperty {
+        property: String,
+        span: Span,
+    },
+    ParentStaticProperty {
+        property: String,
+        span: Span,
+    },
     MethodCall {
         target: Box<Expr>,
         method: String,
@@ -430,6 +459,9 @@ impl Expr {
             | Expr::Index { span, .. }
             | Expr::AppendIndex { span, .. }
             | Expr::Property { span, .. }
+            | Expr::StaticProperty { span, .. }
+            | Expr::SelfStaticProperty { span, .. }
+            | Expr::ParentStaticProperty { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
             | Expr::SelfMethodCall { span, .. }

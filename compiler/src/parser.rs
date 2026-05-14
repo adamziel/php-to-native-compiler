@@ -1174,7 +1174,10 @@ impl Parser {
                 match &target {
                     AssignTarget::Variable { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
-                    | AssignTarget::Property { .. } => {}
+                    | AssignTarget::Property { .. }
+                    | AssignTarget::StaticProperty { .. }
+                    | AssignTarget::SelfStaticProperty { .. }
+                    | AssignTarget::ParentStaticProperty { .. } => {}
                     AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
@@ -1254,7 +1257,10 @@ impl Parser {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::Property { .. } => Ok(()),
-            AssignTarget::ArrayIndex { index: None, .. } => {
+            AssignTarget::ArrayIndex { index: None, .. }
+            | AssignTarget::StaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
         }
@@ -1267,7 +1273,10 @@ impl Parser {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::Property { .. } => Ok(()),
-            AssignTarget::ArrayIndex { index: None, .. } => {
+            AssignTarget::ArrayIndex { index: None, .. }
+            | AssignTarget::StaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
         }
@@ -1346,6 +1355,21 @@ impl Parser {
                 }),
                 _ => Err(unsupported_assignment_expression_target_message()),
             },
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            }),
+            Expr::SelfStaticProperty { property, span } => {
+                Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                Ok(AssignTarget::ParentStaticProperty { property, span })
+            }
             Expr::Array { .. } => Err(unsupported_array_destructuring_assignment_message()),
             _ => Err(unsupported_assignment_expression_target_message()),
         }
@@ -2369,17 +2393,22 @@ impl Parser {
         if receiver.is_some_and(|receiver| receiver.eq_ignore_ascii_case("parent")) {
             let member = self.peek().clone();
             return match member.kind {
-                TokenKind::Variable(_) => Err(self.error_at(
-                    operator_span,
-                    "unsupported parent static property access: static property storage is not implemented",
-                )),
+                TokenKind::Variable(property) => {
+                    self.advance();
+                    Ok(Expr::ParentStaticProperty {
+                        property,
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
                     self.advance();
                     Ok(Expr::ParentClassNameConstant {
                         span: operator_span,
                     })
                 }
-                TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                TokenKind::Identifier(method)
+                    if matches!(self.peek_next().kind, TokenKind::LParen) =>
+                {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
                     let args = self.parse_call_arguments_after_open()?;
@@ -2414,17 +2443,22 @@ impl Parser {
         if receiver.is_some_and(|receiver| receiver.eq_ignore_ascii_case("self")) {
             let member = self.peek().clone();
             return match member.kind {
-                TokenKind::Variable(_) => Err(self.error_at(
-                    operator_span,
-                    "unsupported self static property access: static property storage is not implemented",
-                )),
+                TokenKind::Variable(property) => {
+                    self.advance();
+                    Ok(Expr::SelfStaticProperty {
+                        property,
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
                     self.advance();
                     Ok(Expr::SelfClassNameConstant {
                         span: operator_span,
                     })
                 }
-                TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                TokenKind::Identifier(method)
+                    if matches!(self.peek_next().kind, TokenKind::LParen) =>
+                {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
                     let args = self.parse_call_arguments_after_open()?;
@@ -2493,10 +2527,16 @@ impl Parser {
         }
         let member = self.peek().clone();
         match member.kind {
-            TokenKind::Variable(_) => Err(self.error_at(
-                operator_span,
-                "unsupported static property access: static property storage is not implemented",
-            )),
+            TokenKind::Variable(property) => {
+                self.advance();
+                Ok(Expr::StaticProperty {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    property,
+                    span: operator_span,
+                })
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
                 self.advance();
                 Ok(Expr::ClassNameConstant {
@@ -2726,6 +2766,9 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2786,6 +2829,9 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2873,6 +2919,9 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -2963,6 +3012,9 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -3029,6 +3081,9 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => None,
         }
     }

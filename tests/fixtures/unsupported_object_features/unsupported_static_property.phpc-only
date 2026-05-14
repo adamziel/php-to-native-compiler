@@ -1,1 +1,1 @@
-phpc intentionally rejects static property syntax before static storage exists.
+phpc intentionally rejects late-bound static:: property syntax before late static binding exists.

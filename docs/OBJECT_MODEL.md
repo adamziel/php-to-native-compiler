@@ -30,18 +30,19 @@ calls are supported from active instance method/constructor context and
 dispatch against the current class and inherited method chain while reusing
 the current `$this` object. Dynamic method/property
 names still fail with explicit parse diagnostics. Static member access through
-`::` outside the current parent/self method-call, class-name constant, and
-class-constant slices also fails with explicit parse diagnostics until static
-property storage, static method dispatch, and late-bound static constants exist.
+`::` outside the current parent/self method-call, class-name constant,
+class-constant, and static-property slices also fails with explicit parse
+diagnostics until static method dispatch and late-bound static members exist.
 `ClassName::class` resolves to the
 source-spelled class string without requiring class metadata. `self::class`
 and `parent::class` resolve from active instance method/constructor context.
 Class constants declared with the current constant-expression value subset are
 stored in class metadata and resolve case-sensitively through
 `ClassName::CONST`, `self::CONST`, and `parent::CONST` with current
-public/protected/private visibility checks. Parent and self static property
-access have distinct unsupported diagnostics. Static receiver forms through
-`static::$prop`,
+public/protected/private visibility checks. Untyped/no-default static
+properties are initialized to `null` in class-level storage and resolve
+case-sensitively through `ClassName::$prop`, `self::$prop`, and
+`parent::$prop`. Static receiver forms through `static::$prop`,
 `static::method(...)`, `static::CONST`, and `static::class` also have distinct
 unsupported diagnostics until late static binding is modeled.
 The current introspection slice can check declared methods with
@@ -83,6 +84,8 @@ are not claimed yet.
   constant, and method metadata.
 - `PhpClassConstantMetadata`: class constant name and visibility.
 - `PhpPropertyMetadata`: property name, visibility, and static/instance flag.
+- interpreter-owned static property storage keyed by declaring class and
+  property name for the current untyped/no-default static property slice.
 - `PhpMethodMetadata`: method name, visibility, and static/instance flag.
 - `PhpObjectShape`: the instance-property layout derived from class metadata.
 - `PhpObject`: a cloneable object handle with process-local object identity,
@@ -99,6 +102,9 @@ The model follows the PHP lookup rules needed by the first object slice:
 - class constant names are looked up case-sensitively;
 - instance object shapes preserve exact-class instance-property declaration
   order and skip static properties;
+- static properties are stored per declaring class outside object slots and
+  inherited static property reads/writes share the declaring class slot unless
+  a child redeclares the property;
 - object values initialize inherited and exact-class non-static instance
   properties to `null` while preserving declaring class id/name for each slot;
   compatible inherited public/protected redeclarations share one slot with the
@@ -227,10 +233,12 @@ stable runtime errors for ordinary reads/writes; `isset` returns false for
 null slots, missing property names, undefined target variables, and non-object
 target variables, while `empty` returns true for falsey slots, missing
 property names, undefined target variables, and non-object target variables.
-Static properties are recorded as metadata but are
-not stored in object values. Static member expressions such as
-`ClassName::$prop` and `ClassName::method()` are rejected by the parser instead
-of falling through to generic expression errors.
+Static properties are recorded as metadata and stored per declaring class, but
+are not stored in object values. `ClassName::$prop`, `self::$prop`, and
+`parent::$prop` support direct reads and writes for the current untyped/no-default
+static property slice. Static method expressions such as `ClassName::method()`
+are rejected by the parser instead of falling through to generic expression
+errors.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
@@ -238,6 +246,9 @@ Class constants are accepted as `const NAME = value;` or
 `ClassName::CONST`, `self::CONST`, and `parent::CONST`. Typed constants,
 multiple constants in one declaration, `static::CONST`, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
+outside the current slice.
+Static property defaults, typed static properties, compound assignment,
+increment/decrement, `??=`, dynamic property names, and `static::$prop` are
 outside the current slice.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
@@ -291,12 +302,13 @@ The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interfaces, traits,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 default property values, multiple properties in one declaration, typed or
-multi-declarator class constants, static property storage, late static binding,
-magic methods, namespaces,
+multi-declarator class constants, static property defaults, typed static
+properties, compound/null-coalescing static property mutation, late static
+binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, broader visibility enforcement,
-`self`/`parent`/`static` beyond the current explicit self/parent method-call
-and class-constant slices, constructor behavior beyond public/inherited public
+`self`/`parent`/`static` beyond the current explicit self/parent method-call,
+class-constant, and static-property slices, constructor behavior beyond public/inherited public
 instance `__construct` and explicit parent calls, constructor arguments for classes without constructors,
 typed/default property compatibility,
 non-public property access outside the current private/protected method context,

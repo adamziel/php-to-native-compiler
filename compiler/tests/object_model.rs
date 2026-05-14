@@ -2368,6 +2368,132 @@ fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn static_properties_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Counter {
+    public static $count;
+}
+class Base {
+    public static $shared;
+    protected static $secret;
+
+    public function readBase() {
+        return self::$shared . ":" . self::$secret;
+    }
+}
+class Child extends Base {
+    public static $own;
+
+    public function writeBoth() {
+        parent::$shared = "base";
+        parent::$secret = "protected";
+        self::$own = "child";
+        return parent::$shared . ":" . self::$own;
+    }
+}
+
+Counter::$count = 1;
+echo Counter::$count, "\n";
+Counter::$count = Counter::$count + 4;
+echo Counter::$count, "\n";
+$child = new Child();
+echo $child->writeBoth(), "\n";
+echo $child->readBase(), "\n";
+echo Base::$shared;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\n5\nbase:child\nbase:protected\nbase");
+
+    let self_error = runtime_error("<?php\nself::$value;\n");
+    assert_eq!(
+        self_error.message,
+        "unsupported call self::$value: self static property access requires instance method context"
+    );
+
+    let parent_error = runtime_error("<?php\nparent::$value;\n");
+    assert_eq!(
+        parent_error.message,
+        "unsupported call parent::$value: parent static property access requires instance method context"
+    );
+
+    let missing_parent_error = runtime_error(
+        r#"<?php
+class Root {
+    public function read() {
+        return parent::$value;
+    }
+}
+$root = new Root();
+echo $root->read();
+"#,
+    );
+    assert_eq!(
+        missing_parent_error.message,
+        "unsupported call parent::$value: parent static property access requires a parent class"
+    );
+
+    let visibility_error = runtime_error(
+        r#"<?php
+class Root {
+    protected static $name;
+}
+echo Root::$name;
+"#,
+    );
+    assert_eq!(
+        visibility_error.message,
+        "unsupported call Root::$name: protected static property is not visible from the current class context"
+    );
+
+    let private_error = runtime_error(
+        r#"<?php
+class Root {
+    private static $name;
+}
+echo Root::$name;
+"#,
+    );
+    assert_eq!(
+        private_error.message,
+        "unsupported call Root::$name: private static property is not visible from the current class context"
+    );
+
+    let undefined_class = runtime_error("<?php\necho Missing::$value;\n");
+    assert_eq!(undefined_class.message, "undefined class Missing");
+
+    let undefined_property = runtime_error(
+        r#"<?php
+class Root {}
+echo Root::$missing;
+"#,
+    );
+    assert_eq!(
+        undefined_property.message,
+        "undefined property Root::$missing"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_static_properties_until_native_object_lowering_exists() {
+    for source in [
+        "<?php\necho Box::$cache;\n",
+        "<?php\nself::$cache;\n",
+        "<?php\nparent::$cache;\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("object/class lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -3252,22 +3378,6 @@ echo $box INSTANCEOF Box;
         ),
         (
             r#"<?php
-self::$value;
-"#,
-            2,
-            5,
-            "unsupported self static property access: static property storage is not implemented",
-        ),
-        (
-            r#"<?php
-parent::$value;
-"#,
-            2,
-            7,
-            "unsupported parent static property access: static property storage is not implemented",
-        ),
-        (
-            r#"<?php
 static::class;
 "#,
             2,
@@ -3297,14 +3407,6 @@ static::VERSION;
             2,
             7,
             "unsupported static:: class constant access: late static binding and class constants are not implemented",
-        ),
-        (
-            r#"<?php
-Box::$cache;
-"#,
-            2,
-            4,
-            "unsupported static property access: static property storage is not implemented",
         ),
         (
             r#"<?php

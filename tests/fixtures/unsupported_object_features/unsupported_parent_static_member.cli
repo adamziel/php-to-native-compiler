@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_parent_static_member.php:2:7: unsupported parent static property access: static property storage is not implemented
+runtime error at tests/fixtures/unsupported_object_features/unsupported_parent_static_member.php:2:7: unsupported call parent::$value: parent static property access requires instance method context
 --- stderr end ---

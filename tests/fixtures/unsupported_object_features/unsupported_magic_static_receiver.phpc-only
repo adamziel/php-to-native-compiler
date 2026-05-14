@@ -1,1 +1,1 @@
-phpc intentionally rejects self/parent/static static receiver syntax before magic static resolution exists.
+phpc intentionally reports self static property access outside class context before broader static resolution exists.

@@ -1,2 +1,2 @@
-parse error at 2:7: unsupported parent static property access: static property storage is not implemented
+runtime error at 2:7: unsupported call parent::$value: parent static property access requires instance method context
 

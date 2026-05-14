@@ -328,6 +328,24 @@ Implemented:
   `CARGO_TARGET_DIR=/tmp/phpc-target-full-661 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/checkpoint.sh "objects: add class constants"`
   also passed with 746 fixture tests, 467 system PHP comparisons, and 279
   skipped.
+- Added Milestone 662, narrow static property storage and access. Class
+  metadata now backs untyped/no-default static properties with class-level
+  storage initialized to `null`; `phpc run` resolves case-sensitive
+  `ClassName::$prop`, `self::$prop`, and `parent::$prop` reads and direct
+  writes through the declaring class slot, including inherited properties and
+  current public/protected/private visibility checks. `static::$prop`, static
+  methods, typed/default static properties, compound assignment,
+  increment/decrement, `??=`, dynamic static property names, late static
+  binding, traits, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit. Focused verification:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone662`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone662`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
+  passed.
 
 Next:
 
@@ -339,10 +357,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 662 should take the next object storage/static slice: static
-  property storage diagnostics/execution, static method boundaries, broader
-  class constant semantics, or a documented blocker if typed/default property
-  metadata must land first.
+- Milestone 663 should take the next object storage/static slice: static method
+  boundaries, broader static property mutation, broader class constant
+  semantics, or a documented blocker if typed/default property metadata must
+  land first.
 
 ## 2026-05-12
 

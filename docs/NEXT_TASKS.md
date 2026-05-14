@@ -6006,12 +6006,24 @@ handled.
 
 ## Milestone 662: Object Static Continuation
 
+- [x] Runtime/object lane: add narrow static property storage and access.
+  Implemented class-level storage for untyped/no-default static properties
+  initialized to `null`, plus case-sensitive `ClassName::$prop`,
+  `self::$prop`, and `parent::$prop` reads and direct writes with inherited
+  slot lookup and current visibility checks. Kept `static::$prop`, static
+  methods, typed/default static properties, compound assignment,
+  increment/decrement, `??=`, dynamic static property names, late static
+  binding, trait composition, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering explicit.
+
+## Milestone 663: Object Static Continuation
+
 - [ ] Runtime/object lane: choose the next object storage/static slice: static
-  property storage diagnostics/execution, static method boundaries, broader
-  class constant semantics, or a documented blocker if typed/default property
-  metadata must land first. Keep late static binding, trait composition, magic
-  methods, references/copy-on-write, exact native error objects, and native
-  lowering explicit.
+  method boundaries, broader static property mutation, broader class constant
+  semantics, or a documented blocker if typed/default property metadata must
+  land first. Keep late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

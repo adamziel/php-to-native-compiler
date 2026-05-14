@@ -1,2 +1,2 @@
 <?php
-Box::$cache;
+static::$cache;

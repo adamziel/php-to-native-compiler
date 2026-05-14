@@ -391,7 +391,10 @@ impl LlvmGenerator {
             | Expr::ParentClassNameConstant { span }
             | Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
-            | Expr::ParentClassConstant { span, .. } => {
+            | Expr::ParentClassConstant { span, .. }
+            | Expr::StaticProperty { span, .. }
+            | Expr::SelfStaticProperty { span, .. }
+            | Expr::ParentStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
@@ -807,6 +810,11 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             AssignTarget::Property { span, .. } => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
+            AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::SelfStaticProperty { span, .. }
+            | AssignTarget::ParentStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
         }
@@ -3075,7 +3083,10 @@ impl CGenerator {
             | Expr::ParentClassNameConstant { span }
             | Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
-            | Expr::ParentClassConstant { span, .. } => {
+            | Expr::ParentClassConstant { span, .. }
+            | Expr::StaticProperty { span, .. }
+            | Expr::SelfStaticProperty { span, .. }
+            | Expr::ParentStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
@@ -3493,6 +3504,11 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             AssignTarget::Property { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
+            AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::SelfStaticProperty { span, .. }
+            | AssignTarget::ParentStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
         }

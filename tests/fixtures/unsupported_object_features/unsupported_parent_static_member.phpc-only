@@ -1,1 +1,1 @@
-
+phpc intentionally reports parent static property access outside class context before broader static resolution exists.

@@ -162,9 +162,11 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   public/inherited public instance `__construct` execution with scoped
   `$this`, plus narrow `ClassName::class`, `self::class`, and `parent::class`
   resolution and narrow class constants through `ClassName::CONST`,
-  `self::CONST`, and `parent::CONST`, now execute through `phpc run`, but
-  interfaces, traits, enums, static members, broader class constant semantics,
-  cloning, magic methods, dynamic method/property names, broader
+  `self::CONST`, and `parent::CONST`, plus narrow static properties through
+  `ClassName::$prop`, `self::$prop`, and `parent::$prop`, now execute through
+  `phpc run`, but interfaces, traits, enums, static methods, broader static
+  member semantics, broader class constant semantics, cloning, magic methods,
+  dynamic method/property names, broader
   `parent::`/`self::`/`static::`, typed/default property compatibility,
   broader constructor/inheritance rules, and native object lowering are still
   missing.
@@ -369,8 +371,8 @@ Scope:
   `__construct` and explicit parent calls, including non-public constructor
   visibility;
 - visibility enforcement for public/protected/private access;
-- static properties, static methods, broader class constant semantics,
-  late-bound `static::class`, and broader class-name resolution;
+- static methods, broader static member semantics, broader class constant
+  semantics, late-bound `static::class`, and broader class-name resolution;
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
 - inheritance after the single-class model is stable.

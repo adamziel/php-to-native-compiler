@@ -47,6 +47,7 @@ struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
+    static_properties: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
     constants: ConstantTable,
     source_file: Option<String>,
@@ -196,6 +197,7 @@ impl Interpreter {
         let mut functions = HashMap::new();
         let mut methods = HashMap::new();
         let mut class_constants = HashMap::new();
+        let mut static_properties = HashMap::new();
         let mut classes = PhpClassTable::new();
         for stmt in &program.statements {
             match stmt {
@@ -225,6 +227,10 @@ impl Interpreter {
                             class_constants
                                 .insert((class_id, constant.name.clone()), constant.clone());
                         }
+                        ClassMember::Property(property) if property.is_static => {
+                            static_properties
+                                .insert((class_id, property.name.clone()), Value::Null);
+                        }
                         ClassMember::Method(method) => {
                             methods.insert(
                                 (class_id, method.function.name.to_ascii_lowercase()),
@@ -241,6 +247,7 @@ impl Interpreter {
             functions,
             methods,
             class_constants,
+            static_properties,
             classes,
             constants: ConstantTable::new(),
             source_file,
@@ -683,6 +690,17 @@ impl Interpreter {
                 property,
                 span,
             } => self.evaluate_property_read(target, property, *span, scope),
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => self.evaluate_named_static_property(class_name, property, *span),
+            Expr::SelfStaticProperty { property, span } => {
+                self.evaluate_self_static_property(property, *span)
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                self.evaluate_parent_static_property(property, *span)
+            }
             Expr::MethodCall {
                 target,
                 method,
@@ -1016,6 +1034,22 @@ impl Interpreter {
                     )),
                 }
             }
+            AssignTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                let value = self.evaluate(expr, scope)?;
+                self.write_named_static_property(class_name, property, value, *span)
+            }
+            AssignTarget::SelfStaticProperty { property, span } => {
+                let value = self.evaluate(expr, scope)?;
+                self.write_self_static_property(property, value, *span)
+            }
+            AssignTarget::ParentStaticProperty { property, span } => {
+                let value = self.evaluate(expr, scope)?;
+                self.write_parent_static_property(property, value, *span)
+            }
         }
     }
 
@@ -1129,6 +1163,15 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
+            AssignTarget::StaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "static property targets are not implemented",
+                ),
+            )),
         }
     }
 
@@ -1324,6 +1367,15 @@ impl Interpreter {
                     RuntimeError::undefined_variable(object),
                 )),
             },
+            AssignTarget::StaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "static property targets are not implemented",
+                ),
+            )),
         }
     }
 
@@ -1481,6 +1533,15 @@ impl Interpreter {
                     unreachable!("non-null object properties return before assignment")
                 }
             }
+            AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::SelfStaticProperty { span, .. }
+            | AssignTarget::ParentStaticProperty { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "??=",
+                    "static property targets are not implemented",
+                ),
+            )),
         }
     }
 
@@ -1892,6 +1953,261 @@ impl Interpreter {
             .get(parent_class_id)
             .expect("parent class id should resolve to class metadata");
         Ok(Value::String(parent_class.name().to_string()))
+    }
+
+    fn evaluate_named_static_property(
+        &self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        self.read_resolved_static_property(class_id, class_name, property, span)
+    }
+
+    fn evaluate_self_static_property(&self, property: &str, span: Span) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("self::${property}"),
+                    "self static property access requires instance method context",
+                ),
+            ));
+        };
+
+        let class_name = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata")
+            .name()
+            .to_string();
+        self.read_resolved_static_property(current_class_id, &class_name, property, span)
+    }
+
+    fn evaluate_parent_static_property(&self, property: &str, span: Span) -> CompileResult<Value> {
+        let (parent_class_id, parent_class_name) =
+            self.resolve_parent_static_property_context(property, span)?;
+        self.read_resolved_static_property(parent_class_id, &parent_class_name, property, span)
+    }
+
+    fn write_named_static_property(
+        &mut self,
+        class_name: &str,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        self.write_resolved_static_property(class_id, class_name, property, value, span)
+    }
+
+    fn write_self_static_property(
+        &mut self,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("self::${property}"),
+                    "self static property access requires instance method context",
+                ),
+            ));
+        };
+
+        let class_name = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata")
+            .name()
+            .to_string();
+        self.write_resolved_static_property(current_class_id, &class_name, property, value, span)
+    }
+
+    fn write_parent_static_property(
+        &mut self,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let (parent_class_id, parent_class_name) =
+            self.resolve_parent_static_property_context(property, span)?;
+        self.write_resolved_static_property(
+            parent_class_id,
+            &parent_class_name,
+            property,
+            value,
+            span,
+        )
+    }
+
+    fn resolve_parent_static_property_context(
+        &self,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<(ClassId, String)> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("parent::${property}"),
+                    "parent static property access requires instance method context",
+                ),
+            ));
+        };
+
+        let current_class = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata");
+        let Some(parent_class_id) = current_class.parent_id() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("parent::${property}"),
+                    "parent static property access requires a parent class",
+                ),
+            ));
+        };
+        let parent_class_name = self
+            .classes
+            .get(parent_class_id)
+            .expect("parent class id should resolve to class metadata")
+            .name()
+            .to_string();
+
+        Ok((parent_class_id, parent_class_name))
+    }
+
+    fn read_resolved_static_property(
+        &self,
+        class_id: ClassId,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let (declaring_class_id, declaring_class_name, visibility) = self
+            .resolve_static_property(class_id, property)
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_property(class_name, property))
+            })?;
+
+        self.ensure_static_property_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            property,
+            visibility,
+            span,
+        )?;
+
+        Ok(self
+            .static_properties
+            .get(&(declaring_class_id, property.to_string()))
+            .cloned()
+            .unwrap_or(Value::Null))
+    }
+
+    fn write_resolved_static_property(
+        &mut self,
+        class_id: ClassId,
+        class_name: &str,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let (declaring_class_id, declaring_class_name, visibility) = self
+            .resolve_static_property(class_id, property)
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_property(class_name, property))
+            })?;
+
+        self.ensure_static_property_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            property,
+            visibility,
+            span,
+        )?;
+
+        self.static_properties
+            .insert((declaring_class_id, property.to_string()), value.clone());
+        Ok(value)
+    }
+
+    fn resolve_static_property(
+        &self,
+        class_id: ClassId,
+        property: &str,
+    ) -> Option<(ClassId, String, Visibility)> {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(metadata) = class.property(property) {
+                if metadata.is_static() {
+                    return Some((current_id, class.name().to_string(), metadata.visibility()));
+                }
+                return None;
+            }
+            current = class.parent_id();
+        }
+
+        None
+    }
+
+    fn ensure_static_property_visible(
+        &self,
+        declaring_class_id: ClassId,
+        declaring_class_name: &str,
+        property: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> CompileResult<()> {
+        match visibility {
+            Visibility::Public => Ok(()),
+            Visibility::Private
+                if self.class_context.last().copied() == Some(declaring_class_id) =>
+            {
+                Ok(())
+            }
+            Visibility::Protected
+                if self
+                    .class_context
+                    .last()
+                    .copied()
+                    .is_some_and(|current_id| {
+                        current_id == declaring_class_id
+                            || self.classes.is_subclass_of(current_id, declaring_class_id)
+                    }) =>
+            {
+                Ok(())
+            }
+            Visibility::Private => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::${property}"),
+                    "private static property is not visible from the current class context",
+                ),
+            )),
+            Visibility::Protected => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::${property}"),
+                    "protected static property is not visible from the current class context",
+                ),
+            )),
+        }
     }
 
     fn evaluate_named_class_constant(

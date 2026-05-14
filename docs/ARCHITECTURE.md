@@ -74,8 +74,9 @@ Planned runtime values and semantics:
 - references
 - copy-on-write containers
 - dynamic method/property names, broader visibility enforcement for
-  non-public properties/constructors, static members, magic methods,
-  typed/default property compatibility, broader `parent::`/`self::`/`static::`, broader
+  non-public properties/constructors, static methods and broader static member
+  semantics, magic methods, typed/default property compatibility, broader
+  `parent::`/`self::`/`static::`, broader
   inheritance and constructor semantics, and exact PHP object lifecycle
   behavior
 
@@ -1035,22 +1036,23 @@ Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
-Static property and method syntax
-through `::`, including
-`ClassName::$prop` and `ClassName::method()`, is rejected
-with explicit parse diagnostics until static storage and dispatch exist.
+Static method syntax through `::`, including `ClassName::method()`, is rejected
+with explicit parse diagnostics until static dispatch exists.
 `ClassName::class` returns the source-spelled class string,
 while `self::class` and `parent::class` resolve from the active class context
 in current instance method execution. Direct `ClassName::CONST`, `self::CONST`,
 and `parent::CONST` resolve declared or inherited class constants through
 runtime class metadata in the interpreter; typed constants, multiple constants
 in one declaration, `static::CONST`, and dynamic class-constant string lookup
-remain unsupported. Unsupported parent/self static property forms stop at
-distinct parse diagnostics. `static::$prop`, `static::method(...)`,
-`static::CONST`, and `static::class` also stop at distinct parse diagnostics
-until late static binding is modeled. Native lowering rejects class
-declarations, inheritance metadata, class-name constants, class constants,
-parent/self method calls, object instantiation, object property reads/writes, instance method calls, and
+remain unsupported. Direct `ClassName::$prop`, `self::$prop`, and
+`parent::$prop` resolve untyped/no-default static properties through
+interpreter-owned class-level storage; defaults, typed static properties,
+compound mutation, and dynamic names remain unsupported. `static::$prop`,
+`static::method(...)`, `static::CONST`, and `static::class` stop at distinct
+parse diagnostics until late static binding is modeled. Native lowering
+rejects class declarations, inheritance metadata, class-name constants, class
+constants, static properties, parent/self method calls, object instantiation,
+object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct
 string-name metadata-exists false-folding slice and string/string
