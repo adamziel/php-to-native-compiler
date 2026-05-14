@@ -2013,30 +2013,33 @@ impl PhpObject {
         inherited_properties: &[PhpObjectPropertyInitializer],
         id: i64,
     ) -> Self {
-        let properties = inherited_properties
+        let mut properties = Vec::new();
+        for initializer in inherited_properties
             .iter()
             .filter(|initializer| !initializer.property.is_static())
-            .map(|initializer| ObjectProperty {
-                declaring_class_id: initializer.declaring_class_id,
-                declaring_class_name: initializer.declaring_class_name.clone(),
-                name: initializer.property.name().to_string(),
-                visibility: initializer.property.visibility(),
-                value: Value::Null,
-            })
-            .chain(
-                class
-                    .properties()
-                    .iter()
-                    .filter(|property| !property.is_static())
-                    .map(|property| ObjectProperty {
-                        declaring_class_id: class.id(),
-                        declaring_class_name: class.name().to_string(),
-                        name: property.name().to_string(),
-                        visibility: property.visibility(),
-                        value: Value::Null,
-                    }),
-            )
-            .collect();
+        {
+            Self::push_or_update_instance_property(
+                &mut properties,
+                initializer.declaring_class_id,
+                initializer.declaring_class_name.clone(),
+                initializer.property.name(),
+                initializer.property.visibility(),
+            );
+        }
+
+        for property in class
+            .properties()
+            .iter()
+            .filter(|property| !property.is_static())
+        {
+            Self::push_or_update_instance_property(
+                &mut properties,
+                class.id(),
+                class.name().to_string(),
+                property.name(),
+                property.visibility(),
+            );
+        }
 
         Self {
             id,
@@ -2044,6 +2047,31 @@ impl PhpObject {
             class_name: class.name().to_string(),
             properties: Rc::new(RefCell::new(properties)),
         }
+    }
+
+    fn push_or_update_instance_property(
+        properties: &mut Vec<ObjectProperty>,
+        declaring_class_id: ClassId,
+        declaring_class_name: String,
+        name: &str,
+        visibility: Visibility,
+    ) {
+        if visibility != Visibility::Private {
+            if let Some(property) = properties.iter_mut().find(|property| {
+                property.name == name && property.visibility != Visibility::Private
+            }) {
+                property.visibility = visibility;
+                return;
+            }
+        }
+
+        properties.push(ObjectProperty {
+            declaring_class_id,
+            declaring_class_name,
+            name: name.to_string(),
+            visibility,
+            value: Value::Null,
+        });
     }
 
     pub fn id(&self) -> i64 {

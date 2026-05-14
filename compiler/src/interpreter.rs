@@ -4844,13 +4844,7 @@ fn validate_inherited_property_compatibility(
                 ));
             }
 
-            return Err(RuntimeError::unsupported_class_inheritance(
-                class_name,
-                format!(
-                    "property {}::${} compatible redeclarations require shared inherited slot layout, which is not implemented",
-                    class_name, property.name
-                ),
-            ));
+            return Ok(());
         }
 
         current = parent.parent_id();

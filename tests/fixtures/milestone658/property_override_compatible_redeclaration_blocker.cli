@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/milestone658/property_override_compatible_redeclaration_blocker.php:7:12: unsupported class inheritance for Child: property Child::$name compatible redeclarations require shared inherited slot layout, which is not implemented
---- stderr end ---

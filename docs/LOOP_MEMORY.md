@@ -108,6 +108,31 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "objects: diagnose inherited property redeclarations"`
   if the full gate passes.
 
+## Loop Event 2026-05-14T19:45:00Z
+
+- Checkpoint before this task: `8627dec objects: diagnose inherited property
+  redeclarations`, pushed to `origin/master`.
+- Task attempted: Milestone 659, shared-slot layout for compatible
+  non-private inherited property redeclarations.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone658/*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model inherited_property_redeclarations_validate_current_compatibility_rules -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone658`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone658`, and
+  `git diff --check` passed.
+- Remaining semantic gaps: typed/default property compatibility, static
+  properties, class constants, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run the checkpoint full gate, commit with
+  `tools/checkpoint.sh "objects: share compatible inherited property slots"`,
+  then start Milestone 660 on static property storage diagnostics/execution or
+  class constants.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

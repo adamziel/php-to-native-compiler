@@ -150,7 +150,8 @@
 - top-level class declarations registered into the runtime metadata table:
   `class Name { ... }` and `class Child extends Parent { ... }` with
   single-parent metadata, property names, method names, visibility, and static
-  flags for the documented subset
+  flags for the documented subset, including compatible public/protected
+  inherited property redeclarations sharing one runtime slot
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
   Declared or inherited public instance `__construct` methods execute with
@@ -560,8 +561,11 @@
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
   ClassName(...)` looks up declared classes case-insensitively, initializes
-  instance properties to `null`, skips static properties, treats object values
-  as truthy, and lets direct `isset($object_variable)` return true. Public
+  inherited and exact-class instance properties to `null`, skips static
+  properties, collapses compatible public/protected inherited property
+  redeclarations into one shared runtime slot, keeps private parent property
+  redeclarations as separate child slots, treats object values as truthy, and
+  lets direct `isset($object_variable)` return true. Public
   or inherited public instance `__construct` methods execute after object
   allocation with `$this` bound to the new object handle. Explicit
   `parent::__construct(...)` and `parent::method(...)` calls execute in active
@@ -582,8 +586,9 @@
   and non-object target variables. `get_class($object)` returns the declared
   class name stored on the current minimal object value and is also available
   through string-valued dynamic function calls. Undefined properties, property
-  access on non-object values, non-public properties, and non-object
-  `get_class` arguments still fail with stable runtime diagnostics.
+  access on non-object values, non-public properties outside the current
+  private/protected method-context slice, and non-object `get_class` arguments
+  still fail with stable runtime diagnostics.
   `is_object($value)` returns true for current minimal object values and false
   for scalars and arrays, and is available through string-valued dynamic
   function calls. `get_debug_type($value)` returns current scalar/array type
@@ -635,9 +640,10 @@
   string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
   of public exact and inherited instance property names in parent-to-child slot
-  order with their current slot values. Protected/private slots and static
-  properties are not included. It is available through string-valued dynamic
-  function calls.
+  order with their current slot values. Compatible public redeclarations expose
+  the shared inherited slot once instead of duplicate parent/child entries.
+  Protected/private slots and static properties are not included. It is
+  available through string-valued dynamic function calls.
   Direct `empty($object->name)` accepts direct object-variable public-property
   operands, returns true for falsey public property slots, missing properties,
   undefined target variables, and non-object target variables, and uses a
@@ -696,9 +702,9 @@
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
-  property/constructor visibility context, static storage, class constants,
-  shallow/deep clone property copying, `__clone`, property override
-  compatibility, broader
+  property/constructor visibility context beyond the current slice, static
+  storage, class constants, shallow/deep clone property copying, `__clone`,
+  typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
@@ -2392,7 +2398,7 @@
 - Object/class gaps: nested and conditional class declarations, constructor
   behavior beyond public/inherited public instance `__construct` and explicit
   parent calls,
-  shared-slot layout for compatible non-private property redeclarations,
+  typed/default property compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware

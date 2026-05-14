@@ -157,13 +157,14 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   calls, single-parent metadata, inherited method lookup, inherited
   public/protected/private instance property slots, child-context protected
   property access, private-parent property redeclaration as a separate child
-  slot, inherited property redeclaration diagnostics, and public/inherited
-  public instance `__construct` execution with scoped `$this` now execute
+  slot, compatible public/protected inherited property redeclarations sharing
+  one runtime slot, inherited property redeclaration diagnostics, and
+  public/inherited public instance `__construct` execution with scoped `$this` now execute
   through `phpc run`, but interfaces, traits, enums, static members, class
   constants, cloning, magic methods, dynamic method/property names, broader
-  `parent::`/`self::`/`static::`, shared-slot layout for compatible
-  non-private property redeclarations, broader constructor/inheritance rules,
-  and native object lowering are still missing.
+  `parent::`/`self::`/`static::`, typed/default property compatibility,
+  broader constructor/inheritance rules, and native object lowering are still
+  missing.
   The interpreter object-handle identity slice covers assignment,
   argument/return, array, foreach, strict identity, `spl_object_id`, and a
   current-subset `spl_object_hash`, but clone/destruction/reuse and full object

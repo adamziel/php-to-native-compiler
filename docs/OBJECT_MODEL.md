@@ -9,8 +9,10 @@ evaluate `new ClassName(...)` for declared classes, including public or
 inherited public instance `__construct` execution. It stores class identity
 plus `null`
 instance-property slots for the exact class and inherited public/protected/private
-properties with declaring-class ownership, and can read/write public instance
-properties by static property name and check
+properties with declaring-class ownership. Compatible public/protected
+property redeclarations share one runtime slot while private parent property
+redeclarations remain separate child slots. The runtime can read/write public
+instance properties by static property name and check
 direct public property operands with
 `isset($object->name)` and
 `empty($object->name)`. Objects are now represented as process-local handles, so
@@ -91,6 +93,9 @@ The model follows the PHP lookup rules needed by the first object slice:
   order and skip static properties;
 - object values initialize inherited and exact-class non-static instance
   properties to `null` while preserving declaring class id/name for each slot;
+  compatible inherited public/protected redeclarations share one slot with the
+  effective visibility from the compatible descendant declaration, while
+  private parent properties remain separate from same-name child properties;
 - public instance property reads return the current slot value;
 - public instance property writes mutate the current object value stored in that
   variable;
@@ -197,15 +202,18 @@ constructors produce stable runtime errors.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
-property. It also accepts direct `isset($object->name)` checks over direct
-object-variable operands and direct `empty($object->name)` checks over direct
-object-variable operands. Property names remain case-sensitive. Undefined
-properties, property access on non-object values, and non-public properties
-produce stable runtime errors for ordinary reads/writes; `isset` returns false
-for null slots, missing property names, undefined target variables, and
-non-object target variables, while `empty` returns true for falsey slots,
-missing property names, undefined target variables, and non-object target
-variables. Static properties are recorded as metadata but are
+property, a private slot owned by the active declaring class, or a protected
+slot visible from the active class or an ancestor. It also accepts direct
+`isset($object->name)` checks over direct object-variable operands and direct
+`empty($object->name)` checks over direct object-variable operands for the
+same public/private/protected context slice. Property names remain
+case-sensitive. Undefined properties, property access on non-object values,
+and non-public properties outside the current method-context slice produce
+stable runtime errors for ordinary reads/writes; `isset` returns false for
+null slots, missing property names, undefined target variables, and non-object
+target variables, while `empty` returns true for falsey slots, missing
+property names, undefined target variables, and non-object target variables.
+Static properties are recorded as metadata but are
 not stored in object values. Static member expressions such as
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST` are rejected
 by the parser instead of falling through to generic expression errors.
@@ -266,7 +274,7 @@ cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call
 slices, constructor behavior beyond public/inherited public instance
 `__construct` and explicit parent calls, constructor arguments for classes without constructors,
-shared-slot layout for compatible non-private property redeclarations,
+typed/default property compatibility,
 non-public property access outside the current private/protected method context,
 non-public constructor access beyond the current constructor slice, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,

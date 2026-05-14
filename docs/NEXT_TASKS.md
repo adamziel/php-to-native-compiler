@@ -5956,18 +5956,31 @@ handled.
   untyped property subset: private parent properties may be redeclared as
   separate child slots, inherited public/protected properties reject staticness
   changes and visibility reduction, and otherwise-compatible non-private
-  redeclarations now fail with a stable blocker until shared inherited slot
-  layout is implemented. Kept shared-slot property override layout, static
-  properties, class constants, trait composition, magic methods,
+  redeclarations were left for the following shared-slot layout milestone.
+  Kept static properties, class constants, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
 
 ## Milestone 659: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next object layout slice: implement
+- [x] Runtime/object lane: choose the next object layout slice: implement
   shared-slot layout for compatible non-private property redeclarations,
   static property storage diagnostics/execution, or a documented blocker if
-  typed/default property metadata must land first. Keep class constants, trait
+  typed/default property metadata must land first. Implemented shared-slot
+  layout for compatible non-private property redeclarations by collapsing
+  inherited public/protected slots during object allocation and updating the
+  effective visibility from compatible child declarations. Parent and child
+  methods now see the same slot, public redeclarations expose the shared slot
+  publicly, and private parent redeclarations remain separate child slots.
+  Kept typed/default property compatibility, static properties, class
+  constants, trait composition, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering explicit.
+
+## Milestone 660: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next object storage slice: static
+  property storage diagnostics/execution, class constants, or a documented
+  blocker if typed/default property metadata must land first. Keep trait
   composition, magic methods, references/copy-on-write, exact native error
   objects, and native lowering explicit.
 

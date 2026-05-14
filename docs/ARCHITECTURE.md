@@ -74,8 +74,8 @@ Planned runtime values and semantics:
 - references
 - copy-on-write containers
 - dynamic method/property names, broader visibility enforcement for
-  non-public properties/constructors, static members, magic methods, property
-  override compatibility, broader `parent::`/`self::`/`static::`, broader
+  non-public properties/constructors, static members, magic methods,
+  typed/default property compatibility, broader `parent::`/`self::`/`static::`, broader
   inheritance and constructor semantics, and exact PHP object lifecycle
   behavior
 
@@ -946,8 +946,10 @@ inherited public `__construct` method with `$this` bound to the new object
 handle. Classes without constructors still require no constructor arguments.
 The allocated object stores class identity and `null` instance-property slots
 in inherited parent-to-child declaration order while skipping static
-properties. Each slot carries the declaring class id/name used for non-public
-access checks and private-property mangling.
+properties. Compatible public/protected redeclarations share the inherited
+slot with the descendant visibility, while private parent redeclarations stay
+separate child slots. Each slot carries the declaring class id/name used for
+non-public access checks and private-property mangling.
 
 `phpc run` can read and write public instance properties by static property
 name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
@@ -1023,10 +1025,12 @@ instance method/constructor context against the current class and inherited
 method chain with the current `$this` object. Objects do not enforce
 non-public property visibility beyond same-declaring-class private access and
 class/ancestor protected access for plain read/write, `isset`/`empty`,
-read-modify-write, and null-coalescing forms, or full constructor visibility.
+read-modify-write, and null-coalescing forms, compatible public/protected
+property redeclarations sharing one runtime slot, or full constructor
+visibility.
 Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
-shared-slot property override layout, broader inheritance/constructor semantics, or exact PHP
+typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
 Static member syntax
 through `::`, including

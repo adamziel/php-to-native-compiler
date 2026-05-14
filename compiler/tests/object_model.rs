@@ -2617,17 +2617,33 @@ fn inherited_property_redeclarations_validate_current_compatibility_rules() {
         r#"<?php
 class Base {
     private $privateValue;
+    protected $shared;
+    public $name;
+
+    public function describeBase() {
+        return $this->shared . ":" . $this->name;
+    }
 }
 
 class Child extends Base {
     public $privateValue;
+    public $shared;
+    public $name;
 }
 
-echo "ok";
+$child = new Child();
+$child->privateValue = "child-private";
+$child->shared = "child-shared";
+$child->name = "child-name";
+echo $child->describeBase(), "\n";
+print_r($child);
 "#,
     )
     .unwrap();
-    assert_eq!(valid.stdout, "ok");
+    assert_eq!(
+        valid.stdout,
+        "child-shared:child-name\nChild Object\n(\n    [privateValue:Base:private] => \n    [shared] => child-shared\n    [name] => child-name\n    [privateValue] => child-private\n)\n"
+    );
 
     let visibility_error = runtime_error(
         r#"<?php
@@ -2665,22 +2681,21 @@ class Child extends Base {
         "unsupported class inheritance for Child: cannot redeclare static property Base::$name as non static Child::$name"
     );
 
-    let compatible_error = runtime_error(
+    let static_error = runtime_error(
         r#"<?php
 class Base {
-    protected $name;
+    public $name;
 }
 
 class Child extends Base {
-    public $name;
+    public static $name;
 }
 "#,
     );
-    assert_eq!(compatible_error.line, 7);
-    assert_eq!(compatible_error.column, 12);
+    assert_eq!(static_error.line, 7);
     assert_eq!(
-        compatible_error.message,
-        "unsupported class inheritance for Child: property Child::$name compatible redeclarations require shared inherited slot layout, which is not implemented"
+        static_error.message,
+        "unsupported class inheritance for Child: cannot redeclare non static property Base::$name as static Child::$name"
     );
 }
 

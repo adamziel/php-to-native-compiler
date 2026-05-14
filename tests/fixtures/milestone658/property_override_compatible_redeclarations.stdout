@@ -1,6 +1,9 @@
+child-shared:child-name
 Child Object
 (
     [privateValue:Base:private] => 
+    [shared] => child-shared
+    [name] => child-name
     [privateValue] => child-private
 )
 done
