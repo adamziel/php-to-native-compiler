@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+yes
+yes
+not-class
+Array
+(
+    [0] => App\Contracts\Hookable
+    [1] => App\Contracts\Logger
+)
+--- stdout end ---
+stderr:
+--- stderr end ---

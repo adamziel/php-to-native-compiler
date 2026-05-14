@@ -2,8 +2,8 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, CatchType, ClassConstantDecl,
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam,
-    IncrementDecrementOp, IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, Program,
+    Span, StaticLocalDeclarator, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -54,7 +54,7 @@ impl Parser {
         match &self.peek().kind {
             TokenKind::Function => self.parse_function(),
             TokenKind::Class => self.parse_class(),
-            TokenKind::Interface => self.parse_unsupported_interface_declaration(),
+            TokenKind::Interface => self.parse_interface(),
             TokenKind::Trait => self.parse_unsupported_trait_declaration(),
             TokenKind::Enum => self.parse_unsupported_enum_declaration(),
             TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
@@ -341,11 +341,99 @@ impl Parser {
         Err(self.error_at(span, unsupported_trait_declaration_message()))
     }
 
-    fn parse_unsupported_interface_declaration(&mut self) -> CompileResult<Stmt> {
+    fn parse_interface(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Interface, "expected 'interface'")?
             .span;
-        Err(self.error_at(span, unsupported_interface_declaration_message()))
+        if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
+            return Err(self.error_at(span, unsupported_nested_interface_declaration_message()));
+        }
+        let name = self.consume_identifier("expected interface name")?;
+        let name = self.resolve_declared_class_name(&name);
+        if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_interface_inheritance_message(),
+            ));
+        }
+
+        self.consume_keyword(TokenKind::LBrace, "expected interface body")?;
+        let mut methods = Vec::new();
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            methods.push(self.parse_interface_method()?);
+        }
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after interface body")?;
+
+        Ok(Stmt::Interface(InterfaceDecl {
+            name,
+            methods,
+            span,
+        }))
+    }
+
+    fn parse_interface_method(&mut self) -> CompileResult<InterfaceMethodDecl> {
+        self.match_token(|kind| matches!(kind, TokenKind::Public));
+        if self.match_token(|kind| matches!(kind, TokenKind::Protected | TokenKind::Private)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_interface_method_visibility_message(),
+            ));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Static)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_static_interface_method_message(),
+            ));
+        }
+        if self.match_identifier("const") {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_interface_constant_message(),
+            ));
+        }
+
+        let span = self
+            .consume_keyword(TokenKind::Function, "expected interface method declaration")?
+            .span;
+        let function = self.parse_function_signature_after_keyword(span)?;
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_interface_method_body_message(),
+            ));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after interface method")?;
+
+        Ok(InterfaceMethodDecl { function, span })
+    }
+
+    fn parse_function_signature_after_keyword(
+        &mut self,
+        start: Span,
+    ) -> CompileResult<FunctionDecl> {
+        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
+            let span = self.advance().span;
+            return Err(self.error_at(
+                span,
+                "unsupported reference return: returning functions by reference is not implemented",
+            ));
+        }
+        let name = self.consume_identifier("expected function name")?;
+        self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+        let params = self.parse_function_params_after_open()?;
+        let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            Some(self.parse_type_decl(unsupported_return_type_message())?)
+        } else {
+            None
+        };
+
+        Ok(FunctionDecl {
+            name,
+            params,
+            return_type,
+            body: Vec::new(),
+            span: start,
+        })
     }
 
     fn parse_unsupported_enum_declaration(&mut self) -> CompileResult<Stmt> {
@@ -895,7 +983,7 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
-                        unsupported_interface_declaration_message(),
+                        unsupported_nested_interface_declaration_message(),
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
@@ -1206,7 +1294,7 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
-                        unsupported_interface_declaration_message(),
+                        unsupported_nested_interface_declaration_message(),
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
@@ -2066,7 +2154,7 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
-                        unsupported_interface_declaration_message(),
+                        unsupported_nested_interface_declaration_message(),
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
@@ -4767,8 +4855,32 @@ fn unsupported_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: interface parsing and implementation execution are not implemented"
 }
 
+fn unsupported_nested_interface_declaration_message() -> &'static str {
+    "unsupported interface declaration: only top-level interface declarations are implemented"
+}
+
+fn unsupported_interface_inheritance_message() -> &'static str {
+    "unsupported interface inheritance: interface extends clauses are not implemented"
+}
+
 fn unsupported_interface_implementation_message() -> &'static str {
     "unsupported interface implementation: implements clauses are not implemented"
+}
+
+fn unsupported_interface_constant_message() -> &'static str {
+    "unsupported interface constant declaration: interface constants are not implemented"
+}
+
+fn unsupported_interface_method_visibility_message() -> &'static str {
+    "unsupported interface method declaration: only public interface methods are implemented"
+}
+
+fn unsupported_static_interface_method_message() -> &'static str {
+    "unsupported interface method declaration: static interface methods are not implemented"
+}
+
+fn unsupported_interface_method_body_message() -> &'static str {
+    "unsupported interface method declaration: interface methods cannot have bodies in the current subset"
 }
 
 fn unsupported_enum_declaration_message() -> &'static str {

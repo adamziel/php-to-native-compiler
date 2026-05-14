@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 706, bounded declared interface metadata through `phpc run`.
+  The parser now accepts top-level interface declarations and public method
+  signatures, applies current namespace declaration resolution to interface
+  names, rejects nested interfaces, interface inheritance, constants,
+  non-public/static methods, method bodies, and `implements` clauses, and
+  registers interface names in a class-like case-insensitive registry that
+  conflicts with class names. `interface_exists()` now reports declared user
+  interfaces, `get_declared_interfaces()` lists them in declaration order, and
+  `class_exists()` remains class-only. Interface implementation checks,
+  `instanceof`/`is_a` interface relationships, built-in/internal interfaces,
+  autoload interaction, exact PHP diagnostics, partial-output behavior, and
+  native lowering remain explicit. Native lowering rejects interface
+  declarations before backend execution. Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model interface -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries interface -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone706`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone706`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed after updating the synthetic snapshot. The synthetic WordPress
+  bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:5:1: unsupported trait declaration: trait parsing and trait use execution are not implemented`.
 - Added Milestone 705, a bounded class-name namespace/import slice through
   `phpc run`. The parser now accepts one unbracketed named `namespace`
   declaration per file and simple top-level class `use` imports with optional

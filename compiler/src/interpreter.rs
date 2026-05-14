@@ -13,8 +13,8 @@ use php_runtime::{
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl,
-    IncrementDecrementOp, IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, UnaryOp, UnsetTarget,
+    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, Program, Span,
+    StaticLocalDeclarator, Stmt, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -48,6 +48,8 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    interfaces: Vec<Rc<InterfaceDecl>>,
+    interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
@@ -229,6 +231,8 @@ enum Flow {
 impl Interpreter {
     fn from_program(program: &Program, source_file: Option<String>) -> CompileResult<Self> {
         let mut functions = HashMap::new();
+        let mut interfaces = Vec::new();
+        let mut interface_lookup = HashMap::new();
         let mut methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
@@ -246,7 +250,21 @@ impl Interpreter {
                     functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) if !class.is_nested => {
+                    if interface_lookup.contains_key(&class.name.to_ascii_lowercase()) {
+                        return Err(runtime_error(
+                            class.span,
+                            RuntimeError::duplicate_class(&class.name),
+                        ));
+                    }
                     register_class_name(&mut classes, class)?;
+                }
+                Stmt::Interface(interface) => {
+                    register_interface_name(
+                        &classes,
+                        &mut interfaces,
+                        &mut interface_lookup,
+                        interface,
+                    )?;
                 }
                 _ => {}
             }
@@ -271,6 +289,8 @@ impl Interpreter {
         let mut interpreter = Self {
             functions,
             methods,
+            interfaces,
+            interface_lookup,
             class_constants,
             static_properties,
             classes,
@@ -338,7 +358,24 @@ impl Interpreter {
                     self.functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) if !class.is_nested => {
+                    if self
+                        .interface_lookup
+                        .contains_key(&class.name.to_ascii_lowercase())
+                    {
+                        return Err(runtime_error(
+                            class.span,
+                            RuntimeError::duplicate_class(&class.name),
+                        ));
+                    }
                     register_class_name(&mut self.classes, class)?;
+                }
+                Stmt::Interface(interface) => {
+                    register_interface_name(
+                        &self.classes,
+                        &mut self.interfaces,
+                        &mut self.interface_lookup,
+                        interface,
+                    )?;
                 }
                 _ => {}
             }
@@ -675,7 +712,7 @@ impl Interpreter {
             Stmt::Include { path, once, span } => {
                 self.execute_file_include(path, *once, false, *span, scope)
             }
-            Stmt::Function(_) => Ok(Flow::Normal),
+            Stmt::Function(_) | Stmt::Interface(_) => Ok(Flow::Normal),
             Stmt::Class(class) => {
                 if class.is_nested {
                     self.register_nested_class_declaration(class)?;
@@ -5405,11 +5442,17 @@ impl Interpreter {
                 }
             }
             "interface_exists" => match args.as_slice() {
-                [Value::String(_interface_name)] => Ok(Value::Bool(false)),
-                [Value::String(_interface_name), autoload] => {
+                [Value::String(interface_name)] => Ok(Value::Bool(
+                    self.interface_lookup
+                        .contains_key(&interface_name.to_ascii_lowercase()),
+                )),
+                [Value::String(interface_name), autoload] => {
                     let _autoload =
                         metadata_exists_autoload_flag("interface_exists()", autoload, span)?;
-                    Ok(Value::Bool(false))
+                    Ok(Value::Bool(
+                        self.interface_lookup
+                            .contains_key(&interface_name.to_ascii_lowercase()),
+                    ))
                 }
                 [other] => Err(runtime_error(
                     span,
@@ -5518,7 +5561,13 @@ impl Interpreter {
             }
             "get_declared_interfaces" => {
                 expect_arity(name, &args, 0, span)?;
-                Ok(Value::Array(PhpArray::new()))
+                let mut interfaces = PhpArray::new();
+                for interface in &self.interfaces {
+                    interfaces
+                        .append(Value::String(interface.name.clone()))
+                        .expect("declared interface count fits in array keys");
+                }
+                Ok(Value::Array(interfaces))
             }
             "get_declared_traits" => {
                 expect_arity(name, &args, 0, span)?;
@@ -6838,6 +6887,26 @@ fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> Compil
     classes
         .declare_class(&class.name)
         .map_err(|error| runtime_error(class.span, error))
+}
+
+fn register_interface_name(
+    classes: &PhpClassTable,
+    interfaces: &mut Vec<Rc<InterfaceDecl>>,
+    interface_lookup: &mut HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+) -> CompileResult<()> {
+    let key = interface.name.to_ascii_lowercase();
+    if classes.lookup_class_id(&interface.name).is_some() || interface_lookup.contains_key(&key) {
+        return Err(runtime_error(
+            interface.span,
+            RuntimeError::duplicate_class(&interface.name),
+        ));
+    }
+
+    let interface = Rc::new(interface.clone());
+    interfaces.push(interface.clone());
+    interface_lookup.insert(key, interface);
+    Ok(())
 }
 
 fn register_class_member_runtime_tables(

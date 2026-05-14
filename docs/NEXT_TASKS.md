@@ -6446,16 +6446,29 @@ handled.
   `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
   partial-output behavior, and native lowering. The synthetic WordPress shim
   now reaches the interface declaration blocker at `<bootstrap-shim>:4:1`.
+- [x] Parser/runtime lane: implement the bounded declared-interface metadata
+  slice for the WordPress bootstrap interface declaration blocker reported at
+  `<bootstrap-shim>:4:1`. The parser now accepts top-level interface
+  declarations and public method signatures, registers interface names in a
+  class-like case-insensitive registry, keeps `class_exists()` class-only, and
+  powers `interface_exists()` plus `get_declared_interfaces()` for declared
+  user interfaces. Tests, fixtures, docs, and native rejection coverage name
+  the remaining unsupported edges: interface inheritance, constants,
+  non-public/static methods, `implements` clauses, implementation enforcement,
+  built-in/internal interfaces, autoload interaction, exact PHP diagnostics,
+  partial-output behavior, and native lowering. The synthetic WordPress shim
+  now reaches the trait declaration blocker at `<bootstrap-shim>:5:1`.
 - [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
-  bootstrap interface declaration blocker reported at `<bootstrap-shim>:4:1`,
-  with tests, CLI coverage, docs, and named unsupported edges for interface
-  method signatures, inheritance, implementation checks, autoload interaction,
-  exact PHP diagnostics, partial-output behavior, and native lowering.
+  bootstrap trait declaration blocker reported at `<bootstrap-shim>:5:1`, with
+  tests, CLI coverage, docs, and named unsupported edges for trait members,
+  class `use` adaptations, conflict resolution, aliasing, exact PHP
+  diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 705 work, the latest committed checkpoint is
-  `4b3f4ed runtime: seed exception class metadata`, covering Milestone 704.
+- Before the current Milestone 706 work, the latest committed checkpoint is
+  `da8829c runtime: add bounded namespace class resolution`, covering
+  Milestone 705.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -385,8 +385,8 @@
   values, `get_debug_type` returns scalar/array type names or the current
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name without autoloading, `interface_exists`
-  accepts string names and returns false for the current no-interface metadata
-  model without autoloading, `trait_exists` accepts string names and returns
+  accepts string names and checks current declared interface metadata without
+  autoloading, `trait_exists` accepts string names and returns
   false for the current no-trait metadata model without autoloading,
   `enum_exists` accepts string names and returns false for the current no-enum
   metadata model without autoloading,
@@ -412,8 +412,8 @@
   object/declared-string inputs with parent metadata and false otherwise,
   `get_declared_classes` returns a zero-indexed array of classes
   declared in the current program in declaration order,
-  `get_declared_interfaces` returns an empty zero-indexed array because
-  interface declarations and internal interface metadata are not represented,
+  `get_declared_interfaces` returns a zero-indexed array of interfaces
+  declared in the current program in declaration order,
   `get_declared_traits` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented,
   and `print_r` can render current minimal object values
@@ -567,7 +567,8 @@
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
-  single-parent `extends`, interface declarations and implementation, trait declarations,
+  single-parent `extends`, interface inheritance/constants/non-public or
+  static interface methods, interface implementation, trait declarations,
   trait use inside classes, enum declarations,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
@@ -725,8 +726,8 @@
   through string-valued dynamic function calls. The autoload flag does not
   trigger autoloading in the current subset.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
-  string interface names, return false for all supported calls because
-  interface metadata is not represented yet, and are available through
+  string interface names, perform case-insensitive lookup against interfaces
+  declared in the current parsed program, and are available through
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
@@ -802,9 +803,10 @@
   `get_declared_classes()` returns a zero-indexed array of classes declared in
   the current parsed program in declaration order and is available through
   string-valued dynamic calls.
-  `get_declared_interfaces()` returns an empty zero-indexed array because
-  interface declarations and internal interface metadata are not represented
-  yet, and is available through string-valued dynamic calls.
+  `get_declared_interfaces()` returns a zero-indexed array of interfaces
+  declared in the current parsed program in declaration order and is available
+  through string-valued dynamic calls. Built-in/internal interface entries are
+  not represented yet.
   `get_declared_traits()` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented yet, and is
   available through string-valued dynamic calls.
@@ -2093,9 +2095,9 @@
   objects, references, and exact PHP deprecation/`TypeError` behavior remain
   unsupported for that flag.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
-  string interface names and return false for all supported calls because
-  interface metadata is not represented yet; the autoload flag accepts current
-  bool-like scalar values and does not trigger autoloading.
+  string interface names and perform case-insensitive lookup against
+  interfaces declared in the current parsed program; the autoload flag accepts
+  current bool-like scalar values and does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and return false for all supported calls because trait metadata
   is not represented yet; the autoload flag accepts current bool-like scalar
@@ -2132,8 +2134,9 @@
   one is recorded, otherwise false.
   `get_declared_classes()` returns a zero-indexed array containing only the
   current parsed program's declared class names in declaration order.
-  `get_declared_interfaces()` returns an empty zero-indexed array because
-  interface declarations and internal interface metadata are not represented.
+  `get_declared_interfaces()` returns a zero-indexed array containing only the
+  current parsed program's declared interface names in declaration order.
+  Built-in/internal interface entries are not represented.
   `get_declared_traits()` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
@@ -2634,9 +2637,9 @@
   instance `__construct` and explicit parent calls,
   typed/default property compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
-  interface declarations, `implements` clauses, interface constants,
-  interface method signatures, interface inheritance, namespace-aware
-  interfaces, trait declarations, trait use inside classes,
+  `implements` clauses, interface constants, interface implementation
+  enforcement, interface inheritance, built-in/internal interfaces,
+  trait declarations, trait use inside classes,
   trait methods/properties/constants, trait conflict resolution, aliases,
   visibility changes, namespace-aware traits,
   enum declarations, enum cases, backed enum values, enum methods, enum
@@ -3488,18 +3491,17 @@
   built-in/internal/extension class entries, autoloading, namespaces/import
   aliases, exact native `TypeError` behavior, and native lowering beyond
   direct string-name false folding
-- `interface_exists` declared interface metadata, built-in/internal interface
-  entries, autoloading, namespaces/import aliases, exact native `TypeError`
-  behavior, and native lowering beyond direct string-name false folding
+- `interface_exists` built-in/internal interface entries, autoloading, exact
+  native `TypeError` behavior, interface implementation relationships, and
+  native lowering beyond direct string-name false folding
 - `trait_exists` declared trait metadata, built-in/internal trait entries,
   autoloading, namespaces/import aliases, exact native `TypeError` behavior,
   and native lowering beyond direct string-name false folding
 - `enum_exists` declared enum metadata, built-in/internal enum entries,
   autoloading, namespaces/import aliases, exact native `TypeError` behavior,
   and native lowering beyond direct string-name false folding
-- `get_declared_interfaces` declared interface metadata, built-in/internal
-  interface entries, autoloading, namespaces/import aliases, exact native
-  ordering, and native lowering
+- `get_declared_interfaces` built-in/internal interface entries, autoloading,
+  exact native ordering, and native lowering
 - `get_declared_traits` declared trait metadata, built-in/internal trait
   entries, autoloading, namespaces/import aliases, exact native ordering, and
   native lowering
@@ -3528,7 +3530,7 @@
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/try runtime
   boundaries
-- traits/interfaces/enums
+- interface inheritance/implementation enforcement, traits, and enums
 - generator functions, generator objects, `yield`, `yield from`, key/value
   yields, by-reference yields, `send`/`throw`/`return` generator semantics,
   and native lowering

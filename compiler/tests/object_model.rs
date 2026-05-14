@@ -764,29 +764,35 @@ fn class_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
-fn interface_exists_reports_false_for_current_no_interface_model() {
+fn interface_exists_reports_declared_interface_metadata() {
     let source = r#"<?php
+namespace App;
 class Box {}
+interface Logger {}
+interface Hookable {}
 
-if (!interface_exists("Box")) {
+if (!interface_exists("App\\Box")) {
     echo "class:not-interface\n";
 }
-if (!interface_exists("Missing")) {
-    echo "missing:not-interface\n";
+if (interface_exists("App\\Logger")) {
+    echo "logger:interface\n";
+}
+if (interface_exists("App\\Hookable")) {
+    echo "namespaced:interface\n";
 }
 if (!interface_exists("Missing", false)) {
     echo "missing:false-autoload\n";
 }
 $call = "interface_exists";
-if (!$call("Box", true)) {
-    echo "dynamic:not-interface\n";
+if ($call("APP\\LOGGER", true)) {
+    echo "dynamic:interface\n";
 }
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "class:not-interface\nmissing:not-interface\nmissing:false-autoload\ndynamic:not-interface\n"
+        "class:not-interface\nlogger:interface\nnamespaced:interface\nmissing:false-autoload\ndynamic:interface\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1503,9 +1509,12 @@ fn get_declared_classes_requires_no_arguments() {
 }
 
 #[test]
-fn get_declared_interfaces_reports_empty_interface_table() {
+fn get_declared_interfaces_reports_declared_interface_table() {
     let source = r#"<?php
+namespace App;
 class Box {}
+interface Logger {}
+interface Hookable {}
 
 $declared = get_declared_interfaces();
 print_r($declared);
@@ -1517,7 +1526,10 @@ echo count($dynamic);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(execution.stdout, "Array\n(\n)\n0\n0");
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => App\\Logger\n    [1] => App\\Hookable\n)\n2\n2"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -3743,6 +3755,57 @@ class box {}
 }
 
 #[test]
+fn duplicate_interface_and_class_names_share_class_like_registry() {
+    let duplicate_interface = run_source(
+        r#"<?php
+interface Hookable {}
+interface hookable {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(duplicate_interface.phase, Phase::Runtime);
+    assert_eq!(duplicate_interface.line, 3);
+    assert_eq!(duplicate_interface.column, 1);
+    assert_eq!(
+        duplicate_interface.message,
+        "class hookable is already defined"
+    );
+
+    let class_then_interface = run_source(
+        r#"<?php
+class Existing {}
+interface existing {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(class_then_interface.phase, Phase::Runtime);
+    assert_eq!(class_then_interface.line, 3);
+    assert_eq!(class_then_interface.column, 1);
+    assert_eq!(
+        class_then_interface.message,
+        "class existing is already defined"
+    );
+
+    let interface_then_class = run_source(
+        r#"<?php
+interface Named {}
+class named {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(interface_then_class.phase, Phase::Runtime);
+    assert_eq!(interface_then_class.line, 3);
+    assert_eq!(interface_then_class.column, 1);
+    assert_eq!(
+        interface_then_class.message,
+        "class named is already defined"
+    );
+}
+
+#[test]
 fn duplicate_class_members_have_stable_runtime_errors() {
     let property_error = run_source(
         r#"<?php
@@ -3963,12 +4026,12 @@ trait Logs {
         (
             r#"<?php
 interface Logger {
-    public function write($message);
+    const NAME = "logger";
 }
 "#,
-            2,
-            1,
-            "unsupported interface declaration: interface parsing and implementation execution are not implemented",
+            3,
+            5,
+            "unsupported interface constant declaration: interface constants are not implemented",
         ),
         (
             r#"<?php
@@ -4022,7 +4085,7 @@ if (true) {
 "#,
             3,
             5,
-            "unsupported interface declaration: interface parsing and implementation execution are not implemented",
+            "unsupported interface declaration: only top-level interface declarations are implemented",
         ),
         (
             r#"<?php

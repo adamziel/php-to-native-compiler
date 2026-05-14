@@ -1,0 +1,1 @@
+phpc reports only user-declared interfaces in get_declared_interfaces(); system PHP includes built-in/internal interfaces.

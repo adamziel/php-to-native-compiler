@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/milestone706/interface_extends_boundary.php:2:17: unsupported interface inheritance: interface extends clauses are not implemented
+--- stderr end ---

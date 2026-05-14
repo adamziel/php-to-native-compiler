@@ -116,6 +116,10 @@ incorrect native code.
   `as` aliases, namespace-qualified class declarations, class imports for
   class-like references, `new`, `extends`, `instanceof`, static members, and
   `ClassName::class`
+- declared interface metadata: top-level `interface Name {}` declarations and
+  public method signatures parse, register class-like interface names, power
+  `interface_exists()` and `get_declared_interfaces()`, and otherwise execute
+  as declaration metadata only
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -153,7 +157,7 @@ slice, include/require breadth beyond the current narrow local
 `require`/`require_once`/`include`/`include_once` statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
-interfaces, traits, enums,
+interface inheritance/implementation enforcement, traits, enums,
 try/catch/finally exception execution, exception objects and stack unwinding,
 array destructuring beyond simple positional statement-form `list(...)`,
 constructor behavior beyond public/inherited public instance `__construct`

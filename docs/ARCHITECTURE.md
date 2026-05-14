@@ -1032,14 +1032,15 @@ single-parent ancestor relationships against the current metadata table.
 single-parent chain while keeping exact-class and missing-class cases false.
 `$value instanceof Name` uses the same current object class metadata and
 single-parent chain for object values. Non-object values and unknown
-class/interface names return false, including WordPress compatibility names
-such as `Countable` until interface metadata exists.
+class/interface names return false. Declared interface names are currently
+tracked for metadata builtins, but interface implementation relationships are
+not modeled yet.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.
 `get_declared_classes()` lists classes declared in the current parsed program;
-`get_declared_interfaces()` returns an empty list because interface metadata is
-not represented yet; `get_declared_traits()` returns an empty list because
+`get_declared_interfaces()` lists interfaces declared in the current parsed
+program; `get_declared_traits()` returns an empty list because
 trait metadata is not represented yet.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;

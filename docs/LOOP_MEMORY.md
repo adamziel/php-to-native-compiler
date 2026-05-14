@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T11:15:00Z
+
+- Checkpoint before this task: `da8829c runtime: add bounded namespace class
+  resolution`, pushed to `origin/master`.
+- Task attempted: Milestone 706, bounded declared interface metadata.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone706/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_interface.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_interface_declaration.*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OBJECT_MODEL.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model interface -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries interface -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone706`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone706`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: interface inheritance, constants,
+  non-public/static methods, `implements` clauses, implementation enforcement,
+  `instanceof`/`is_a` interface relationships, built-in/internal interfaces,
+  autoload interaction, exact PHP diagnostics, partial-output behavior, and
+  native lowering remain explicit.
+- Next concrete task: run formatting, diff, and focused gates, then checkpoint
+  with `tools/checkpoint.sh "runtime: add declared interface metadata"` if the
+  full gate passes. The synthetic WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:5:1: unsupported trait declaration: trait parsing and trait use execution are not implemented`.
+
 ## Loop Event 2026-05-14T10:35:00Z
 
 - Checkpoint before this task: `4b3f4ed runtime: seed exception class

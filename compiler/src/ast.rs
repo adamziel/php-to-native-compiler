@@ -146,6 +146,7 @@ pub enum Stmt {
         span: Span,
     },
     Function(FunctionDecl),
+    Interface(InterfaceDecl),
     Class(ClassDecl),
     Return {
         value: Option<Expr>,
@@ -331,6 +332,19 @@ pub struct ClassDecl {
     pub parent: Option<String>,
     pub members: Vec<ClassMember>,
     pub is_nested: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterfaceDecl {
+    pub name: String,
+    pub methods: Vec<InterfaceMethodDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterfaceMethodDecl {
+    pub function: FunctionDecl,
     pub span: Span,
 }
 

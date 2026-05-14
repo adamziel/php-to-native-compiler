@@ -1,1 +1,1 @@
-phpc intentionally rejects interface declarations before interface parsing or implementation execution exists.
+phpc intentionally rejects interface constants before interface constant metadata and implementation execution exist.

@@ -356,11 +356,12 @@ references/copy-on-write, exact native ordering,
 `get_mangled_object_vars` protected/private property-name mangling, dynamic
 properties, non-public visibility context, references/copy-on-write, exact
 native ordering,
-`interface_exists` true results for declared/built-in/internal interfaces,
+`interface_exists` true results for built-in/internal interfaces and interface
+implementation relationships,
 `trait_exists` true results for declared/built-in/internal traits,
 `enum_exists` true results for declared/built-in/internal enums,
-`get_declared_interfaces` declared interface metadata and built-in/internal
-interface entries, `get_declared_traits` declared trait metadata and
+`get_declared_interfaces` built-in/internal interface entries,
+`get_declared_traits` declared trait metadata and
 built-in/internal trait entries,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.

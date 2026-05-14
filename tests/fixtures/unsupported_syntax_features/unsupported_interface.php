@@ -1,2 +1,2 @@
 <?php
-interface Renderable {}
+interface Renderable extends Displayable {}

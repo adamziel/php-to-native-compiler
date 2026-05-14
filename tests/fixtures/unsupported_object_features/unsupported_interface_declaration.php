@@ -1,5 +1,4 @@
 <?php
 interface Logger {
-    public function write($message);
+    const NAME = "logger";
 }
-
