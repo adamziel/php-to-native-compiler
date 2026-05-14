@@ -47,6 +47,7 @@ struct Interpreter {
     constants: ConstantTable,
     source_file: Option<String>,
     call_depth: usize,
+    next_object_id: i64,
     function_context: Vec<String>,
     stdout: String,
 }
@@ -212,6 +213,7 @@ impl Interpreter {
             constants: ConstantTable::new(),
             source_file,
             call_depth: 0,
+            next_object_id: 1,
             function_context: Vec::new(),
             stdout: String::new(),
         })
@@ -710,7 +712,7 @@ impl Interpreter {
     }
 
     fn instantiate_object(
-        &self,
+        &mut self,
         class_name: &str,
         args: &[Expr],
         span: Span,
@@ -740,7 +742,15 @@ impl Interpreter {
             ));
         }
 
-        Ok(Value::Object(PhpObject::from_class(class)))
+        let object_id = self.next_object_id;
+        self.next_object_id = self
+            .next_object_id
+            .checked_add(1)
+            .expect("object id counter fits in i64");
+
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
     }
 
     fn execute_assignment(
@@ -909,7 +919,6 @@ impl Interpreter {
                 Some(Value::Object(value)) => {
                     let left = value
                         .read_public_property(property)
-                        .cloned()
                         .map_err(|error| runtime_error(span, error))?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -1092,7 +1101,6 @@ impl Interpreter {
                 Some(Value::Object(value)) => {
                     let left = value
                         .read_public_property(property)
-                        .cloned()
                         .map_err(|error| runtime_error(span, error))?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -1425,7 +1433,7 @@ impl Interpreter {
         match scope.read_named(name) {
             Some(Value::Object(object)) => object
                 .read_public_property_for_isset(property)
-                .map(|value| value.cloned().filter(|value| !matches!(value, Value::Null)))
+                .map(|value| value.filter(|value| !matches!(value, Value::Null)))
                 .map_err(|error| runtime_error(span, error)),
             Some(_) | None => Ok(None),
         }
@@ -1443,7 +1451,6 @@ impl Interpreter {
         match target_value {
             Value::Object(object) => object
                 .read_public_property(property)
-                .cloned()
                 .map_err(|error| runtime_error(span, error)),
             other => Err(runtime_error(
                 span,
@@ -2993,13 +3000,7 @@ impl Interpreter {
             "spl_object_id" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Object(_) => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "spl_object_id()",
-                            "PHP object handle identity is not implemented in the current subset",
-                        ),
-                    )),
+                    Value::Object(object) => Ok(Value::Int(object.id())),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -3012,13 +3013,7 @@ impl Interpreter {
             "spl_object_hash" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Object(_) => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "spl_object_hash()",
-                            "PHP object handle hash is not implemented in the current subset",
-                        ),
-                    )),
+                    Value::Object(object) => Ok(Value::String(object.hash())),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -4431,7 +4426,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
             for property in value.properties() {
                 output.push_str(&format!(
                     "{padding}  [{}]=>\n",
-                    format_var_dump_object_property(value.class_name(), property)
+                    format_var_dump_object_property(value.class_name(), &property)
                 ));
                 output.push_str(&format_var_dump_with_indent(property.value(), indent + 1));
             }
@@ -4496,7 +4491,7 @@ fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
     for property in object.properties() {
         output.push_str(&format!(
             "{child_padding}[{}] => ",
-            format_print_r_object_property(object.class_name(), property)
+            format_print_r_object_property(object.class_name(), &property)
         ));
         match property.value() {
             Value::Array(value) => {

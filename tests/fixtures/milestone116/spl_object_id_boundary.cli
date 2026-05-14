@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+1--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone116/spl_object_id_boundary.php:3:10: unsupported call spl_object_id(): PHP object handle identity is not implemented in the current subset
 --- stderr end ---

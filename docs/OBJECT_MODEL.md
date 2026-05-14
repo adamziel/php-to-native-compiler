@@ -8,8 +8,11 @@ can evaluate `new ClassName()` for declared classes that do not define
 constructors. It stores class identity plus `null` instance-property slots and
 can read/write public instance properties by static property name and check
 direct public property operands with `isset($object->name)` and
-`empty($object->name)`. Method calls and dynamic property names still fail
-with explicit parse diagnostics. Static
+`empty($object->name)`. Objects are now represented as process-local handles, so
+assignment, function argument/return binding, array storage, and foreach
+by-value over object values preserve object identity and shared property slots.
+Method calls and dynamic property names still fail with explicit parse
+diagnostics. Static
 member access through `::` also fails with explicit parse diagnostics until
 static property storage, static method dispatch, and class constants exist.
 The current introspection slice can check declared methods with
@@ -32,13 +35,11 @@ property-name mangling and visibility-context behavior are not represented yet.
 `get_called_class()` is recognized as a zero-argument callable boundary, but it
 currently fails with a stable unsupported-call diagnostic until method/static
 class context and late static binding exist.
-`spl_object_id($object)` is recognized as a one-argument callable boundary, but
-it currently fails with a stable unsupported-call diagnostic for object inputs
-until PHP object handle identity exists.
-`spl_object_hash($object)` is recognized as a one-argument callable boundary,
-but it currently fails with a stable unsupported-call diagnostic for object
-inputs until PHP object handle hash behavior is modeled on top of object
-identity.
+`spl_object_id($object)` accepts current object values and returns a stable
+process-local handle id. `spl_object_hash($object)` accepts current object
+values and returns a stable 32-character current-subset hash derived from that
+handle id. Exact system PHP hash formatting and handle reuse after destruction
+are not claimed yet.
 
 ## Runtime Metadata
 
@@ -52,7 +53,8 @@ identity.
 - `PhpPropertyMetadata`: property name, visibility, and static/instance flag.
 - `PhpMethodMetadata`: method name, visibility, and static/instance flag.
 - `PhpObjectShape`: the instance-property layout derived from class metadata.
-- `PhpObject`: an instantiated object with class identity and initialized
+- `PhpObject`: a cloneable object handle with process-local object identity,
+  class identity, and shared initialized
   instance-property slots.
 - `Visibility`: `public`, `protected`, and `private` metadata markers.
 
@@ -99,12 +101,10 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_called_class()` validates its zero-argument call shape and then fails
   with a stable unsupported-call diagnostic because no method/static class
   context is tracked yet;
-- `spl_object_id($object)` validates its one-argument call shape and object
-  operand boundary, then fails with a stable unsupported-call diagnostic for
-  object inputs because PHP object handle identity is not represented yet;
-- `spl_object_hash($object)` validates its one-argument call shape and object
-  operand boundary, then fails with a stable unsupported-call diagnostic for
-  object inputs because PHP object handle hash behavior is not represented yet;
+- `spl_object_id($object)` validates its one-argument call shape and returns the
+  current object's process-local handle id for object inputs;
+- `spl_object_hash($object)` validates its one-argument call shape and returns a
+  stable current-subset hash for object inputs;
 - duplicate class names, duplicate methods, and duplicate exact property names
   produce structured runtime errors.
 
@@ -199,10 +199,9 @@ static member execution through `::`, `::class`, `method_exists` inheritance, `i
 `is_subclass_of` inheritance/interface traversal, `get_parent_class`
 inheritance lookup, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,
-`spl_object_id` object handle identity, handle reuse after destruction, clone
-semantics, destructors,
-`spl_object_hash` object handle hash formatting, object handle identity, handle
-reuse after destruction, clone semantics, destructors,
+`spl_object_id` handle reuse after destruction, clone semantics, destructors,
+`spl_object_hash` exact system PHP hash formatting, handle reuse after
+destruction, clone semantics, destructors,
 `get_class_methods` inheritance/trait/interface and non-public
 context-sensitive method listing, `get_class_vars` property defaults,
 inheritance/trait/interface properties, context-sensitive visibility, object

@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; system PHP returns a native object handle hash for spl_object_hash().
+Project-specific stable object-handle hash fixture; exact hash formatting differs from system PHP until full handle/hash compatibility is modeled.

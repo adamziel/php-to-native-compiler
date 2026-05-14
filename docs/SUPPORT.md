@@ -978,10 +978,8 @@
   non-object `get_mangled_object_vars` arguments,
   extra `get_declared_interfaces` or `get_declared_traits` arguments,
   unsupported `get_called_class()` calls before method/static class context
-  exists, unsupported `spl_object_id($object)` calls before PHP object handle
-  identity exists, non-object `spl_object_id` operands, unsupported
-  `spl_object_hash($object)` calls before PHP object handle hash behavior
-  exists, non-object `spl_object_hash` operands,
+  exists, non-object `spl_object_id` operands, non-object `spl_object_hash`
+  operands,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
@@ -1732,10 +1730,10 @@
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`
   cover the documented scalar/array/object subset. `get_called_class` is
   recognized only as the explicit unsupported method/static class context
-  boundary described below. `spl_object_id` is recognized only as the explicit
-  unsupported object-handle identity boundary described below.
-  `spl_object_hash` is recognized only as the explicit unsupported
-  object-handle hash boundary described below.
+  boundary described below. `spl_object_id` returns the current object's stable
+  process-local handle id for object inputs. `spl_object_hash` returns a stable
+  32-character current-subset hash derived from that handle id; exact system PHP
+  hash formatting and handle reuse after destruction are not claimed.
   `gettype($value)` returns PHP legacy type names for the current boxed value
   model, and `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
   `is_float`/`is_double`, `is_string`, `is_array`, and `is_scalar` report the
@@ -1831,14 +1829,12 @@
   `get_called_class()` is recognized as a zero-argument callable boundary, but
   direct and string-valued dynamic calls fail with a stable unsupported-call
   diagnostic until method/static class context exists.
-  `spl_object_id($object)` is recognized as a one-argument callable boundary,
-  but object arguments fail with a stable unsupported-call diagnostic until PHP
-  object handle identity exists; non-object arguments fail with a stable
+  `spl_object_id($object)` accepts current object values and returns the
+  process-local object handle id; non-object arguments fail with a stable
   type-boundary diagnostic.
-  `spl_object_hash($object)` is recognized as a one-argument callable boundary,
-  but object arguments fail with a stable unsupported-call diagnostic until PHP
-  object handle hash behavior is modeled on top of object identity; non-object
-  arguments fail with a stable type-boundary diagnostic.
+  `spl_object_hash($object)` accepts current object values and returns a stable
+  current-subset handle hash; non-object arguments fail with a stable
+  type-boundary diagnostic.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
@@ -3096,13 +3092,12 @@
 - `get_called_class` method/static class context, late static binding,
   inheritance, aliases/imports, namespace-aware names, exact native `Error`
   behavior, and native lowering
-- `spl_object_id` object handle identity, handle reuse after destruction,
-  clone semantics, destructors, references/copy-on-write behavior, exact native
-  `TypeError` behavior, and native lowering
-- `spl_object_hash` object handle hash formatting, object handle identity,
-  handle reuse after destruction, clone semantics, destructors,
+- `spl_object_id` handle reuse after destruction, clone semantics, destructors,
   references/copy-on-write behavior, exact native `TypeError` behavior, and
   native lowering
+- `spl_object_hash` exact system PHP hash formatting, handle reuse after
+  destruction, clone semantics, destructors, references/copy-on-write behavior,
+  exact native `TypeError` behavior, and native lowering
 - `class_exists` native true results, native declared class tables,
   built-in/internal/extension class entries, autoloading, namespaces/import
   aliases, exact native `TypeError` behavior, and native lowering beyond

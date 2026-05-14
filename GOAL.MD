@@ -153,7 +153,11 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   aliasing semantics, object/resource edge cases, and native lowering.
 - Objects/classes are still minimal: no method dispatch, constructors, `$this`,
   inheritance, interfaces, traits, enums, static members, class constants,
-  object identity, cloning, magic methods, or full visibility enforcement.
+  cloning, magic methods, or full visibility enforcement. A first interpreter
+  object-handle identity slice exists for assignment, argument/return, array,
+  foreach, strict identity, `spl_object_id`, and a current-subset
+  `spl_object_hash`, but clone/destruction/reuse and full object execution are
+  still missing.
 - Standard-library and extension coverage is broad only in selected array and
   scalar areas; real app compatibility needs filesystem, streams, regex, JSON,
   XML, HTTP, database, crypto, encoding, date/time, reflection, sessions, and
@@ -350,7 +354,8 @@ Scope:
 - constructor execution and constructor arguments;
 - visibility enforcement for public/protected/private access;
 - static properties, static methods, class constants, and `::class`;
-- object identity, `spl_object_id`, `spl_object_hash`, clone boundaries;
+- full object identity behavior including clone/destruction/reuse boundaries,
+  exact `spl_object_hash` formatting, and native object handles;
 - inheritance after the single-class model is stable.
 
 Exit criteria:

@@ -1,7 +1,10 @@
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 use std::ptr;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
@@ -693,7 +696,7 @@ impl PhpArray {
         let mut array = Self::new();
         for entry in &self.entries {
             let value = match &column_key {
-                None => Some(&entry.value),
+                None => Some(entry.value.clone()),
                 Some(column_key) => array_column_row_value(&entry.value, column_key),
             };
 
@@ -701,7 +704,7 @@ impl PhpArray {
                 match &index_key {
                     Some(index_key) => match array_column_row_value(&entry.value, index_key) {
                         Some(index_value) => {
-                            let key = array_column_index_key_from_value(index_value)?;
+                            let key = array_column_index_key_from_value(&index_value)?;
                             array.insert(key, value.clone());
                         }
                         None => {
@@ -1517,9 +1520,9 @@ impl ArrayColumnKey {
     }
 }
 
-fn array_column_row_value<'a>(row: &'a Value, key: &ArrayColumnKey) -> Option<&'a Value> {
+fn array_column_row_value(row: &Value, key: &ArrayColumnKey) -> Option<Value> {
     match row {
-        Value::Array(row) => row.get(key.array_key()),
+        Value::Array(row) => row.get(key.array_key()).cloned(),
         Value::Object(row) => key
             .property_name()
             .and_then(|name| row.read_current_public_property(name)),
@@ -1898,15 +1901,28 @@ impl PhpObjectShape {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+static NEXT_OBJECT_ID: AtomicI64 = AtomicI64::new(1);
+
+#[derive(Debug, Clone)]
 pub struct PhpObject {
+    id: i64,
     class_id: ClassId,
     class_name: String,
-    properties: Vec<ObjectProperty>,
+    properties: Rc<RefCell<Vec<ObjectProperty>>>,
+}
+
+impl PartialEq for PhpObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl PhpObject {
     pub fn from_class(class: &PhpClassMetadata) -> Self {
+        Self::from_class_with_id(class, NEXT_OBJECT_ID.fetch_add(1, AtomicOrdering::Relaxed))
+    }
+
+    pub fn from_class_with_id(class: &PhpClassMetadata, id: i64) -> Self {
         let properties = class
             .properties()
             .iter()
@@ -1919,10 +1935,19 @@ impl PhpObject {
             .collect();
 
         Self {
+            id,
             class_id: class.id(),
             class_name: class.name().to_string(),
-            properties,
+            properties: Rc::new(RefCell::new(properties)),
         }
+    }
+
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+
+    pub fn hash(&self) -> String {
+        format!("{:032x}", self.id)
     }
 
     pub fn class_id(&self) -> ClassId {
@@ -1933,13 +1958,13 @@ impl PhpObject {
         &self.class_name
     }
 
-    pub fn properties(&self) -> &[ObjectProperty] {
-        &self.properties
+    pub fn properties(&self) -> Vec<ObjectProperty> {
+        self.properties.borrow().clone()
     }
 
-    pub fn read_public_property(&self, name: &str) -> RuntimeResult<&Value> {
-        let property = self
-            .properties
+    pub fn read_public_property(&self, name: &str) -> RuntimeResult<Value> {
+        let properties = self.properties.borrow();
+        let property = properties
             .iter()
             .find(|property| property.name == name)
             .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
@@ -1951,15 +1976,12 @@ impl PhpObject {
             )));
         }
 
-        Ok(&property.value)
+        Ok(property.value.clone())
     }
 
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
-        let Some(property) = self
-            .properties
-            .iter()
-            .find(|property| property.name == name)
-        else {
+        let properties = self.properties.borrow();
+        let Some(property) = properties.iter().find(|property| property.name == name) else {
             return Ok(false);
         };
 
@@ -1973,12 +1995,9 @@ impl PhpObject {
         Ok(!matches!(property.value, Value::Null))
     }
 
-    pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<&Value>> {
-        let Some(property) = self
-            .properties
-            .iter()
-            .find(|property| property.name == name)
-        else {
+    pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<Value>> {
+        let properties = self.properties.borrow();
+        let Some(property) = properties.iter().find(|property| property.name == name) else {
             return Ok(None);
         };
 
@@ -1989,22 +2008,20 @@ impl PhpObject {
             )));
         }
 
-        Ok(Some(&property.value))
+        Ok(Some(property.value.clone()))
     }
 
-    pub fn read_current_public_property(&self, name: &str) -> Option<&Value> {
+    pub fn read_current_public_property(&self, name: &str) -> Option<Value> {
         self.properties
+            .borrow()
             .iter()
             .find(|property| property.name == name && property.visibility == Visibility::Public)
-            .map(|property| &property.value)
+            .map(|property| property.value.clone())
     }
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
-        let Some(property) = self
-            .properties
-            .iter()
-            .find(|property| property.name == name)
-        else {
+        let properties = self.properties.borrow();
+        let Some(property) = properties.iter().find(|property| property.name == name) else {
             return Ok(true);
         };
 
@@ -2018,9 +2035,9 @@ impl PhpObject {
         Ok(!property.value.is_truthy())
     }
 
-    pub fn write_public_property(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
-        let property = self
-            .properties
+    pub fn write_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let property = properties
             .iter_mut()
             .find(|property| property.name == name)
             .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
@@ -2375,11 +2392,8 @@ impl Value {
                     "strict identity for arrays is not implemented",
                 ))
             }
-            (Value::Object(_), _) | (_, Value::Object(_)) => {
-                Err(RuntimeError::unsupported_comparison(
-                    "strict identity for objects is not implemented",
-                ))
-            }
+            (Value::Object(left), Value::Object(right)) => Ok(left.id() == right.id()),
+            (Value::Object(_), _) | (_, Value::Object(_)) => Ok(false),
             _ => Ok(self.php_identical_scalar(other)),
         }
     }
@@ -3221,7 +3235,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_identity_rejects_non_scalar_values() {
+    fn strict_identity_rejects_arrays_and_checks_object_handles() {
         let error = Value::Array(PhpArray::new())
             .php_identical_checked(&Value::Array(PhpArray::new()))
             .unwrap_err();
@@ -3241,18 +3255,12 @@ mod tests {
         let class_id = classes.declare_class("Box").unwrap();
         let class = classes.get(class_id).unwrap();
         let object = Value::Object(PhpObject::from_class(class));
-        let error = object.php_identical_checked(&Value::Null).unwrap_err();
+        let alias = object.clone();
+        let other = Value::Object(PhpObject::from_class(class));
 
-        assert_eq!(
-            error.kind(),
-            &RuntimeErrorKind::UnsupportedComparison {
-                reason: "strict identity for objects is not implemented".to_string(),
-            }
-        );
-        assert_eq!(
-            error.message(),
-            "unsupported comparison: strict identity for objects is not implemented"
-        );
+        assert!(object.php_identical_checked(&alias).unwrap());
+        assert!(!object.php_identical_checked(&other).unwrap());
+        assert!(!object.php_identical_checked(&Value::Null).unwrap());
     }
 
     fn comparison_matrix_value(label: &str) -> Value {
@@ -6394,15 +6402,15 @@ mod tests {
             .add_property(PhpPropertyMetadata::instance("secret", Visibility::Private))
             .unwrap();
 
-        let mut object = PhpObject::from_class(class);
+        let object = PhpObject::from_class(class);
 
-        assert_eq!(object.read_public_property("id").unwrap(), &Value::Null);
+        assert_eq!(object.read_public_property("id").unwrap(), Value::Null);
         assert!(!object.is_public_property_set("id").unwrap());
         assert!(object.is_public_property_empty("id").unwrap());
         object
             .write_public_property("id", Value::Int(42))
             .expect("public property write should update the slot");
-        assert_eq!(object.read_public_property("id").unwrap(), &Value::Int(42));
+        assert_eq!(object.read_public_property("id").unwrap(), Value::Int(42));
         assert!(object.is_public_property_set("id").unwrap());
         assert!(!object.is_public_property_empty("id").unwrap());
         assert!(!object.is_public_property_set("ID").unwrap());

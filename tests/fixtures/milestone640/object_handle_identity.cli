@@ -1,0 +1,15 @@
+exit: 0
+stdout:
+alias
+array
+function
+return
+foreach
+bool(true)
+bool(true)
+bool(false)
+bool(true)
+bool(true)
+done--- stdout end ---
+stderr:
+--- stderr end ---

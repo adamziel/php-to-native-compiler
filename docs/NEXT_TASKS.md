@@ -5714,6 +5714,21 @@ handled.
   bootstrap blocker, and commit a real external-source snapshot only if the
   output is stable and the repository still does not need to vendor core.
 
+## Milestone 640: Interpreter Object Handle Identity
+
+- [x] Runtime/object lane: move current interpreter object values from inline
+  cloneable payloads to cloneable process-local handles so supported value
+  copies preserve shared property slots and object identity. Added strict object
+  identity, `spl_object_id`, current-subset `spl_object_hash`, and tests for
+  assignment, function argument/return, array, and foreach object-handle copies.
+
+## Milestone 641: Public Instance Method Dispatch
+
+- [ ] Parser/runtime/object lane: add the next executable object slice:
+  static-name public instance method calls with scoped `$this` binding and
+  native lowering rejection, while keeping constructors, inheritance, dynamic
+  method names, visibility context, magic methods, and references explicit.
+
 ## Latest Checkpoint
 
 - The current checkpoint records the completed split-lane work through

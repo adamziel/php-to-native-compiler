@@ -1,3 +1,3 @@
 <?php
 class Box {}
-var_dump(spl_object_hash(new Box()));
+echo spl_object_hash(new Box());

@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+00000000000000000000000000000001--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone117/spl_object_hash_boundary.php:3:10: unsupported call spl_object_hash(): PHP object handle hash is not implemented in the current subset
 --- stderr end ---

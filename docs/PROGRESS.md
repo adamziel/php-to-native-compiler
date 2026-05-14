@@ -17,6 +17,14 @@ Implemented:
   inventory tool now supports normalized output for stable snapshots, and a
   synthetic WordPress-shaped CLI test pins the inventory format and current
   unsupported `require` bootstrap blocker without vendoring WordPress core.
+- Added Milestone 640, interpreter object handle identity. Current object values
+  now clone as process-local handles instead of inline payload copies, preserving
+  shared public property slots through assignment, function argument/return,
+  array storage, and foreach by-value. Strict object identity, `spl_object_id`,
+  and a current-subset `spl_object_hash` are executable through `phpc run`;
+  clone/destruction/reuse, exact PHP hash formatting, method dispatch, `$this`,
+  constructors, inheritance, references/copy-on-write, and native object
+  lowering remain unsupported.
 
 Next:
 
@@ -28,6 +36,9 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
+- Milestone 641 should add public static-name instance method dispatch with
+  scoped `$this` binding, or document the blocker if object-handle plumbing
+  exposes a sharper prerequisite.
 
 ## 2026-05-12
 

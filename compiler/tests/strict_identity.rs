@@ -64,24 +64,25 @@ fn strict_identity_rejects_arrays_until_array_identity_exists() {
 }
 
 #[test]
-fn strict_identity_rejects_objects_until_object_identity_exists() {
-    let error = run_source(
+fn strict_identity_checks_object_handle_identity() {
+    let execution = run_source(
         r#"<?php
 class Box {}
 $left = new Box();
+$alias = $left;
 $right = new Box();
-echo $left === $right;
+if ($left === $alias) {
+    echo "same\n";
+}
+if ($left !== $right) {
+    echo "different\n";
+}
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported comparison: strict identity for objects is not implemented"
-    );
+    assert_eq!(execution.stdout, "same\ndifferent\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

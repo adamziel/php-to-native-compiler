@@ -986,14 +986,13 @@ trait metadata is not represented yet.
 `get_called_class()` is reserved as a zero-argument runtime boundary and fails
 with a stable unsupported-call diagnostic until method/static class context and
 late static binding exist.
-`spl_object_id($object)` is reserved as a one-argument runtime boundary and
-fails with a stable unsupported-call diagnostic for object inputs until PHP
-object handle identity is represented; non-object inputs fail with the current
-stable type-boundary diagnostic.
-`spl_object_hash($object)` is reserved as a one-argument runtime boundary and
-fails with a stable unsupported-call diagnostic for object inputs until PHP
-object handle hash behavior is modeled on top of object identity; non-object
-inputs fail with the current stable type-boundary diagnostic.
+`spl_object_id($object)` accepts current object values and returns a
+process-local handle id; non-object inputs fail with the current stable
+type-boundary diagnostic.
+`spl_object_hash($object)` accepts current object values and returns a stable
+current-subset hash derived from the handle id; exact system PHP hash formatting
+is not claimed yet, and non-object inputs fail with the current stable
+type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
 execute methods, run constructors, enforce visibility for non-public

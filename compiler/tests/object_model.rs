@@ -113,6 +113,52 @@ print_r($profile);
 }
 
 #[test]
+fn object_handles_preserve_identity_across_supported_value_copies() {
+    let source = r#"<?php
+class Box {
+    public $value;
+}
+
+function set_value($object, $value) {
+    $object->value = $value;
+    return $object;
+}
+
+$box = new Box();
+$alias = $box;
+$alias->value = "alias";
+echo $box->value, "\n";
+
+$items = [$box];
+$fromArray = $items[0];
+$fromArray->value = "array";
+echo $box->value, "\n";
+
+set_value($box, "function");
+echo $box->value, "\n";
+
+$returned = set_value($box, "return");
+echo $box->value, "\n";
+
+foreach ([$box] as $item) {
+    $item->value = "foreach";
+}
+echo $box->value, "\n";
+
+var_dump($box === $alias);
+var_dump($box === $returned);
+var_dump($box === new Box());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "alias\narray\nfunction\nreturn\nforeach\nbool(true)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn isset_public_instance_properties_checks_current_slot_values() {
     let source = r#"<?php
 class Profile {
@@ -1215,26 +1261,22 @@ fn get_called_class_requires_no_arguments() {
 }
 
 #[test]
-fn spl_object_id_has_stable_boundary_until_object_handles_exist() {
-    let error = runtime_error("<?php\nclass Box {}\nvar_dump(spl_object_id(new Box()));\n");
+fn spl_object_id_reports_current_object_handle_identity() {
+    let source = r#"<?php
+class Box {}
+$left = new Box();
+$alias = $left;
+$right = new Box();
+$call = "spl_object_id";
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 10);
-    assert_eq!(
-        error.message,
-        "unsupported call spl_object_id(): PHP object handle identity is not implemented in the current subset"
-    );
+var_dump(spl_object_id($left) === spl_object_id($alias));
+var_dump(spl_object_id($left) === spl_object_id($right));
+var_dump($call($left) === spl_object_id($left));
+"#;
 
-    let dynamic_error = runtime_error(
-        "<?php\nclass Box {}\n$call = \"spl_object_id\";\nvar_dump($call(new Box()));\n",
-    );
-
-    assert_eq!(dynamic_error.line, 4);
-    assert_eq!(dynamic_error.column, 10);
-    assert_eq!(
-        dynamic_error.message,
-        "unsupported call spl_object_id(): PHP object handle identity is not implemented in the current subset"
-    );
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "bool(true)\nbool(false)\nbool(true)\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1259,26 +1301,26 @@ fn spl_object_id_requires_one_object_argument() {
 }
 
 #[test]
-fn spl_object_hash_has_stable_boundary_until_object_handles_exist() {
-    let error = runtime_error("<?php\nclass Box {}\nvar_dump(spl_object_hash(new Box()));\n");
+fn spl_object_hash_reports_stable_current_object_handle_hash() {
+    let source = r#"<?php
+class Box {}
+$left = new Box();
+$alias = $left;
+$right = new Box();
+$call = "spl_object_hash";
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 10);
+var_dump(spl_object_hash($left) === spl_object_hash($alias));
+var_dump(spl_object_hash($left) === spl_object_hash($right));
+var_dump($call($left) === spl_object_hash($left));
+var_dump(strlen(spl_object_hash($left)));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call spl_object_hash(): PHP object handle hash is not implemented in the current subset"
+        execution.stdout,
+        "bool(true)\nbool(false)\nbool(true)\nint(32)\n"
     );
-
-    let dynamic_error = runtime_error(
-        "<?php\nclass Box {}\n$call = \"spl_object_hash\";\nvar_dump($call(new Box()));\n",
-    );
-
-    assert_eq!(dynamic_error.line, 4);
-    assert_eq!(dynamic_error.column, 10);
-    assert_eq!(
-        dynamic_error.message,
-        "unsupported call spl_object_hash(): PHP object handle hash is not implemented in the current subset"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
