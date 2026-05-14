@@ -31,8 +31,17 @@ Implemented:
   to the receiver object handle in a fresh local scope, preserves caller-visible
   property mutation through shared handles, and keeps non-object receivers,
   missing methods, non-public methods, static methods through object receivers,
-  top-level `$this`, dynamic method/property names, constructors, inheritance,
-  magic methods, references/copy-on-write, and native object lowering explicit.
+  top-level `$this`, dynamic method/property names, inheritance, magic methods,
+  references/copy-on-write, and native object lowering explicit.
+- Added Milestone 642, public instance constructor dispatch. `new
+  ClassName(...)` now allocates the object, executes a declared public instance
+  `__construct` method with `$this` bound to the new object handle, supports the
+  current positional argument/default-parameter subset, preserves constructor
+  property writes, and keeps constructor arguments for classes without
+  constructors, non-public constructors, static constructors, promoted
+  properties, parent constructors, inheritance, named arguments,
+  references/copy-on-write, exact native error objects, and native object
+  lowering explicit.
 
 Next:
 
@@ -44,10 +53,9 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 642 should add the next constructor execution slice for public
-  `__construct` methods with scoped `$this`, or document the blocker if
-  constructor ordering, visibility, or argument binding exposes a sharper
-  prerequisite.
+- Milestone 643 should take the next object visibility slice: same-class
+  private method/constructor access if the current runtime call context is
+  sufficient, or a documented call-context prerequisite if it is not.
 
 ## 2026-05-12
 

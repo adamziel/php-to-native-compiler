@@ -147,8 +147,10 @@
 - top-level class declarations registered into the runtime metadata table:
   `class Name { ... }` with property names, method names, visibility, and static
   flags for the documented subset
-- minimal object instantiation with `new ClassName()` for declared classes that
-  do not define `__construct` and are called without constructor arguments
+- object instantiation with `new ClassName(...)` for declared classes. Classes
+  without `__construct` are supported only with no constructor arguments.
+  Declared public instance `__construct` methods execute with scoped `$this`,
+  positional arguments, and the current default-parameter subset.
 - public instance property reads and direct-variable writes by static property
   name: `$object->name` and `$object->name = ...`
 - public instance method calls by static method name:
@@ -517,12 +519,15 @@
   The accepted member subset records properties without defaults and methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
-  ClassName()` looks up declared classes case-insensitively, initializes
+  ClassName(...)` looks up declared classes case-insensitively, initializes
   instance properties to `null`, skips static properties, treats object values
-  as truthy, and lets direct `isset($object_variable)` return true. Undefined
-  classes, constructor methods, and constructor arguments fail with stable
-  runtime diagnostics. Public instance property reads and direct-variable
-  writes work by static property name; property names are case-sensitive, and
+  as truthy, and lets direct `isset($object_variable)` return true. Public
+  instance `__construct` methods execute after object allocation with `$this`
+  bound to the new object handle. Undefined classes, constructor arguments for
+  classes without constructors, non-public constructors, and static
+  constructors fail with stable runtime diagnostics. Public instance property
+  reads and direct-variable writes work by static property name; property names
+  are case-sensitive, and
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
   false for `null` slots, missing property names, undefined target variables,
@@ -1427,9 +1432,9 @@
   lowering with a specific codegen diagnostic until generated code has native
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
-  Native class declarations, object instantiation, public property reads/writes,
-  public instance method calls, and object metadata builtins beyond
-  scalar/null/string `is_object`,
+  Native class declarations, object instantiation, constructor dispatch, public
+  property reads/writes, public instance method calls, and object metadata
+  builtins beyond scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
   false folding, including string/string `property_exists` and
   `method_exists`, and string/string relationship false folding for `is_a` and
@@ -2315,7 +2320,7 @@
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
 - Object/class gaps: nested and conditional class declarations, constructor
-  execution, constructor arguments, inheritance,
+  behavior beyond public instance `__construct`, inheritance,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
   interfaces, trait declarations, trait use inside classes,
@@ -2341,12 +2346,12 @@
   `self`/`parent`/`static`, object comparisons, `instanceof` relationship
   checks, object-to-string conversion, object callables, and native lowering
   are unsupported.
-- Constructor boundary: declaring a class with `__construct` or supplying
-  arguments to `new ClassName(...)` fails with stable runtime diagnostics before
-  any user constructor body executes. Constructor `$this` binding, constructor
-  property initialization, visibility checks, inheritance and parent
-  constructor calls, promoted properties, exact PHP `Error` object behavior,
-  and native lowering remain unsupported.
+- Constructor boundary: public instance `__construct` methods execute in
+  `phpc run` with scoped `$this`. Constructor arguments for classes without a
+  constructor, non-public constructors, static constructors, constructor
+  promotion, inheritance and parent constructor calls, named arguments,
+  references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
+  native lowering remain unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -2469,9 +2474,9 @@
   stable runtime diagnostics
 - non-public object property access and property writes to lvalues other than a
   direct variable
-- constructor execution and constructor arguments for `new ClassName()`
-  currently fail with stable runtime diagnostics when a declared constructor is
-  present or arguments are supplied
+- constructor arguments for classes without a declared constructor, non-public
+  constructors, and static constructors currently fail with stable runtime
+  diagnostics
 - unsupported class forms including nested/conditional declarations,
   inheritance, interface declarations and `implements` clauses, interface
   constants, interface method signatures, interface inheritance, trait

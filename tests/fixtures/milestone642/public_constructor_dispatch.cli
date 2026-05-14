@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+Grace:1
+Ada:1--- stdout end ---
+stderr:
+--- stderr end ---

@@ -54,9 +54,9 @@ Implemented now:
 - `String`
 - ordered PHP arrays with integer/string keys
 - class metadata, object-shape descriptors, and minimal object values for
-  `new ClassName()` over declared constructor-free classes, process-local
-  object handles, public instance properties, and public instance method
-  dispatch with scoped `$this`
+  `new ClassName(...)` over declared classes, process-local object handles,
+  public instance properties, public instance method dispatch, and public
+  instance `__construct` dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -69,9 +69,9 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
-- constructor calls, inheritance, dynamic method/property names, visibility
-  enforcement for non-public members, static members, magic methods, and exact
-  PHP object lifecycle behavior
+- inheritance, dynamic method/property names, visibility enforcement for
+  non-public members, static members, magic methods, broader constructor
+  semantics, and exact PHP object lifecycle behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -934,10 +934,11 @@ duplicate class/member metadata produces structured runtime errors.
 registry. The accepted member subset records public/protected/private
 visibility, static flags, property names without defaults, and method names
 whose parameters/bodies use the existing function parser subset. `new
-ClassName()` can instantiate a declared class when the class has no
-`__construct` method and the call supplies no constructor arguments. The
-allocated object stores class identity and `null` instance-property slots in
-declaration order while skipping static properties.
+ClassName(...)` can instantiate a declared class and execute a public instance
+`__construct` method with `$this` bound to the new object handle. Classes
+without constructors still require no constructor arguments. The allocated
+object stores class identity and `null` instance-property slots in declaration
+order while skipping static properties.
 
 `phpc run` can read and write public instance properties by static property
 name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
@@ -999,9 +1000,9 @@ type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Public instance methods can
 execute through `phpc run` with `$this` bound to the receiver object handle.
-Objects do not run constructors, enforce visibility for non-public members,
-expose reflection, implement dynamic method/property names, inheritance, or
-exact PHP lifecycle behavior. Static member syntax
+Objects do not enforce visibility for non-public members, expose reflection,
+implement dynamic method/property names, inheritance, broader constructor
+semantics, or exact PHP lifecycle behavior. Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
 with explicit parse diagnostics until static storage, dispatch, and class

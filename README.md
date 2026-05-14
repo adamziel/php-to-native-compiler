@@ -94,19 +94,19 @@ incorrect native code.
   append writes, offset removal, and array iteration
 - top-level constants, selected built-in constants, runtime-defined constants,
   and executable magic constants documented in the support matrix
-- a minimal object/class slice: class metadata, constructor-free
-  `new ClassName()`, public instance property reads/writes, public instance
-  method calls with scoped `$this`, object `isset` and `empty`, and selected
-  metadata builtins
+- a minimal object/class slice: class metadata, `new ClassName(...)` with
+  public instance `__construct`, public instance property reads/writes, public
+  instance method calls with scoped `$this`, object `isset` and `empty`, and
+  selected metadata builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, inheritance, interfaces, traits,
-enums, constructors, visibility enforcement beyond the current public
-property/method slice, dynamic method/property names, resources, and native
-extension integration.
+enums, constructor behavior beyond public instance `__construct`, visibility
+enforcement beyond the current public property/method/constructor slice,
+dynamic method/property names, resources, and native extension integration.
 
 ### Native Path
 

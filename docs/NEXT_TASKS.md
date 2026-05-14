@@ -5731,11 +5731,20 @@ handled.
 
 ## Milestone 642: Object Constructor Dispatch
 
-- [ ] Runtime/object lane: add the next constructor slice for
+- [x] Runtime/object lane: add the next constructor slice for
   `new ClassName(...)` with declared public `__construct` execution and scoped
   `$this`, while keeping promoted properties, inheritance/parent constructors,
   non-public constructor visibility, named arguments, references/copy-on-write,
   exact native error objects, and native lowering explicit.
+
+## Milestone 643: Non-public Method and Constructor Visibility Boundary
+
+- [ ] Runtime/object lane: add the next honest visibility slice: either execute
+  private methods/constructors only from same-class `$this` context with tests,
+  or introduce a sharper runtime call-context model and keep non-public access
+  rejected with more precise diagnostics. Keep inheritance, protected lookup,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native lowering explicit.
 
 ## Latest Checkpoint
 

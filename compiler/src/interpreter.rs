@@ -661,7 +661,7 @@ impl Interpreter {
                 class_name,
                 args,
                 span,
-            } => self.instantiate_object(class_name, args, *span),
+            } => self.instantiate_object(class_name, args, *span, scope),
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
@@ -746,31 +746,30 @@ impl Interpreter {
         class_name: &str,
         args: &[Expr],
         span: Span,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        let (class_id, declared_class_name, constructor) = {
+            let class = self
+                .classes
+                .lookup_class(class_name)
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+            (
+                class.id(),
+                class.name().to_string(),
+                class.method("__construct").map(|method| {
+                    (
+                        method.name().to_string(),
+                        method.visibility(),
+                        method.is_static(),
+                    )
+                }),
+            )
+        };
+
         let class = self
             .classes
-            .lookup_class(class_name)
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
-
-        if !args.is_empty() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    class.name(),
-                    "constructor arguments are not implemented",
-                ),
-            ));
-        }
-
-        if class.method("__construct").is_some() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    class.name(),
-                    "constructors are not implemented",
-                ),
-            ));
-        }
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
 
         let object_id = self.next_object_id;
         self.next_object_id = self
@@ -778,9 +777,57 @@ impl Interpreter {
             .checked_add(1)
             .expect("object id counter fits in i64");
 
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        let object = PhpObject::from_class_with_id(class, object_id);
+        let Some((constructor_name, constructor_visibility, constructor_is_static)) = constructor
+        else {
+            if !args.is_empty() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        declared_class_name,
+                        "constructor arguments are not implemented",
+                    ),
+                ));
+            }
+            return Ok(Value::Object(object));
+        };
+
+        if constructor_is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "static constructors are not implemented",
+                ),
+            ));
+        }
+
+        if constructor_visibility != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "non-public constructors require visibility enforcement, which is not implemented",
+                ),
+            ));
+        }
+
+        let function = self
+            .methods
+            .get(&(class_id, constructor_name.to_ascii_lowercase()))
+            .cloned()
+            .expect("declared constructor metadata should have a stored function body");
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, scope)?);
+        }
+
+        self.call_user_function_with_this(function, object.clone(), values)?;
+        Ok(Value::Object(object))
     }
 
     fn execute_assignment(

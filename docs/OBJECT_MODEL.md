@@ -4,10 +4,11 @@ This document records the current object/class boundary. It is a narrow
 instantiation slice, not full PHP object execution.
 
 The current implementation parses top-level class declarations into metadata and
-can evaluate `new ClassName()` for declared classes that do not define
-constructors. It stores class identity plus `null` instance-property slots and
-can read/write public instance properties by static property name and check
-direct public property operands with `isset($object->name)` and
+can evaluate `new ClassName(...)` for declared classes, including public
+instance `__construct` execution. It stores class identity plus `null`
+instance-property slots and can read/write public instance properties by static
+property name and check direct public property operands with
+`isset($object->name)` and
 `empty($object->name)`. Objects are now represented as process-local handles, so
 assignment, function argument/return binding, array storage, and foreach
 by-value over object values preserve object identity and shared property slots.
@@ -128,12 +129,14 @@ The current syntax slice accepts:
 top-level statements. Class declarations themselves are no-op statements at
 runtime after registration.
 
-The current syntax slice also accepts `new ClassName()` with an identifier class
-name and empty constructor argument list. Instantiation looks up the class
-case-insensitively and returns an object value using the declared class spelling.
-Undefined classes produce a stable runtime error. Classes with a `__construct`
-method and `new` calls with constructor arguments also produce stable runtime
-errors because constructor execution is not implemented.
+The current syntax slice also accepts `new ClassName(...)` with an identifier
+class name. Instantiation looks up the class case-insensitively, allocates an
+object value using the declared class spelling, initializes instance properties
+to `null`, and then executes a declared public instance `__construct` method
+with `$this` bound to the new object handle. Constructor arguments use the
+current positional argument and default-parameter subset. Undefined classes,
+constructor arguments for classes without constructors, non-public
+constructors, and static constructors produce stable runtime errors.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
@@ -200,9 +203,10 @@ default property values, multiple properties in one declaration, constants,
 static property storage, late static binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
-`self`/`parent`/`static`, constructor execution, constructor arguments,
-non-public method/property access, dynamic method/property names, property
-assignment targets other than a direct variable, object comparisons,
+`self`/`parent`/`static`, constructor behavior beyond public instance
+`__construct`, constructor arguments for classes without constructors,
+non-public method/property/constructor access, dynamic method/property names,
+property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
 operands, complex object-property `isset` operands, dynamic property-name

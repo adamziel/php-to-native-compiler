@@ -1807,24 +1807,37 @@ $box = new Missing();
 }
 
 #[test]
-fn constructors_remain_explicitly_unsupported_for_instantiation() {
-    let error = runtime_error(
+fn public_constructors_execute_with_this_binding() {
+    let execution = run_source(
         r#"<?php
 class Box {
-    public function __construct() {}
+    public $name;
+    public $count;
+
+    public function __construct($name = "Ada") {
+        $this->name = $name;
+        $this->count = 1;
+    }
+
+    public function label() {
+        return $this->name . ":" . $this->count;
+    }
 }
 
-$box = new Box();
+$box = new Box("Grace");
+echo $box->label(), "\n";
+$default = new Box();
+echo $default->label();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 8);
-    assert_eq!(
-        error.message,
-        "unsupported object instantiation for Box: constructors are not implemented"
-    );
+    assert_eq!(execution.stdout, "Grace:1\nAda:1");
+    assert_eq!(execution.exit_code, 0);
+}
 
+#[test]
+fn constructor_dispatch_reports_current_unsupported_boundaries() {
     let argument_error = runtime_error(
         r#"<?php
 class Box {}
@@ -1838,6 +1851,40 @@ $box = new Box("name");
     assert_eq!(
         argument_error.message,
         "unsupported object instantiation for Box: constructor arguments are not implemented"
+    );
+
+    let private_constructor = runtime_error(
+        r#"<?php
+class Box {
+    private function __construct() {}
+}
+
+$box = new Box();
+"#,
+    );
+
+    assert_eq!(private_constructor.line, 6);
+    assert_eq!(private_constructor.column, 8);
+    assert_eq!(
+        private_constructor.message,
+        "unsupported object instantiation for Box: non-public constructors require visibility enforcement, which is not implemented"
+    );
+
+    let static_constructor = runtime_error(
+        r#"<?php
+class Box {
+    public static function __construct() {}
+}
+
+$box = new Box();
+"#,
+    );
+
+    assert_eq!(static_constructor.line, 6);
+    assert_eq!(static_constructor.column, 8);
+    assert_eq!(
+        static_constructor.message,
+        "unsupported object instantiation for Box: static constructors are not implemented"
     );
 }
 
