@@ -138,20 +138,31 @@ $$name = "dynamic";
 }
 
 #[test]
-fn php_attributes_are_rejected_with_stable_lex_error() {
-    let error = lex_error(
+fn php_attributes_are_skipped_as_syntax_only_metadata() {
+    let execution = run_source(
         r#"<?php
 #[Example]
-function demo() {}
-"#,
-    );
+function demo(#[SensitiveParameter] $value) {
+    return $value;
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported attribute syntax: PHP attributes are not implemented"
-    );
+#[Example(["nested" => "value]kept"])]
+class Box {
+    #[Example]
+    public function label(#[SensitiveParameter] $value) {
+        return $value;
+    }
+}
+
+echo demo("ok"), "\n";
+$box = new Box();
+echo $box->label("box");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ok\nbox");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

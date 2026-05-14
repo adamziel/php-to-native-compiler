@@ -552,9 +552,12 @@
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
-- explicit lex diagnostics for unsupported PHP attribute syntax beginning with
-  `#[...]`; ordinary `#` comments, including `# [` with whitespace before the
-  bracket, remain comments
+- syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
+  before functions, classes, class members, and parameters. Attribute metadata,
+  reflection visibility, target validation, namespace-aware attribute names,
+  constructor argument evaluation, repeated-attribute rules, and native
+  lowering remain unsupported; ordinary `#` comments, including `# [` with
+  whitespace before the bracket, remain comments
 
 ## Partially Supported
 
@@ -3451,7 +3454,7 @@
   yields, by-reference yields, `send`/`throw`/`return` generator semantics,
   and native lowering
 - executable attribute declarations and reflection metadata beyond the current
-  lex boundary
+  syntax-only skip boundary
 - `is_callable` callable-name output parameter, array/object callable dynamic
   invocation, object `__invoke` callables, private/protected caller-context
   method callability, inherited/trait/interface method lookup, first-class

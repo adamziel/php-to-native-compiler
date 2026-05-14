@@ -6355,16 +6355,24 @@ handled.
 
 ## Milestone 696: WordPress Bridge Continuation
 
-- [ ] Syntax/attribute lane: implement or explicitly bound PHP attribute syntax
+- [x] Syntax/attribute lane: implement or explicitly bound PHP attribute syntax
   for WordPress class declarations, with tests, CLI coverage, docs, and named
   unsupported edges for attribute metadata storage, reflection behavior,
   namespace resolution, constructor argument evaluation, exact PHP diagnostics,
   and native lowering.
 
+## Milestone 697: WordPress Bridge Continuation
+
+- [ ] Runtime/exception lane: implement or explicitly bound `throw` statements
+  for WordPress's sodium compat class, with tests, CLI coverage, docs, and
+  named unsupported edges for exception object modeling, stack unwinding,
+  catch/finally behavior, stack traces, exact PHP diagnostics, and native
+  lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 695 work, the latest committed checkpoint is
-  `8d33563 runtime: add bounded dirname`, covering Milestone 694.
+- Before the current Milestone 696 work, the latest committed checkpoint is
+  `58beac8 runtime: add bounded spl_autoload_register`, covering Milestone 695.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

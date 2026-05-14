@@ -940,13 +940,28 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone695`, and
   `PHPC_BIN=/tmp/phpc-target-695/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 696, syntax-only PHP attribute handling for the current
+  lexer/parser boundary. `#[...]` blocks are now skipped as metadata before
+  the parser sees the surrounding declaration, which covers WordPress's
+  `#[\SensitiveParameter]` parameter attributes in the sodium compat class.
+  Attribute metadata storage, reflection behavior, target validation,
+  namespace-aware attribute names, constructor argument evaluation,
+  repeated-attribute rules, exact PHP diagnostics, and native lowering remain
+  explicit. The real WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `<bootstrap-shim>:178:13`, unsupported `throw` syntax. Focused verification
+  so far: `cargo test -p phpc --test dynamic_features attributes`,
+  `cargo run -p phpc -- test tests/fixtures/milestone696`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone696`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`, and
+  `PHPC_BIN=/tmp/phpc-target-696/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 696 should implement or explicitly bound PHP attribute syntax for
-  WordPress class declarations, while keeping attribute metadata storage,
-  reflection behavior, namespace resolution, constructor argument evaluation,
-  exact PHP diagnostics, and native lowering explicit unless proven.
+- Milestone 697 should implement or explicitly bound `throw` statements for
+  WordPress's sodium compat class, while keeping exception object modeling,
+  stack unwinding, catch/finally behavior, stack traces, exact PHP diagnostics,
+  and native lowering explicit unless proven.
 
 ## 2026-05-12
 

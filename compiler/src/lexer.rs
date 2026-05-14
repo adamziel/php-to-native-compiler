@@ -298,10 +298,8 @@ impl<'a> Lexer<'a> {
 
             if self.peek() == Some('#') {
                 if self.peek_next() == Some('[') {
-                    return Err(self.error_at(
-                        self.span(),
-                        "unsupported attribute syntax: PHP attributes are not implemented",
-                    ));
+                    self.skip_attribute_block()?;
+                    continue;
                 }
                 while !matches!(self.peek(), None | Some('\n')) {
                     self.advance();
@@ -328,6 +326,51 @@ impl<'a> Lexer<'a> {
         }
 
         Ok(())
+    }
+
+    fn skip_attribute_block(&mut self) -> CompileResult<()> {
+        let start = self.span();
+        self.advance();
+        self.advance();
+        let mut depth = 1usize;
+
+        while !self.is_at_end() {
+            match self.advance() {
+                '\'' | '"' => self.skip_quoted_attribute_string(start)?,
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Err(self.error_at(
+            start,
+            "unterminated attribute syntax: expected ']' to close PHP attribute",
+        ))
+    }
+
+    fn skip_quoted_attribute_string(&mut self, start: Span) -> CompileResult<()> {
+        let quote = self.chars[self.index - 1];
+        while !self.is_at_end() {
+            let ch = self.advance();
+            if ch == '\\' && !self.is_at_end() {
+                self.advance();
+                continue;
+            }
+            if ch == quote {
+                return Ok(());
+            }
+        }
+
+        Err(self.error_at(
+            start,
+            "unterminated attribute syntax: expected quoted string to close before PHP attribute end",
+        ))
     }
 
     fn matches_php_open_tag(&mut self) -> bool {

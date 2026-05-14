@@ -1155,6 +1155,15 @@ include/require inside eval, references/copy-on-write interactions,
 `GLOBALS`/superglobal behavior, namespaces/use declarations, opcache behavior,
 and PHP's exact warning/fatal recovery details.
 
+## Attribute Boundary
+
+PHP attributes are currently treated as syntax-only metadata. The lexer skips
+balanced `#[...]` blocks, including simple quoted strings and nested bracket
+payloads, before the parser sees the surrounding declaration. No AST metadata,
+reflection data, target validation, namespace-aware attribute name resolution,
+constructor argument evaluation, repeated-attribute rules, or native lowering
+exists yet.
+
 ## Exception Boundary
 
 Exception syntax is reserved by the lexer/parser today and rejected with stable

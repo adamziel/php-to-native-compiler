@@ -1,3 +1,0 @@
-<?php
-#[Example]
-function demo() {}

@@ -17904,3 +17904,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run the full checkpoint with
   `tools/checkpoint.sh "runtime: add bounded spl_autoload_register"` if the
   full gate passes.
+
+## Loop Event 2026-05-14T05:00:00Z
+
+- Checkpoint before this task: `58beac8 runtime: add bounded spl_autoload_register`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 696, syntax-only PHP attribute handling for
+  WordPress's `#[\SensitiveParameter]` parameter attributes.
+- Files changed so far: `compiler/src/lexer.rs`,
+  `compiler/tests/dynamic_features.rs`, `tests/fixtures/milestone696/*`,
+  removed `tests/fixtures/unsupported_dynamic_features/unsupported_attribute.*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test dynamic_features attributes`,
+  `cargo run -p phpc -- test tests/fixtures/milestone696`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone696`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`, and
+  `PHPC_BIN=/tmp/phpc-target-696/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: attribute metadata storage, reflection behavior,
+  target validation, namespace-aware attribute names, constructor argument
+  evaluation, repeated-attribute rules, exact PHP diagnostics, `throw`
+  statements, exception object/runtime behavior, WordPress bootstrap
+  environment, exact native errors, and native lowering remain explicit.
+- Next concrete task: run `cargo check -p phpc`, the updated focused gates,
+  then checkpoint with `tools/checkpoint.sh "syntax: skip PHP attributes"` if
+  the full gate passes.
