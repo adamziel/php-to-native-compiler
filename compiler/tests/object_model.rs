@@ -1700,6 +1700,109 @@ Box::call();
 }
 
 #[test]
+fn object_static_method_calls_execute_visible_static_methods() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected static function hidden() {
+        return "hidden:" . static::class;
+    }
+
+    public static function name() {
+        return "base:" . static::class;
+    }
+
+    public static function label() {
+        return static::name() . ":" . static::hidden();
+    }
+
+    public function fromThis() {
+        return $this::label();
+    }
+}
+
+class Child extends Base {
+    public static function name() {
+        return "child:" . static::class;
+    }
+
+    public static function callOn($object) {
+        return $object::label();
+    }
+}
+
+class Vault {
+    private static function key() {
+        return "key:" . static::class;
+    }
+
+    public function reveal($other) {
+        return $other::key();
+    }
+}
+
+$base = new Base();
+$child = new Child();
+$vault = new Vault();
+echo $base::label(), "\n";
+echo $child::label(), "\n";
+echo $child->fromThis(), "\n";
+echo Child::callOn($child), "\n";
+echo $vault->reveal(new Vault());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:Base:hidden:Base\nchild:Child:hidden:Child\nchild:Child:hidden:Child\nchild:Child:hidden:Child\nkey:Vault"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn object_static_method_calls_report_current_boundaries() {
+    let non_object = runtime_error(
+        r#"<?php
+$class = "Box";
+$class::make();
+"#,
+    );
+    assert_eq!(
+        non_object.message,
+        "unsupported call make(): object static method receiver must be object, got string"
+    );
+
+    let non_static_method = runtime_error(
+        r#"<?php
+class Box {
+    public function make() {}
+}
+$box = new Box();
+$box::make();
+"#,
+    );
+    assert_eq!(
+        non_static_method.message,
+        "unsupported call Box::make(): non-static method dispatch through object static receivers is not implemented"
+    );
+
+    let private_method = runtime_error(
+        r#"<?php
+class Box {
+    private static function make() {}
+}
+$box = new Box();
+$box::make();
+"#,
+    );
+    assert_eq!(
+        private_method.message,
+        "unsupported call Box::make(): private method dispatch requires same-class method context"
+    );
+}
+
+#[test]
 fn late_static_properties_execute_current_subset() {
     let execution = run_source(
         r#"<?php
@@ -2444,6 +2547,18 @@ fn emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists
 #[test]
 fn emit_ir_rejects_late_static_method_calls_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\nstatic::make();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_object_static_method_calls_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\n$box::make();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
@@ -3755,6 +3870,22 @@ $box->$property;
             7,
             7,
             "unsupported dynamic property access: dynamic property names are not implemented",
+        ),
+        (
+            r#"<?php
+$box::NAME;
+"#,
+            2,
+            5,
+            "unsupported object static class constant access: object receiver class constants are not implemented",
+        ),
+        (
+            r#"<?php
+$box::$value;
+"#,
+            2,
+            5,
+            "unsupported object static property access: object receiver static properties are not implemented",
         ),
         (
             r#"<?php

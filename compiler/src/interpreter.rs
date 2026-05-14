@@ -872,6 +872,12 @@ impl Interpreter {
                 args,
                 span,
             } => self.call_named_static_method(class_name, method, args, *span, scope),
+            Expr::ObjectStaticMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.call_object_static_method(target, method, args, *span, scope),
             Expr::SelfMethodCall { method, args, span } => {
                 self.call_self_method(method, args, *span, scope)
             }
@@ -2282,6 +2288,96 @@ impl Interpreter {
                 "non-static method dispatch through named static receivers is not implemented",
             ),
         ))
+    }
+
+    fn call_object_static_method(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let target_value = self.evaluate(target, caller_scope)?;
+        let object = match target_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{method_name}()"),
+                        format!(
+                            "object static method receiver must be object, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let receiver_class = self
+            .classes
+            .get(object.class_id())
+            .expect("object class id should resolve to class metadata");
+        let Some((
+            declaring_class_id,
+            declaring_class_name,
+            resolved_method_name,
+            visibility,
+            is_static,
+        )) = self.resolve_instance_method(object.class_id(), method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    receiver_class.name()
+                )),
+            ));
+        };
+
+        self.ensure_instance_method_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            method_name,
+            visibility,
+            span,
+        )?;
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "non-static method dispatch through object static receivers is not implemented",
+                ),
+            ));
+        }
+
+        let function = self
+            .methods
+            .get(&(
+                declaring_class_id,
+                resolved_method_name.to_ascii_lowercase(),
+            ))
+            .cloned()
+            .expect("declared object static method metadata should have a stored function body");
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            Some(declaring_class_id),
+            Some(object.class_id()),
+        )
     }
 
     fn evaluate_self_class_name_constant(&self, span: Span) -> CompileResult<Value> {

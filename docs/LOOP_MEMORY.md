@@ -17282,3 +17282,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   exact native error objects, and native lowering remain explicit.
 - Next concrete task: run focused parser/unsupported-object fixture checks,
   docs/diff checks, then checkpoint if the gate passes.
+
+## Loop Event 2026-05-15T02:35:00Z
+
+- Checkpoint before this task: `fcf672f parser: distinguish typed static
+  property boundary`, pushed to `origin/master`.
+- Task attempted: Milestone 675, narrow object-receiver static method dispatch
+  through `$object::method(...)`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone675/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_static_method_calls_execute_visible_static_methods -- --test-threads=1`,
+  `cargo test -p phpc --test object_model object_static_method_calls_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_object_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone675`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone675`
+  passed after removing the fixture's extra final newline.
+- Remaining semantic gaps: dynamic class-string static method receivers,
+  object receiver static properties/constants, non-static method dispatch
+  through object static receivers, broader class constant semantics, typed
+  static property metadata/enforcement, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, native lowering, and
+  WordPress include/namespace/callable bootstrap gaps remain explicit.
+- Next concrete task: run full object-model focused checks, docs/diff checks,
+  then checkpoint with
+  `tools/checkpoint.sh "objects: add object static method dispatch"` if the
+  full gate passes.

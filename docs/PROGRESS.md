@@ -571,6 +571,23 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 675, narrow object-receiver static method dispatch.
+  `$object::method(...)` now evaluates the receiver, requires an object,
+  resolves a visible declared or inherited static method from that object's
+  class, executes without `$this`, and preserves the receiver object's class as
+  the called-class context for `static::` and `get_called_class()`. Non-object
+  receivers, non-static method targets, object-receiver static properties and
+  constants, dynamic class-string static receivers, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit. Focused verification so far: `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_static_method_calls_execute_visible_static_methods -- --test-threads=1`,
+  `cargo test -p phpc --test object_model object_static_method_calls_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_object_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone675`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone675`
+  passed.
 
 Next:
 
@@ -582,10 +599,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 668 should take the next object storage/static slice:
-  `self::`/`parent::` static method dispatch prerequisites, broader class
-  constant semantics, typed/default static property metadata, or a documented
-  blocker.
+- Milestone 676 should take the next object/static or WordPress bridge slice:
+  dynamic class-string static method receivers, broader class constant
+  semantics, typed static property metadata, narrow require/bootstrap
+  execution, or a documented blocker.
 
 ## 2026-05-12
 

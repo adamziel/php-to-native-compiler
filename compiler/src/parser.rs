@@ -2299,6 +2299,55 @@ impl Parser {
                 continue;
             }
 
+            if self.match_token(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                let operator_span = self.previous().span;
+                let member = self.peek().clone();
+                match member.kind {
+                    TokenKind::Identifier(method)
+                        if matches!(self.peek_next().kind, TokenKind::LParen) =>
+                    {
+                        self.advance();
+                        self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                        let span = expr.span();
+                        let args = self.parse_call_arguments_after_open()?;
+                        expr = Expr::ObjectStaticMethodCall {
+                            target: Box::new(expr),
+                            method,
+                            args,
+                            span,
+                        };
+                        continue;
+                    }
+                    TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
+                        return Err(self.error_at(
+                            operator_span,
+                            "unsupported object static class-name constant: object receiver ::class is not implemented",
+                        ));
+                    }
+                    TokenKind::Identifier(_) | TokenKind::Class => {
+                        return Err(self.error_at(
+                            operator_span,
+                            "unsupported object static class constant access: object receiver class constants are not implemented",
+                        ));
+                    }
+                    TokenKind::Variable(_) => {
+                        return Err(self.error_at(
+                            operator_span,
+                            "unsupported object static property access: object receiver static properties are not implemented",
+                        ));
+                    }
+                    _ => {
+                        return Err(self.error_at(
+                            operator_span,
+                            format!(
+                                "expected object static member name after '::', found {}",
+                                token_name(&member.kind)
+                            ),
+                        ));
+                    }
+                }
+            }
+
             if self.check_increment_decrement_operator() {
                 let span = expr.span();
                 let target = self
@@ -2942,6 +2991,7 @@ impl Parser {
             | Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
             | Expr::Call { .. }
@@ -3010,6 +3060,7 @@ impl Parser {
             | Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
             | Expr::Call { .. }
@@ -3057,6 +3108,10 @@ impl Parser {
             }
             Expr::ParentMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::StaticMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
+            Expr::ObjectStaticMethodCall { target, args, .. } => {
+                Self::expr_contains_assignment(target)
+                    || args.iter().any(Self::expr_contains_assignment)
+            }
             Expr::SelfMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::LateStaticMethodCall { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
@@ -3154,6 +3209,12 @@ impl Parser {
             Expr::StaticMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
+            Expr::ObjectStaticMethodCall { target, args, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(target)
+                    || args
+                        .iter()
+                        .any(Self::expr_contains_unsupported_assignment_rhs)
+            }
             Expr::SelfMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -3239,6 +3300,10 @@ impl Parser {
             }
             Expr::StaticMethodCall { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
+            }
+            Expr::ObjectStaticMethodCall { target, args, .. } => {
+                Self::find_append_index_span(target)
+                    .or_else(|| args.iter().find_map(Self::find_append_index_span))
             }
             Expr::SelfMethodCall { args, .. } => args.iter().find_map(Self::find_append_index_span),
             Expr::LateStaticMethodCall { args, .. } => {

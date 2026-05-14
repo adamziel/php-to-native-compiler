@@ -426,6 +426,12 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    ObjectStaticMethodCall {
+        target: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     SelfMethodCall {
         method: String,
         args: Vec<Expr>,
@@ -530,6 +536,7 @@ impl Expr {
             | Expr::MethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
             | Expr::StaticMethodCall { span, .. }
+            | Expr::ObjectStaticMethodCall { span, .. }
             | Expr::SelfMethodCall { span, .. }
             | Expr::LateStaticMethodCall { span, .. }
             | Expr::Call { span, .. }

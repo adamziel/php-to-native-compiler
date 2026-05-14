@@ -6160,11 +6160,23 @@ handled.
 
 ## Milestone 675: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next static/member slice: broader class
-  constant semantics, object-receiver static method dispatch, typed static
-  property metadata design, or a documented blocker. Keep trait composition,
+- [x] Runtime/object lane: implement the narrow object-receiver static method
+  slice. `$object::method(...)` now resolves visible static methods through the
+  receiver object's class, executes without `$this`, and preserves that object
+  class as the called-class context for `static::` and `get_called_class()`.
+  Kept dynamic class-string static method receivers, object receiver static
+  properties/constants, non-static object static dispatch, trait composition,
   magic methods, references/copy-on-write, exact native error objects, and
   native lowering explicit.
+
+## Milestone 676: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next static/member or WordPress bridge
+  slice: dynamic class-string static method receivers, broader class constant
+  semantics, typed static property metadata design, narrow require/bootstrap
+  execution, or a documented blocker. Keep trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

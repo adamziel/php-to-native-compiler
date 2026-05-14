@@ -113,6 +113,8 @@ incorrect native code.
   context with direct reads/writes, compound assignment, pre/post
   increment/decrement, `isset`/`empty`, `??`, `??=`, and stable `unset(...)`
   diagnostics for PHP-forbidden static-property unset,
+  object-receiver static method calls through `$object::method()` for visible
+  static methods,
   single-parent metadata, object `isset` and `empty`, and selected metadata
   builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
@@ -123,7 +125,8 @@ references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
-current method, class-name, class-constant, and static-property slices,
+current method, object static method, class-name, class-constant, and
+static-property slices,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and

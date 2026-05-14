@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+base:Base:hidden:Base
+child:Child:hidden:Child
+child:Child:hidden:Child
+child:Child:hidden:Child
+key:Vault
+--- stdout end ---
+stderr:
+--- stderr end ---

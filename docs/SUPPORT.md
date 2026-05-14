@@ -198,6 +198,11 @@
   without `$this`, and runs the method body with the declaring class as the
   active class context so current `self::class` and static-property access
   resolve lexically.
+- object-receiver static method calls by static method name:
+  `$object::method(...)` evaluates the receiver expression, requires an object,
+  resolves a declared or inherited visible static method from that object's
+  class, executes without `$this`, and preserves the receiver object's class as
+  the called-class context for `static::` and `get_called_class()`.
 - class constants declared as `const NAME = value;` or
   `public|protected|private const NAME = value;` with values from the current
   constant-expression subset. `ClassName::CONST`, `self::CONST`, and
@@ -726,9 +731,11 @@
   available through string-valued dynamic calls.
   Named static method expressions such as `ClassName::method(...)` execute for
   declared or inherited visible static methods under the current positional
-  argument/default-parameter subset, and `self::method(...)`,
-  `parent::method(...)`, and `static::method(...)` execute resolved visible
-  static methods while an active class/called-class context exists. `clone
+  argument/default-parameter subset, `$object::method(...)` executes visible
+  static methods using the receiver object's class as the called-class context,
+  and `self::method(...)`, `parent::method(...)`, and `static::method(...)`
+  execute resolved visible static methods while an active class/called-class
+  context exists. `clone
   $object` expressions fail with a stable parse diagnostic before object
   handle copying or `__clone` dispatch is implemented.
   `$object instanceof ClassName` expressions fail with a stable parse
@@ -762,9 +769,10 @@
   class context; non-static methods still require current `$this`.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
-  `$this` binding. Named `ClassName::method(...)`, `self::method(...)`, and
-  `parent::method(...)` static method dispatch is supported for the current
-  visible declared/inherited static-method subset.
+  `$this` binding. Named `ClassName::method(...)`, object-receiver
+  `$object::method(...)`, `self::method(...)`, and `parent::method(...)`
+  static method dispatch is supported for the current visible
+  declared/inherited static-method subset.
   Dynamic method names, dynamic property names, non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant
@@ -2628,8 +2636,8 @@
   `$object->$method()` currently fail with stable parse diagnostics
 - private instance method dispatch outside same-class method context,
   protected instance method dispatch outside same-class/child method context,
-  static methods called through object receivers, and `$this` outside instance
-  method execution currently fail with stable runtime diagnostics
+  non-static methods through object static receivers, and `$this` outside
+  instance method execution currently fail with stable runtime diagnostics
 - non-public object property access and property writes to lvalues other than a
   direct variable
 - constructor arguments for classes without a declared constructor, non-public
@@ -2646,7 +2654,8 @@
   typed/static/multi-declarator class constants, typed static properties,
   storage-removing static-property unset,
   and anonymous classes
-- static method dispatch through object receivers and broader `static::`
+- object receiver static properties/class constants, dynamic class-string
+  static method receivers such as `$class::method()`, and broader `static::`
   member forms through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
