@@ -785,7 +785,12 @@ impl Interpreter {
             .checked_add(1)
             .expect("object id counter fits in i64");
 
-        let object = PhpObject::from_class_with_id(class, object_id);
+        let inherited_public_properties = self.inherited_public_instance_properties(class_id);
+        let object = PhpObject::from_class_with_inherited_public_properties_with_id(
+            class,
+            &inherited_public_properties,
+            object_id,
+        );
         let Some((constructor_name, constructor_visibility, constructor_is_static)) = constructor
         else {
             if !args.is_empty() {
@@ -836,6 +841,42 @@ impl Interpreter {
 
         self.call_user_function_with_this(function, object.clone(), values, Some(class_id))?;
         Ok(Value::Object(object))
+    }
+
+    fn inherited_public_instance_properties(&self, class_id: ClassId) -> Vec<PhpPropertyMetadata> {
+        let mut ancestors = Vec::new();
+        let mut current = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata")
+            .parent_id();
+        while let Some(ancestor_id) = current {
+            ancestors.push(ancestor_id);
+            current = self
+                .classes
+                .get(ancestor_id)
+                .expect("ancestor class id should resolve to metadata")
+                .parent_id();
+        }
+        ancestors.reverse();
+
+        let mut properties = Vec::new();
+        for ancestor_id in ancestors {
+            let ancestor = self
+                .classes
+                .get(ancestor_id)
+                .expect("ancestor class id should resolve to metadata");
+            properties.extend(
+                ancestor
+                    .properties()
+                    .iter()
+                    .filter(|property| {
+                        !property.is_static() && property.visibility() == Visibility::Public
+                    })
+                    .cloned(),
+            );
+        }
+        properties
     }
 
     fn execute_assignment(
@@ -1638,6 +1679,38 @@ impl Interpreter {
             current = class.parent_id();
         }
         None
+    }
+
+    fn class_has_property_in_hierarchy(&self, class_id: ClassId, property_name: &str) -> bool {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self
+                .classes
+                .get(current_id)
+                .expect("class id should resolve to class metadata");
+            if let Some(property) = class.property(property_name) {
+                if current_id == class_id || property.visibility() != Visibility::Private {
+                    return true;
+                }
+            }
+            current = class.parent_id();
+        }
+        false
+    }
+
+    fn append_public_class_vars(&self, class_id: ClassId, properties: &mut PhpArray) {
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
+        for property in class.properties() {
+            if property.visibility() == Visibility::Public {
+                properties.insert(ArrayKey::from(property.name()), Value::Null);
+            }
+        }
+        if let Some(parent_id) = class.parent_id() {
+            self.append_public_class_vars(parent_id, properties);
+        }
     }
 
     fn can_call_constructor(&self, class_id: ClassId, visibility: Visibility) -> bool {
@@ -3304,13 +3377,13 @@ impl Interpreter {
                 [object_or_class, Value::String(property_name)] => {
                     let exists = match object_or_class {
                         Value::Object(object) => self
-                            .classes
-                            .get(object.class_id())
-                            .is_some_and(|class| class.property(property_name).is_some()),
+                            .class_has_property_in_hierarchy(object.class_id(), property_name),
                         Value::String(class_name) => self
                             .classes
-                            .lookup_class(class_name)
-                            .is_some_and(|class| class.property(property_name).is_some()),
+                            .lookup_class_id(class_name)
+                            .is_some_and(|class_id| {
+                                self.class_has_property_in_hierarchy(class_id, property_name)
+                            }),
                         other => {
                             return Err(runtime_error(
                                 span,
@@ -3459,11 +3532,7 @@ impl Interpreter {
                     };
 
                     let mut properties = PhpArray::new();
-                    for property in class.properties() {
-                        if property.visibility() == Visibility::Public {
-                            properties.insert(ArrayKey::from(property.name()), Value::Null);
-                        }
-                    }
+                    self.append_public_class_vars(class.id(), &mut properties);
                     Ok(Value::Array(properties))
                 }
                 [other] => Err(runtime_error(

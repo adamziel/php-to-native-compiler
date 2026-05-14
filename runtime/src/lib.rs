@@ -1984,9 +1984,17 @@ impl PhpObject {
     }
 
     pub fn from_class_with_id(class: &PhpClassMetadata, id: i64) -> Self {
-        let properties = class
-            .properties()
+        Self::from_class_with_inherited_public_properties_with_id(class, &[], id)
+    }
+
+    pub fn from_class_with_inherited_public_properties_with_id(
+        class: &PhpClassMetadata,
+        inherited_public_properties: &[PhpPropertyMetadata],
+        id: i64,
+    ) -> Self {
+        let properties = inherited_public_properties
             .iter()
+            .chain(class.properties().iter())
             .filter(|property| !property.is_static())
             .map(|property| ObjectProperty {
                 name: property.name().to_string(),

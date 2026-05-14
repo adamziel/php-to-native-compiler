@@ -55,9 +55,10 @@ Implemented now:
 - ordered PHP arrays with integer/string keys
 - class metadata, object-shape descriptors, and minimal object values for
   `new ClassName(...)` over declared classes, process-local object handles,
-  public instance properties, single-parent metadata, inherited method lookup,
-  public/same-class private/protected same-class and child instance method
-  dispatch, and public instance `__construct` dispatch with scoped `$this`
+  public instance properties including inherited public slots, single-parent
+  metadata, inherited method lookup, public/same-class private/protected
+  same-class and child instance method dispatch, and public instance
+  `__construct` dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -70,10 +71,10 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
-- inherited properties, dynamic method/property names, visibility enforcement
-  for non-public properties/constructors, static members, magic methods,
-  broader inheritance and constructor semantics, and exact PHP object lifecycle
-  behavior
+- dynamic method/property names, visibility enforcement for non-public
+  properties/constructors, static members, magic methods, property override
+  compatibility, broader inheritance and constructor semantics, and exact PHP
+  object lifecycle behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -964,14 +965,15 @@ and `enum_exists($name[, $autoload])` accept the same string-name and
 bool-like scalar autoload boundary, return false for all supported calls
 because interface, trait, and enum metadata are not represented yet, and do not
 trigger autoloading.
-`property_exists($object_or_class, $property)` checks the same declared
-property metadata for current object values or string class names, with
-case-sensitive property names and no autoload side effects.
+`property_exists($object_or_class, $property)` checks the same declared and
+inherited property metadata for current object values or string class names,
+with case-sensitive property names and no autoload side effects.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared property names in declaration order with `null` values because
-property defaults are not implemented.
+public declared and inherited property names in child-to-parent declaration
+order with `null` values because property defaults are not implemented.
 `get_object_vars($object)` accepts current object values and returns public
-instance property names with their current slot values in declaration order.
+exact and inherited instance property names with their current slot values in
+parent-to-child slot order.
 `get_mangled_object_vars($object)` accepts current object values and returns
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
@@ -1004,8 +1006,9 @@ stable runtime diagnostics for normal reads/writes. Public, same-class private,
 and protected same-class/child instance methods can execute through `phpc run`
 with `$this` bound to the receiver object handle. Objects do not enforce
 non-public property/constructor visibility, expose reflection, implement
-dynamic method/property names, inherited properties, `parent::`/`self::`/`static::`,
-broader inheritance/constructor semantics, or exact PHP lifecycle behavior.
+dynamic method/property names, `parent::`/`self::`/`static::`, property override
+compatibility, broader inheritance/constructor semantics, or exact PHP
+lifecycle behavior.
 Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected

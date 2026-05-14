@@ -153,7 +153,8 @@
   Declared public instance `__construct` methods execute with scoped `$this`,
   positional arguments, and the current default-parameter subset.
 - public instance property reads and direct-variable writes by static property
-  name: `$object->name` and `$object->name = ...`
+  name, including inherited public property slots:
+  `$object->name` and `$object->name = ...`
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -280,17 +281,18 @@
   `enum_exists` accepts string names and returns false for the current no-enum
   metadata model without autoloading,
   `property_exists` checks
-  case-sensitive declared property metadata for current object values or
+  case-sensitive declared and inherited property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared and
   inherited method metadata for current object values or string class names,
   `get_class_methods` returns public declared and inherited method names in
   child-to-parent declaration order for current object values or declared
-  string class names, `get_class_vars` returns public
-  declared property names in declaration order with `null` values for declared
-  string class names, `get_object_vars` returns public instance property names
-  with their current values in declaration order for current object values,
-  `get_mangled_object_vars` currently returns the same public instance
-  property slice for current object values,
+  string class names, `get_class_vars` returns public declared and inherited
+  property names in child-to-parent declaration order with `null` values for
+  declared string class names, `get_object_vars` returns public exact and
+  inherited instance property names with their current values in
+  parent-to-child slot order for current object values, `get_mangled_object_vars`
+  currently returns the exact-class non-public instance property slice plus
+  public inherited slots for current object values,
   `is_a` checks
   exact class identity and single-parent ancestor relationships over current
   object values or string class names when `allow_string` is true,
@@ -571,9 +573,11 @@
   trigger autoloading.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
-  declared property metadata with case-sensitive property names, reports
-  public/protected/private and static properties as existing, returns false for
-  missing properties or missing string class names, and is available through
+  declared and inherited property metadata with case-sensitive property names,
+  reports public/protected/private and static properties on the exact class as
+  existing, reports inherited public/protected/static properties as existing,
+  keeps inherited private properties invisible, returns false for missing
+  properties or missing string class names, and is available through
   string-valued dynamic function calls.
   `method_exists($object_or_class, $method)` accepts a current object value or
   string class name and a string method name. It checks the current declared
@@ -586,13 +590,15 @@
   names in declaration order, including public static methods. It is available
   through string-valued dynamic function calls.
   `get_class_vars($class_name)` accepts declared string class names and returns
-  an array of public declared properties in declaration order, including public
-  static properties, with `null` values because property defaults are not
-  implemented. It is available through string-valued dynamic function calls.
+  an array of public declared and inherited properties in child-to-parent
+  declaration order, including public static properties, with `null` values
+  because property defaults are not implemented. It is available through
+  string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
-  of public instance property names in declaration order with their current
-  slot values. Protected/private slots and static properties are not included.
-  It is available through string-valued dynamic function calls.
+  of public exact and inherited instance property names in parent-to-child slot
+  order with their current slot values. Protected/private slots and static
+  properties are not included. It is available through string-valued dynamic
+  function calls.
   Direct `empty($object->name)` accepts direct object-variable public-property
   operands, returns true for falsey public property slots, missing properties,
   undefined target variables, and non-object target variables, and uses a
@@ -646,8 +652,9 @@
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context, static storage, class constants,
-  shallow/deep clone property copying, `__clone`, inherited properties,
-  `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
+  shallow/deep clone property copying, `__clone`, non-public inherited
+  property slots, property override compatibility, `parent::`/`self::`/`static::`,
+  broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
@@ -1818,16 +1825,17 @@
   names and return false for all supported calls because enum metadata is not
   represented yet; the autoload flag accepts current bool-like scalar values
   and does not trigger autoloading.
-  `property_exists($object_or_class, $property)` checks declared property
-  metadata for current object values or string class names with case-sensitive
-  property names. `method_exists($object_or_class, $method)` checks declared
+  `property_exists($object_or_class, $property)` checks declared and inherited
+  property metadata for current object values or string class names with
+  case-sensitive property names. `method_exists($object_or_class, $method)` checks declared and inherited
   method metadata for current object values or string class names with
   case-insensitive method names. `get_class_methods($object_or_class)` returns
   a zero-indexed array of public declared method names for current object
   values or declared string class names. `get_class_vars($class_name)` returns
-  public declared property names with `null` values for declared string class
-  names. `get_object_vars($object)` returns public instance property names
-  with their current values for current object values.
+  public declared and inherited property names with `null` values for declared
+  string class names. `get_object_vars($object)` returns public exact and
+  inherited instance property names with their current values for current
+  object values.
   `get_mangled_object_vars($object)` returns public, protected, and private
   instance slots with PHP-style mangled keys for current object values.
   `empty($object->name)`
@@ -2329,8 +2337,9 @@
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
 - Object/class gaps: nested and conditional class declarations, constructor
-  behavior beyond public instance `__construct`, inherited properties, parent
-  constructors, `parent::`/`self::`/`static::`, broader inheritance rules,
+  behavior beyond public instance `__construct`, non-public inherited property
+  slots, property override compatibility, parent constructors,
+  `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
   interfaces, trait declarations, trait use inside classes,

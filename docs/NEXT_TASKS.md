@@ -5756,20 +5756,34 @@ handled.
   sharper diagnostics. Implemented single-parent class metadata, inherited
   instance method lookup, protected same-class/child method dispatch, and
   parent-aware `is_a`, `is_subclass_of`, `get_parent_class`, `method_exists`,
-  and `get_class_methods`. Kept inherited properties, parent constructors,
-  property visibility, trait composition, static dispatch, magic methods,
+  and `get_class_methods`. Milestone 645 later added inherited public
+  property slots; parent constructors, non-public inherited property
+  visibility, trait composition, static dispatch, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
 
 ## Milestone 645: Inherited Property Layout Boundary
 
-- [ ] Runtime/object lane: add the next honest inheritance slice for inherited
+- [x] Runtime/object lane: add the next honest inheritance slice for inherited
   public property slots and property metadata lookup on child objects, or
   document the object-layout blocker before parent constructors and `parent::`
-  calls. Keep non-public property visibility, constructor inheritance,
-  property overrides/conflicts, trait composition, static dispatch, magic
-  methods, references/copy-on-write, exact native error objects, and native
-  lowering explicit.
+  calls. Added inherited public instance slots on child objects, parent-aware
+  `property_exists`, `get_class_vars`, and `get_object_vars`, and PHP
+  comparison fixture coverage. Kept non-public inherited property slots,
+  constructor inheritance, property overrides/conflicts, trait composition,
+  static dispatch, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
+
+## Milestone 646: Parent Constructor and Parent Method Boundary
+
+- [ ] Runtime/object lane: choose the next smallest parent-call slice:
+  inherited public constructor lookup, `parent::__construct`, or
+  `parent::method()` parsing/dispatch if feasible. If static-receiver parsing
+  and class-context modeling need a sharper design first, document that
+  blocker. Keep non-public constructor visibility, static properties/methods,
+  property override compatibility, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

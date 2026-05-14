@@ -7,8 +7,9 @@ The current implementation parses top-level class declarations into metadata,
 including a single `extends Parent` link between declared classes, and can
 evaluate `new ClassName(...)` for declared classes, including public instance
 `__construct` execution. It stores class identity plus `null`
-instance-property slots for the exact class and can read/write public instance
-properties by static property name and check direct public property operands with
+instance-property slots for the exact class and inherited public properties,
+and can read/write public instance properties by static property name and check
+direct public property operands with
 `isset($object->name)` and
 `empty($object->name)`. Objects are now represented as process-local handles, so
 assignment, function argument/return binding, array storage, and foreach
@@ -31,10 +32,10 @@ and walks the current single-parent metadata chain. `get_parent_class($object_or
 validates current object/declared-string inputs and returns the immediate
 parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared properties with `null` values because property defaults are not
+public declared and inherited properties with `null` values because property defaults are not
 represented yet.
 `get_object_vars($object)` accepts current object values and returns public
-instance property names with their current slot values in declaration order.
+exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and currently
 returns the same public instance property slice; protected/private
 property-name mangling and visibility-context behavior are not represented yet.
@@ -70,9 +71,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   spelling;
 - method names are looked up case-insensitively;
 - property names are looked up case-sensitively;
-- instance object shapes preserve instance-property declaration order and skip
-  static properties;
-- object values initialize supported instance properties to `null`;
+- instance object shapes preserve exact-class instance-property declaration
+  order and skip static properties;
+- object values initialize inherited public instance properties and exact-class
+  instance properties to `null`;
 - public instance property reads return the current slot value;
 - public instance property writes mutate the current object value stored in that
   variable;
@@ -94,10 +96,12 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_class_methods($object_or_class)` returns public declared and inherited
   method names in child-to-parent declaration order for current object values
   or declared string class names;
-- `get_class_vars($class_name)` returns public declared property names in
-  declaration order with `null` values for declared string class names;
-- `get_object_vars($object)` returns public instance property names in
-  declaration order with their current slot values for current object values;
+- `get_class_vars($class_name)` returns public declared and inherited property
+  names in child-to-parent declaration order with `null` values for declared
+  string class names;
+- `get_object_vars($object)` returns public exact and inherited instance
+  property names in parent-to-child slot order with their current slot values
+  for current object values;
 - `get_mangled_object_vars($object)` returns the same public instance
   property slice for current object values until protected/private name
   mangling and visibility-context behavior exist;
@@ -214,7 +218,8 @@ autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static`, constructor behavior beyond public instance
 `__construct`, constructor arguments for classes without constructors,
-inherited properties, non-public property/constructor access, dynamic method/property names,
+non-public inherited property slots, property override compatibility,
+non-public property/constructor access, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`

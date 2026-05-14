@@ -57,8 +57,19 @@ Implemented:
   methods execute from same-class or child method contexts, and `is_a`,
   `is_subclass_of`, `get_parent_class`, `method_exists`, and
   `get_class_methods` use the current single-parent method/relationship
-  metadata. Inherited properties, parent constructors, `parent::`/`self::`/
-  `static::`, override compatibility, interfaces, traits, magic methods,
+  metadata. At that step inherited properties, parent constructors,
+  `parent::`/`self::`/`static::`, override compatibility, interfaces, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native object
+  lowering remain explicit.
+- Added Milestone 645, inherited public property slots and parent-aware
+  property metadata lookup. Child objects now materialize public instance
+  properties from ancestors before exact-class properties, public inherited
+  properties can be read/written through `$object->name`, `get_object_vars`
+  reports inherited public slots in parent-to-child order, and
+  `property_exists`/`get_class_vars` walk the current single-parent property
+  metadata while keeping inherited private properties invisible. Non-public
+  inherited property slots, property override compatibility, parent
+  constructors, `parent::`/`self::`/`static::`, traits, magic methods,
   references/copy-on-write, exact native error objects, and native object
   lowering remain explicit.
 
@@ -72,9 +83,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 645 should take the next object inheritance slice: inherited
-  public property slots and property metadata lookup if feasible, or document
-  the property-layout blocker before parent constructors and `parent::` calls.
+- Milestone 646 should take the next object inheritance slice: inherited
+  constructor lookup/dispatch or `parent::__construct`/`parent::method`
+  parsing if feasible, or document the static-receiver/call-context blocker
+  before broader parent calls.
 
 ## 2026-05-12
 

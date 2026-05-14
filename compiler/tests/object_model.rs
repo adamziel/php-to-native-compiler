@@ -120,7 +120,11 @@ print_r($box);
 #[test]
 fn public_instance_property_reads_and_writes_mutate_object_slots() {
     let source = r#"<?php
-class Profile {
+class Account {
+    public $id;
+}
+
+class Profile extends Account {
     public $name;
     public $visits;
     protected $secret;
@@ -129,9 +133,12 @@ class Profile {
 }
 
 $profile = new profile();
+echo "parent-initial:", $profile->id, "\n";
+$profile->id = 7;
 echo "initial:", $profile->name, "\n";
 $profile->name = "Ada";
 $profile->visits = 3;
+echo $profile->id, "\n";
 echo $profile->name, "\n";
 echo $profile->visits + 2, "\n";
 print_r($profile);
@@ -140,7 +147,7 @@ print_r($profile);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "initial:\nAda\n5\nProfile Object\n(\n    [name] => Ada\n    [visits] => 3\n    [secret:protected] => \n    [token:Profile:private] => \n)\n"
+        "parent-initial:\ninitial:\n7\nAda\n5\nProfile Object\n(\n    [id] => 7\n    [name] => Ada\n    [visits] => 3\n    [secret:protected] => \n    [token:Profile:private] => \n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -664,13 +671,32 @@ fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
 #[test]
 fn property_exists_checks_declared_property_metadata() {
     let source = r#"<?php
-class Box {
+class Base {
+    public $baseName;
+    protected $baseSecret;
+    private $baseToken;
+    public static $baseShared;
+}
+
+class Box extends Base {
     public $name;
     protected $secret;
     private static $cache;
 }
 
 $box = new box();
+if (property_exists($box, "baseName")) {
+    echo "object:baseName\n";
+}
+if (property_exists($box, "baseSecret")) {
+    echo "object:baseSecret\n";
+}
+if (!property_exists($box, "baseToken")) {
+    echo "object:baseToken-private-false\n";
+}
+if (property_exists("Box", "baseShared")) {
+    echo "class:baseShared\n";
+}
 if (property_exists($box, "name")) {
     echo "object:name\n";
 }
@@ -698,7 +724,7 @@ if ($call($box, "name")) {
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "object:name\nobject:secret\nobject:static\nclass:static\nclass:missing\nmissing-class:false\ndynamic:exists\n"
+        "object:baseName\nobject:baseSecret\nobject:baseToken-private-false\nclass:baseShared\nobject:name\nobject:secret\nobject:static\nclass:static\nclass:missing\nmissing-class:false\ndynamic:exists\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -842,7 +868,13 @@ fn get_class_methods_requires_object_or_declared_class_string_argument() {
 #[test]
 fn get_class_vars_lists_public_declared_properties_with_null_defaults() {
     let source = r#"<?php
-class Box {
+class Base {
+    public $baseName;
+    protected $baseSecret;
+    public static $baseShared;
+}
+
+class Box extends Base {
     public $name;
     protected $secret;
     private $token;
@@ -862,7 +894,7 @@ echo count($dynamic), "|", array_key_exists("secret", $dynamic);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [name] => \n    [shared] => \n)\n2|1|1\n2|"
+        "Array\n(\n    [name] => \n    [shared] => \n    [baseName] => \n    [baseShared] => \n)\n4|1|1\n4|"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -891,7 +923,12 @@ fn get_class_vars_requires_declared_class_string_argument() {
 #[test]
 fn get_object_vars_lists_current_public_instance_property_values() {
     let source = r#"<?php
-class Box {
+class Base {
+    public $baseName;
+    protected $baseSecret;
+}
+
+class Box extends Base {
     public $name;
     protected $secret;
     private $token;
@@ -900,21 +937,22 @@ class Box {
 }
 
 $box = new box();
+$box->baseName = "Root";
 $box->name = "Ada";
 $box->count = 3;
 $vars = get_object_vars($box);
 print_r($vars);
-echo count($vars), "|", $vars["name"], "|", $vars["count"], "|", array_key_exists("secret", $vars), "\n";
+echo count($vars), "|", $vars["baseName"], "|", $vars["name"], "|", $vars["count"], "|", array_key_exists("secret", $vars), "\n";
 
 $call = "get_object_vars";
 $dynamic = $call($box);
-echo count($dynamic), "|", $dynamic["name"];
+echo count($dynamic), "|", $dynamic["baseName"], "|", $dynamic["name"];
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [name] => Ada\n    [count] => 3\n)\n2|Ada|3|\n2|Ada"
+        "Array\n(\n    [baseName] => Root\n    [name] => Ada\n    [count] => 3\n)\n3|Root|Ada|3|\n3|Root|Ada"
     );
     assert_eq!(execution.exit_code, 0);
 }
