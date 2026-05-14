@@ -1,0 +1,1 @@
+phpc intentionally rejects nested trait declarations before conditional trait registration semantics exist.

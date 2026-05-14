@@ -1,0 +1,1 @@
+phpc reports only user-declared traits in get_declared_traits(); system PHP may include built-in/internal traits.

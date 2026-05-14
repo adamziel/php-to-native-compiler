@@ -24,6 +24,8 @@ const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects cl
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const ASSEMBLY_INTERFACE_REJECTION: &str = "assembly interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
+const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
+const ASSEMBLY_TRAIT_REJECTION: &str = "assembly trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
@@ -357,6 +359,7 @@ impl LlvmGenerator {
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, LLVM_INTERFACE_REJECTION))
             }
+            Stmt::Trait(trait_decl) => Err(self.unsupported(trait_decl.span, LLVM_TRAIT_REJECTION)),
             Stmt::Class(class) => Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION)),
             Stmt::If { span, .. }
             | Stmt::While { span, .. }
@@ -3113,6 +3116,9 @@ impl CGenerator {
             }
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
+            }
+            Stmt::Trait(trait_decl) => {
+                Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION))
             }
             Stmt::Class(class) => {
                 Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))

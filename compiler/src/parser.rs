@@ -3,7 +3,8 @@ use crate::ast::{
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam,
     IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, Program,
-    Span, StaticLocalDeclarator, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
+    UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -55,7 +56,7 @@ impl Parser {
             TokenKind::Function => self.parse_function(),
             TokenKind::Class => self.parse_class(),
             TokenKind::Interface => self.parse_interface(),
-            TokenKind::Trait => self.parse_unsupported_trait_declaration(),
+            TokenKind::Trait => self.parse_trait(),
             TokenKind::Enum => self.parse_unsupported_enum_declaration(),
             TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
                 if matches!(self.peek_next().kind, TokenKind::Class) =>
@@ -334,11 +335,24 @@ impl Parser {
         }))
     }
 
-    fn parse_unsupported_trait_declaration(&mut self) -> CompileResult<Stmt> {
+    fn parse_trait(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Trait, "expected 'trait'")?
             .span;
-        Err(self.error_at(span, unsupported_trait_declaration_message()))
+        if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
+            return Err(self.error_at(span, unsupported_nested_trait_declaration_message()));
+        }
+        let name = self.consume_identifier("expected trait name")?;
+        let name = self.resolve_declared_class_name(&name);
+        self.consume_keyword(TokenKind::LBrace, "expected trait body")?;
+        if !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_trait_member_declaration_message(),
+            ));
+        }
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after trait body")?;
+        Ok(Stmt::Trait(TraitDecl { name, span }))
     }
 
     fn parse_interface(&mut self) -> CompileResult<Stmt> {
@@ -987,9 +1001,10 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
-                    return Err(
-                        self.error_at(self.peek().span, unsupported_trait_declaration_message())
-                    );
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_nested_trait_declaration_message(),
+                    ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Enum)) {
                     return Err(
@@ -1298,9 +1313,10 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
-                    return Err(
-                        self.error_at(self.peek().span, unsupported_trait_declaration_message())
-                    );
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_nested_trait_declaration_message(),
+                    ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Enum)) {
                     return Err(
@@ -2158,9 +2174,10 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Trait)) {
-                    return Err(
-                        self.error_at(self.peek().span, unsupported_trait_declaration_message())
-                    );
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_nested_trait_declaration_message(),
+                    ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Enum)) {
                     return Err(
@@ -4849,6 +4866,14 @@ fn unsupported_class_expression_message() -> &'static str {
 
 fn unsupported_trait_declaration_message() -> &'static str {
     "unsupported trait declaration: trait parsing and trait use execution are not implemented"
+}
+
+fn unsupported_nested_trait_declaration_message() -> &'static str {
+    "unsupported trait declaration: only top-level trait declarations are implemented"
+}
+
+fn unsupported_trait_member_declaration_message() -> &'static str {
+    "unsupported trait member declaration: trait members and trait use execution are not implemented"
 }
 
 fn unsupported_interface_declaration_message() -> &'static str {

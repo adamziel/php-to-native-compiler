@@ -1,0 +1,10 @@
+yes
+yes
+not-class
+not-interface
+Array
+(
+    [0] => App\Shared\Hookable
+    [1] => App\Shared\Logs
+)
+

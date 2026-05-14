@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 707, bounded declared trait metadata through `phpc run`.
+  The parser now accepts empty top-level trait declarations, applies current
+  namespace declaration resolution to trait names, rejects nested traits and
+  any trait body members, and registers trait names in the same class-like
+  case-insensitive namespace as classes and interfaces. `trait_exists()` now
+  reports declared user traits, `get_declared_traits()` lists them in
+  declaration order, and `class_exists()`/`interface_exists()` remain
+  kind-specific. Trait members, class `use` composition, conflict resolution,
+  aliasing, built-in/internal traits, autoload interaction, exact PHP
+  diagnostics, partial-output behavior, and native lowering remain explicit.
+  Native lowering rejects trait declarations before backend execution. Focused
+  verification so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model trait -- --test-threads=1`,
+  `cargo test -p phpc --test object_model duplicate_interface_and_class_names_share_class_like_registry -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries trait -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone707`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone707`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed. The synthetic WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:6:1: unsupported enum declaration: enum parsing and case/value execution are not implemented`.
 - Added Milestone 706, bounded declared interface metadata through `phpc run`.
   The parser now accepts top-level interface declarations and public method
   signatures, applies current namespace declaration resolution to interface

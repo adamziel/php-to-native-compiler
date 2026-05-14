@@ -819,29 +819,36 @@ fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
-fn trait_exists_reports_false_for_current_no_trait_model() {
+fn trait_exists_reports_declared_trait_metadata() {
     let source = r#"<?php
-class Box {}
+namespace App;
 
-if (!trait_exists("Box")) {
+class Box {}
+trait Logger {}
+trait Hookable {}
+
+if (!trait_exists("App\\Box")) {
     echo "class:not-trait\n";
 }
-if (!trait_exists("Missing")) {
-    echo "missing:not-trait\n";
+if (trait_exists("App\\Logger")) {
+    echo "logger:trait\n";
 }
-if (!trait_exists("Missing", false)) {
+if (trait_exists("App\\Hookable")) {
+    echo "hookable:trait\n";
+}
+if (!trait_exists("App\\Missing", false)) {
     echo "missing:false-autoload\n";
 }
 $call = "trait_exists";
-if (!$call("Box", true)) {
-    echo "dynamic:not-trait\n";
+if ($call("APP\\LOGGER", true)) {
+    echo "dynamic:trait\n";
 }
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "class:not-trait\nmissing:not-trait\nmissing:false-autoload\ndynamic:not-trait\n"
+        "class:not-trait\nlogger:trait\nhookable:trait\nmissing:false-autoload\ndynamic:trait\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1546,9 +1553,13 @@ fn get_declared_interfaces_requires_no_arguments() {
 }
 
 #[test]
-fn get_declared_traits_reports_empty_trait_table() {
+fn get_declared_traits_reports_declared_trait_metadata() {
     let source = r#"<?php
+namespace App;
+
 class Box {}
+trait Logger {}
+trait Hookable {}
 
 $declared = get_declared_traits();
 print_r($declared);
@@ -1560,7 +1571,10 @@ echo count($dynamic);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(execution.stdout, "Array\n(\n)\n0\n0");
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => App\\Logger\n    [1] => App\\Hookable\n)\n2\n2"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -3803,6 +3817,64 @@ class named {}
         interface_then_class.message,
         "class named is already defined"
     );
+
+    let duplicate_trait = run_source(
+        r#"<?php
+trait Reusable {}
+trait reusable {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(duplicate_trait.phase, Phase::Runtime);
+    assert_eq!(duplicate_trait.line, 3);
+    assert_eq!(duplicate_trait.column, 1);
+    assert_eq!(duplicate_trait.message, "class reusable is already defined");
+
+    let class_then_trait = run_source(
+        r#"<?php
+class Worker {}
+trait worker {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(class_then_trait.phase, Phase::Runtime);
+    assert_eq!(class_then_trait.line, 3);
+    assert_eq!(class_then_trait.column, 1);
+    assert_eq!(class_then_trait.message, "class worker is already defined");
+
+    let interface_then_trait = run_source(
+        r#"<?php
+interface Contract {}
+trait contract {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(interface_then_trait.phase, Phase::Runtime);
+    assert_eq!(interface_then_trait.line, 3);
+    assert_eq!(interface_then_trait.column, 1);
+    assert_eq!(
+        interface_then_trait.message,
+        "class contract is already defined"
+    );
+
+    let trait_then_interface = run_source(
+        r#"<?php
+trait NamedTrait {}
+interface namedtrait {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(trait_then_interface.phase, Phase::Runtime);
+    assert_eq!(trait_then_interface.line, 3);
+    assert_eq!(trait_then_interface.column, 1);
+    assert_eq!(
+        trait_then_interface.message,
+        "class namedtrait is already defined"
+    );
 }
 
 #[test]
@@ -4019,9 +4091,9 @@ trait Logs {
     public function write($message) {}
 }
 "#,
-            2,
-            1,
-            "unsupported trait declaration: trait parsing and trait use execution are not implemented",
+            3,
+            5,
+            "unsupported trait member declaration: trait members and trait use execution are not implemented",
         ),
         (
             r#"<?php
@@ -4075,7 +4147,7 @@ if (true) {
 "#,
             3,
             5,
-            "unsupported trait declaration: trait parsing and trait use execution are not implemented",
+            "unsupported trait declaration: only top-level trait declarations are implemented",
         ),
         (
             r#"<?php

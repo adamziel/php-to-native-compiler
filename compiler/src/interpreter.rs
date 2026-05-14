@@ -14,7 +14,7 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl,
     IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, Program, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -50,6 +50,8 @@ struct Interpreter {
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     interfaces: Vec<Rc<InterfaceDecl>>,
     interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
+    traits: Vec<Rc<TraitDecl>>,
+    trait_lookup: HashMap<String, Rc<TraitDecl>>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
@@ -233,6 +235,8 @@ impl Interpreter {
         let mut functions = HashMap::new();
         let mut interfaces = Vec::new();
         let mut interface_lookup = HashMap::new();
+        let mut traits = Vec::new();
+        let mut trait_lookup = HashMap::new();
         let mut methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
@@ -250,7 +254,8 @@ impl Interpreter {
                     functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) if !class.is_nested => {
-                    if interface_lookup.contains_key(&class.name.to_ascii_lowercase()) {
+                    let key = class.name.to_ascii_lowercase();
+                    if interface_lookup.contains_key(&key) || trait_lookup.contains_key(&key) {
                         return Err(runtime_error(
                             class.span,
                             RuntimeError::duplicate_class(&class.name),
@@ -261,9 +266,19 @@ impl Interpreter {
                 Stmt::Interface(interface) => {
                     register_interface_name(
                         &classes,
+                        &trait_lookup,
                         &mut interfaces,
                         &mut interface_lookup,
                         interface,
+                    )?;
+                }
+                Stmt::Trait(trait_decl) => {
+                    register_trait_name(
+                        &classes,
+                        &interface_lookup,
+                        &mut traits,
+                        &mut trait_lookup,
+                        trait_decl,
                     )?;
                 }
                 _ => {}
@@ -291,6 +306,8 @@ impl Interpreter {
             methods,
             interfaces,
             interface_lookup,
+            traits,
+            trait_lookup,
             class_constants,
             static_properties,
             classes,
@@ -358,9 +375,9 @@ impl Interpreter {
                     self.functions.insert(key, Rc::new(function.clone()));
                 }
                 Stmt::Class(class) if !class.is_nested => {
-                    if self
-                        .interface_lookup
-                        .contains_key(&class.name.to_ascii_lowercase())
+                    let key = class.name.to_ascii_lowercase();
+                    if self.interface_lookup.contains_key(&key)
+                        || self.trait_lookup.contains_key(&key)
                     {
                         return Err(runtime_error(
                             class.span,
@@ -372,9 +389,19 @@ impl Interpreter {
                 Stmt::Interface(interface) => {
                     register_interface_name(
                         &self.classes,
+                        &self.trait_lookup,
                         &mut self.interfaces,
                         &mut self.interface_lookup,
                         interface,
+                    )?;
+                }
+                Stmt::Trait(trait_decl) => {
+                    register_trait_name(
+                        &self.classes,
+                        &self.interface_lookup,
+                        &mut self.traits,
+                        &mut self.trait_lookup,
+                        trait_decl,
                     )?;
                 }
                 _ => {}
@@ -712,7 +739,7 @@ impl Interpreter {
             Stmt::Include { path, once, span } => {
                 self.execute_file_include(path, *once, false, *span, scope)
             }
-            Stmt::Function(_) | Stmt::Interface(_) => Ok(Flow::Normal),
+            Stmt::Function(_) | Stmt::Interface(_) | Stmt::Trait(_) => Ok(Flow::Normal),
             Stmt::Class(class) => {
                 if class.is_nested {
                     self.register_nested_class_declaration(class)?;
@@ -5484,11 +5511,17 @@ impl Interpreter {
                 )),
             },
             "trait_exists" => match args.as_slice() {
-                [Value::String(_trait_name)] => Ok(Value::Bool(false)),
-                [Value::String(_trait_name), autoload] => {
+                [Value::String(trait_name)] => Ok(Value::Bool(
+                    self.trait_lookup
+                        .contains_key(&trait_name.to_ascii_lowercase()),
+                )),
+                [Value::String(trait_name), autoload] => {
                     let _autoload =
                         metadata_exists_autoload_flag("trait_exists()", autoload, span)?;
-                    Ok(Value::Bool(false))
+                    Ok(Value::Bool(
+                        self.trait_lookup
+                            .contains_key(&trait_name.to_ascii_lowercase()),
+                    ))
                 }
                 [other] => Err(runtime_error(
                     span,
@@ -5571,7 +5604,13 @@ impl Interpreter {
             }
             "get_declared_traits" => {
                 expect_arity(name, &args, 0, span)?;
-                Ok(Value::Array(PhpArray::new()))
+                let mut traits = PhpArray::new();
+                for trait_decl in &self.traits {
+                    traits
+                        .append(Value::String(trait_decl.name.clone()))
+                        .expect("declared trait count fits in array keys");
+                }
+                Ok(Value::Array(traits))
             }
             "get_called_class" => {
                 expect_arity(name, &args, 0, span)?;
@@ -6891,12 +6930,16 @@ fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> Compil
 
 fn register_interface_name(
     classes: &PhpClassTable,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     interfaces: &mut Vec<Rc<InterfaceDecl>>,
     interface_lookup: &mut HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
 ) -> CompileResult<()> {
     let key = interface.name.to_ascii_lowercase();
-    if classes.lookup_class_id(&interface.name).is_some() || interface_lookup.contains_key(&key) {
+    if classes.lookup_class_id(&interface.name).is_some()
+        || interface_lookup.contains_key(&key)
+        || trait_lookup.contains_key(&key)
+    {
         return Err(runtime_error(
             interface.span,
             RuntimeError::duplicate_class(&interface.name),
@@ -6906,6 +6949,30 @@ fn register_interface_name(
     let interface = Rc::new(interface.clone());
     interfaces.push(interface.clone());
     interface_lookup.insert(key, interface);
+    Ok(())
+}
+
+fn register_trait_name(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    traits: &mut Vec<Rc<TraitDecl>>,
+    trait_lookup: &mut HashMap<String, Rc<TraitDecl>>,
+    trait_decl: &TraitDecl,
+) -> CompileResult<()> {
+    let key = trait_decl.name.to_ascii_lowercase();
+    if classes.lookup_class_id(&trait_decl.name).is_some()
+        || interface_lookup.contains_key(&key)
+        || trait_lookup.contains_key(&key)
+    {
+        return Err(runtime_error(
+            trait_decl.span,
+            RuntimeError::duplicate_class(&trait_decl.name),
+        ));
+    }
+
+    let trait_decl = Rc::new(trait_decl.clone());
+    traits.push(trait_decl.clone());
+    trait_lookup.insert(key, trait_decl);
     Ok(())
 }
 

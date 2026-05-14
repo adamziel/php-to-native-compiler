@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_trait_declaration.php:2:1: unsupported trait declaration: trait parsing and trait use execution are not implemented
+parse error at tests/fixtures/unsupported_object_features/unsupported_trait_declaration.php:3:5: unsupported trait member declaration: trait members and trait use execution are not implemented
 --- stderr end ---

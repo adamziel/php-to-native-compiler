@@ -61,6 +61,10 @@ parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared and inherited properties with `null` values because property defaults are not
 represented yet.
+`interface_exists()` and `trait_exists()` check declared user interface and
+empty top-level trait metadata without triggering autoloading.
+`get_declared_interfaces()` and `get_declared_traits()` list declared user
+interfaces and empty top-level traits in declaration order.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -318,7 +322,8 @@ object handle hash behavior has native support.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, interfaces, traits,
+conditional class declarations, interface implementation/inheritance, trait
+members, trait use inside classes,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
@@ -358,10 +363,9 @@ properties, non-public visibility context, references/copy-on-write, exact
 native ordering,
 `interface_exists` true results for built-in/internal interfaces and interface
 implementation relationships,
-`trait_exists` true results for declared/built-in/internal traits,
+`trait_exists` true results for built-in/internal traits,
 `enum_exists` true results for declared/built-in/internal enums,
 `get_declared_interfaces` built-in/internal interface entries,
-`get_declared_traits` declared trait metadata and
-built-in/internal trait entries,
+`get_declared_traits` built-in/internal trait entries,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
 exact native `TypeError` behavior, and native lowering.

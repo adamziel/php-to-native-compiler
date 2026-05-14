@@ -386,8 +386,8 @@
   object's declared class name, `class_exists` checks the current declared
   class metadata by string name without autoloading, `interface_exists`
   accepts string names and checks current declared interface metadata without
-  autoloading, `trait_exists` accepts string names and returns
-  false for the current no-trait metadata model without autoloading,
+  autoloading, `trait_exists` accepts string names and checks current declared
+  trait metadata without autoloading,
   `enum_exists` accepts string names and returns false for the current no-enum
   metadata model without autoloading,
   `property_exists` checks
@@ -414,8 +414,8 @@
   declared in the current program in declaration order,
   `get_declared_interfaces` returns a zero-indexed array of interfaces
   declared in the current program in declaration order,
-  `get_declared_traits` returns an empty zero-indexed array because trait
-  declarations and internal trait metadata are not represented,
+  `get_declared_traits` returns a zero-indexed array of traits declared in the
+  current program in declaration order,
   and `print_r` can render current minimal object values
 - structured runtime errors for undefined variables, arity mismatches,
   unsupported calls, division by zero, modulo by zero, non-numeric string
@@ -568,7 +568,7 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
-  static interface methods, interface implementation, trait declarations,
+  static interface methods, interface implementation, trait members,
   trait use inside classes, enum declarations,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
@@ -731,10 +731,10 @@
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
-  trait names, return false for all supported calls because trait metadata is
-  not represented yet, and are available through string-valued dynamic function
-  calls. The autoload flag accepts current bool-like scalar values and does not
-  trigger autoloading.
+  trait names, perform case-insensitive lookup against empty top-level traits
+  declared in the current parsed program, and are available through
+  string-valued dynamic function calls. The autoload flag accepts current
+  bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names, return false for all supported calls because enum metadata is not
   represented yet, and are available through string-valued dynamic function
@@ -807,9 +807,10 @@
   declared in the current parsed program in declaration order and is available
   through string-valued dynamic calls. Built-in/internal interface entries are
   not represented yet.
-  `get_declared_traits()` returns an empty zero-indexed array because trait
-  declarations and internal trait metadata are not represented yet, and is
-  available through string-valued dynamic calls.
+  `get_declared_traits()` returns a zero-indexed array of empty top-level
+  traits declared in the current parsed program in declaration order and is
+  available through string-valued dynamic calls. Built-in/internal trait
+  entries are not represented yet.
   Named static method expressions such as `ClassName::method(...)` execute for
   declared or inherited visible static methods under the current positional
   argument/default-parameter subset, `$object::method(...)` and
@@ -2099,9 +2100,9 @@
   interfaces declared in the current parsed program; the autoload flag accepts
   current bool-like scalar values and does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
-  trait names and return false for all supported calls because trait metadata
-  is not represented yet; the autoload flag accepts current bool-like scalar
-  values and does not trigger autoloading.
+  trait names and perform case-insensitive lookup against empty top-level
+  traits declared in the current parsed program; the autoload flag accepts
+  current bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names and return false for all supported calls because enum metadata is not
   represented yet; the autoload flag accepts current bool-like scalar values
@@ -2137,8 +2138,9 @@
   `get_declared_interfaces()` returns a zero-indexed array containing only the
   current parsed program's declared interface names in declaration order.
   Built-in/internal interface entries are not represented.
-  `get_declared_traits()` returns an empty zero-indexed array because trait
-  declarations and internal trait metadata are not represented.
+  `get_declared_traits()` returns a zero-indexed array containing only the
+  current parsed program's empty top-level trait names in declaration order.
+  Built-in/internal trait entries are not represented.
   `get_called_class()` is recognized as a zero-argument callable and returns
   the current called class while executing in current instance and static
   method contexts, including string-valued dynamic calls. Outside method or
@@ -2639,7 +2641,7 @@
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   `implements` clauses, interface constants, interface implementation
   enforcement, interface inheritance, built-in/internal interfaces,
-  trait declarations, trait use inside classes,
+  trait members, trait use inside classes,
   trait methods/properties/constants, trait conflict resolution, aliases,
   visibility changes, namespace-aware traits,
   enum declarations, enum cases, backed enum values, enum methods, enum
@@ -3494,17 +3496,18 @@
 - `interface_exists` built-in/internal interface entries, autoloading, exact
   native `TypeError` behavior, interface implementation relationships, and
   native lowering beyond direct string-name false folding
-- `trait_exists` declared trait metadata, built-in/internal trait entries,
-  autoloading, namespaces/import aliases, exact native `TypeError` behavior,
-  and native lowering beyond direct string-name false folding
+- `trait_exists` built-in/internal trait entries, autoloading,
+  namespaces/import aliases beyond parsed declarations, exact native
+  `TypeError` behavior, and native lowering beyond direct string-name false
+  folding
 - `enum_exists` declared enum metadata, built-in/internal enum entries,
   autoloading, namespaces/import aliases, exact native `TypeError` behavior,
   and native lowering beyond direct string-name false folding
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
-- `get_declared_traits` declared trait metadata, built-in/internal trait
-  entries, autoloading, namespaces/import aliases, exact native ordering, and
-  native lowering
+- `get_declared_traits` built-in/internal trait entries, autoloading,
+  namespaces/import aliases beyond parsed declarations, exact native ordering,
+  and native lowering
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase

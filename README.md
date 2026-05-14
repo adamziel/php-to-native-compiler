@@ -147,7 +147,8 @@ incorrect native code.
   dynamic static method calls through `$object::method()` and
   `$className::method()` for visible static methods,
   single-parent metadata, object `isset` and `empty`, and selected metadata
-  builtins
+  builtins, including declared interface metadata and declared empty-trait
+  metadata
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
@@ -157,7 +158,8 @@ slice, include/require breadth beyond the current narrow local
 `require`/`require_once`/`include`/`include_once` statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
-interface inheritance/implementation enforcement, traits, enums,
+interface inheritance/implementation enforcement, trait members and trait
+composition, enums,
 try/catch/finally exception execution, exception objects and stack unwinding,
 array destructuring beyond simple positional statement-form `list(...)`,
 constructor behavior beyond public/inherited public instance `__construct`

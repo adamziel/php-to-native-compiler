@@ -132,13 +132,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   declaration/import blocker at `<bootstrap-shim>:2:1` is covered for the
   current class-name slice by Milestone 705. The previous interface declaration
   blocker at `<bootstrap-shim>:4:1` is covered for declared interface metadata
-  by Milestone 706. The shim probe now reaches
-  `parse error at <bootstrap-shim>:5:1: unsupported trait declaration: trait parsing and trait use execution are not implemented`.
+  by Milestone 706. The previous trait declaration blocker at
+  `<bootstrap-shim>:5:1` is covered for empty declared trait metadata by
+  Milestone 707. The shim probe now reaches
+  `parse error at <bootstrap-shim>:6:1: unsupported enum declaration: enum parsing and case/value execution are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
-- class inheritance, interface implementation/enforcement, traits, and modern
-  object semantics;
+- class inheritance, interface implementation/enforcement, trait
+  members/composition, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;
 - filesystem, streams, HTTP, database, JSON, XML, mbstring/intl, password/hash,
   date/time, sessions/cookies, and request superglobals;

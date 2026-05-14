@@ -1,0 +1,14 @@
+exit: 0
+stdout:
+yes
+yes
+not-class
+not-interface
+Array
+(
+    [0] => App\Shared\Hookable
+    [1] => App\Shared\Logs
+)
+--- stdout end ---
+stderr:
+--- stderr end ---

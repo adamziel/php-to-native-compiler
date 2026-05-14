@@ -6458,17 +6458,27 @@ handled.
   built-in/internal interfaces, autoload interaction, exact PHP diagnostics,
   partial-output behavior, and native lowering. The synthetic WordPress shim
   now reaches the trait declaration blocker at `<bootstrap-shim>:5:1`.
+- [x] Parser/runtime lane: implement the bounded declared-trait metadata slice
+  for the WordPress bootstrap trait declaration blocker reported at
+  `<bootstrap-shim>:5:1`. The parser now accepts empty top-level trait
+  declarations, registers trait names in the class-like case-insensitive
+  registry, powers `trait_exists()` plus `get_declared_traits()` for declared
+  user traits, and keeps native lowering rejecting trait declarations before
+  backend execution. Tests, fixtures, docs, and native rejection coverage name
+  the remaining unsupported edges: trait members, class `use` composition,
+  conflict resolution, aliasing, built-in/internal traits, autoload
+  interaction, exact PHP diagnostics, partial-output behavior, and native
+  lowering.
 - [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
-  bootstrap trait declaration blocker reported at `<bootstrap-shim>:5:1`, with
-  tests, CLI coverage, docs, and named unsupported edges for trait members,
-  class `use` adaptations, conflict resolution, aliasing, exact PHP
+  bootstrap enum declaration blocker reported at `<bootstrap-shim>:6:1`, with
+  tests, CLI coverage, docs, and named unsupported edges for enum cases,
+  backed values, enum methods, interface implementation, exact PHP
   diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 706 work, the latest committed checkpoint is
-  `da8829c runtime: add bounded namespace class resolution`, covering
-  Milestone 705.
+- Before the current Milestone 707 work, the latest committed checkpoint is
+  `40d5a80 runtime: add declared interface metadata`, covering Milestone 706.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

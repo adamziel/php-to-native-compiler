@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/milestone707/nested_trait_boundary.php:3:5: unsupported trait declaration: only top-level trait declarations are implemented
+--- stderr end ---

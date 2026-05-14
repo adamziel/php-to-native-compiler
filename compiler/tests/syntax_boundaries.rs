@@ -5,6 +5,7 @@ const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
+const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -677,12 +678,20 @@ fn emit_asm_rejects_interface_declaration_before_backend_execution() {
 
 #[test]
 fn unsupported_trait_declaration_has_stable_parse_errors() {
-    let cases = [(
-        "<?php\ntrait Reusable {}\n",
-        2,
-        1,
-        "unsupported trait declaration: trait parsing and trait use execution are not implemented",
-    )];
+    let cases = [
+        (
+            "<?php\ntrait Reusable {\n    public function render() {}\n}\n",
+            3,
+            5,
+            "unsupported trait member declaration: trait members and trait use execution are not implemented",
+        ),
+        (
+            "<?php\nif (true) {\n    trait Nested {}\n}\n",
+            3,
+            5,
+            "unsupported trait declaration: only top-level trait declarations are implemented",
+        ),
+    ];
 
     for (source, line, column, message) in cases {
         let error = parse_error(source);
@@ -693,14 +702,19 @@ fn unsupported_trait_declaration_has_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_trait_declaration_at_parse_boundary() {
+fn emit_ir_rejects_trait_declaration_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\ntrait Reusable {}\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported trait declaration: trait parsing and trait use execution are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_TRAIT_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_trait_declaration_before_backend_execution() {
+    let error = php_compiler::emit_asm_source("<?php\ntrait Reusable {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_TRAIT_REJECTION);
 }
 
 #[test]
