@@ -604,7 +604,12 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            Stmt::Require { path, once, span } => self.execute_require(path, *once, *span, scope),
+            Stmt::Require { path, once, span } => {
+                self.execute_file_include(path, *once, true, *span, scope)
+            }
+            Stmt::Include { path, span } => {
+                self.execute_file_include(path, false, false, *span, scope)
+            }
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
@@ -648,14 +653,23 @@ impl Interpreter {
         }
     }
 
-    fn execute_require(
+    fn execute_file_include(
         &mut self,
         path: &Expr,
         once: bool,
+        required: bool,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
-        let construct = if once { "require_once" } else { "require" };
+        let construct = if required {
+            if once {
+                "require_once"
+            } else {
+                "require"
+            }
+        } else {
+            "include"
+        };
         let path_value = self.evaluate(path, scope)?;
         let Value::String(path_value) = path_value else {
             return Err(runtime_error(
@@ -681,6 +695,15 @@ impl Interpreter {
         }
 
         let source = fs::read_to_string(&path.read_path).map_err(|error| {
+            if !required {
+                return runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        construct,
+                        "missing-file warning recovery is not implemented",
+                    ),
+                );
+            }
             Diagnostic::new(
                 Phase::Io,
                 span.line,

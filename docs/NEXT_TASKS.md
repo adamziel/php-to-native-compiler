@@ -6211,16 +6211,29 @@ handled.
 
 ## Milestone 680: WordPress Bridge Continuation
 
+- [x] Runtime/WordPress bridge lane: implement narrow statement-form
+  `include path;` for existing local files, enough to parse and skip the
+  false-by-default optional `advanced-cache.php` branch. Keep expression-form
+  `include`, `include_once`, missing-file include warning/recovery,
+  include-path lookup, streams/URLs, exact include return values,
+  declaration-order dependencies, exact warning/fatal recovery, and native
+  lowering explicit. The follow-up external WordPress inventory now reaches
+  `wp-settings.php:471:2`, statement-form `include_once $mu_plugin`.
+
+## Milestone 681: WordPress Bridge Continuation
+
 - [ ] Runtime/WordPress bridge lane: implement or explicitly bound
-  statement-form `include` for the optional `advanced-cache.php` drop-in path,
-  including the missing-file warning/recovery behavior needed before real
-  WordPress bootstrap can progress past `wp-settings.php:100`.
+  statement-form `include_once`, first for the must-use plugin loop shape.
+  Reuse the resolved-file de-duplication table where appropriate, and keep
+  expression-form `include_once`, include-path lookup, streams/URLs, missing
+  optional include warning/recovery, exact include return values, and native
+  lowering explicit.
 
 ## Latest Checkpoint
 
-- The latest committed checkpoint is `39b2e15 dynamic: execute narrow local
-  require`, covering Milestone 677. Milestones 678-679 are in progress in the
-  working tree.
+- The latest committed checkpoint is `6c4e43d dynamic: add narrow
+  require_once`, covering Milestones 678-679. Milestone 680 is in progress in
+  the working tree.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

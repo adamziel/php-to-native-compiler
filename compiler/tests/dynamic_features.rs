@@ -173,11 +173,11 @@ fn include_require_constructs_are_rejected_with_stable_parse_errors() {
     let cases = [
         (
             r#"<?php
-include 'config.php';
+$ok = include 'config.php';
 "#,
             2,
-            1,
-            "unsupported include: include/require resolution and execution are not implemented",
+            7,
+            "unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files",
         ),
         (
             r#"<?php
@@ -258,6 +258,36 @@ echo $from;
     let execution = run_source_with_source_file(&source, main.display().to_string()).unwrap();
 
     assert_eq!(execution.stdout, "loaded\nclass:Loaded\nmain:load");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn include_executes_local_files_in_caller_scope() {
+    let root =
+        std::env::temp_dir().join(format!("phpc-include-{}-{}", std::process::id(), "local"));
+    fs::create_dir_all(&root).expect("create include fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("lib.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+$value = "from-include";
+"#,
+    )
+    .expect("write included file");
+
+    let source = r#"<?php
+include 'lib.php';
+if (false) {
+    include 'missing.php';
+}
+echo $value;
+"#;
+    fs::write(&main, source).expect("write main file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "from-include");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -376,6 +406,7 @@ fn emit_ir_rejects_require_until_native_multifile_lowering_exists() {
     for source in [
         "<?php\nrequire 'bootstrap.php';\n",
         "<?php\nrequire_once 'bootstrap.php';\n",
+        "<?php\ninclude 'bootstrap.php';\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

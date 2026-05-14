@@ -17414,3 +17414,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: checkpoint with
   `tools/checkpoint.sh "dynamic: add narrow require_once"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T23:45:00Z
+
+- Checkpoint before this task: `6c4e43d dynamic: add narrow require_once`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 680, narrow statement-form `include path;`
+  execution for existing local files.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/dynamic_features.rs`, `tests/fixtures/milestone680/*`,
+  unsupported dynamic include-expression fixtures, `README.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone680`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone680`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: `include_once`, expression-form `include`,
+  expression-form `require`, expression-form `require_once`, include-path
+  lookup, streams/URLs, missing-file include warning/recovery, exact include
+  return values, autoload/opcache behavior, exact PHP warning/fatal recovery,
+  declaration-order dependencies across required files, namespace/import
+  resolution, interfaces/traits, exceptions, references/copy-on-write, exact
+  native error objects, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "dynamic: add narrow include"` if the full gate passes.

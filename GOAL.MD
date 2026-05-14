@@ -184,9 +184,10 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   process-level execution semantics, and native diagnostics.
 - The interpreter is missing large parts of PHP syntax and semantics:
   namespaces, include/require breadth beyond the first local
-  `require`/`require_once` slice, autoload, references, copy-on-write, closures,
-  generators, exceptions, type declarations, attributes, destructuring, spreads,
-  resources, and exact warning/recovery behavior.
+  `require`/`require_once`/`include` slice, autoload, references,
+  copy-on-write, closures, generators, exceptions, type declarations,
+  attributes, destructuring, spreads, resources, and exact warning/recovery
+  behavior.
 - Arrays are interpreter-supported for a growing subset but still lack full PHP
   copy-on-write/reference behavior, by-reference iteration, recursive/nested
   aliasing semantics, object/resource edge cases, and native lowering.

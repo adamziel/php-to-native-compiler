@@ -368,7 +368,9 @@ impl LlvmGenerator {
             Stmt::ConstDeclaration { span, .. } => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
-            Stmt::Require { span, .. } => Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION)),
+            Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
+                Err(self.unsupported(*span, LLVM_REQUIRE_REJECTION))
+            }
             Stmt::Return { span, .. } => {
                 Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
             }
@@ -3080,7 +3082,9 @@ impl CGenerator {
             Stmt::ConstDeclaration { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }
-            Stmt::Require { span, .. } => Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION)),
+            Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
+            }
             Stmt::Return { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
             }

@@ -882,9 +882,9 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   the current built-in constant slice
 
 String-valued dynamic function lookup and the narrow local `require path;` /
-`require_once path;` statement slice are executable today. Variable-variable
-execution and `eval` remain design boundaries; direct `eval(...)` syntax is
-reserved and rejected with a stable parse diagnostic.
+`require_once path;` / `include path;` statement slice are executable today.
+Variable-variable execution and `eval` remain design boundaries; direct
+`eval(...)` syntax is reserved and rejected with a stable parse diagnostic.
 Namespace declarations and top-level `use` import declarations are also
 reserved and rejected with stable parse diagnostics.
 First-class callable syntax such as `strlen(...)` and `$callback(...)` also
@@ -1075,8 +1075,9 @@ the named unsupported edge cases.
 
 ## Include/Require Resolution Design
 
-The first executable include/require slice is now a narrow `require path;` and
-`require_once path;` statement subset for local files. It uses these rules:
+The first executable include/require slice is now a narrow `require path;`,
+`require_once path;`, and `include path;` statement subset for local files. It
+uses these rules:
 
 - the interpreter carries the current file path in runtime execution context
 - only paths that evaluate to PHP strings are accepted
@@ -1092,11 +1093,12 @@ The first executable include/require slice is now a narrow `require path;` and
 - native lowering rejects include/require until file loading, scope effects,
   and return-value behavior have explicit lowering support
 
-Unsupported include/require behavior remains: `include`, `include_once`,
-expression-form `require`, expression-form `require_once`, include return
-values, `include_path` lookup, process-current-working-directory behavior
-beyond the fallback used when no source file is available, stream wrappers,
-`phar://`, URL includes, autoload interaction, opcache behavior,
+Unsupported include/require behavior remains: `include_once`, expression-form
+`include`, expression-form `require`, expression-form `require_once`, missing
+file warning/recovery for executed `include` statements, include return values,
+`include_path` lookup, process-current-working-directory behavior beyond the
+fallback used when no source file is available, stream wrappers, `phar://`, URL
+includes, autoload interaction, opcache behavior,
 declaration-order dependencies such as a required file declaring `class Child
 extends Base` only after requiring the base class, exact source mapping for
 declarations after include, and PHP's warning-vs-fatal recovery details.

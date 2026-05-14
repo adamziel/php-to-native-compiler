@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+value=included--- stdout end ---
+stderr:
+--- stderr end ---

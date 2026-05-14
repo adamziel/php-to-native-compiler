@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_include.php:2:1: unsupported include: include/require resolution and execution are not implemented
---- stderr end ---

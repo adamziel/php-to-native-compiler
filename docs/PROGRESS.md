@@ -661,6 +661,23 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
   `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed, and `git diff --check` passed.
+- Added Milestone 680, narrow statement-form `include path;` execution for
+  existing local files. It shares the current source-file-relative path
+  resolution, declaration registration, and caller-scope execution path with
+  `require`, while keeping expression-form `include`, `include_once`,
+  missing-file include warning/recovery, include-path lookup, streams/URLs,
+  include return values, declaration-order dependencies, exact warning/fatal
+  recovery, and native lowering explicit. The real WordPress 6.9.4 inventory
+  now reaches `wp-settings.php:471:2`, statement-form `include_once $mu_plugin`
+  inside the must-use plugin loop. Focused verification so far:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone680`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone680`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -672,10 +689,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 680 should implement or explicitly bound the next WordPress
-  bootstrap blocker: statement-form `include` for the conditional
-  `advanced-cache.php` drop-in path, including PHP warning/recovery behavior
-  decisions for missing optional files.
+- Milestone 681 should implement or explicitly bound statement-form
+  `include_once`, first for the must-use plugin loop shape, while keeping
+  include-path lookup, streams/URLs, and exact warning/recovery behavior
+  explicit.
 
 ## 2026-05-12
 
