@@ -6316,16 +6316,24 @@ handled.
 
 ## Milestone 691: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound `instanceof` enough
+- [x] Parser/runtime lane: implement or explicitly bound `instanceof` enough
   for WordPress's `Countable` checks in `wp-includes/compat.php`, with tests,
   CLI coverage, docs, and named unsupported edges for class/interface
   relationship breadth, autoload behavior, namespace-aware class names, exact
   PHP diagnostics, and native lowering.
 
+## Milestone 692: WordPress Bridge Continuation
+
+- [ ] Runtime/builtin lane: implement or explicitly bound `extension_loaded()`
+  for WordPress's early compatibility probes, with tests, CLI coverage, docs,
+  and named unsupported edges for exact extension inventory policy, case
+  normalization, host PHP/module discovery, side effects, exact PHP
+  diagnostics, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 690 work, the latest committed checkpoint is
-  `927019d functions: parse closure use syntax`, covering Milestone 689.
+- Before the current Milestone 691 work, the latest committed checkpoint is
+  `12bbb7e control: parse alternate if syntax`, covering Milestone 690.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

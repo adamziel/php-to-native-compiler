@@ -526,8 +526,7 @@
   before typed metadata/uninitialized state/write enforcement exist, instance
   property default values, multiple property declarations, unsupported class
   constant declaration forms such as typed, static, or multi-declarator class constants,
-  unsupported `clone` expressions, unsupported
-  `instanceof` expressions,
+  unsupported `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
   anonymous class expressions, dynamic property names,
@@ -761,8 +760,14 @@
   context exists. `clone
   $object` expressions fail with a stable parse diagnostic before object
   handle copying or `__clone` dispatch is implemented.
-  `$object instanceof ClassName` expressions fail with a stable parse
-  diagnostic before class/interface relationship checks exist.
+  `$value instanceof Name` executes for the current bounded runtime slice:
+  non-object left operands return `false`, object operands check declared class
+  metadata plus the current single-parent chain, unknown class/interface names
+  return `false`, and bare internal interface/class names such as `Countable`
+  are accepted as names without implying interface metadata support.
+  Dynamic right-hand class operands, namespace-qualified names, `self`/`parent`/`static`
+  targets, autoload side effects, exact PHP diagnostics, and native lowering
+  remain unsupported.
   `ClassName::class` expressions return the source-spelled class string without
   requiring class metadata. `self::class` resolves to the active declaring
   class name and `parent::class` resolves to that class's immediate parent
@@ -2557,9 +2562,9 @@
   declarations, autoload side effects from property introspection,
   object handle identity/aliasing,
   cloning, destructors, serialization hooks, visibility enforcement,
-  `self`/`parent`/`static`, object comparisons, `instanceof` relationship
-  checks, object-to-string conversion, object callables, and native lowering
-  are unsupported.
+  broader `self`/`parent`/`static` behavior, object comparisons, full
+  `instanceof` interface/class relationship metadata, object-to-string
+  conversion, object callables, and native lowering are unsupported.
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in

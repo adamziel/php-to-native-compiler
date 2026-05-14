@@ -3,6 +3,7 @@ use php_compiler::run_source;
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -570,22 +571,16 @@ fn emit_ir_rejects_clone_expression_at_parse_boundary() {
 fn unsupported_instanceof_expression_has_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$is = $object instanceof Widget;\n",
+            "<?php\n$is = $object instanceof $class;\n",
             2,
-            15,
-            "unsupported instanceof expression: class/interface relationship checks are not implemented",
+            26,
+            "unsupported instanceof class expression: dynamic class names are not implemented",
         ),
         (
-            "<?php\necho $object instanceof Widget;\n",
+            "<?php\n$is = $object INSTANCEOF $class;\n",
             2,
-            14,
-            "unsupported instanceof expression: class/interface relationship checks are not implemented",
-        ),
-        (
-            "<?php\n$is = $object INSTANCEOF Widget;\n",
-            2,
-            15,
-            "unsupported instanceof expression: class/interface relationship checks are not implemented",
+            26,
+            "unsupported instanceof class expression: dynamic class names are not implemented",
         ),
     ];
 
@@ -598,15 +593,12 @@ fn unsupported_instanceof_expression_has_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_instanceof_expression_at_parse_boundary() {
+fn emit_ir_rejects_instanceof_expression_at_codegen_boundary() {
     let error =
         php_compiler::emit_ir_source("<?php\n$is = $object instanceof Widget;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported instanceof expression: class/interface relationship checks are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
 }
 
 #[test]

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_instanceof_expression.php:6:11: unsupported instanceof expression: class/interface relationship checks are not implemented
+parse error at tests/fixtures/unsupported_object_features/unsupported_instanceof_expression.php:7:22: unsupported instanceof class expression: dynamic class names are not implemented
 --- stderr end ---

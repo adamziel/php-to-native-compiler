@@ -1176,6 +1176,12 @@ impl Interpreter {
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
             }
+            Expr::InstanceOf {
+                expr, class_name, ..
+            } => {
+                let value = self.evaluate(expr, scope)?;
+                Ok(Value::Bool(self.value_instanceof(&value, class_name)))
+            }
             Expr::Closure { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call(
@@ -3912,6 +3918,20 @@ impl Interpreter {
 
         candidate_id == target_class.id()
             || self.classes.is_subclass_of(candidate_id, target_class.id())
+    }
+
+    fn value_instanceof(&self, value: &Value, class_name: &str) -> bool {
+        let Value::Object(object) = value else {
+            return false;
+        };
+        let Some(target_class) = self.classes.lookup_class(class_name) else {
+            return false;
+        };
+
+        object.class_id() == target_class.id()
+            || self
+                .classes
+                .is_subclass_of(object.class_id(), target_class.id())
     }
 
     fn value_is_subclass_of(

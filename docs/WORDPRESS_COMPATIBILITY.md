@@ -101,8 +101,9 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `compat.php:54` is covered by the Milestone 689 syntax-only closure slice.
   The previous alternate `if (...) : ... endif;` blocker in the bootstrap shim
   is covered by Milestone 690 through the existing conditional runtime path.
-  The shim probe now reaches `instanceof Countable` in
-  `wp-includes/compat.php:318`.
+  The previous `instanceof Countable` blocker in `wp-includes/compat.php` is
+  covered by the bounded Milestone 691 `instanceof` runtime slice. The shim
+  probe now reaches `extension_loaded()` at `<bootstrap-shim>:232:7`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

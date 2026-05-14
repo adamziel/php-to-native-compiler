@@ -478,6 +478,9 @@ impl LlvmGenerator {
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => {
                 Err(self.unsupported(*span, LLVM_FUNCTION_CALL_REJECTION))
             }
+            Expr::InstanceOf { span, .. } => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
             Expr::Closure { span, .. } => {
                 Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
             }
@@ -3202,6 +3205,9 @@ impl CGenerator {
             }
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+            }
+            Expr::InstanceOf { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Closure { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))

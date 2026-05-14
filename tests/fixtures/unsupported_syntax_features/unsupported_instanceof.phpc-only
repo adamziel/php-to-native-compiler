@@ -1,1 +1,1 @@
-Project-specific stable parse diagnostic for unsupported instanceof expressions.
+Project-specific stable parse diagnostic for unsupported dynamic instanceof class expressions.

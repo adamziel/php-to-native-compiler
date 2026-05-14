@@ -1002,6 +1002,10 @@ object model.
 single-parent ancestor relationships against the current metadata table.
 `is_subclass_of(...)` shares the same argument boundary and walks the current
 single-parent chain while keeping exact-class and missing-class cases false.
+`$value instanceof Name` uses the same current object class metadata and
+single-parent chain for object values. Non-object values and unknown
+class/interface names return false, including WordPress compatibility names
+such as `Countable` until interface metadata exists.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.

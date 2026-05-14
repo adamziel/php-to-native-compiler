@@ -1,2 +1,2 @@
 <?php
-$is = $object instanceof Widget;
+$is = $object instanceof $class;

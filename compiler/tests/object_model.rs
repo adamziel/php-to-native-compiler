@@ -4221,26 +4221,6 @@ $copy = CLONE $box;
             9,
             "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
         ),
-        (
-            r#"<?php
-class Box {}
-$box = new Box();
-echo $box instanceof Box;
-"#,
-            4,
-            11,
-            "unsupported instanceof expression: class/interface relationship checks are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {}
-$box = new Box();
-echo $box INSTANCEOF Box;
-"#,
-            4,
-            11,
-            "unsupported instanceof expression: class/interface relationship checks are not implemented",
-        ),
     ];
 
     for (source, line, column, message) in cases {
@@ -4249,6 +4229,69 @@ echo $box INSTANCEOF Box;
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
     }
+}
+
+#[test]
+fn instanceof_checks_current_object_relationships() {
+    let execution = run_source(
+        r#"<?php
+class Box {}
+class Child extends Box {}
+class Other {}
+
+$box = new Box();
+$child = new Child();
+
+echo $box instanceof Box ? "1" : "0";
+echo $child instanceof Child ? "1" : "0";
+echo $child instanceof Box ? "1" : "0";
+echo $box instanceof Child ? "1" : "0";
+echo $child instanceof Other ? "1" : "0";
+echo $child instanceof Missing ? "1" : "0";
+echo "x" instanceof Box ? "1" : "0";
+echo $child INSTANCEOF box ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "11100001");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn instanceof_handles_wordpress_countable_shape_as_false_for_current_values() {
+    let execution = run_source(
+        r#"<?php
+$items = [1, 2, 3];
+$name = "Ada";
+echo $items instanceof Countable ? "countable" : "plain";
+echo "\n";
+echo $name instanceof Countable ? "countable" : "plain";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "plain\nplain");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn instanceof_rejects_dynamic_class_names_for_now() {
+    let error = parse_error(
+        r#"<?php
+class Box {}
+$box = new Box();
+$class = "Box";
+echo $box instanceof $class;
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 22);
+    assert_eq!(
+        error.message,
+        "unsupported instanceof class expression: dynamic class names are not implemented"
+    );
 }
 
 #[test]

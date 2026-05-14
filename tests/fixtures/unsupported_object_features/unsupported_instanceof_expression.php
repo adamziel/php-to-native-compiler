@@ -3,4 +3,5 @@ class Box {
     public $name;
 }
 $box = new Box();
-echo $box instanceof Box;
+$class = "Box";
+echo $box instanceof $class;

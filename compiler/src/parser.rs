@@ -2241,8 +2241,6 @@ impl Parser {
                 BinaryOp::StrictEq
             } else if self.match_token(|kind| matches!(kind, TokenKind::StrictBangEqual)) {
                 BinaryOp::StrictNe
-            } else if self.check_instanceof_operator() {
-                return Err(self.error_at(self.peek().span, unsupported_instanceof_message()));
             } else {
                 break;
             };
@@ -2252,6 +2250,16 @@ impl Parser {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
+                span,
+            };
+        }
+        if self.check_instanceof_operator() {
+            self.advance();
+            let class_name = self.consume_instanceof_class_name()?;
+            let span = expr.span();
+            expr = Expr::InstanceOf {
+                expr: Box::new(expr),
+                class_name,
                 span,
             };
         }
@@ -3142,6 +3150,33 @@ impl Parser {
         })
     }
 
+    fn consume_instanceof_class_name(&mut self) -> CompileResult<String> {
+        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_namespace_qualified_class_name_message(),
+            ));
+        }
+
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) => {
+                if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_namespace_qualified_class_name_message(),
+                    ));
+                }
+                Ok(name)
+            }
+            TokenKind::Variable(_) => Err(self.error_at(
+                token.span,
+                "unsupported instanceof class expression: dynamic class names are not implemented",
+            )),
+            _ => Err(self.error_at(token.span, "expected class name after instanceof")),
+        }
+    }
+
     fn parse_array_literal(
         &mut self,
         span: Span,
@@ -3288,6 +3323,7 @@ impl Parser {
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
             | Expr::MethodCall { .. }
+            | Expr::InstanceOf { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
             | Expr::ObjectStaticMethodCall { .. }
@@ -3359,6 +3395,7 @@ impl Parser {
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
             | Expr::MethodCall { .. }
+            | Expr::InstanceOf { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
             | Expr::ObjectStaticMethodCall { .. }
@@ -3429,6 +3466,7 @@ impl Parser {
                 Self::expr_contains_assignment(callee)
                     || args.iter().any(Self::expr_contains_assignment)
             }
+            Expr::InstanceOf { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Binary { left, right, .. } => {
                 Self::expr_contains_assignment(left) || Self::expr_contains_assignment(right)
             }
@@ -3542,6 +3580,7 @@ impl Parser {
                         .iter()
                         .any(Self::expr_contains_unsupported_assignment_rhs)
             }
+            Expr::InstanceOf { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Binary { left, right, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(left)
                     || Self::expr_contains_unsupported_assignment_rhs(right)
@@ -3632,6 +3671,7 @@ impl Parser {
                 .find_map(Self::find_append_index_span),
             Expr::DynamicCall { callee, args, .. } => Self::find_append_index_span(callee)
                 .or_else(|| args.iter().find_map(Self::find_append_index_span)),
+            Expr::InstanceOf { expr, .. } => Self::find_append_index_span(expr),
             Expr::Binary { left, right, .. } => {
                 Self::find_append_index_span(left).or_else(|| Self::find_append_index_span(right))
             }

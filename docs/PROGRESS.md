@@ -842,13 +842,32 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
   `PHPC_BIN=/tmp/phpc-target-690/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 691, bounded `instanceof` execution for the current
+  interpreter runtime. `phpc run` now accepts bare-name `instanceof`
+  expressions needed by WordPress's `Countable`, `SimpleXMLElement`, and
+  `ResourceBundle` checks in `wp-includes/compat.php`; non-object left
+  operands and unknown class/interface names return `false`, while object
+  operands use declared class metadata and the current single-parent chain.
+  Dynamic right-hand class operands, namespace-qualified names,
+  `self`/`parent`/`static` targets, full interface metadata, autoload behavior,
+  exact PHP diagnostics, and native lowering remain explicit. The real
+  WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `<bootstrap-shim>:232:7`, `extension_loaded()`. Focused verification so far:
+  `cargo check -p phpc`, `cargo test -p phpc --test object_model instanceof`,
+  `cargo test -p phpc --test syntax_boundaries instanceof`,
+  `cargo run -p phpc -- test tests/fixtures/milestone691`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone691`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
+  `PHPC_BIN=/tmp/phpc-target-691/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 691 should implement or explicitly bound `instanceof` enough for
-  WordPress's `Countable` checks in `wp-includes/compat.php`, while keeping
-  class/interface relationship breadth, autoload behavior, namespace-aware
-  class names, exact PHP diagnostics, and native lowering explicit unless
+- Milestone 692 should implement or explicitly bound `extension_loaded()` for
+  WordPress's early compatibility probes, while keeping exact extension
+  inventory policy, case normalization, host PHP/module discovery,
+  side effects, exact PHP diagnostics, and native lowering explicit unless
   proven.
 
 ## 2026-05-12

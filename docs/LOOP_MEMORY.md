@@ -17752,3 +17752,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `git diff --check`, the focused gates, then
   checkpoint with `tools/checkpoint.sh "control: parse alternate if syntax"` if
   the full gate passes.
+
+## Loop Event 2026-05-14T02:30:00Z
+
+- Checkpoint before this task: `12bbb7e control: parse alternate if syntax`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 691, bounded `instanceof` parsing and interpreter
+  execution for WordPress's `Countable`, `SimpleXMLElement`, and
+  `ResourceBundle` compatibility checks.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone691/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_instanceof.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_instanceof_expression.*`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model instanceof`,
+  `cargo test -p phpc --test syntax_boundaries instanceof`,
+  `cargo run -p phpc -- test tests/fixtures/milestone691`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone691`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
+  `PHPC_BIN=/tmp/phpc-target-691/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: dynamic `instanceof` class operands,
+  namespace-qualified names, `self`/`parent`/`static` targets, full interface
+  metadata, autoload behavior, exact PHP diagnostics, `extension_loaded()`,
+  WordPress bootstrap environment, exact native errors, and native lowering
+  remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, the focused
+  gates, then checkpoint with
+  `tools/checkpoint.sh "objects: add bounded instanceof"` if the full gate
+  passes.

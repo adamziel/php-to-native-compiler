@@ -497,6 +497,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    InstanceOf {
+        expr: Box<Expr>,
+        class_name: String,
+        span: Span,
+    },
     Closure {
         params: Vec<FunctionParam>,
         captures: Vec<ClosureCapture>,
@@ -598,6 +603,7 @@ impl Expr {
             | Expr::LateStaticMethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
+            | Expr::InstanceOf { span, .. }
             | Expr::Closure { span, .. }
             | Expr::New { span, .. }
             | Expr::Binary { span, .. }
