@@ -349,34 +349,48 @@ echo "done";
 }
 
 #[test]
-fn child_context_protected_property_access_remains_explicitly_unsupported() {
+fn child_context_can_access_parent_declared_protected_properties() {
     let source = r#"<?php
 class Base {
     protected $shared;
+    protected $count;
 
-    public function seedBase($shared) {
+    public function seedBase($shared, $count) {
         $this->shared = $shared;
+        $this->count = $count;
+    }
+
+    public function describeBase() {
+        return $this->shared . ":" . $this->count;
     }
 }
 
 class Child extends Base {
-    public function readShared() {
-        return $this->shared;
+    public function updateFromChild($other) {
+        echo $this->shared, "\n";
+        echo isset($other->shared) ? "peer-set\n" : "peer-unset\n";
+        echo empty($other->shared) ? "peer-empty\n" : "peer-filled\n";
+        $this->count += 2;
+        ++$other->count;
+        $other->shared ??= "filled";
+        echo $this->describeBase(), "\n";
+        echo $other->describeBase();
     }
 }
 
-$child = new Child();
-$child->seedBase("base-shared");
-echo $child->readShared();
+$first = new Child();
+$second = new Child();
+$first->seedBase("first", 4);
+$second->seedBase(null, 9);
+$first->updateFromChild($second);
 "#;
 
-    let error = runtime_error(source);
-    assert_eq!(error.line, 12);
-    assert_eq!(error.column, 16);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Child::$shared requires same-class method context in the current subset"
+        execution.stdout,
+        "first\npeer-unset\npeer-empty\nfirst:6\nfilled:10"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

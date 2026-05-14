@@ -57,6 +57,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "objects: add inherited non-public property slots"` if
   the full gate passes.
 
+## Loop Event 2026-05-14T18:55:00Z
+
+- Checkpoint before this task: `9e1d71d objects: add inherited non-public
+  property slots`, pushed to `origin/master`.
+- Task attempted: Milestone 657, child-context protected property access for
+  parent-declared protected slots.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone657/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model child_context_can_access_parent_declared_protected_properties -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone657`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone657`
+  passed.
+- Remaining semantic gaps: property override compatibility/conflict
+  diagnostics, duplicate inherited public/protected slot behavior, static
+  properties, class constants, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run full object-model focused checks and `git diff
+  --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: allow child protected property access"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

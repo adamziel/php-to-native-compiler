@@ -2077,9 +2077,11 @@ impl PhpObject {
         &self,
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Value> {
         let properties = self.properties.borrow();
-        let property = self.context_property(&properties, name, current_class_id)?;
+        let property =
+            self.context_property(&properties, name, current_class_id, protected_class_ids)?;
 
         Ok(property.value.clone())
     }
@@ -2097,9 +2099,15 @@ impl PhpObject {
         &self,
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
-        let Some(property) = self.context_property_or_none(&properties, name, current_class_id)?
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
         else {
             return Ok(false);
         };
@@ -2120,9 +2128,15 @@ impl PhpObject {
         &self,
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Option<Value>> {
         let properties = self.properties.borrow();
-        let Some(property) = self.context_property_or_none(&properties, name, current_class_id)?
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
         else {
             return Ok(None);
         };
@@ -2151,9 +2165,15 @@ impl PhpObject {
         &self,
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
-        let Some(property) = self.context_property_or_none(&properties, name, current_class_id)?
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
         else {
             return Ok(true);
         };
@@ -2174,9 +2194,15 @@ impl PhpObject {
         name: &str,
         value: Value,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
-        let property = self.context_property_mut(&mut properties, name, current_class_id)?;
+        let property = self.context_property_mut(
+            &mut properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?;
 
         property.value = value;
         Ok(())
@@ -2226,8 +2252,9 @@ impl PhpObject {
         properties: &'a [ObjectProperty],
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<&'a ObjectProperty> {
-        self.context_property_or_none(properties, name, current_class_id)?
+        self.context_property_or_none(properties, name, current_class_id, protected_class_ids)?
             .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))
     }
 
@@ -2236,12 +2263,13 @@ impl PhpObject {
         properties: &'a [ObjectProperty],
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Option<&'a ObjectProperty>> {
-        if let Some(class_id) = current_class_id {
+        if current_class_id.is_some() {
             if let Some(property) = properties.iter().rev().find(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.declaring_class_id == class_id
+                    && property.is_visible_in_context(current_class_id, protected_class_ids)
             }) {
                 return Ok(Some(property));
             }
@@ -2255,12 +2283,13 @@ impl PhpObject {
         properties: &'a mut [ObjectProperty],
         name: &str,
         current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
     ) -> RuntimeResult<&'a mut ObjectProperty> {
-        if let Some(class_id) = current_class_id {
+        if current_class_id.is_some() {
             if let Some(index) = properties.iter().rposition(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.declaring_class_id == class_id
+                    && property.is_visible_in_context(current_class_id, protected_class_ids)
             }) {
                 return Ok(&mut properties[index]);
             }
@@ -2344,6 +2373,18 @@ impl ObjectProperty {
             Visibility::Public => self.name.clone(),
             Visibility::Protected => format!("\0*\0{}", self.name),
             Visibility::Private => format!("\0{}\0{}", self.declaring_class_name, self.name),
+        }
+    }
+
+    fn is_visible_in_context(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        match self.visibility {
+            Visibility::Public => true,
+            Visibility::Private => current_class_id == Some(self.declaring_class_id),
+            Visibility::Protected => protected_class_ids.contains(&self.declaring_class_id),
         }
     }
 }

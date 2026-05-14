@@ -244,6 +244,21 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone656`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone656`,
   and `git diff --check` passed.
+- Added Milestone 657, child-context protected property access. Runtime
+  property access now receives the active class plus ancestors from the
+  interpreter, so private slots still require exact declaring-class context
+  while protected slots declared by the active class or an ancestor are visible
+  from child-class method context. The supported protected-property context now
+  covers plain reads/writes, `isset`/`empty`, compound assignment,
+  increment/decrement, and null-coalescing forms. Property override
+  compatibility/conflict diagnostics, static properties, class constants,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model child_context_can_access_parent_declared_protected_properties -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone657`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone657`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -255,10 +270,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 657 should take the next object visibility slice: child-context
-  protected property access for parent-declared protected slots, property
-  override compatibility/conflict diagnostics, or a documented blocker if
-  protected visibility needs broader class relationship metadata.
+- Milestone 658 should take the next object compatibility slice: property
+  override compatibility/conflict diagnostics, duplicate inherited
+  public/protected slot behavior, or a documented blocker if exact PHP
+  property layout requires a broader class-declaration validation pass.
 
 ## 2026-05-12
 

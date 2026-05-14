@@ -54,8 +54,9 @@
   expr`, `$object->property -= expr`, `$object->property *= expr`,
   `$object->property /= expr`, `$object->property %= expr`, and
   `$object->property .= expr` over existing declared public property slots and
-  private/protected property slots owned by the active declaring-class method
-  context, plus bitwise/shift compound forms
+  private property slots owned by the active declaring class and protected
+  slots owned by the active class or an ancestor, plus bitwise/shift compound
+  forms
   `$object->property &= expr`, `$object->property |= expr`,
   `$object->property ^= expr`, `$object->property <<= expr`, and
   `$object->property >>= expr`, in statement position, expression position,
@@ -71,9 +72,9 @@
   position, expression position, and C-style `for` initializer/increment
   slots: `++$object->property`, `$object->property++`,
   `--$object->property`, and `$object->property--` for existing declared
-  public property slots and private/protected property slots owned by the
-  active declaring-class method context whose current values are integers or
-  floats. In expressions, pre forms return the updated value and post forms
+  public property slots, private slots owned by the active declaring class, and
+  protected slots owned by the active class or an ancestor whose current values
+  are integers or floats. In expressions, pre forms return the updated value and post forms
   return the previous value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
@@ -158,10 +159,9 @@
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`. Plain reads and direct writes for
-  private/protected property slots owned by the active declaring class are also
-  supported while executing a method on that declaring class, including
-  inherited parent-declared slots on child objects. Child-method access to
-  parent-declared protected properties remains unsupported.
+  private property slots owned by the active declaring class and protected
+  property slots owned by the active class or an ancestor are also supported,
+  including inherited parent-declared protected slots on child objects.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -188,8 +188,9 @@
   left-to-right, and executes the resolved method body with the declaring class
   as the active method context.
 - `isset($object->name)` for direct public instance property operands on direct
-  object variables, plus private/protected property operands owned by the
-  active declaring-class method context
+  object variables, plus private property operands owned by the active
+  declaring class and protected property operands owned by the active class or
+  an ancestor
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
   `SORT_NUMERIC`, and `SORT_STRING`, which evaluate to integers `0`, `1`,
@@ -227,8 +228,9 @@
   the current value model
 - null coalescing `??` for direct static variables, direct array-variable
   offset operands, direct object-variable public-property operands, and
-  private/protected object-property operands owned by the active
-  declaring-class method context over the current value model; undefined
+  private object-property operands owned by the active declaring class and
+  protected operands owned by the active class or an ancestor over the current
+  value model; undefined
   variables, missing
   array keys, missing supported object properties, non-array/non-object
   targets, null variables, null array values, and null supported object
@@ -237,8 +239,9 @@
 - null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`, and
   `$object->property ??= expr` for direct static variables, direct
   array-variable offset operands, direct object-variable public-property
-  operands, and private/protected object-property operands owned by the active
-  declaring-class method context, in statement position and parenthesized
+  operands, and private object-property operands owned by the active declaring
+  class plus protected operands owned by the active class or an ancestor, in
+  statement position and parenthesized
   expression position; undefined and `null` variables, undefined/null arrays,
   missing array keys, null array values, and null supported object property
   values evaluate and store the right-hand expression, while existing
@@ -694,8 +697,8 @@
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context, static storage, class constants,
-  shallow/deep clone property copying, `__clone`, child-context protected
-  property access, property override compatibility, broader
+  shallow/deep clone property copying, `__clone`, property override
+  compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
@@ -2322,25 +2325,26 @@
   function calls. `isset` supports direct variable
   operands, direct array offset operands such as `isset($array[$key])`,
   and direct public object-property operands such as `isset($object->name)`.
-  In active declaring-class method context, direct private/protected
-  object-property operands owned by that declaring class are also supported.
+  In active method context, direct private operands owned by the active
+  declaring class and protected operands owned by the active class or an
+  ancestor are also supported.
   `isset` can safely check undefined
   variables, missing/null array slots, undefined array variables, non-array
   array targets, and undefined object-property targets. Nested array offsets,
   append offset operands, dynamic property names, non-public property operands
-  outside declaring-class method context, complex lvalues, and general expression
-  operands remain unsupported. `empty`
+  outside the current private/protected visibility context, complex lvalues,
+  and general expression operands remain unsupported. `empty`
   supports one direct variable operand, one direct array offset operand such
   as `empty($array[$key])`, or one direct public object-property operand such
-  as `empty($object->name)`. In active declaring-class method context, direct
-  private/protected object-property operands owned by that declaring class are
-  also supported;
+  as `empty($object->name)`. In active method context, direct private operands
+  owned by the active declaring class and protected operands owned by the
+  active class or an ancestor are also supported;
   undefined variables, missing array keys,
   undefined array targets, non-array array targets, missing object properties,
   undefined object targets, and non-object property targets are treated as
   empty, and existing values use the current PHP truthiness rules. Nested array
   offsets, dynamic property names, non-public property visibility context
-  outside same-class method context, append offset operands, complex lvalues,
+  outside the current private/protected method context, append offset operands, complex lvalues,
   general expression operands, magic methods, and unsupported array-key
   coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
@@ -2388,7 +2392,7 @@
 - Object/class gaps: nested and conditional class declarations, constructor
   behavior beyond public/inherited public instance `__construct` and explicit
   parent calls,
-  child-context protected property access, property override compatibility,
+  property override compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
@@ -2407,8 +2411,7 @@
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
-  current declaring-class method context, child-context protected property
-  access, broader
+  current private/protected method context, broader
   constructor visibility context, static member
   execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
@@ -2691,14 +2694,15 @@
   assignment, copy-on-write container aliasing, exact native error objects, and
   native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
-  array-variable offsets, direct public object properties, and exact-class
-  private/protected object properties in active same-class method context over
-  the current scalar/object value model. The
+  array-variable offsets, direct public object properties, private properties
+  in active declaring-class method context, and protected properties owned by
+  the active class or an ancestor over the current scalar/object value model.
+  The
   read-modify-write operation reuses the existing PHP-shaped scalar arithmetic,
   modulo, bitwise/shift, and string concatenation helpers, so undefined
   left-hand variables, missing array keys, missing object properties, non-array
-  targets, non-object property targets, non-public properties outside
-  same-class method context, division by
+  targets, non-object property targets, non-public properties outside the
+  current private/protected visibility context, division by
   zero, modulo by zero, non-numeric strings, arrays, and objects as operand
   values fail through existing stable runtime diagnostics.
   Statement forms, expression forms such as `($name += expr)` and

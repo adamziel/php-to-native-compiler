@@ -965,6 +965,8 @@ impl Interpreter {
                 span,
             } => {
                 let value = self.evaluate(expr, scope)?;
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
                 let slot = scope.object_slot_for_static_write(object, *span)?;
 
                 match slot {
@@ -972,7 +974,8 @@ impl Interpreter {
                         .write_property_from_context(
                             property,
                             value.clone(),
-                            self.class_context.last().copied(),
+                            current_class_id,
+                            &protected_class_ids,
                         )
                         .map(|()| value)
                         .map_err(|error| runtime_error(*span, error)),
@@ -1069,8 +1072,14 @@ impl Interpreter {
                 object, property, ..
             } => match scope.read_named(object) {
                 Some(Value::Object(value)) => {
+                    let (current_class_id, protected_class_ids) =
+                        self.current_property_access_context();
                     let left = value
-                        .read_property_from_context(property, self.class_context.last().copied())
+                        .read_property_from_context(
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        )
                         .map_err(|error| runtime_error(span, error))?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -1125,6 +1134,8 @@ impl Interpreter {
                 }
             }
             CompoundAssignmentPlace::ObjectProperty { object, property } => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
                 let slot = scope.object_slot_for_static_write(&object, span)?;
 
                 match slot {
@@ -1132,7 +1143,8 @@ impl Interpreter {
                         .write_property_from_context(
                             &property,
                             value,
-                            self.class_context.last().copied(),
+                            current_class_id,
+                            &protected_class_ids,
                         )
                         .map_err(|error| runtime_error(span, error)),
                     other => Err(runtime_error(
@@ -1255,8 +1267,14 @@ impl Interpreter {
                 object, property, ..
             } => match scope.read_named(object) {
                 Some(Value::Object(value)) => {
+                    let (current_class_id, protected_class_ids) =
+                        self.current_property_access_context();
                     let left = value
-                        .read_property_from_context(property, self.class_context.last().copied())
+                        .read_property_from_context(
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        )
                         .map_err(|error| runtime_error(span, error))?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -1388,12 +1406,15 @@ impl Interpreter {
                 property,
                 span,
             } => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
                 let should_assign = match scope.read_named(object) {
                     Some(Value::Object(object)) => {
                         match object
                             .read_property_for_isset_from_context(
                                 property,
-                                self.class_context.last().copied(),
+                                current_class_id,
+                                &protected_class_ids,
                             )
                             .map_err(|error| runtime_error(*span, error))?
                         {
@@ -1415,7 +1436,8 @@ impl Interpreter {
                             .write_property_from_context(
                                 property,
                                 value.clone(),
-                                self.class_context.last().copied(),
+                                current_class_id,
+                                &protected_class_ids,
                             )
                             .map(|()| value)
                             .map_err(|error| runtime_error(*span, error)),
@@ -1594,10 +1616,18 @@ impl Interpreter {
         };
 
         match scope.read_named(name) {
-            Some(Value::Object(object)) => object
-                .read_property_for_isset_from_context(property, self.class_context.last().copied())
-                .map(|value| value.filter(|value| !matches!(value, Value::Null)))
-                .map_err(|error| runtime_error(span, error)),
+            Some(Value::Object(object)) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_for_isset_from_context(
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map(|value| value.filter(|value| !matches!(value, Value::Null)))
+                    .map_err(|error| runtime_error(span, error))
+            }
             Some(_) | None => Ok(None),
         }
     }
@@ -1612,9 +1642,13 @@ impl Interpreter {
         let target_value = self.evaluate(target, scope)?;
 
         match target_value {
-            Value::Object(object) => object
-                .read_property_from_context(property, self.class_context.last().copied())
-                .map_err(|error| runtime_error(span, error)),
+            Value::Object(object) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(span, error))
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_property_access(format!(
@@ -1912,6 +1946,29 @@ impl Interpreter {
         if let Some(parent_id) = class.parent_id() {
             self.append_public_class_vars(parent_id, properties);
         }
+    }
+
+    fn current_property_access_context(&self) -> (Option<ClassId>, Vec<ClassId>) {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return (None, Vec::new());
+        };
+
+        let mut protected_class_ids = vec![current_class_id];
+        let mut current = self
+            .classes
+            .get(current_class_id)
+            .expect("current class id should resolve to metadata")
+            .parent_id();
+        while let Some(class_id) = current {
+            protected_class_ids.push(class_id);
+            current = self
+                .classes
+                .get(class_id)
+                .expect("ancestor class id should resolve to metadata")
+                .parent_id();
+        }
+
+        (Some(current_class_id), protected_class_ids)
     }
 
     fn can_call_constructor(&self, class_id: ClassId, visibility: Visibility) -> bool {
@@ -4494,9 +4551,13 @@ impl Interpreter {
         };
 
         match caller_scope.read_named(name) {
-            Some(Value::Object(object)) => object
-                .is_property_set_from_context(property, self.class_context.last().copied())
-                .map_err(|error| runtime_error(span, error)),
+            Some(Value::Object(object)) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .is_property_set_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(span, error))
+            }
             Some(_) | None => Ok(false),
         }
     }
@@ -4587,9 +4648,17 @@ impl Interpreter {
         };
 
         match caller_scope.read_named(name) {
-            Some(Value::Object(object)) => object
-                .is_property_empty_from_context(property, self.class_context.last().copied())
-                .map_err(|error| runtime_error(span, error)),
+            Some(Value::Object(object)) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .is_property_empty_from_context(
+                        property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))
+            }
             Some(_) | None => Ok(true),
         }
     }

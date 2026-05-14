@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+first
+peer-unset
+peer-empty
+first:6
+filled:10--- stdout end ---
+stderr:
+--- stderr end ---

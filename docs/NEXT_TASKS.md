@@ -5933,11 +5933,26 @@ handled.
 
 ## Milestone 657: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next property visibility slice:
+- [x] Runtime/object lane: choose the next property visibility slice:
   child-context protected property access for parent-declared protected slots,
   property override compatibility/conflict diagnostics, or a documented
   blocker if protected visibility needs broader class relationship metadata.
-  Keep static properties, class constants, trait composition, magic methods,
+  Implemented child-context protected property access by passing the active
+  class plus ancestors into runtime property access. Private slots still
+  require exact declaring-class context, while protected slots are visible from
+  the declaring class or a child-class method context across reads, writes,
+  `isset`/`empty`, read-modify-write, and null-coalescing forms. Kept property
+  override compatibility/conflict diagnostics, static properties, class
+  constants, trait composition, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering explicit.
+
+## Milestone 658: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next object compatibility slice:
+  property override compatibility/conflict diagnostics, duplicate inherited
+  public/protected slot behavior, or a documented blocker if exact PHP
+  property layout requires a broader class-declaration validation pass. Keep
+  static properties, class constants, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
 

@@ -985,8 +985,9 @@ public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
 and private names as `\0ClassName\0name` using the declaring class name.
 Dynamic properties, property defaults, trait/interface properties, and
-non-public property visibility-context behavior beyond declaring-class method
-context remain outside the current object model.
+non-public property visibility-context behavior beyond same-declaring-class
+private access and class/ancestor protected access remain outside the current
+object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class and
 single-parent ancestor relationships against the current metadata table.
 `is_subclass_of(...)` shares the same argument boundary and walks the current
@@ -1009,7 +1010,7 @@ current-subset hash derived from the handle id; exact system PHP hash formatting
 is not claimed yet, and non-object inputs fail with the current stable
 type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties outside the
-current declaring-class method context still produce stable runtime
+current private/protected method context still produce stable runtime
 diagnostics for normal reads/writes. Public, same-class private, and protected
 same-class/child instance methods can execute through `phpc run` with `$this`
 bound to the receiver object handle, and inherited public constructors execute
@@ -1020,10 +1021,10 @@ instance method/constructor context against the current class's parent chain
 with the current `$this` object. `self::method(...)` calls execute from active
 instance method/constructor context against the current class and inherited
 method chain with the current `$this` object. Objects do not enforce
-non-public property visibility beyond declaring-class plain read/write,
-`isset`/`empty`, read-modify-write, and null-coalescing forms, or full
-constructor visibility. Child-method access to parent-declared protected
-properties remains unsupported. Objects do not expose reflection, implement
+non-public property visibility beyond same-declaring-class private access and
+class/ancestor protected access for plain read/write, `isset`/`empty`,
+read-modify-write, and null-coalescing forms, or full constructor visibility.
+Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 property override compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
