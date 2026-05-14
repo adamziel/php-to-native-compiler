@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
+use std::ptr;
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
@@ -71,6 +72,10 @@ impl NativeScalarValue {
             NativeScalarTag::Float => Value::Float(self.float_value),
         }
     }
+
+    pub fn echo_string(self) -> String {
+        self.to_value().echo_string()
+    }
 }
 
 #[no_mangle]
@@ -91,6 +96,35 @@ pub extern "C" fn phpc_native_int(value: i64) -> NativeScalarValue {
 #[no_mangle]
 pub extern "C" fn phpc_native_float(value: f64) -> NativeScalarValue {
     NativeScalarValue::float(value)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_scalar_echo_len(value: NativeScalarValue) -> usize {
+    value.echo_string().len()
+}
+
+/// # Safety
+///
+/// `buffer` must either be null or point to at least `capacity` writable bytes.
+/// The function returns the total byte length required for the scalar echo
+/// string, even when the provided buffer is too small.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_scalar_echo_write(
+    value: NativeScalarValue,
+    buffer: *mut u8,
+    capacity: usize,
+) -> usize {
+    let output = value.echo_string();
+    let bytes = output.as_bytes();
+    let required = bytes.len();
+
+    if buffer.is_null() || capacity == 0 {
+        return required;
+    }
+
+    let written = required.min(capacity);
+    ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, written);
+    required
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2723,6 +2757,42 @@ mod tests {
 
         assert_eq!(value.tag(), NativeScalarTag::Bool);
         assert_eq!(value.to_value(), Value::Bool(true));
+    }
+
+    #[test]
+    fn native_scalar_echo_helper_reports_required_lengths() {
+        assert_eq!(phpc_native_scalar_echo_len(phpc_native_null()), 0);
+        assert_eq!(phpc_native_scalar_echo_len(phpc_native_bool(false)), 0);
+        assert_eq!(phpc_native_scalar_echo_len(phpc_native_bool(true)), 1);
+        assert_eq!(phpc_native_scalar_echo_len(phpc_native_int(-42)), 3);
+        assert_eq!(phpc_native_scalar_echo_len(phpc_native_float(1.5)), 3);
+    }
+
+    #[test]
+    fn native_scalar_echo_helper_writes_bytes() {
+        let mut buffer = [0_u8; 8];
+        let required = unsafe {
+            phpc_native_scalar_echo_write(phpc_native_int(12345), buffer.as_mut_ptr(), 3)
+        };
+
+        assert_eq!(required, 5);
+        assert_eq!(&buffer[..3], b"123");
+        assert_eq!(&buffer[3..], &[0, 0, 0, 0, 0]);
+
+        let required = unsafe {
+            phpc_native_scalar_echo_write(phpc_native_bool(true), buffer.as_mut_ptr(), buffer.len())
+        };
+
+        assert_eq!(required, 1);
+        assert_eq!(buffer[0], b'1');
+    }
+
+    #[test]
+    fn native_scalar_echo_helper_accepts_null_buffers_for_sizing() {
+        let required =
+            unsafe { phpc_native_scalar_echo_write(phpc_native_int(123), std::ptr::null_mut(), 0) };
+
+        assert_eq!(required, 3);
     }
 
     #[test]

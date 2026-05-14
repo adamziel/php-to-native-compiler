@@ -13030,6 +13030,21 @@ Next:
 
 Next:
 
+- Added Milestone 635, the first scalar runtime output helper bridge. The native
+  scalar ABI now exposes `phpc_native_scalar_echo_len` and unsafe
+  `phpc_native_scalar_echo_write`, giving future generated code a two-pass
+  byte sizing/writing path for current scalar echo conversion without defining
+  heap ownership or linked native execution yet.
+- Focused check passed:
+  `cargo test -p php_runtime native_scalar_echo_helper -- --test-threads=1`,
+  covering required length reporting, partial buffer writes, and null-buffer
+  sizing.
+- Updated `docs/NATIVE_RUNTIME_ABI.md` and `docs/NEXT_TASKS.md`; generated
+  LLVM still does not call runtime helpers, and linked executable support
+  remains unsupported.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`

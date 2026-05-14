@@ -5671,10 +5671,21 @@ handled.
 
 ## Milestone 635: Native Runtime ABI Follow-up
 
-- [ ] IR/lowering/compiler-output lane: choose the next smallest runtime ABI
+- [x] IR/lowering/compiler-output lane: choose the next smallest runtime ABI
   bridge after scalar value construction: generated LLVM declaration/use of one
   exported runtime helper, string ownership design, echo helper handoff, or a
   link-command prototype that still reports unsupported executable mode clearly.
+  Selected candidate: added scalar echo sizing/writing helper symbols for
+  `NativeScalarValue`, with focused runtime tests for required length reporting,
+  partial buffer writes, and null-buffer sizing. Generated LLVM does not call
+  these helpers yet.
+
+## Milestone 636: Native Runtime Helper Lowering
+
+- [ ] IR/lowering/compiler-output lane: add the first generated LLVM declaration
+  or deterministic IR snapshot that references an exported native runtime helper
+  without linking/executing yet, or document the exact blocker if current crate
+  artifact layout prevents a truthful helper-call snapshot.
 
 ## Latest Checkpoint
 
