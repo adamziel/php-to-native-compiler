@@ -919,6 +919,43 @@ fn native_array_reduce_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_
 
 #[test]
 #[cfg(unix)]
+fn native_array_filter_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output() {
+    let Some(cc_path) = find_command_on_path("cc") else {
+        return;
+    };
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone616/native_array_filter_callable_lookup.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_cc_only(workspace_root, &cc_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone616/native_array_filter_callable_lookup_cc_fallback_emit_asm.cli",
+    ))
+    .expect("native array_filter callable lookup cc fallback CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
 fn native_scalar_is_callable_false_emit_asm_cc_fallback_cli_summary_matches_committed_output() {
     let Some(cc_path) = find_command_on_path("cc") else {
         return;
@@ -3496,6 +3533,44 @@ fn native_scalar_echo_emit_asm_empty_stdout_selected_llc_does_not_cc_fallback_cl
         "tests/fixtures/milestone610/native_assembly_empty_stdout_llc_precedence_emit_asm.cli",
     ))
     .expect("native assembly empty-stdout llc-precedence CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_empty_stdout_stderr_selected_clang_does_not_fallback_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join(
+        "tests/fixtures/milestone615/native_assembly_empty_stdout_stderr_selected_precedence.php",
+    );
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path =
+        TempPath::with_empty_stdout_stderr_successful_clang_and_available_fallbacks(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone615/native_assembly_empty_stdout_stderr_selected_precedence_emit_asm.cli",
+    ))
+    .expect(
+        "native assembly empty-stdout-with-stderr selected-precedence CLI snapshot is readable",
+    );
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);
@@ -8790,6 +8865,79 @@ exit {exit_code}\n"
             std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
             fs::set_permissions(&script, permissions).expect(
                 "temporary empty-stdout selected-precedence fallback script can be made executable",
+            );
+        }
+
+        Self { path }
+    }
+
+    fn with_empty_stdout_stderr_successful_clang_and_available_fallbacks(
+        workspace_root: &Path,
+    ) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-empty-stdout-stderr-selected-precedence-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect(
+            "temporary empty-stdout-with-stderr selected-precedence PATH directory can be created",
+        );
+
+        let clang = path.join("clang");
+        fs::write(
+            &clang,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake clang 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' 'fake clang diagnostic on empty successful assembly' >&2\n\
+exit 0\n",
+        )
+        .expect(
+            "temporary empty-stdout-with-stderr selected-precedence clang script can be written",
+        );
+        let mut clang_permissions = fs::metadata(&clang)
+            .expect(
+                "temporary empty-stdout-with-stderr selected-precedence clang script metadata is readable",
+            )
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut clang_permissions, 0o755);
+        fs::set_permissions(&clang, clang_permissions).expect(
+            "temporary empty-stdout-with-stderr selected-precedence clang script can be made executable",
+        );
+
+        for (command, exit_code) in [("llc", 114), ("cc", 115)] {
+            let script = path.join(command);
+            fs::write(
+                &script,
+                format!(
+                    "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake {command} 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected {command} fallback invocation after empty-stdout clang success with stderr' >&2\n\
+exit {exit_code}\n"
+                ),
+            )
+            .expect(
+                "temporary empty-stdout-with-stderr selected-precedence fallback script can be written",
+            );
+            let mut permissions = fs::metadata(&script)
+                .expect(
+                    "temporary empty-stdout-with-stderr selected-precedence fallback script metadata is readable",
+                )
+                .permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+            fs::set_permissions(&script, permissions).expect(
+                "temporary empty-stdout-with-stderr selected-precedence fallback script can be made executable",
             );
         }
 

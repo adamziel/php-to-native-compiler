@@ -162,6 +162,11 @@ successful stdout artifact is invalid.
 A selected-backend whitespace-with-stderr precedence snapshot exposes the same
 invalid successful `clang` output while `llc` and `cc` are also available. That
 pins the no-recovery boundary after invalid selected-backend output.
+A selected-backend empty-stdout-with-stderr precedence snapshot exposes invalid
+successful `clang` output with no assembly stdout and stderr diagnostics while
+`llc` and `cc` are also available. That pins stdout validation as the reported
+failure and keeps fallback recovery disabled for empty selected-backend
+artifacts with stderr.
 An `llc` whitespace-with-stderr precedence snapshot exposes invalid successful
 `llc` output while the `cc -S` fallback is also available and `clang` is
 unavailable. That pins the no-recovery boundary after invalid selected `llc`
@@ -749,8 +754,8 @@ extension-loaded functions outside the documented table, dynamic callees, and
 runtime callable dispatch remain outside native lowering.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_product`, and
-`array_reduce`; direct calls to those builtins still reject under the
-array-lowering boundary.
+`array_reduce`, and `array_filter`; direct calls to those builtins still
+reject under the array-lowering boundary.
 Direct `strlen($value)` calls fold only when `$value` is an already-lowerable
 known string operand, including tracked string expressions whose possible
 values have one uniform byte length. A selected-`clang` assembly snapshot

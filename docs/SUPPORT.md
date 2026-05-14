@@ -786,26 +786,28 @@
   through string-valued dynamic calls to `array_reduce`.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
   and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`,
-  or `2`, integer-string mode flags that trim and parse to `0`, `1`, or `2`,
-  or boolean mode flags accept arrays only, remove values that are falsey under
-  the current PHP-shaped truthiness rules, preserve the original integer/string
-  keys and insertion order of kept entries, and are available through
-  string-valued dynamic function calls.
+  or `2`, finite integral float mode flags, integral numeric string mode flags
+  that trim and parse to `0`, `1`, or `2`, or boolean mode flags accept arrays
+  only, remove values that are falsey under the current PHP-shaped truthiness
+  rules, preserve the original integer/string keys and insertion order of kept
+  entries, and are available through string-valued dynamic function calls.
   `array_filter($array, $callback)` accepts callbacks that evaluate to string
   function names resolving to current user functions or callable builtins,
   invokes the callback once per value in insertion order with the value as the
   only argument, preserves keys whose callback result is truthy, accepts
-  explicit integer mode flag `0`, integer-string mode flag `"0"`, and boolean
-  mode flag `false` for the same value-only callback path, and is also
-  available through string-valued dynamic calls to `array_filter`.
-  `array_filter($array, $callback, 2)` and integer-string mode values that
-  parse to `2` invoke the same string-valued callback subset once per entry
-  with the current integer or string key as the only argument, preserving keys
-  whose callback result is truthy.
+  explicit integer mode flag `0`, finite integral float mode flag `0.0`,
+  integral numeric string mode flag `"0"`, and boolean mode flag `false` for
+  the same value-only callback path, and is also available through
+  string-valued dynamic calls to `array_filter`.
+  `array_filter($array, $callback, 2)` plus finite integral float and integral
+  numeric string mode values that parse to `2` invoke the same string-valued
+  callback subset once per entry with the current integer or string key as the
+  only argument, preserving keys whose callback result is truthy.
   `array_filter($array, $callback, 1)` and `array_filter($array, $callback,
-  true)`, plus integer-string mode values that parse to `1`, invoke that
-  callback subset once per entry with the value and then the current integer or
-  string key as arguments, preserving keys whose callback result is truthy.
+  true)`, plus finite integral float and integral numeric string mode values
+  that parse to `1`, invoke that callback subset once per entry with the value
+  and then the current integer or string key as arguments, preserving keys
+  whose callback result is truthy.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array of
@@ -1353,13 +1355,13 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `array_change_key_case`, `array_column`, `array_count_values`, and
-  `array_sum`, `array_product`, and `array_reduce`, fold to `true`, and
+  `array_sum`, `array_product`, `array_reduce`, and `array_filter`, fold to `true`, and
   missing names fold to `false`.
   Direct calls to array builtins such as `array_change_key_case(...)`,
   `array_column(...)`, `array_sum(...)`, `array_product(...)`, and
-  callback-driven forms such as `array_reduce(...)` still reject under the
-  native array-lowering boundary. Assembly snapshots also validate that the
-  deterministic folded IR for this existing slice reaches the fallback backend
+  callback-driven forms such as `array_reduce(...)` and `array_filter(...)`
+  still reject under the native array-lowering boundary. Assembly snapshots
+  also validate that the deterministic folded IR for this existing slice reaches the fallback backend
   without widening production lowering behavior.
   Direct `strlen($value)` calls fold in native output when `$value` is an
   already-lowerable known string operand, including tracked string expressions
@@ -1507,7 +1509,11 @@
   output. A selected backend whitespace-with-stderr precedence snapshot exposes
   the same invalid successful `clang` output while `llc` and `cc` are also
   available, proving fallback recovery is not attempted after invalid selected
-  backend output. An `llc` whitespace-with-stderr precedence snapshot exposes
+  backend output. A selected backend empty-stdout-with-stderr precedence
+  snapshot exposes invalid successful `clang` output with no assembly stdout
+  and stderr diagnostics while `llc` and `cc` are also available, proving
+  stdout validation wins and fallback recovery is still not attempted. An
+  `llc` whitespace-with-stderr precedence snapshot exposes
   invalid successful `llc` output while the `cc -S` fallback is also
   available and `clang` is unavailable, proving fallback recovery is not
   attempted after invalid selected `llc` output. An `llc` empty-stdout
@@ -1592,7 +1598,12 @@
   `clang`, `llc`, and `cc` commands together, makes selected `clang` pass
   discovery and then fail to start for assembly emission, and proves the
   stable selected-backend start diagnostic is reported without falling through
-  to fallback tools. A fallback start-failure-precedence snapshot hides
+  to fallback tools. A selected-backend empty-stdout-with-stderr precedence
+  snapshot exposes deterministic fake `clang`, `llc`, and `cc` commands
+  together, makes selected `clang` exit successfully with no assembly stdout
+  and stderr diagnostics, and proves the stable empty-output diagnostic is
+  reported without falling through to fallback tools or surfacing
+  successful-backend stderr. A fallback start-failure-precedence snapshot hides
   `clang` while exposing deterministic fake `llc` and `cc` commands together,
   makes selected `llc` pass discovery and then fail to start for assembly
   emission, and proves the stable `llc` start diagnostic is reported without
@@ -2127,8 +2138,9 @@
   are not implemented.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
   and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`,
-  or `2`, integer-string mode flags that trim and parse to `0`, `1`, or `2`,
-  or boolean mode flags accept arrays only, remove `null`, `false`, zero
+  or `2`, finite integral float mode flags, integral numeric string mode flags
+  that trim and parse to `0`, `1`, or `2`, or boolean mode flags accept arrays
+  only, remove `null`, `false`, zero
   integers and floats, empty strings, string `"0"`, and empty arrays using the current
   `Value::is_truthy` rules, preserve the original integer/string keys and
   insertion order of kept entries, and are available through string-valued
@@ -2137,17 +2149,20 @@
   to string function names resolving to current user functions or callable
   builtins, invokes the callback with the value only, keeps entries whose
   callback result is truthy, preserves original keys and insertion order,
-  accepts explicit integer mode flag `0`, integer-string mode flag `"0"`, and
-  boolean mode flag `false` for the same value-only callback path, and is
-  available when `array_filter` itself is called through a string-valued dynamic
-  function name. `array_filter($array, $callback, 2)` and integer-string modes
-  that parse to `2` invoke that same string-valued callback subset with each
-  entry's current integer or string key as the only argument and preserve
-  original keys for entries whose callback result is truthy. `array_filter($array,
-  $callback, 1)`, `array_filter($array, $callback, true)`, and integer-string
-  modes that parse to `1` invoke the same string-valued callback subset with
-  the value and then the current integer or string key as arguments, preserving
-  original keys for entries whose callback result is truthy. Non-string
+  accepts explicit integer mode flag `0`, finite integral float mode flag
+  `0.0`, integral numeric string mode flag `"0"`, and boolean mode flag
+  `false` for the same value-only callback path, and is available when
+  `array_filter` itself is called through a string-valued dynamic function
+  name. `array_filter($array, $callback, 2)` plus finite integral float and
+  integral numeric string modes that parse to `2` invoke that same
+  string-valued callback subset with each entry's current integer or string
+  key as the only argument and preserve original keys for entries whose
+  callback result is truthy. `array_filter($array, $callback, 1)`,
+  `array_filter($array, $callback, true)`, and finite integral float or
+  integral numeric string modes that parse to `1` invoke the same string-valued
+  callback subset with the value and then the current integer or string key as
+  arguments, preserving original keys for entries whose callback result is
+  truthy. Non-string
   non-null callback values
   fail with a stable diagnostic, and unresolved callback names fail with the
   current undefined-function diagnostic. Exact uppercase
@@ -2282,7 +2297,8 @@
   string function-name subset, and `array_filter` callback forms outside the
   current null-callback, value-only string function-name, key-only string
   function-name, and value/key string function-name modes, plus `array_filter`
-  mode coercions outside the current int/bool/integer-string subset, and `array_map`
+  mode coercions outside the current int/bool/finite-integral-float/integral
+  numeric string subset, and `array_map`
   callback forms outside current null-callback and string-valued function-name
   forms are not implemented.
   Because `isset` and `empty` are modeled as special static forms, they are not
@@ -3023,8 +3039,9 @@
   native lowering
 - `array_filter` callbacks outside `null` and string-valued
   user-function/callable-builtin names, integer mode flags outside `0`, `1`,
-  and `2`, string mode coercions outside the current trimmed integer-string
-  subset, float-string or lossy mode coercions such as `"2.0"` and `"2.5"`,
+  and `2`, non-finite or non-integral float mode values, string mode coercions
+  outside the current trimmed integral numeric string subset, lossy mode
+  coercions such as `2.5` and `"2.5"`,
   reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering

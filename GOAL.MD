@@ -329,17 +329,27 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. The active split-lane queue is:
 
-- Milestone 615: compiler-output lane, choose the next deterministic CLI
+- Milestone 615: compiler-output lane closed selected-`clang`
+  empty-stdout-with-stderr no-fallback coverage.
+- Milestone 617: parser lane closed the unsupported `interface` declaration
+  boundary.
+- Milestone 616: IR/lowering lane closed native callable lookup folding
+  coverage for `array_filter`.
+- Milestone 618: runtime lane closed finite-integral-float and integral
+  numeric-string mode-flag support for `array_filter`.
+- Milestone 619: tests/docs lane closed the 615-618 implementation batch and
+  opened the 620-624 queue.
+- Milestone 620: compiler-output lane, choose the next deterministic CLI
   artifact or backend contract coverage target from existing native output
   behavior.
-- Milestone 618: runtime lane, choose the next small array/object builtin
+- Milestone 623: runtime lane, choose the next small array/object builtin
   refinement from documented unsupported gaps.
-- Milestone 617: parser lane, choose the next small syntax or parse-diagnostic
+- Milestone 622: parser lane, choose the next small syntax or parse-diagnostic
   boundary without widening runtime or native support claims.
-- Milestone 616: IR/lowering lane, choose the next narrow native IR or lowering
+- Milestone 621: IR/lowering lane, choose the next narrow native IR or lowering
   refinement, or a precise rejection boundary, from already documented
   interpreter behavior.
-- Milestone 619: tests/docs lane, keep the lane queue, focused-test policy,
+- Milestone 624: tests/docs lane, keep the lane queue, focused-test policy,
   support matrix, and progress records current after the active implementation
   batch.
 

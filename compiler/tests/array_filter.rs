@@ -390,6 +390,51 @@ echo count($null_mode), "|", strlen($null_mode["space"]);
 }
 
 #[test]
+fn array_filter_accepts_integral_float_and_float_string_mode_flags() {
+    let source = r#"<?php
+function keep_selected_key($key) {
+    return $key === "long" || $key === 5;
+}
+
+function keep_value_and_key($value, $key) {
+    if ($key === "long") {
+        return $value === "Grace";
+    }
+    if ($key === 5) {
+        return $value === "Linus";
+    }
+    return false;
+}
+
+$items = [];
+$items["short"] = "Ada";
+$items["long"] = "Grace";
+$items[5] = "Linus";
+$items[] = "";
+
+$both_mode = array_filter($items, "keep_value_and_key", 1.0);
+print_r(array_keys($both_mode));
+echo count($both_mode), "|", $both_mode["long"], "|", $both_mode[5], "\n";
+
+$call = "array_filter";
+$key_mode = $call($items, "keep_selected_key", "2.0");
+print_r(array_keys($key_mode));
+echo count($key_mode), "|", $key_mode["long"], "|", $key_mode[5], "\n";
+
+$null_mode = $call(["empty" => "", "zero" => "0", "space" => " "], null, "0e0");
+print_r(array_keys($null_mode));
+echo count($null_mode), "|", strlen($null_mode["space"]);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => long\n    [1] => 5\n)\n2|Grace|Linus\nArray\n(\n    [0] => long\n    [1] => 5\n)\n2|Grace|Linus\nArray\n(\n    [0] => space\n)\n1|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_filter_requires_array_argument() {
     let error = runtime_error("<?php\necho array_filter(42);\n");
 
@@ -482,7 +527,20 @@ fn array_filter_rejects_unsupported_non_integer_mode_flags() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_filter(): mode flag string must be an integer string in the current subset"
+        "unsupported call array_filter(): mode flag string must be an integral numeric string in the current subset"
+    );
+}
+
+#[test]
+fn array_filter_rejects_lossy_float_mode_flags() {
+    let error =
+        runtime_error("<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, null, 2.5);\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_filter(): mode flag float must be finite and integral in the current subset"
     );
 }
 

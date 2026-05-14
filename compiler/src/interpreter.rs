@@ -69,7 +69,20 @@ fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
     if trimmed.is_empty() {
         return None;
     }
-    trimmed.parse::<i64>().ok()
+    if let Ok(value) = trimmed.parse::<i64>() {
+        return Some(value);
+    }
+    trimmed.parse::<f64>().ok().and_then(integral_float_to_i64)
+}
+
+fn integral_float_to_i64(value: f64) -> Option<i64> {
+    if !value.is_finite() || value.fract() != 0.0 {
+        return None;
+    }
+    if value < i64::MIN as f64 || value > i64::MAX as f64 {
+        return None;
+    }
+    Some(value as i64)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3544,6 +3557,28 @@ impl Interpreter {
                     ),
                 ),
             )),
+            Value::Float(value) => match integral_float_to_i64(*value) {
+                Some(0) => Ok(ArrayFilterMode::Value),
+                Some(1) => Ok(ArrayFilterMode::Both),
+                Some(2) => Ok(ArrayFilterMode::Key),
+                Some(value) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        format!(
+                            "mode flag float must coerce to integer 0, 1, or 2 in the current subset, got {value}"
+                        ),
+                    ),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        "mode flag float must be finite and integral in the current subset"
+                            .to_string(),
+                    ),
+                )),
+            },
             Value::String(value) => match parse_array_filter_string_mode(value) {
                 Some(0) => Ok(ArrayFilterMode::Value),
                 Some(1) => Ok(ArrayFilterMode::Both),
@@ -3561,7 +3596,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "array_filter()",
-                        "mode flag string must be an integer string in the current subset"
+                        "mode flag string must be an integral numeric string in the current subset"
                             .to_string(),
                     ),
                 )),
@@ -3571,7 +3606,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "array_filter()",
                     format!(
-                        "mode flag must be integer 0, 1, 2, bool, or integer string in the current subset, got {}",
+                        "mode flag must be integer 0, 1, 2, bool, finite integral float, or integral numeric string in the current subset, got {}",
                         other.type_name()
                     ),
                 ),

@@ -194,31 +194,33 @@ unless the command covers that lane's requirements directly.
 Use `docs/NEXT_TASKS.md` as the source of truth for milestone status. The
 current split is:
 
-- Tests/docs lane: Milestone 614 closed the 610-613 implementation-batch queue
-  refresh; Milestone 619 is the next tests/docs slot after the next
+- Tests/docs lane: Milestone 619 closed the 615-618 implementation-batch queue
+  refresh; Milestone 624 is the next tests/docs slot after the next
   implementation batch.
-- Parser lane: Milestone 612 closed the unsupported `instanceof` expression
-  boundary; Milestone 617 is the next parser slot, selecting a small syntax or
+- Parser lane: Milestone 617 closed the unsupported `interface` declaration
+  boundary; Milestone 622 is the next parser slot, selecting a small syntax or
   parse-diagnostic boundary from documented unsupported gaps without widening
   runtime or native support claims.
-- Compiler-output lane: Milestone 610 closed selected-`llc` empty-stdout
-  no-`cc`-fallback coverage; Milestone 615 is the next compiler-output slot to
-  choose another deterministic CLI artifact or backend contract coverage
-  target from existing native output behavior.
-- IR/lowering lane: Milestone 611 closed native callable lookup folding
-  coverage for `array_reduce`; Milestone 616 is the next IR slot, selecting a
+- Compiler-output lane: Milestone 615 closed selected-`clang`
+  empty-stdout-with-stderr no-fallback coverage; Milestone 620 is the next
+  compiler-output slot to choose another deterministic CLI artifact or backend
+  contract coverage target from existing native output behavior.
+- IR/lowering lane: Milestone 616 closed native callable lookup folding
+  coverage for `array_filter`; Milestone 621 is the next IR slot, selecting a
   narrow native IR/lowering refinement or precise rejection boundary from
   already documented interpreter behavior.
-- Runtime lane: Milestone 613 closed `array_filter` integer-string mode-flag
-  support through `phpc run`; Milestone 618 is the next runtime slot to choose
-  a small array/object builtin refinement from the documented unsupported gaps.
+- Runtime lane: Milestone 618 closed `array_filter` finite-integral-float and
+  integral numeric-string mode-flag support through `phpc run`; Milestone 623
+  is the next runtime slot to choose a small array/object builtin refinement
+  from the documented unsupported gaps.
 
 Milestones 555-560 closed the first split-lane batch, Milestones 561, 571, 587,
-592, 597, 602, 607, and 612 closed recent parser slots, Milestones 565, 568,
-572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, and 610 closed recent
+592, 597, 602, 607, 612, and 617 closed recent parser slots, Milestones 565, 568,
+572, 575, 577, 579, 581, 583, 585, 590, 595, 600, 605, 610, and 615 closed recent
 compiler-output slots, Milestones 567, 570, 574, 576, 578, 580, 582, 584, 586,
-593, 598, 603, 608, and 613 closed recent runtime slots, and Milestones 569,
-573, 588, 591, 596, 601, 606, and 611 closed recent IR/lowering slots. The
+593, 598, 603, 608, 613, and 618 closed recent runtime slots, and Milestones 569,
+573, 588, 591, 596, 601, 606, 611, and 616 closed recent IR/lowering slots.
+Milestones 604, 609, 614, and 619 closed recent tests/docs queue refreshes. The
 next batch should again
 keep one active milestone per lane and should use separate worktrees and
 separate `CARGO_TARGET_DIR` values when workers run in parallel.

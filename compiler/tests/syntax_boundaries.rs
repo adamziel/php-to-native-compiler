@@ -609,6 +609,34 @@ fn emit_ir_rejects_instanceof_expression_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_interface_declaration_has_stable_parse_errors() {
+    let cases = [(
+        "<?php\ninterface Renderable {}\n",
+        2,
+        1,
+        "unsupported interface declaration: interface parsing and implementation execution are not implemented",
+    )];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_interface_declaration_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\ninterface Renderable {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported interface declaration: interface parsing and implementation execution are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_goto_syntax_has_stable_parse_errors() {
     let cases = [
         ("<?php\ngoto done;\ndone:\necho 'done';\n", 2, 1),

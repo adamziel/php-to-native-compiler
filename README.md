@@ -90,6 +90,10 @@ stderr remains unsurfaced on invalid successful output.
 A selected-backend whitespace-with-stderr precedence snapshot exposes the same
 fake `clang` while `llc` and `cc` are available, proving that invalid selected
 backend output is reported without fallback recovery.
+A selected-backend empty-stdout-with-stderr precedence snapshot exposes a fake
+`clang` that exits successfully with no assembly stdout and stderr diagnostics
+while `llc` and `cc` are available, proving stdout validation wins and fallback
+recovery is not attempted.
 An `llc` whitespace-with-stderr precedence snapshot exposes fake `llc` and
 `cc` tools while `clang` is unavailable, proving invalid selected `llc` output
 is reported without falling through to the `cc -S` fallback.
@@ -407,10 +411,11 @@ subset:
   `array_reduce($array, $callback[, $initial])` over the current string-valued
   callback subset, `array_filter` without a callback, with a `null` callback,
   and with string-valued value-only callbacks, including explicit integer mode
-  flag `0`, integer-string mode flag `"0"`, and boolean mode flag `false` for
-  those value-only paths, plus string-valued key-only callbacks through integer
-  or integer-string mode flag `2` and string-valued value/key callbacks
-  through integer or integer-string mode flag `1` or boolean mode flag `true`,
+  flag `0`, integral numeric string mode flag `"0"`, finite integral float
+  mode flag `0.0`, and boolean mode flag `false` for those value-only paths,
+  plus string-valued key-only callbacks through integer/integral numeric mode
+  flag `2` and string-valued value/key callbacks through integer/integral
+  numeric mode flag `1` or boolean mode flag `true`,
   `define`, `constant`, and `defined` over the documented
   runtime-defined/built-in constant name slice, `array_map` over the current
   one-array null-callback identity, variadic null-callback zip, and variadic
@@ -1025,11 +1030,11 @@ Direct `function_exists($name)` calls fold when `$name` is an already-lowerable
 string value with a uniform known answer in the documented builtin table:
 documented callable builtins, including `array_change_key_case` and
 `array_column`, `array_count_values`, `array_sum`, `array_product`, and
-`array_reduce`, fold to
+`array_reduce`, and `array_filter`, fold to
 `true`, and missing names fold to `false`. Direct calls to array builtins such
 as `array_change_key_case(...)`, `array_column(...)`, `array_sum(...)`, and
-`array_product(...)` and callback-driven forms such as `array_reduce(...)`
-still reject under the native array-lowering boundary.
+`array_product(...)` and callback-driven forms such as `array_reduce(...)` and
+`array_filter(...)` still reject under the native array-lowering boundary.
 Direct `defined($name)` calls fold when `$name` is an already-lowerable string
 whose possible values are supported unqualified constant names with a uniform
 answer against the current exact built-in constant table: `CASE_LOWER`,
