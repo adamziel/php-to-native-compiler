@@ -658,7 +658,10 @@ impl Parser {
         let condition = self.parse_expression()?;
         self.consume_keyword(TokenKind::RParen, close_message)?;
         if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
-            return Err(self.error_at(self.previous().span, unsupported_if_alternate_message()));
+            if keyword == "elseif" {
+                return Err(self.error_at(self.previous().span, unsupported_if_alternate_message()));
+            }
+            return self.parse_alternate_if_after_condition(span, condition);
         }
         let then_branch = self.parse_block_or_statement()?;
         let else_branch = if let Some(elseif_span) = self.match_elseif() {
@@ -678,6 +681,92 @@ impl Parser {
             else_branch,
             span,
         })
+    }
+
+    fn parse_alternate_if_after_condition(
+        &mut self,
+        span: Span,
+        condition: Expr,
+    ) -> CompileResult<Stmt> {
+        let then_branch = self.parse_alternate_if_body()?;
+        let else_branch = if let Some(elseif_span) = self.match_elseif() {
+            let condition = self.parse_alternate_elseif_condition()?;
+            vec![self.parse_alternate_if_after_condition(elseif_span, condition)?]
+        } else if self.match_else() {
+            self.consume_keyword(TokenKind::Colon, "expected ':' after else")?;
+            let body = self.parse_alternate_if_body()?;
+            self.consume_alternate_if_end()?;
+            body
+        } else {
+            self.consume_alternate_if_end()?;
+            Vec::new()
+        };
+
+        Ok(Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            span,
+        })
+    }
+
+    fn parse_alternate_elseif_condition(&mut self) -> CompileResult<Expr> {
+        self.consume_keyword(TokenKind::LParen, "expected '(' after elseif")?;
+        let condition = self.parse_expression()?;
+        self.consume_keyword(TokenKind::RParen, "expected ')' after elseif condition")?;
+        self.consume_keyword(TokenKind::Colon, "expected ':' after elseif condition")?;
+        Ok(condition)
+    }
+
+    fn parse_alternate_if_body(&mut self) -> CompileResult<Vec<Stmt>> {
+        self.nested_statement_depth += 1;
+        let result = (|| {
+            let mut statements = Vec::new();
+            while !self.check_alternate_if_boundary()
+                && !self.check(|kind| matches!(kind, TokenKind::Eof))
+            {
+                if self.check(|kind| matches!(kind, TokenKind::Class)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "unsupported nested class declaration: only top-level class declarations are implemented",
+                    ));
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Interface)) {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_interface_declaration_message(),
+                    ));
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Trait)) {
+                    return Err(
+                        self.error_at(self.peek().span, unsupported_trait_declaration_message())
+                    );
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Enum)) {
+                    return Err(
+                        self.error_at(self.peek().span, unsupported_enum_declaration_message())
+                    );
+                }
+                if self.check_unsupported_class_modifier_declaration() {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_class_modifier_declaration_message(),
+                    ));
+                }
+                statements.push(self.parse_statement()?);
+            }
+            Ok(statements)
+        })();
+        self.nested_statement_depth -= 1;
+        result
+    }
+
+    fn consume_alternate_if_end(&mut self) -> CompileResult<()> {
+        if !self.match_identifier("endif") {
+            return Err(self.error_at(self.peek().span, "expected 'endif' after alternate if body"));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after endif")
+            .map(|_| ())
     }
 
     fn match_elseif(&mut self) -> Option<Span> {
@@ -3694,6 +3783,18 @@ impl Parser {
             SwitchBodyKind::Alternate => self.check(|kind| {
                 matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("endswitch"))
             }),
+        }
+    }
+
+    fn check_alternate_if_boundary(&self) -> bool {
+        match &self.peek().kind {
+            TokenKind::Else | TokenKind::ElseIf => true,
+            TokenKind::Identifier(name) => {
+                name.eq_ignore_ascii_case("else")
+                    || name.eq_ignore_ascii_case("elseif")
+                    || name.eq_ignore_ascii_case("endif")
+            }
+            _ => false,
         }
     }
 

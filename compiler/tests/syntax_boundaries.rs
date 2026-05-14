@@ -1152,15 +1152,6 @@ fn unsupported_alternate_if_forms_are_rejected_with_stable_parse_error() {
     let cases = [
         (
             r#"<?php
-if ($value):
-    echo "yes";
-endif;
-"#,
-            2,
-            12,
-        ),
-        (
-            r#"<?php
 $value = 2;
 if ($value == 1) {
     echo "one";

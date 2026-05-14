@@ -115,7 +115,8 @@
   lazy branch/fallback evaluation, condition-value reuse for short ternary,
   parenthesized nested ternaries, mixes with `??`, and assignment-expression
   branches over the documented direct-target subset
-- `if` / `elseif` / `else`
+- `if` / `elseif` / `else`, including alternate
+  `if (...) : ... elseif (...) : ... else: ... endif;` syntax
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
   optional and each initializer/increment slot contains at most one expression
@@ -485,8 +486,8 @@
 - explicit parse diagnostics for unsupported expression-position `for` and
   comma-separated `for` header expression lists
 - explicit parse diagnostics for unsupported expression-position `do ... while`
-- explicit parse diagnostics for unsupported alternate `if`/`elseif`/`else`
-  colon/`endif` syntax
+- explicit parse diagnostics for malformed or mixed alternate
+  `if`/`elseif`/`else` colon/`endif` syntax
 - explicit parse diagnostics for unsupported expression-position `switch` and
   malformed alternate colon/`endswitch` switch bodies
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
@@ -1056,10 +1057,11 @@
 - Conditionals: statement-form `if` supports zero or more `elseif` clauses and
   an optional `else` clause over the current expression and truthiness subset.
   Branch bodies may be brace blocks or single statements. Alternate
-  `if`/`elseif`/`else` colon/`endif` conditional syntax now fails with a
-  stable parse diagnostic. Alternate conditional execution, nested alternate
-  conditional parsing, mixed brace/colon conditional recovery, and native
-  conditional lowering are not implemented.
+  `if`/`elseif`/`else` colon/`endif` conditional syntax executes through the
+  same `Stmt::If` runtime path, including nested alternate conditionals.
+  Malformed alternate conditional diagnostics, mixed brace/colon recovery,
+  source mapping edge cases, and native conditional lowering remain
+  unsupported.
 - Loop control: `break;` and `continue;` execute for the innermost currently
   executing `while`, supported `for`, supported `do ... while`, or supported
   array `foreach` loop in `phpc run`; `break;` also exits the innermost
@@ -1620,12 +1622,12 @@
   before file loading until generated code has multi-file loading, source-map
   handoff, caller-scope effects, declaration registration, include return
   values, and exact native error objects.
-  Native `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
-  `break`, and `continue` are rejected before condition, body, case, or
-  loop-control lowering with a specific codegen diagnostic until generated
-  code has PHP truthiness, branch layout, loop control flow, switch
-  fallthrough, references/copy-on-write side-effect behavior, and exact native
-  error objects.
+  Native `if`/`elseif`/`else`, including alternate colon/`endif` syntax,
+  `while`, `for`, `do ... while`, `switch`, `break`, and `continue` are
+  rejected before condition, body, case, or loop-control lowering with a
+  specific codegen diagnostic until generated code has PHP truthiness, branch
+  layout, loop control flow, switch fallthrough, references/copy-on-write
+  side-effect behavior, and exact native error objects.
   Native compound assignment, null coalescing assignment,
   increment/decrement, assignment expressions, direct variable unset, static
   property unset, and multiple-operand unset are rejected before operand or
@@ -2758,8 +2760,9 @@
 - comma-separated `for` initializer, condition, or increment expression lists;
   only zero or one expression or assignment is supported in each header slot
 - expression-form `for`; `for` is only supported as a statement
-- alternate colon/`endif` syntax for `if`/`elseif`/`else`; conditionals are
-  limited to brace blocks or single-statement bodies
+- malformed alternate `if`/`elseif`/`else` colon/`endif` forms, mixed
+  brace/colon conditional recovery, exact PHP diagnostics, source mapping edge
+  cases, and native lowering
 - expression-form `do ... while`; `do ... while` is only supported as a
   statement
 - expression-form `switch`, malformed alternate colon/`endswitch` switch
@@ -2768,10 +2771,10 @@
   only statement-form `break;` for the innermost active `while`, supported
   `for`, supported `do ... while`, supported array `foreach`, or supported
   `switch`, and `continue;` for the innermost active loop are implemented
-- native lowering for `if`/`elseif`/`else`, `while`, `for`, `do ... while`,
-  `switch`, `goto` labels, `break`, and `continue`; generated code currently
-  rejects those forms before lowering conditions, bodies, cases, jumps, or
-  loop-control flow
+- native lowering for `if`/`elseif`/`else`, including alternate colon/`endif`
+  syntax, `while`, `for`, `do ... while`, `switch`, `goto` labels, `break`,
+  and `continue`; generated code currently rejects those forms before lowering
+  conditions, bodies, cases, jumps, or loop-control flow
 - native lowering for cast expressions; generated code currently rejects casts
   before implying PHP scalar conversion, diagnostics, allocation behavior,
   references/copy-on-write, or exact native error behavior

@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+two
+fallback
+yes
+no--- stdout end ---
+stderr:
+--- stderr end ---

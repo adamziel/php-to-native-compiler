@@ -6308,16 +6308,24 @@ handled.
 
 ## Milestone 690: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound alternate
+- [x] Parser/runtime lane: implement or explicitly bound alternate
   `if`/`elseif`/`else` colon/`endif` syntax enough for the current WordPress
   bootstrap shim, with tests, CLI coverage, docs, and named unsupported edges
   for exact PHP diagnostics, nested alternate syntax edge cases, mixed
   brace/colon recovery, source mapping, and native lowering.
 
+## Milestone 691: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound `instanceof` enough
+  for WordPress's `Countable` checks in `wp-includes/compat.php`, with tests,
+  CLI coverage, docs, and named unsupported edges for class/interface
+  relationship breadth, autoload behavior, namespace-aware class names, exact
+  PHP diagnostics, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 689 work, the latest committed checkpoint is
-  `4ba4998 functions: add bounded static locals`, covering Milestone 688.
+- Before the current Milestone 690 work, the latest committed checkpoint is
+  `927019d functions: parse closure use syntax`, covering Milestone 689.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

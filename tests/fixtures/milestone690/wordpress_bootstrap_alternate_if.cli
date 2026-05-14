@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+pcre--- stdout end ---
+stderr:
+--- stderr end ---

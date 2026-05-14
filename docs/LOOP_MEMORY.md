@@ -17722,3 +17722,33 @@ injects this file into every prompt. Each Codex pass should update it with:
   gates, then checkpoint with
   `tools/checkpoint.sh "functions: parse closure use syntax"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T02:00:00Z
+
+- Checkpoint before this task: `927019d functions: parse closure use syntax`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 690, alternate `if`/`elseif`/`else`
+  colon/`endif` parsing and runtime execution for the current WordPress
+  bootstrap-shim conditional shape.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/elseif.rs`, `compiler/tests/native_control_flow_boundary.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone690/*`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test elseif alternate_if`,
+  `cargo test -p phpc --test native_control_flow_boundary control_flow`,
+  `cargo test -p phpc --test syntax_boundaries alternate_if`,
+  `cargo run -p phpc -- test tests/fixtures/milestone690`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone690`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
+  `PHPC_BIN=/tmp/phpc-target-690/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: malformed alternate conditional diagnostics, mixed
+  brace/colon recovery, source mapping edge cases, exact PHP diagnostics,
+  `instanceof` class/interface relationship checks, WordPress bootstrap
+  environment, exact native errors, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, the focused gates, then
+  checkpoint with `tools/checkpoint.sh "control: parse alternate if syntax"` if
+  the full gate passes.

@@ -822,14 +822,34 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone689`, and
   `PHPC_BIN=/tmp/phpc-target-689/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 690, alternate `if`/`elseif`/`else` colon/`endif` parsing
+  and runtime execution for the current interpreter conditional subset. The
+  parser now accepts the WordPress bootstrap-shim alternate conditional shape,
+  including nested alternate conditionals, and lowers it into the existing
+  `Stmt::If` AST/runtime path. Mixed brace/colon conditionals remain an
+  explicit unsupported parse boundary, and native LLVM/assembly emission still
+  rejects alternate conditionals through the existing control-flow boundary.
+  Malformed alternate conditional diagnostics, mixed brace/colon recovery,
+  source mapping edge cases, exact PHP diagnostics, and native lowering remain
+  explicit. The real WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `wp-includes/compat.php:318`, an `instanceof Countable` expression. Focused
+  verification so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test elseif alternate_if`,
+  `cargo test -p phpc --test native_control_flow_boundary control_flow`,
+  `cargo test -p phpc --test syntax_boundaries alternate_if`,
+  `cargo run -p phpc -- test tests/fixtures/milestone690`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone690`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
+  `PHPC_BIN=/tmp/phpc-target-690/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 690 should implement or explicitly bound alternate
-  `if`/`elseif`/`else` colon/`endif` syntax enough for the current WordPress
-  bootstrap shim, while keeping exact PHP diagnostics, nested alternate syntax
-  edge cases, mixed brace/colon recovery, source mapping, and native lowering
-  explicit unless proven.
+- Milestone 691 should implement or explicitly bound `instanceof` enough for
+  WordPress's `Countable` checks in `wp-includes/compat.php`, while keeping
+  class/interface relationship breadth, autoload behavior, namespace-aware
+  class names, exact PHP diagnostics, and native lowering explicit unless
+  proven.
 
 ## 2026-05-12
 

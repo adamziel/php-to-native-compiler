@@ -63,6 +63,7 @@ do {
 fn emit_ir_rejects_structured_control_flow_with_specific_boundary() {
     for source in [
         "<?php\nif (true) { echo 1; }\n",
+        "<?php\nif (true): echo 1; endif;\n",
         "<?php\nif (false) { echo 0; } elseif (true) { echo 1; }\n",
         "<?php\nwhile (true) { echo 1; break; }\n",
         "<?php\nfor ($i = 0; $i < 1; $i = $i + 1) { echo $i; }\n",
@@ -83,6 +84,7 @@ fn emit_ir_rejects_structured_control_flow_with_specific_boundary() {
 fn emit_ir_rejects_control_flow_before_lowering_nested_operands_or_bodies() {
     for source in [
         "<?php\nif (missing_call()) { echo [1]; }\n",
+        "<?php\nif (missing_call()): echo [1]; endif;\n",
         "<?php\nwhile (missing_call()) { echo [1]; }\n",
         "<?php\nfor ($i = missing_call(); $i < 1; $i = $i + 1) { echo [1]; }\n",
         "<?php\ndo { echo [1]; } while (missing_call());\n",
