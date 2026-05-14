@@ -17691,3 +17691,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   fixture gates, then checkpoint with
   `tools/checkpoint.sh "functions: add bounded static locals"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T01:30:00Z
+
+- Checkpoint before this task: `4ba4998 functions: add bounded static locals`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 689, syntax-only anonymous closure parsing with
+  `use (...)` captures for WordPress's `_wp_can_use_pcre_u()` error-handler
+  declaration path.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone689/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_closure.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes closure`,
+  `cargo test -p phpc --test unsupported_function_features_cli`,
+  `cargo run -p phpc -- test tests/fixtures/milestone689`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone689`, and
+  `PHPC_BIN=/tmp/phpc-target-689/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: closure values and invocation, capture binding,
+  by-reference capture semantics, `$this` binding, static closures, callback
+  integration, exact PHP diagnostics, alternate colon/endif control-flow
+  syntax, WordPress bootstrap environment, exact native errors, and native
+  lowering remain explicit.
+- Next concrete task: run `git diff --check`, focused unsupported fixture
+  gates, then checkpoint with
+  `tools/checkpoint.sh "functions: parse closure use syntax"` if the full gate
+  passes.

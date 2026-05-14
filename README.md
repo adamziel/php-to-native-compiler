@@ -133,8 +133,8 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, include/require breadth beyond
 the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
-generators, closures, type declaration enforcement, cast behavior outside the
-current `(string)` scalar/null slice, interfaces, traits, enums,
+generators, closure values and invocation, type declaration enforcement, cast
+behavior outside the current `(string)` scalar/null slice, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and

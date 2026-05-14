@@ -353,6 +353,13 @@ pub struct TypeDecl {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ClosureCapture {
+    pub name: String,
+    pub by_reference: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayItem {
     pub key: Option<Expr>,
     pub value: Expr,
@@ -490,6 +497,13 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    Closure {
+        params: Vec<FunctionParam>,
+        captures: Vec<ClosureCapture>,
+        return_type: Option<TypeDecl>,
+        body: Vec<Stmt>,
+        span: Span,
+    },
     New {
         class_name: String,
         args: Vec<Expr>,
@@ -584,6 +598,7 @@ impl Expr {
             | Expr::LateStaticMethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
+            | Expr::Closure { span, .. }
             | Expr::New { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }

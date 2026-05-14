@@ -448,7 +448,7 @@
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference expressions,
   function-scope reference parameter invocation, reference returns, type
-  declaration enforcement, anonymous functions,
+  declaration enforcement,
   arrow functions, named arguments, first-class callable syntax such as
   `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
@@ -1870,10 +1870,16 @@
   `TypeError` behavior, `strict_types`, variance, and reflection metadata are
   not implemented. Reference parameter declarations are also accepted as
   metadata, but invoking those functions fails with a stable runtime error until
-  reference binding exists. Variadic parameters and argument unpacking,
-  reference returns, reference expressions, anonymous functions, arrow
-  functions, named arguments, first-class callable syntax such as `strlen(...)`
-  and `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
+  reference binding exists. Anonymous closure syntax with parameter lists,
+  optional return-type metadata, block bodies, and `use (...)` capture lists is
+  parsed so containing functions can be registered, including by-reference
+  capture syntax such as `use (&$name)`. Evaluating a closure expression still
+  fails with a stable runtime diagnostic; closure values, invocation, capture
+  binding, `$this` binding, static closures, callback integration, exact PHP
+  diagnostics, and native lowering are unsupported. Variadic parameters and
+  argument unpacking, reference returns, reference expressions, arrow functions,
+  named arguments, first-class callable syntax such as `strlen(...)` and
+  `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
   rejected with stable parse diagnostics. Function-local `static` declarations
   are supported for the current bounded direct-variable storage slice:
   `static $name;` and `static $name = value;` initialize per-function storage
@@ -1907,7 +1913,7 @@
   recursion/reentrancy edge behavior, canonical absolute
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,
   method/class magic constant context, namespace and trait magic constants,
-  closure function-name context, magic constant native lowering, array callables, object/method
+  closure values and invocation, closure function-name context, magic constant native lowering, array callables, object/method
   callables, first-class callable
   syntax, `call_user_func`, namespace-qualified callable resolution, autoload
   interaction, and native lowering for type declarations are unsupported.
@@ -3394,7 +3400,7 @@
   remain unsupported
 - namespace-aware name resolution, imports, aliases, grouped imports, and
   executable qualified/fully qualified function or class references
-- closures and arrow functions
+- closure values/invocation, capture binding semantics, and arrow functions
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current parse boundary
 - traits/interfaces/enums

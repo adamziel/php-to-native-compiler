@@ -1,2 +1,2 @@
-parse error at 2:7: unsupported closure: anonymous functions are not implemented
+runtime error at 2:7: unsupported call closure: anonymous function values and invocation are not implemented
 

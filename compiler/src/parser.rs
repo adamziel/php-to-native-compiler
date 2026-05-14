@@ -1,8 +1,9 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
-    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr,
-    ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
-    Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
+    ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TypeDecl,
+    UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -149,7 +150,28 @@ impl Parser {
         }
         let name = self.consume_identifier("expected function name")?;
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+        let params = self.parse_function_params_after_open()?;
 
+        let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            Some(self.parse_type_decl(unsupported_return_type_message())?)
+        } else {
+            None
+        };
+        self.function_body_depth += 1;
+        let body = self.parse_required_block("expected function body");
+        self.function_body_depth -= 1;
+        let body = body?;
+
+        Ok(FunctionDecl {
+            name,
+            params,
+            return_type,
+            body,
+            span: start,
+        })
+    }
+
+    fn parse_function_params_after_open(&mut self) -> CompileResult<Vec<FunctionParam>> {
         let mut params = Vec::new();
         let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
@@ -200,23 +222,7 @@ impl Parser {
         }
 
         self.consume_keyword(TokenKind::RParen, "expected ')' after parameter list")?;
-        let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
-            Some(self.parse_type_decl(unsupported_return_type_message())?)
-        } else {
-            None
-        };
-        self.function_body_depth += 1;
-        let body = self.parse_required_block("expected function body");
-        self.function_body_depth -= 1;
-        let body = body?;
-
-        Ok(FunctionDecl {
-            name,
-            params,
-            return_type,
-            body,
-            span: start,
-        })
+        Ok(params)
     }
 
     fn parse_type_decl(&mut self, message: &'static str) -> CompileResult<TypeDecl> {
@@ -2543,10 +2549,7 @@ impl Parser {
             TokenKind::Instanceof => {
                 Err(self.error_at(token.span, unsupported_instanceof_message()))
             }
-            TokenKind::Function => Err(self.error_at(
-                token.span,
-                "unsupported closure: anonymous functions are not implemented",
-            )),
+            TokenKind::Function => self.parse_closure_expression(token.span),
             TokenKind::Fn => Err(self.error_at(
                 token.span,
                 "unsupported closure: arrow functions are not implemented",
@@ -2720,6 +2723,64 @@ impl Parser {
                 format!("expected expression, found {}", token_name(&other)),
             )),
         }
+    }
+
+    fn parse_closure_expression(&mut self, span: Span) -> CompileResult<Expr> {
+        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
+            let span = self.advance().span;
+            return Err(self.error_at(
+                span,
+                "unsupported reference return: returning closures by reference is not implemented",
+            ));
+        }
+
+        self.consume_keyword(TokenKind::LParen, "expected '(' after function")?;
+        let params = self.parse_function_params_after_open()?;
+
+        let mut captures = Vec::new();
+        if self.match_token(|kind| matches!(kind, TokenKind::Use)) {
+            self.consume_keyword(TokenKind::LParen, "expected '(' after closure use")?;
+            if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                loop {
+                    let by_reference =
+                        self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
+                    let (name, capture_span) =
+                        self.consume_variable_with_span("expected closure capture variable")?;
+                    captures.push(ClosureCapture {
+                        name,
+                        by_reference,
+                        span: capture_span,
+                    });
+
+                    if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                        break;
+                    }
+                    if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                        break;
+                    }
+                }
+            }
+            self.consume_keyword(TokenKind::RParen, "expected ')' after closure use list")?;
+        }
+
+        let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            Some(self.parse_type_decl(unsupported_return_type_message())?)
+        } else {
+            None
+        };
+
+        self.function_body_depth += 1;
+        let body = self.parse_required_block("expected closure body");
+        self.function_body_depth -= 1;
+        let body = body?;
+
+        Ok(Expr::Closure {
+            params,
+            captures,
+            return_type,
+            body,
+            span,
+        })
     }
 
     fn reject_unsupported_static_member_access(
@@ -3145,6 +3206,7 @@ impl Parser {
             | Expr::LateStaticMethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
+            | Expr::Closure { .. }
             | Expr::Assign { .. }
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
@@ -3215,6 +3277,7 @@ impl Parser {
             | Expr::LateStaticMethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
+            | Expr::Closure { .. }
             | Expr::Assign { .. }
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
@@ -3269,6 +3332,10 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
             }
+            Expr::Closure { params, .. } => params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .any(Self::expr_contains_assignment),
             Expr::DynamicCall { callee, args, .. } => {
                 Self::expr_contains_assignment(callee)
                     || args.iter().any(Self::expr_contains_assignment)
@@ -3376,6 +3443,10 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
+            Expr::Closure { params, .. } => params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .any(Self::expr_contains_unsupported_assignment_rhs),
             Expr::DynamicCall { callee, args, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(callee)
                     || args
@@ -3466,6 +3537,10 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
             }
+            Expr::Closure { params, .. } => params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .find_map(Self::find_append_index_span),
             Expr::DynamicCall { callee, args, .. } => Self::find_append_index_span(callee)
                 .or_else(|| args.iter().find_map(Self::find_append_index_span)),
             Expr::Binary { left, right, .. } => {

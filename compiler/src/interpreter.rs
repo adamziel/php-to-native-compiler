@@ -1176,6 +1176,13 @@ impl Interpreter {
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
             }
+            Expr::Closure { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "closure",
+                    "anonymous function values and invocation are not implemented",
+                ),
+            )),
             Expr::New {
                 class_name,
                 args,

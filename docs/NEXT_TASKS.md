@@ -6300,16 +6300,24 @@ handled.
 
 ## Milestone 689: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound anonymous closures and
+- [x] Parser/runtime lane: implement or explicitly bound anonymous closures and
   `use` captures enough for WordPress's `_wp_can_use_pcre_u()` error-handler
   path, with tests, CLI coverage, docs, and named unsupported edges for
   by-reference capture semantics, callback invocation, exact PHP diagnostics,
   and native lowering.
 
+## Milestone 690: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound alternate
+  `if`/`elseif`/`else` colon/`endif` syntax enough for the current WordPress
+  bootstrap shim, with tests, CLI coverage, docs, and named unsupported edges
+  for exact PHP diagnostics, nested alternate syntax edge cases, mixed
+  brace/colon recovery, source mapping, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 688 work, the latest committed checkpoint is
-  `237db1c runtime: add bounded string casts`, covering Milestone 687.
+- Before the current Milestone 689 work, the latest committed checkpoint is
+  `4ba4998 functions: add bounded static locals`, covering Milestone 688.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -679,8 +679,29 @@ $alias =& $value;
 }
 
 #[test]
-fn closures_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn closure_syntax_inside_unexecuted_function_body_is_registered() {
+    let execution = run_source(
+        r#"<?php
+function register_handler() {
+    $utf8_pcre = null;
+    $handler = function ($errno, $errstr) use (&$utf8_pcre) {
+        $utf8_pcre = false;
+        return false;
+    };
+    return "registered";
+}
+echo "ok";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn closure_values_have_stable_runtime_unsupported_error() {
+    let error = runtime_error(
         r#"<?php
 $fn = function ($value) {
     return $value;
@@ -692,7 +713,7 @@ $fn = function ($value) {
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "unsupported closure: anonymous functions are not implemented"
+        "unsupported call closure: anonymous function values and invocation are not implemented"
     );
 }
 

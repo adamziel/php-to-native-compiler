@@ -804,18 +804,32 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone688`, and
   `PHPC_BIN=/tmp/phpc-target-688/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 689, syntax-only anonymous closure parsing for the current
+  interpreter parser/AST boundary. `phpc run` now accepts anonymous closure
+  expressions with parameter lists, optional return-type metadata, block
+  bodies, and `use (...)` capture lists, including by-reference capture syntax
+  such as `use (&$utf8_pcre)`, so WordPress's `_wp_can_use_pcre_u()` function
+  body can be registered. Evaluating a closure expression still fails with a
+  stable runtime diagnostic; closure values, invocation, capture binding,
+  `$this` binding, static closures, callback integration, exact PHP
+  diagnostics, and native lowering remain explicit. The real WordPress 6.9.4
+  bootstrap-shim inventory now reaches alternate `if (...) : ... endif;`
+  syntax at `<bootstrap-shim>:113:41`. Focused verification so far:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes closure`,
+  `cargo test -p phpc --test unsupported_function_features_cli`,
+  `cargo run -p phpc -- test tests/fixtures/milestone689`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone689`, and
+  `PHPC_BIN=/tmp/phpc-target-689/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 637 should pick the next native runtime integration slice:
-  target-data-layout-aware helper signatures, boxed scalar construction in
-  generated LLVM, a linker command prototype that rejects executable mode
-  clearly, or a documented blocker if the current LLVM text backend cannot model
-  C ABI helper calls safely.
-- Milestone 689 should implement or explicitly bound anonymous closures and
-  `use` captures enough for WordPress's `_wp_can_use_pcre_u()` error-handler
-  path, while keeping by-reference capture semantics, callback invocation,
-  exact PHP diagnostics, and native lowering explicit unless proven.
+- Milestone 690 should implement or explicitly bound alternate
+  `if`/`elseif`/`else` colon/`endif` syntax enough for the current WordPress
+  bootstrap shim, while keeping exact PHP diagnostics, nested alternate syntax
+  edge cases, mixed brace/colon recovery, source mapping, and native lowering
+  explicit unless proven.
 
 ## 2026-05-12
 

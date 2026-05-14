@@ -97,8 +97,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `(string)` cast blocker in that file is covered by the bounded Milestone 687
   cast slice. The previous function-local `static` blocker in
   `wp-includes/compat.php` is covered by the bounded Milestone 688 static-local
-  runtime slice. The shim probe now reaches anonymous closure syntax in
-  `wp-includes/compat.php:54`.
+  runtime slice, and the previous anonymous closure syntax blocker in
+  `compat.php:54` is covered by the Milestone 689 syntax-only closure slice.
+  The shim probe now reaches alternate `if (...) : ... endif;` syntax in the
+  bootstrap shim at `<bootstrap-shim>:113:41`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;
