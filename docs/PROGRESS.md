@@ -742,6 +742,17 @@ Implemented:
   `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
   and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 685, hexadecimal integer literal lexing for the current
+  signed 64-bit integer subset. `phpc run` now treats forms such as `0xC2` and
+  `0Xdf` as integer literals, and the fixture is compared against system PHP.
+  Overflow behavior, binary/octal literal variants, numeric-string coercion
+  interactions, and native lowering remain explicit. The real WordPress 6.9.4
+  bootstrap-shim inventory now reaches `wp-includes/compat-utf8.php:140:4`,
+  `goto invalid_utf8;`. Focused verification so far: `cargo fmt --check`,
+  `cargo check -p phpc`, `cargo run -p phpc -- test tests/fixtures/milestone685`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone685`, and
+  `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -750,10 +761,10 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 685 should implement hexadecimal integer literals over the current
-  integer value subset so WordPress's early UTF-8 scanner body can parse, while
-  keeping overflow behavior, additional literal variants, numeric-string
-  coercion interactions, and native lowering explicit unless proven.
+- Milestone 686 should implement or explicitly bound `goto` statements and
+  labels enough to parse WordPress's early UTF-8 scanner error path while
+  keeping cross-scope jumps, jumps into loops/switches, finally blocks, exact
+  PHP diagnostics, and native lowering explicit unless proven.
 
 ## 2026-05-12
 

@@ -439,6 +439,22 @@ impl<'a> Lexer<'a> {
         let mut text = String::new();
         text.push(first);
 
+        if first == '0' && matches!(self.peek(), Some('x' | 'X')) {
+            text.push(self.advance());
+            let mut digits = String::new();
+            while matches!(self.peek(), Some(ch) if ch.is_ascii_hexdigit()) {
+                let ch = self.advance();
+                text.push(ch);
+                digits.push(ch);
+            }
+            if digits.is_empty() {
+                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
+            }
+            let value = i64::from_str_radix(&digits, 16)
+                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
+            return Ok(TokenKind::Int(value));
+        }
+
         while matches!(self.peek(), Some('0'..='9')) {
             text.push(self.advance());
         }

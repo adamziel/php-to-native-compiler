@@ -17569,3 +17569,26 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `git diff --check`, then checkpoint with
   `tools/checkpoint.sh "functions: accept signature type syntax"` if the full
   gate passes.
+
+## Loop Event 2026-05-15T02:00:00Z
+
+- Checkpoint before this task: `38bbd0f functions: accept signature type
+  syntax`, pushed to `origin/master`.
+- Task attempted: Milestone 685, hexadecimal integer literal lexing for the
+  current signed 64-bit integer subset.
+- Files changed so far: `compiler/src/lexer.rs`, `tests/fixtures/milestone685/*`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo run -p phpc -- test tests/fixtures/milestone685`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone685`, and
+  `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: `goto` statements and labels, overflow behavior for
+  integer literals, binary/octal literal variants, numeric-string coercion
+  interactions, invoking typed/reference-parameter functions, reference binding,
+  string offsets, WordPress bootstrap environment, exact native errors, and
+  native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "lexer: add hexadecimal integer literals"` if the full
+  gate passes.

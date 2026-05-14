@@ -5,7 +5,7 @@
 - PHP opening tag `<?php`
 - `echo` statements with one or more comma-separated expressions
 - `print` statements
-- integer literals
+- decimal and hexadecimal integer literals in the current signed 64-bit subset
 - float literals
 - single-quoted and double-quoted string literals with basic escapes
 - `null`, `true`, and `false`

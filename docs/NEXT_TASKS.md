@@ -6264,16 +6264,25 @@ handled.
 
 ## Milestone 685: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement hexadecimal integer literals over the
+- [x] Parser/runtime lane: implement hexadecimal integer literals over the
   current integer value subset so WordPress's early UTF-8 scanner body can
   parse, including fixture comparison against system PHP and explicit gaps for
-  overflow behavior, binary/octal literal variants if not included, numeric
-  string coercion interactions, and native lowering unless proven.
+  overflow behavior, binary/octal literal variants, numeric string coercion
+  interactions, and native lowering. The follow-up bootstrap-shim inventory now
+  reaches `wp-includes/compat-utf8.php:140:4`, `goto invalid_utf8;`.
+
+## Milestone 686: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound `goto` statements and
+  labels enough to parse WordPress's early UTF-8 scanner error path, including
+  tests for forward jumps within one function and explicit gaps for cross-scope
+  jumps, jumps into loops/switches, finally blocks, labels in included files,
+  exact PHP diagnostics, and native lowering unless proven.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 684 work, the latest committed checkpoint is
-  `32258c3 compat: add wordpress bootstrap shim probe`, covering Milestone 683.
+- Before the current Milestone 685 work, the latest committed checkpoint is
+  `38bbd0f functions: accept signature type syntax`, covering Milestone 684.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
