@@ -133,7 +133,8 @@
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop
-- function declarations with optional trailing commas in parameter lists
+- function declarations with optional trailing commas in parameter lists and
+  syntax-only parameter/return type annotations for the current metadata slice
 - positional function calls with optional trailing commas in argument lists
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions, with optional
@@ -445,9 +446,9 @@
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
   inside `switch`, and runaway user-function recursion
 - explicit parse diagnostics for unsupported function syntax: variadic
-  parameters, variadic argument unpacking, reference parameters/returns,
-  reference expressions, parameter type declarations, return type declarations,
-  static local variable declarations inside functions, anonymous functions,
+  parameters, variadic argument unpacking, reference expressions,
+  function-scope reference parameter invocation, reference returns, type
+  declaration enforcement, static local variable declarations inside functions, anonymous functions,
   arrow functions, named arguments, first-class callable syntax such as
   `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
@@ -1853,16 +1854,22 @@
   dynamic calls, and indexed reads are rejected by the parser. Required
   parameters after default parameters are also rejected instead of modeling
   PHP's deprecation and implicit-required behavior. Empty parameter slots such
-  as `function f(,)` remain rejected. Variadic parameters and argument unpacking,
-  reference parameters/returns, reference expressions, anonymous functions,
-  arrow functions, named arguments, first-class callable syntax such as
-  `strlen(...)` and `$callback(...)`, empty call arguments, and
-  `declare(strict_types=1)` are rejected with stable parse diagnostics.
-  Parameter type declarations and return type
-  declarations also fail with stable parse diagnostics before any type
-  enforcement can run. Static local variable declarations inside functions
-  also fail with a stable parse diagnostic before function-local static storage
-  exists. The `__LINE__` magic constant evaluates to the source line of the
+  as `function f(,)` remain rejected. Parameter and return type declarations,
+  including nullable, union, intersection, and namespace-qualified names, are
+  accepted as syntax-only metadata so WordPress-style helper signatures can be
+  registered. Invoking a function with parameter/return type annotations fails
+  with a stable runtime error because type enforcement, coercion, exact
+  `TypeError` behavior, `strict_types`, variance, and reflection metadata are
+  not implemented. Reference parameter declarations are also accepted as
+  metadata, but invoking those functions fails with a stable runtime error until
+  reference binding exists. Variadic parameters and argument unpacking,
+  reference returns, reference expressions, anonymous functions, arrow
+  functions, named arguments, first-class callable syntax such as `strlen(...)`
+  and `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
+  rejected with stable parse diagnostics. Static local variable declarations
+  inside functions also fail with a stable parse diagnostic before
+  function-local static storage exists. The `__LINE__` magic constant evaluates
+  to the source line of the
   expression token in ordinary expressions, default parameter values, and
   top-level `const` declarations. The `__FILE__` magic constant evaluates to
   the current `phpc run` input path string when one is available, including
@@ -2694,11 +2701,11 @@
   unqualified constant-reference subset
 - required parameters after default parameters
 - variadic parameters and variadic argument unpacking
-- reference parameters, reference returns, reference assignments, and
+- reference parameter invocation, reference returns, reference assignments, and
   by-reference calls
-- parameter type declarations and return type declarations, including
-  nullable, union, intersection, `mixed`, `void`/`never`, class/interface
-  names, coercive versus strict typing, variance, and native lowering
+- parameter/return type enforcement, coercion, exact `TypeError` behavior,
+  `strict_types`, variance, reflection metadata, and native lowering for type
+  declarations
 - static local variable declarations inside functions, including
   initialization expressions, per-function persistence, references,
   recursion/reentrancy behavior, and native lowering

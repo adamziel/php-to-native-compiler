@@ -332,118 +332,66 @@ function collect(...$items) {
 }
 
 #[test]
-fn reference_parameters_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn typed_and_reference_function_declarations_register_without_invocation() {
+    let execution = run_source(
         r#"<?php
-function mutate(&$value) {
+function _wp_scan_utf8(string $bytes, int &$at, int &$invalid_length, ?int $max_bytes = null, ?int $max_code_points = null, ?bool &$has_noncharacters = null): int {
+    return 0;
+}
+function union_result($value): int|string {
     return $value;
 }
+function intersection_param(Iterator&Countable $value) {
+    return $value;
+}
+echo function_exists("_wp_scan_utf8"), "\n";
+echo function_exists("union_result"), "\n";
+echo function_exists("intersection_param"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\n1\n1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_function_invocation_is_rejected_until_type_enforcement_exists() {
+    let error = runtime_error(
+        r#"<?php
+function label(string $value): string {
+    return $value;
+}
+echo label("Ada");
 "#,
     );
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 17);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported reference parameter: references are not implemented"
+        "unsupported call label(): parameter and return type enforcement is not implemented"
     );
 }
 
 #[test]
-fn parameter_type_declarations_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-function label(string $value) {
-    return $value;
+fn reference_parameter_invocation_is_rejected_until_references_exist() {
+    let error = runtime_error(
+        r#"<?php
+function mutate(&$value) {
+    $value = 2;
 }
+$value = 1;
+mutate($value);
 "#,
-            16,
-        ),
-        (
-            r#"<?php
-function nullable(?string $value) {
-    return $value;
-}
-"#,
-            19,
-        ),
-        (
-            r#"<?php
-function union(int|string $value) {
-    return $value;
-}
-"#,
-            16,
-        ),
-        (
-            r#"<?php
-function intersection(Iterator&Countable $value) {
-    return $value;
-}
-"#,
-            23,
-        ),
-    ];
+    );
 
-    for (source, column) in cases {
-        let error = parse_error(source);
-
-        assert_eq!(error.line, 2);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported parameter type declaration: parameter type enforcement is not implemented"
-        );
-    }
-}
-
-#[test]
-fn return_type_declarations_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-function label($value): string {
-    return $value;
-}
-"#,
-            23,
-        ),
-        (
-            r#"<?php
-function nullable($value): ?string {
-    return $value;
-}
-"#,
-            26,
-        ),
-        (
-            r#"<?php
-function union($value): int|string {
-    return $value;
-}
-"#,
-            23,
-        ),
-        (
-            r#"<?php
-function void_result(): void {
-}
-"#,
-            23,
-        ),
-    ];
-
-    for (source, column) in cases {
-        let error = parse_error(source);
-
-        assert_eq!(error.line, 2);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported return type declaration: return type enforcement is not implemented"
-        );
-    }
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mutate(): reference parameter invocation is not implemented"
+    );
 }
 
 #[test]

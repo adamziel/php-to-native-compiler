@@ -17536,3 +17536,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run focused checks and `git diff --check`, then
   checkpoint with `tools/checkpoint.sh "compat: add wordpress bootstrap shim probe"`
   if the full gate passes.
+
+## Loop Event 2026-05-15T01:35:00Z
+
+- Checkpoint before this task: `32258c3 compat: add wordpress bootstrap shim
+  probe`, pushed to `origin/master`.
+- Task attempted: Milestone 684, syntax-only parameter/return type declaration
+  acceptance and reference parameter declaration acceptance for WordPress's
+  early `compat-utf8.php` helper signatures.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone684/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_parameter_type.*`,
+  `tests/fixtures/unsupported_function_features/unsupported_reference_parameter.*`,
+  `tests/fixtures/unsupported_function_features/unsupported_return_type.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone684`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone684`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: invoking typed functions and reference-parameter
+  functions remains unsupported; type enforcement, coercion, exact `TypeError`
+  behavior, `strict_types`, variance, reflection metadata, reference binding,
+  reference returns, hexadecimal integer literals, string offsets, `goto`,
+  WordPress bootstrap environment, exact native errors, and native lowering
+  remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "functions: accept signature type syntax"` if the full
+  gate passes.

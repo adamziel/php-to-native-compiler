@@ -89,7 +89,8 @@ incorrect native code.
   boundaries
 - `if`, loops, `switch`, `break`, `continue`, `foreach`, and user functions with
   local scopes, defaults, returns, dynamic string-valued calls, and recursion
-  guarded by a fixed depth limit
+  guarded by a fixed depth limit; parameter/return type syntax is accepted as
+  metadata only, without runtime type enforcement
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements; function-scope `global` imports remain unsupported
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
@@ -130,7 +131,7 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, include/require breadth beyond
 the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
-generators, closures, typed declarations, interfaces, traits, enums,
+generators, closures, type declaration enforcement, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and

@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+scan=1
+union=1
+intersection=1--- stdout end ---
+stderr:
+--- stderr end ---

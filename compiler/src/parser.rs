@@ -2,7 +2,7 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl,
     ClassPropertyDecl, ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction,
     FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program, Span,
-    Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -163,17 +163,12 @@ impl Parser {
                         "unsupported variadic parameter: variadics are not implemented",
                     ));
                 }
-                if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
-                    let span = self.advance().span;
-                    return Err(self.error_at(
-                        span,
-                        "unsupported reference parameter: references are not implemented",
-                    ));
-                }
-                if self.check(is_parameter_type_start) {
-                    let span = self.peek().span;
-                    return Err(self.error_at(span, unsupported_parameter_type_message()));
-                }
+                let type_decl = if self.check(is_parameter_type_start) {
+                    Some(self.parse_type_decl(unsupported_parameter_type_message())?)
+                } else {
+                    None
+                };
+                let by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
                 let (name, span) = self.consume_variable_with_span("expected parameter name")?;
                 let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                     saw_default = true;
@@ -192,6 +187,8 @@ impl Parser {
 
                 params.push(FunctionParam {
                     name,
+                    type_decl,
+                    by_reference,
                     default,
                     span,
                 });
@@ -205,9 +202,11 @@ impl Parser {
         }
 
         self.consume_keyword(TokenKind::RParen, "expected ')' after parameter list")?;
-        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
-            return Err(self.error_at(self.previous().span, unsupported_return_type_message()));
-        }
+        let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            Some(self.parse_type_decl(unsupported_return_type_message())?)
+        } else {
+            None
+        };
         self.function_body_depth += 1;
         let body = self.parse_required_block("expected function body");
         self.function_body_depth -= 1;
@@ -216,9 +215,64 @@ impl Parser {
         Ok(FunctionDecl {
             name,
             params,
+            return_type,
             body,
             span: start,
         })
+    }
+
+    fn parse_type_decl(&mut self, message: &'static str) -> CompileResult<TypeDecl> {
+        let span = self.peek().span;
+        let mut text = String::new();
+
+        if self.match_token(|kind| matches!(kind, TokenKind::Question)) {
+            text.push('?');
+        }
+        self.parse_type_name(&mut text, message)?;
+
+        loop {
+            let separator = match &self.peek().kind {
+                TokenKind::Pipe => '|',
+                TokenKind::Ampersand
+                    if !matches!(self.peek_next().kind, TokenKind::Variable(_)) =>
+                {
+                    '&'
+                }
+                _ => break,
+            };
+            self.advance();
+            text.push(separator);
+            self.parse_type_name(&mut text, message)?;
+        }
+
+        Ok(TypeDecl { text, span })
+    }
+
+    fn parse_type_name(&mut self, text: &mut String, message: &'static str) -> CompileResult<()> {
+        if self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            text.push('\\');
+        }
+
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) => text.push_str(&name),
+            TokenKind::Static => text.push_str("static"),
+            TokenKind::Null => text.push_str("null"),
+            TokenKind::True => text.push_str("true"),
+            TokenKind::False => text.push_str("false"),
+            _ => return Err(self.error_at(token.span, message)),
+        }
+
+        while self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            text.push('\\');
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::Identifier(name) => text.push_str(&name),
+                _ => return Err(self.error_at(token.span, message)),
+            }
+        }
+
+        Ok(())
     }
 
     fn parse_class(&mut self) -> CompileResult<Stmt> {

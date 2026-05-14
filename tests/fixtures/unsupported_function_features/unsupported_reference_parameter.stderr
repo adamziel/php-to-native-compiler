@@ -1,2 +1,2 @@
-parse error at 2:17: unsupported reference parameter: references are not implemented
+runtime error at 6:6: unsupported call mutate(): reference parameter invocation is not implemented
 

@@ -1276,6 +1276,7 @@ impl Interpreter {
             .expect("declared constructor metadata should have a stored function body");
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -2303,6 +2304,7 @@ impl Interpreter {
             .expect("declared method metadata should have a stored function body");
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -2376,6 +2378,7 @@ impl Interpreter {
             .expect("declared parent method metadata should have a stored function body");
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -2472,6 +2475,7 @@ impl Interpreter {
                 .expect("declared static method metadata should have a stored function body");
             let function = function.as_ref();
             ensure_user_function_arity(function, args.len(), span)?;
+            ensure_supported_function_signature(function, span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
             let mut values = Vec::with_capacity(args.len());
@@ -2583,6 +2587,7 @@ impl Interpreter {
             .expect("declared object static method metadata should have a stored function body");
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -3311,6 +3316,7 @@ impl Interpreter {
             .expect("declared self method metadata should have a stored function body");
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -3407,6 +3413,7 @@ impl Interpreter {
             .expect("declared late static method metadata should have a stored function body");
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -3664,6 +3671,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -3682,6 +3690,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
+        ensure_supported_function_signature(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
         self.call_user_function_with_checked_values(function, args, None, None, None)
     }
@@ -6755,6 +6764,35 @@ fn ensure_user_function_arity(
                 callable_name(&function.name),
                 arity_expectation(required, function.params.len()),
                 actual,
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_supported_function_signature(function: &FunctionDecl, span: Span) -> CompileResult<()> {
+    if function.params.iter().any(|param| param.by_reference) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "reference parameter invocation is not implemented",
+            ),
+        ));
+    }
+
+    if function.return_type.is_some()
+        || function
+            .params
+            .iter()
+            .any(|param| param.type_decl.is_some())
+    {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "parameter and return type enforcement is not implemented",
             ),
         ));
     }

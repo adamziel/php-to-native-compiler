@@ -91,8 +91,9 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `global ...;` declarations are accepted as no-ops. The inventory now reports
   both the direct `wp-settings.php` probe, which reaches undefined `ABSPATH`,
   and a bootstrap-shim probe, which defines `ABSPATH` before loading
-  `wp-settings.php`. Against real WordPress 6.9.4, the shim probe reaches
-  `wp-includes/compat-utf8.php:47:25`, unsupported parameter type declarations.
+  `wp-settings.php`. Against real WordPress 6.9.4, the shim probe now reaches
+  `wp-includes/compat-utf8.php:130:16`, where hexadecimal integer literals such
+  as `0xC2` are not yet lexed.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

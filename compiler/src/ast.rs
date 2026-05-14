@@ -313,6 +313,7 @@ pub enum ClassVisibility {
 pub struct FunctionDecl {
     pub name: String,
     pub params: Vec<FunctionParam>,
+    pub return_type: Option<TypeDecl>,
     pub body: Vec<Stmt>,
     pub span: Span,
 }
@@ -320,7 +321,15 @@ pub struct FunctionDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParam {
     pub name: String,
+    pub type_decl: Option<TypeDecl>,
+    pub by_reference: bool,
     pub default: Option<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeDecl {
+    pub text: String,
     pub span: Span,
 }
 

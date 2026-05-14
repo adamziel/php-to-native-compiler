@@ -6252,16 +6252,28 @@ handled.
 
 ## Milestone 684: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound parameter type
-  declarations enough to parse WordPress's early `compat-utf8.php` helper
-  signatures while keeping type enforcement, nullable/union/intersection types,
-  class/interface type resolution, by-reference interactions, exact
-  `TypeError` behavior, and native lowering explicit unless proved by tests.
+- [x] Parser/runtime lane: accept syntax-only parameter/return type
+  declarations and reference parameter declarations enough to register
+  WordPress's early `compat-utf8.php` helper signatures. Runtime invocation of
+  typed functions and by-reference parameter functions remains rejected with
+  stable diagnostics, keeping type enforcement, coercion, reference binding,
+  exact `TypeError` behavior, reflection metadata, and native lowering explicit.
+  The follow-up bootstrap-shim inventory now reaches
+  `wp-includes/compat-utf8.php:130:16`, where hexadecimal integer literals such
+  as `0xC2` are not yet lexed.
+
+## Milestone 685: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement hexadecimal integer literals over the
+  current integer value subset so WordPress's early UTF-8 scanner body can
+  parse, including fixture comparison against system PHP and explicit gaps for
+  overflow behavior, binary/octal literal variants if not included, numeric
+  string coercion interactions, and native lowering unless proven.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 683 work, the latest committed checkpoint is
-  `b08cc8b dynamic: allow top-level global`, covering Milestone 682.
+- Before the current Milestone 684 work, the latest committed checkpoint is
+  `32258c3 compat: add wordpress bootstrap shim probe`, covering Milestone 683.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

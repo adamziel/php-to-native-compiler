@@ -724,6 +724,24 @@ Implemented:
   Focused verification so far: `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
   and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 684, syntax-only user-function parameter/return type
+  declaration acceptance plus reference parameter declaration acceptance. The
+  parser now registers WordPress-shaped helper signatures such as
+  `_wp_scan_utf8(string $bytes, int &$at, ?int $max_bytes = null, ?bool &$flag = null): int`,
+  while `phpc run` rejects invocation of typed functions and by-reference
+  parameter functions with stable runtime diagnostics until type enforcement,
+  coercion, reference binding, exact `TypeError` behavior, reflection metadata,
+  and native lowering exist. The real WordPress 6.9.4 bootstrap-shim inventory
+  now reaches `wp-includes/compat-utf8.php:130:16`, where hexadecimal integer
+  literals such as `0xC2` are not yet lexed. Focused verification so far:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone684`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone684`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -732,11 +750,10 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 684 should implement or explicitly bound parameter type
-  declarations enough to parse WordPress's early `compat-utf8.php` helper
-  signatures while keeping type enforcement, nullable/union/intersection types,
-  class/interface type resolution, exact `TypeError` behavior, and native
-  lowering explicit.
+- Milestone 685 should implement hexadecimal integer literals over the current
+  integer value subset so WordPress's early UTF-8 scanner body can parse, while
+  keeping overflow behavior, additional literal variants, numeric-string
+  coercion interactions, and native lowering explicit unless proven.
 
 ## 2026-05-12
 
