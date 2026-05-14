@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+base:3:child
+base:8:child
+ancestor--- stdout end ---
+stderr:
+--- stderr end ---

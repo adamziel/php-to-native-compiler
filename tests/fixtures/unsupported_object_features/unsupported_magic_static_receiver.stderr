@@ -1,2 +1,2 @@
-parse error at 2:5: unsupported magic static receiver: self and static resolution is not implemented
+parse error at 2:5: unsupported self static property access: static property storage is not implemented
 

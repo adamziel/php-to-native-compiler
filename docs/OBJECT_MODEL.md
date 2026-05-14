@@ -22,13 +22,17 @@ handle. Inherited method lookup walks the current single-parent chain from the
 receiver class to ancestors. Explicit `parent::method(...)` and
 `parent::__construct(...)` calls are supported from active instance
 method/constructor context and dispatch against the current class's parent
-chain while reusing the current `$this` object. Dynamic method/property
+chain while reusing the current `$this` object. Explicit `self::method(...)`
+calls are supported from active instance method/constructor context and
+dispatch against the current class and inherited method chain while reusing
+the current `$this` object. Dynamic method/property
 names still fail with explicit parse diagnostics. Static
 member access through `::` outside the current parent method-call slice also
 fails with explicit parse diagnostics until static property storage, static
 method dispatch, and class constants exist. Parent static property access,
 parent class constants, and `parent::class` have distinct unsupported
-diagnostics.
+diagnostics, as do self static properties, self class constants, and
+`self::class`.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
@@ -101,6 +105,11 @@ The model follows the PHP lookup rules needed by the first object slice:
   resolved method in the parent chain. They evaluate arguments left to right,
   reuse the current `$this` object, and execute the resolved method with the
   declaring parent class as the active method context;
+- explicit `self::method(...)` calls require active instance method context
+  and a visible non-static method resolved from the current class and inherited
+  method chain. They evaluate arguments left to right, reuse the current
+  `$this` object, and execute the resolved method with the declaring class as
+  the active method context;
 - direct `unset($object->name)` is reserved with an explicit parse diagnostic
   until property uninitialization semantics are modeled;
 - `method_exists($object_or_class, $method)` checks declared and inherited
@@ -232,9 +241,9 @@ default property values, multiple properties in one declaration, constants,
 static property storage, late static binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
-`self`/`parent`/`static` beyond the current explicit parent method-call slice,
-constructor behavior beyond public/inherited public instance `__construct` and
-explicit parent calls, constructor arguments for classes without constructors,
+`self`/`parent`/`static` beyond the current explicit self/parent method-call
+slices, constructor behavior beyond public/inherited public instance
+`__construct` and explicit parent calls, constructor arguments for classes without constructors,
 non-public inherited property slots, property override compatibility,
 non-public property/constructor access, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,

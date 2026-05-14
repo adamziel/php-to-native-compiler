@@ -2373,6 +2373,45 @@ impl Parser {
                 )),
             };
         }
+        if receiver.is_some_and(|receiver| receiver.eq_ignore_ascii_case("self")) {
+            let member = self.peek().clone();
+            return match member.kind {
+                TokenKind::Variable(_) => Err(self.error_at(
+                    operator_span,
+                    "unsupported self static property access: static property storage is not implemented",
+                )),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Err(self
+                    .error_at(
+                        operator_span,
+                        "unsupported self class name constant: self::class resolution is not implemented",
+                    )),
+                TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                    self.advance();
+                    self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                    let args = self.parse_call_arguments_after_open()?;
+                    Ok(Expr::SelfMethodCall {
+                        method,
+                        args,
+                        span: operator_span,
+                    })
+                }
+                TokenKind::Identifier(_) => Err(self.error_at(
+                    operator_span,
+                    "unsupported self class constant access: class constants are not implemented",
+                )),
+                TokenKind::Class => Err(self.error_at(
+                    operator_span,
+                    "unsupported self class name constant: self::class resolution is not implemented",
+                )),
+                _ => Err(self.error_at(
+                    operator_span,
+                    format!(
+                        "expected self member name after '::', found {}",
+                        token_name(&member.kind)
+                    ),
+                )),
+            };
+        }
         if receiver.is_some_and(is_magic_static_receiver) {
             return Err(self.error_at(operator_span, unsupported_magic_static_receiver_message()));
         }
@@ -2593,6 +2632,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
@@ -2647,6 +2687,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
@@ -2681,6 +2722,7 @@ impl Parser {
                     || args.iter().any(Self::expr_contains_assignment)
             }
             Expr::ParentMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
+            Expr::SelfMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
             }
@@ -2759,6 +2801,9 @@ impl Parser {
             Expr::ParentMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
+            Expr::SelfMethodCall { args, .. } => args
+                .iter()
+                .any(Self::expr_contains_unsupported_assignment_rhs),
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -2824,6 +2869,7 @@ impl Parser {
             Expr::ParentMethodCall { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
             }
+            Expr::SelfMethodCall { args, .. } => args.iter().find_map(Self::find_append_index_span),
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
             }

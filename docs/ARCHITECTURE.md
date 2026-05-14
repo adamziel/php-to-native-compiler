@@ -58,8 +58,8 @@ Implemented now:
   public instance properties including inherited public slots, single-parent
   metadata, inherited method lookup, public/same-class private/protected
   same-class and child instance method dispatch, and public/inherited public
-  instance `__construct` plus explicit parent method dispatch with scoped
-  `$this`
+  instance `__construct` plus explicit parent/self method dispatch with
+  scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -1010,19 +1010,21 @@ with `$this` bound to the receiver object handle, and inherited public
 constructors execute during child instantiation. Explicit
 `parent::method(...)` and `parent::__construct(...)` calls execute from active
 instance method/constructor context against the current class's parent chain
-with the current `$this` object. Objects do not enforce
+with the current `$this` object. `self::method(...)` calls execute from active
+instance method/constructor context against the current class and inherited
+method chain with the current `$this` object. Objects do not enforce
 non-public property/constructor visibility, expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 property override compatibility, broader inheritance/constructor semantics, or
 exact PHP lifecycle behavior.
 Static member syntax
 through `::`, including
-`ClassName::$prop`, `ClassName::method()`, `ClassName::CONST`, `self::`, and
-`static::`, is rejected with explicit parse diagnostics until static storage,
-dispatch, late static binding, and class constants exist. Unsupported parent
-static property, parent class constant, and `parent::class` forms also stop at
-distinct parse diagnostics. Native lowering
-rejects class declarations, inheritance metadata, parent method calls, object
+`ClassName::$prop`, `ClassName::method()`, `ClassName::CONST`, and `static::`,
+is rejected with explicit parse diagnostics until static storage, dispatch,
+late static binding, and class constants exist. Unsupported parent/self static
+property, class constant, and class-name constant forms also stop at distinct
+parse diagnostics. Native lowering
+rejects class declarations, inheritance metadata, parent/self method calls, object
 instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct

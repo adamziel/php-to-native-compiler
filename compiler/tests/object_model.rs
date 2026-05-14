@@ -1901,6 +1901,18 @@ fn emit_ir_rejects_parent_method_calls_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_self_method_calls_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nself::make();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -2106,6 +2118,130 @@ $child->call();
     assert_eq!(
         static_parent_method.message,
         "unsupported call Base::make(): static method dispatch through parent:: is not implemented"
+    );
+}
+
+#[test]
+fn self_method_calls_execute_with_current_this_binding() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $id;
+
+    public function baseLabel() {
+        return "base:" . $this->id;
+    }
+
+    protected function bumpBase($amount) {
+        $this->id = $this->id + $amount;
+    }
+}
+
+class Child extends Base {
+    public function __construct($id) {
+        $this->id = $id;
+    }
+
+    private function suffix() {
+        return "child";
+    }
+
+    public function label() {
+        return self::baseLabel() . ":" . self::suffix();
+    }
+
+    public function bump($amount) {
+        self::bumpBase($amount);
+    }
+}
+
+$child = new Child(3);
+echo $child->label(), "\n";
+$child->bump(5);
+echo $child->label(), "\n";
+
+class Ancestor {
+    public function label() {
+        return "ancestor";
+    }
+
+    public function callSelf() {
+        return self::label();
+    }
+}
+
+class Descendant extends Ancestor {
+    public function label() {
+        return "descendant";
+    }
+}
+
+$descendant = new Descendant();
+echo $descendant->callSelf();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "base:3:child\nbase:8:child\nancestor");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn self_method_calls_report_current_unsupported_boundaries() {
+    let top_level = runtime_error(
+        r#"<?php
+self::make();
+"#,
+    );
+
+    assert_eq!(top_level.line, 2);
+    assert_eq!(top_level.column, 5);
+    assert_eq!(
+        top_level.message,
+        "unsupported call self::make(): self method calls require instance method context"
+    );
+
+    let private_parent_method = runtime_error(
+        r#"<?php
+class Base {
+    private function hide() {}
+}
+class Child extends Base {
+    public function call() {
+        self::hide();
+    }
+}
+$child = new Child();
+$child->call();
+"#,
+    );
+
+    assert_eq!(private_parent_method.line, 7);
+    assert_eq!(private_parent_method.column, 13);
+    assert_eq!(
+        private_parent_method.message,
+        "unsupported call Base::hide(): private method dispatch requires same-class method context"
+    );
+
+    let static_self_method = runtime_error(
+        r#"<?php
+class Box {
+    public static function make() {}
+
+    public function call() {
+        self::make();
+    }
+}
+$box = new Box();
+$box->call();
+"#,
+    );
+
+    assert_eq!(static_self_method.line, 6);
+    assert_eq!(static_self_method.column, 13);
+    assert_eq!(
+        static_self_method.message,
+        "unsupported call Box::make(): static method dispatch through self:: is not implemented"
     );
 }
 
@@ -2542,7 +2678,23 @@ self::$value;
 "#,
             2,
             5,
-            "unsupported magic static receiver: self and static resolution is not implemented",
+            "unsupported self static property access: static property storage is not implemented",
+        ),
+        (
+            r#"<?php
+self::VERSION;
+"#,
+            2,
+            5,
+            "unsupported self class constant access: class constants are not implemented",
+        ),
+        (
+            r#"<?php
+self::class;
+"#,
+            2,
+            5,
+            "unsupported self class name constant: self::class resolution is not implemented",
         ),
         (
             r#"<?php

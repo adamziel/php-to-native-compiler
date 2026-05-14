@@ -308,6 +308,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    SelfMethodCall {
+        method: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -389,6 +394,7 @@ impl Expr {
             | Expr::Property { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
+            | Expr::SelfMethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::New { span, .. }

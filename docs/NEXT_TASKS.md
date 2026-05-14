@@ -5816,14 +5816,28 @@ handled.
 
 ## Milestone 649: Self Receiver Boundary
 
-- [ ] Runtime/object lane: choose the next smallest `self::` or static member
+- [x] Runtime/object lane: choose the next smallest `self::` or static member
   boundary: parse and reject `self::method(...)` with class-context-aware
   diagnostics, implement a narrow same-class instance call if feasible, or
   document why static/self dispatch needs a broader storage/design step first.
-  Keep static properties, class constants, late static binding,
-  property override compatibility, trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  explicit.
+  Implemented narrow `self::method(...)` instance-context dispatch with current
+  `$this`, current class/inherited method lookup, public/protected/private
+  visibility checks, and explicit native rejection. Added distinct diagnostics
+  for unsupported self static properties, self class constants, and
+  `self::class`. Kept static properties, static methods, class constants,
+  `static::`, late static binding, property override compatibility, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
+
+## Milestone 650: Static Receiver Continuation
+
+- [ ] Runtime/object lane: choose the next smallest static receiver slice:
+  static method diagnostics through `self::`/`parent::`, a `static::` parse
+  refinement, same-class protected/private constructor visibility, or a
+  documented blocker for static storage and late static binding. Keep static
+  properties, class constants, property override compatibility, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

@@ -97,6 +97,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run focused checks and checkpoint if the full gate
   passes.
 
+## Loop Event 2026-05-14T14:41:52Z
+
+- Task attempted: Milestone 649, narrow `self::method(...)` dispatch for the
+  current object model.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone649/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_magic_static_receiver.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone649`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone649`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: static properties, static methods, class constants,
+  `static::`, late static binding, property override compatibility, traits,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native object lowering remain explicit.
+- Next concrete task: rerun focused checks after docs, then checkpoint if the
+  full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

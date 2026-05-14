@@ -174,6 +174,13 @@
   visibility rules. The call reuses the current `$this` object, evaluates
   positional arguments left-to-right, and executes the resolved parent method
   body with the declaring parent class as the active method context.
+- explicit self method calls by static method name:
+  `self::method(...)` is supported in active instance method/constructor
+  context when the resolved current-class or inherited method is a non-static
+  public/protected/private instance method visible under the current rules.
+  The call reuses the current `$this` object, evaluates positional arguments
+  left-to-right, and executes the resolved method body with the declaring class
+  as the active method context.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
@@ -545,6 +552,8 @@
   allocation with `$this` bound to the new object handle. Explicit
   `parent::__construct(...)` and `parent::method(...)` calls execute in active
   instance method/constructor context against the current single-parent chain.
+  `self::method(...)` calls execute in active instance method/constructor
+  context against the current class and inherited method chain.
   Undefined classes, constructor arguments for classes without constructors,
   non-public constructors, top-level parent calls, parent calls in classes
   without parents, and static parent methods fail with stable runtime
@@ -658,12 +667,11 @@
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions fail with a stable parse diagnostic before
-  class-name constant resolution exists. Magic static receivers `self::` and
-  `static::` fail with a stable parse diagnostic before class-context or
-  late-static-binding resolution exists. `parent::method(...)` calls are the
-  supported parent receiver slice; parent static property access,
-  parent class constants, and `parent::class` fail with stable parse
-  diagnostics.
+  class-name constant resolution exists. `static::` fails with a stable parse
+  diagnostic before late-static-binding resolution exists. `parent::method(...)`
+  and `self::method(...)` calls are the supported magic receiver slices;
+  self/parent static property access, self/parent class constants, and
+  `self::class`/`parent::class` fail with stable parse diagnostics.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
@@ -2528,8 +2536,8 @@
   class constant declarations, constants, parent static properties/constants,
   and anonymous classes
 - static property access, static method calls, class constant access,
-  class-name constant access, and magic static receivers such as `self::`,
-  `parent::`, and `static::` through `::`
+  class-name constant access, unsupported self/parent static
+  property/constant/class-name forms, and `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

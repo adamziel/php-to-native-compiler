@@ -121,6 +121,24 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 649, narrow self receiver method dispatch. The parser now
+  accepts `self::method(...)` calls, and the interpreter executes them from
+  active instance method/constructor context by resolving against the current
+  class and inherited method chain, reusing the current `$this` object, and
+  preserving the resolved declaring class as the active method context.
+  Public, protected, and same-class private instance methods work under the
+  current visibility rules; top-level self calls, inherited private methods,
+  static self methods, self static property/constant access, `self::class`,
+  `static::`, late static binding, broader static member semantics, property
+  override compatibility, traits, magic methods, references/copy-on-write,
+  exact native error objects, and native object lowering remain explicit.
+  Focused verification: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone649`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone649`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -132,10 +150,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 649 should take the next `self::` or static member boundary:
-  parse and reject `self::method(...)` with class-context-aware diagnostics,
-  implement a narrow same-class instance call if feasible, or document why
-  static/self dispatch needs a broader storage/design step first.
+- Milestone 650 should take the next static receiver slice: static method
+  diagnostics through `self::`/`parent::`, a `static::` parse refinement,
+  same-class protected/private constructor visibility, or a documented blocker
+  for static storage and late static binding.
 
 ## 2026-05-12
 
