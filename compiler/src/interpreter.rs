@@ -50,6 +50,7 @@ struct Interpreter {
     call_depth: usize,
     next_object_id: i64,
     function_context: Vec<String>,
+    class_context: Vec<ClassId>,
     stdout: String,
 }
 
@@ -228,6 +229,7 @@ impl Interpreter {
             call_depth: 0,
             next_object_id: 1,
             function_context: Vec::new(),
+            class_context: Vec::new(),
             stdout: String::new(),
         })
     }
@@ -802,12 +804,12 @@ impl Interpreter {
             ));
         }
 
-        if constructor_visibility != Visibility::Public {
+        if !self.can_call_constructor(class_id, constructor_visibility) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     declared_class_name,
-                    "non-public constructors require visibility enforcement, which is not implemented",
+                    "non-public constructors require same-class method context; protected constructor lookup and inheritance are not implemented",
                 ),
             ));
         }
@@ -826,7 +828,7 @@ impl Interpreter {
             values.push(self.evaluate(arg, scope)?);
         }
 
-        self.call_user_function_with_this(function, object.clone(), values)?;
+        self.call_user_function_with_this(function, object.clone(), values, Some(class_id))?;
         Ok(Value::Object(object))
     }
 
@@ -1561,40 +1563,41 @@ impl Interpreter {
             }
         };
 
-        let class = self
-            .classes
-            .get(object.class_id())
-            .expect("object class id should resolve to class metadata");
-        let Some(method) = class.method(method_name) else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::undefined_function(format!("{}::{method_name}()", class.name())),
-            ));
+        let (class_id, class_name, resolved_method_name, visibility, is_static) = {
+            let class = self
+                .classes
+                .get(object.class_id())
+                .expect("object class id should resolve to class metadata");
+            let Some(method) = class.method(method_name) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!("{}::{method_name}()", class.name())),
+                ));
+            };
+            (
+                class.id(),
+                class.name().to_string(),
+                method.name().to_string(),
+                method.visibility(),
+                method.is_static(),
+            )
         };
 
-        if method.is_static() {
+        if is_static {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    format!("{}::{method_name}()", class.name()),
+                    format!("{class_name}::{method_name}()"),
                     "static method dispatch through object receivers is not implemented",
                 ),
             ));
         }
 
-        if method.visibility() != Visibility::Public {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{}::{method_name}()", class.name()),
-                    "non-public method dispatch requires visibility enforcement, which is not implemented",
-                ),
-            ));
-        }
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
         let function = self
             .methods
-            .get(&(class.id(), method.name().to_ascii_lowercase()))
+            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
             .cloned()
             .expect("declared method metadata should have a stored function body");
         let function = function.as_ref();
@@ -1606,7 +1609,43 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_this(function, object, values)
+        self.call_user_function_with_this(function, object, values, Some(class_id))
+    }
+
+    fn can_call_constructor(&self, class_id: ClassId, visibility: Visibility) -> bool {
+        match visibility {
+            Visibility::Public => true,
+            Visibility::Private => self.class_context.last().copied() == Some(class_id),
+            Visibility::Protected => false,
+        }
+    }
+
+    fn ensure_instance_method_visible(
+        &self,
+        class_id: ClassId,
+        class_name: &str,
+        method_name: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> CompileResult<()> {
+        match visibility {
+            Visibility::Public => Ok(()),
+            Visibility::Private if self.class_context.last().copied() == Some(class_id) => Ok(()),
+            Visibility::Private => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "private method dispatch requires same-class method context",
+                ),
+            )),
+            Visibility::Protected => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "protected method dispatch requires inheritance-aware visibility enforcement, which is not implemented",
+                ),
+            )),
+        }
     }
 
     fn evaluate_array_key(
@@ -1721,7 +1760,7 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_checked_values(function, values, None)
+        self.call_user_function_with_checked_values(function, values, None, None)
     }
 
     fn call_user_function_with_values(
@@ -1733,7 +1772,7 @@ impl Interpreter {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
-        self.call_user_function_with_checked_values(function, args, None)
+        self.call_user_function_with_checked_values(function, args, None, None)
     }
 
     fn call_user_function_with_checked_values(
@@ -1741,8 +1780,12 @@ impl Interpreter {
         function: &FunctionDecl,
         args: Vec<Value>,
         this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
+        if let Some(class_context) = class_context {
+            self.class_context.push(class_context);
+        }
         let mut local_scope = SymbolTable::new();
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
@@ -1760,6 +1803,9 @@ impl Interpreter {
                     Ok(value) => value,
                     Err(error) => {
                         self.function_context.pop();
+                        if class_context.is_some() {
+                            self.class_context.pop();
+                        }
                         return Err(error);
                     }
                 }
@@ -1771,6 +1817,9 @@ impl Interpreter {
         let flow = self.execute_statements(&function.body, &mut local_scope);
         self.call_depth -= 1;
         self.function_context.pop();
+        if class_context.is_some() {
+            self.class_context.pop();
+        }
 
         match flow? {
             Flow::Normal => Ok(Value::Null),
@@ -1791,8 +1840,14 @@ impl Interpreter {
         function: &FunctionDecl,
         this_object: PhpObject,
         args: Vec<Value>,
+        class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
-        self.call_user_function_with_checked_values(function, args, Some(this_object))
+        self.call_user_function_with_checked_values(
+            function,
+            args,
+            Some(this_object),
+            class_context,
+        )
     }
 
     fn ensure_user_function_call_depth(

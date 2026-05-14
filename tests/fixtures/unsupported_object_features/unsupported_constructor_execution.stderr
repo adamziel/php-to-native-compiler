@@ -1,2 +1,2 @@
-runtime error at 6:8: unsupported object instantiation for Box: non-public constructors require visibility enforcement, which is not implemented
+runtime error at 6:8: unsupported object instantiation for Box: non-public constructors require same-class method context; protected constructor lookup and inheritance are not implemented
 

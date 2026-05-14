@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, object instantiation, constructor dispatch, public property reads/writes, public instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 #[test]
 fn phpc_run_still_handles_current_object_class_subset() {
@@ -82,7 +82,7 @@ fn emit_ir_rejects_public_property_reads_and_writes_with_specific_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_public_instance_method_calls_with_specific_boundary() {
+fn emit_ir_rejects_instance_method_calls_with_specific_boundary() {
     let error = emit_ir_source("<?php\n$box->label();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
@@ -129,7 +129,7 @@ fn emit_asm_rejects_constructor_argument_instantiation_before_backend_execution(
 }
 
 #[test]
-fn emit_asm_rejects_public_instance_method_calls_before_backend_execution() {
+fn emit_asm_rejects_instance_method_calls_before_backend_execution() {
     let error = emit_asm_source("<?php\n$box->label();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);

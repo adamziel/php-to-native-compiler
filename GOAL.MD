@@ -152,12 +152,13 @@ The major missing areas are not side quests. They are the compatibility roadmap.
 - Arrays are interpreter-supported for a growing subset but still lack full PHP
   copy-on-write/reference behavior, by-reference iteration, recursive/nested
   aliasing semantics, object/resource edge cases, and native lowering.
-- Objects/classes are still minimal: public instance method calls and public
-  instance `__construct` execution with scoped `$this` now execute through
-  `phpc run`, but inheritance, interfaces, traits, enums, static members, class
-  constants, cloning, magic methods, dynamic method/property names, non-public
-  visibility enforcement, broader constructor semantics, and native object
-  lowering are still missing. The interpreter object-handle
+- Objects/classes are still minimal: public instance method calls, same-class
+  private instance method calls, and public instance `__construct` execution
+  with scoped `$this` now execute through `phpc run`, but inheritance,
+  interfaces, traits, enums, static members, class constants, cloning, magic
+  methods, dynamic method/property names, protected visibility, non-public
+  property/constructor visibility enforcement, broader constructor semantics,
+  and native object lowering are still missing. The interpreter object-handle
   identity slice covers assignment, argument/return, array, foreach, strict
   identity, `spl_object_id`, and a current-subset `spl_object_hash`, but
   clone/destruction/reuse and full object execution are still missing.

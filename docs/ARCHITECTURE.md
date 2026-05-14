@@ -55,8 +55,8 @@ Implemented now:
 - ordered PHP arrays with integer/string keys
 - class metadata, object-shape descriptors, and minimal object values for
   `new ClassName(...)` over declared classes, process-local object handles,
-  public instance properties, public instance method dispatch, and public
-  instance `__construct` dispatch with scoped `$this`
+  public instance properties, public and same-class private instance method
+  dispatch, and public instance `__construct` dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -1000,14 +1000,15 @@ type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Public instance methods can
 execute through `phpc run` with `$this` bound to the receiver object handle.
-Objects do not enforce visibility for non-public members, expose reflection,
-implement dynamic method/property names, inheritance, broader constructor
-semantics, or exact PHP lifecycle behavior. Static member syntax
+Objects do not enforce protected visibility or non-public property/constructor
+visibility, expose reflection, implement dynamic method/property names,
+inheritance, broader constructor semantics, or exact PHP lifecycle behavior.
+Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
 with explicit parse diagnostics until static storage, dispatch, and class
 constants exist. Native lowering rejects class declarations, object
-instantiation, object property reads/writes, public instance method calls, and
+instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct
 string-name metadata-exists false-folding slice and string/string

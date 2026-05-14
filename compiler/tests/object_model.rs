@@ -1867,7 +1867,7 @@ $box = new Box();
     assert_eq!(private_constructor.column, 8);
     assert_eq!(
         private_constructor.message,
-        "unsupported object instantiation for Box: non-public constructors require visibility enforcement, which is not implemented"
+        "unsupported object instantiation for Box: non-public constructors require same-class method context; protected constructor lookup and inheritance are not implemented"
     );
 
     let static_constructor = runtime_error(
@@ -2357,6 +2357,42 @@ echo $box->count;
 }
 
 #[test]
+fn private_instance_methods_execute_from_same_class_context() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function label() {
+        return $this->prefix() . ":" . $this->name;
+    }
+
+    public function labelOther($other) {
+        return $other->prefix() . ":" . $other->name;
+    }
+
+    private function prefix() {
+        return "private";
+    }
+}
+
+$left = new Box("Ada");
+$right = new Box("Grace");
+echo $left->label(), "\n";
+echo $left->labelOther($right);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "private:Ada\nprivate:Grace");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn instance_method_dispatch_reports_current_unsupported_boundaries() {
     let non_object = runtime_error(
         r#"<?php
@@ -2395,7 +2431,29 @@ $box->secret();
     assert_eq!(private_method.column, 1);
     assert_eq!(
         private_method.message,
-        "unsupported call Box::secret(): non-public method dispatch requires visibility enforcement, which is not implemented"
+        "unsupported call Box::secret(): private method dispatch requires same-class method context"
+    );
+
+    let protected_method = runtime_error(
+        r#"<?php
+class Box {
+    public function callSeal() {
+        return $this->seal();
+    }
+
+    protected function seal() {
+        return "sealed";
+    }
+}
+$box = new Box();
+$box->callSeal();
+"#,
+    );
+    assert_eq!(protected_method.line, 4);
+    assert_eq!(protected_method.column, 16);
+    assert_eq!(
+        protected_method.message,
+        "unsupported call Box::seal(): protected method dispatch requires inheritance-aware visibility enforcement, which is not implemented"
     );
 
     let static_method = runtime_error(

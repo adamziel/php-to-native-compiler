@@ -5739,12 +5739,23 @@ handled.
 
 ## Milestone 643: Non-public Method and Constructor Visibility Boundary
 
-- [ ] Runtime/object lane: add the next honest visibility slice: either execute
+- [x] Runtime/object lane: add the next honest visibility slice: either execute
   private methods/constructors only from same-class `$this` context with tests,
   or introduce a sharper runtime call-context model and keep non-public access
-  rejected with more precise diagnostics. Keep inheritance, protected lookup,
+  rejected with more precise diagnostics. Added same-class private instance
+  method dispatch with runtime class-context tracking, while protected lookup,
+  private constructors without an in-class construction surface, inheritance,
   traits, magic methods, references/copy-on-write, exact native error objects,
-  and native lowering explicit.
+  and native lowering remain explicit.
+
+## Milestone 644: Protected Visibility and Inheritance Prerequisite
+
+- [ ] Runtime/object lane: choose the next smallest honest visibility step:
+  implement single-parent `extends` metadata and protected same-class/child
+  method lookup, or document the exact inheritance/call-context blocker with
+  sharper diagnostics. Keep property visibility, trait composition, static
+  dispatch, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

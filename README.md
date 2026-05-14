@@ -96,8 +96,8 @@ incorrect native code.
   and executable magic constants documented in the support matrix
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public instance `__construct`, public instance property reads/writes, public
-  instance method calls with scoped `$this`, object `isset` and `empty`, and
-  selected metadata builtins
+  and same-class private instance method calls with scoped `$this`, object
+  `isset` and `empty`, and selected metadata builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
@@ -105,8 +105,9 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, inheritance, interfaces, traits,
 enums, constructor behavior beyond public instance `__construct`, visibility
-enforcement beyond the current public property/method/constructor slice,
-dynamic method/property names, resources, and native extension integration.
+enforcement beyond the current public property/private-method/constructor
+slice, dynamic method/property names, resources, and native extension
+integration.
 
 ### Native Path
 

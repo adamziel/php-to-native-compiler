@@ -153,13 +153,14 @@
   positional arguments, and the current default-parameter subset.
 - public instance property reads and direct-variable writes by static property
   name: `$object->name` and `$object->name = ...`
-- public instance method calls by static method name:
+- public and same-class private instance method calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
-  public instance method case-insensitively, evaluates positional arguments
+  instance method case-insensitively, evaluates positional arguments
   left-to-right, executes the method body in a fresh local scope, and binds
   `$this` to the current object handle so `$this->property` reads/writes share
-  the caller-visible object slots. Current method calls reuse the existing
-  user-function parameter/default/return subset.
+  the caller-visible object slots. Private methods are callable only while
+  executing a method on the same declaring class. Current method calls reuse the
+  existing user-function parameter/default/return subset.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
@@ -634,10 +635,10 @@
   class-name constant resolution exists. Magic static receivers such as
   `self::`, `parent::`, and `static::` fail with a stable parse diagnostic
   before class-context, parent-class, or late-static-binding resolution exists.
-  Public instance method dispatch supports static method names and scoped
-  `$this` binding. Dynamic method names, dynamic property names, non-public
-  method/property visibility context, static storage, class constants,
-  shallow/deep clone property
+  Public and same-class private instance method dispatch supports static method
+  names and scoped `$this` binding. Dynamic method names, dynamic property
+  names, protected method lookup, non-public property/constructor visibility
+  context, static storage, class constants, shallow/deep clone property
   copying, `__clone`, inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
@@ -1433,7 +1434,7 @@
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
   Native class declarations, object instantiation, constructor dispatch, public
-  property reads/writes, public instance method calls, and object metadata
+  property reads/writes, instance method calls, and object metadata
   builtins beyond scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
   false folding, including string/string `property_exists` and
@@ -2336,8 +2337,8 @@
   multi-property declarations, class constant declarations, constants, static
   property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
-  dynamic property names, dynamic method names, non-public method/property
-  visibility context, static member execution
+  dynamic property names, dynamic method names, protected method lookup,
+  non-public property/constructor visibility context, static member execution
   through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
@@ -2469,9 +2470,10 @@
   imports exist
 - dynamic method names and dynamic property names; `$object->$name` and
   `$object->$method()` currently fail with stable parse diagnostics
-- non-public instance method dispatch, static methods called through object
-  receivers, and `$this` outside instance method execution currently fail with
-  stable runtime diagnostics
+- private instance method dispatch outside same-class method context, protected
+  instance method dispatch, static methods called through object receivers, and
+  `$this` outside instance method execution currently fail with stable runtime
+  diagnostics
 - non-public object property access and property writes to lvalues other than a
   direct variable
 - constructor arguments for classes without a declared constructor, non-public

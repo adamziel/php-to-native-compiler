@@ -42,6 +42,14 @@ Implemented:
   properties, parent constructors, inheritance, named arguments,
   references/copy-on-write, exact native error objects, and native object
   lowering explicit.
+- Added Milestone 643, same-class private instance method dispatch. The
+  interpreter now tracks the active class context while executing instance
+  methods and constructors, allows private instance methods from same-class
+  method bodies including calls on another same-class object, keeps top-level
+  private calls and protected method calls as stable runtime diagnostics, and
+  leaves private constructors without an in-class construction surface,
+  inheritance/protected lookup, traits, magic methods, references/copy-on-write,
+  exact native error objects, and native object lowering explicit.
 
 Next:
 
@@ -53,9 +61,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 643 should take the next object visibility slice: same-class
-  private method/constructor access if the current runtime call context is
-  sufficient, or a documented call-context prerequisite if it is not.
+- Milestone 644 should take the next protected-visibility prerequisite:
+  single-parent inheritance metadata and protected same-class/child method
+  lookup if feasible, or a documented blocker if inheritance context needs a
+  sharper design first.
 
 ## 2026-05-12
 

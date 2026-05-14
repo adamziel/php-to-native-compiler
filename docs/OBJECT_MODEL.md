@@ -12,10 +12,10 @@ property name and check direct public property operands with
 `empty($object->name)`. Objects are now represented as process-local handles, so
 assignment, function argument/return binding, array storage, and foreach
 by-value over object values preserve object identity and shared property slots.
-It can also dispatch public instance methods by static method name through
-`$object->method(...)`; method bodies run in a fresh local scope with `$this`
-bound to the current object handle. Dynamic method/property names still fail
-with explicit parse diagnostics. Static
+It can also dispatch public and same-class private instance methods by static
+method name through `$object->method(...)`; method bodies run in a fresh local
+scope with `$this` bound to the current object handle. Dynamic method/property
+names still fail with explicit parse diagnostics. Static
 member access through `::` also fails with explicit parse diagnostics until
 static property storage, static method dispatch, and class constants exist.
 The current introspection slice can check declared methods with
@@ -77,10 +77,11 @@ The model follows the PHP lookup rules needed by the first object slice:
   and false for null or missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
   missing slots, undefined target variables, and non-object target variables;
-- public instance method calls use case-insensitive declared method lookup,
-  enforce the current public-only instance-method boundary, evaluate arguments
-  left to right, bind `$this` to the receiver object handle, and reuse the
-  current user-function parameter/default/return subset;
+- public and same-class private instance method calls use case-insensitive
+  declared method lookup, evaluate arguments left to right, bind `$this` to the
+  receiver object handle, and reuse the current user-function
+  parameter/default/return subset. Private methods require an active
+  same-class method context;
 - direct `unset($object->name)` is reserved with an explicit parse diagnostic
   until property uninitialization semantics are modeled;
 - `method_exists($object_or_class, $method)` checks declared method metadata
@@ -154,15 +155,16 @@ not stored in object values. Static member expressions such as
 by the parser instead of falling through to generic expression errors.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
-static identifier naming a declared public instance method. The receiver is
-evaluated first, arguments are evaluated left to right after metadata checks,
-and the method body runs with `$this` bound to the receiver object handle.
-Missing methods, non-object receivers, non-public methods, static methods
-called through an object receiver, and `$this` outside instance method
-execution report stable runtime diagnostics.
+static identifier naming a declared public instance method or a private method
+called from a same-class method context. The receiver is evaluated first,
+arguments are evaluated left to right after metadata checks, and the method
+body runs with `$this` bound to the receiver object handle. Missing methods,
+non-object receivers, private methods outside same-class method context,
+protected methods, static methods called through an object receiver, and
+`$this` outside instance method execution report stable runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
-property reads/writes, and public instance method calls until metadata, object
+property reads/writes, and instance method calls until metadata, object
 allocation, property slots, object handles, method dispatch, and diagnostics
 have explicit lowering support.
 Native lowering also rejects `method_exists` through the current function-call
@@ -205,7 +207,7 @@ autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static`, constructor behavior beyond public instance
 `__construct`, constructor arguments for classes without constructors,
-non-public method/property/constructor access, dynamic method/property names,
+protected method lookup, non-public property/constructor access, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
