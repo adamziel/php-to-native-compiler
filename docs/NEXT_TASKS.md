@@ -6070,10 +6070,23 @@ handled.
 
 ## Milestone 667: Object Static Continuation
 
+- [x] Runtime/object lane: implement the first named static-method dispatch
+  slice. `ClassName::method(...)` now executes declared or inherited visible
+  static methods through `phpc run`, evaluates positional arguments after
+  metadata and arity checks, runs without `$this`, and preserves the declaring
+  class as the active class context for current `self::class` and static
+  property access. Kept static dispatch through `self::`, `parent::`, object
+  receivers, and late-bound `static::method(...)`, broader class constant
+  semantics, typed/default static property metadata, trait composition, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering explicit.
+
+## Milestone 668: Object Static Continuation
+
 - [ ] Runtime/object lane: choose the next object storage/static slice:
-  executable static method dispatch prerequisites, broader class constant
-  semantics, typed/default static property metadata, or a documented blocker.
-  Keep late static binding, trait composition, magic methods,
+  `self::`/`parent::` static method dispatch prerequisites, broader class
+  constant semantics, typed/default static property metadata, or a documented
+  blocker. Keep late static binding, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
 

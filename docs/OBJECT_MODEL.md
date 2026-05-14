@@ -243,8 +243,9 @@ untyped/no-default static property slice. `unset(ClassName::$prop)`,
 `unset(self::$prop)`, and `unset(parent::$prop)` are parsed and report a
 stable runtime diagnostic because PHP forbids unsetting static properties; they
 do not remove static storage. Named static method expressions such as
-`ClassName::method(...)` report stable runtime diagnostics before argument
-evaluation or static dispatch.
+`ClassName::method(...)` execute for declared or inherited visible static
+methods under the current positional/default-parameter subset, without `$this`,
+and with the declaring class as the active class context.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
@@ -263,12 +264,12 @@ private method called from a same-class method context, or a protected method
 called from a same-class/child method context. The receiver is evaluated first,
 arguments are evaluated left to right after metadata checks, and the method
 body runs with `$this` bound to the receiver object handle. Named
-`ClassName::method(...)` calls are accepted only as a non-executable runtime
-boundary for now. Missing methods,
+`ClassName::method(...)` calls execute visible static methods without binding
+`$this`. Missing methods,
 non-object receivers, private methods outside same-class method context,
 protected methods outside same-class/child context, static methods called
-through named, object, `self::`, or `parent::` receivers, and `$this` outside
-instance method execution report stable runtime diagnostics.
+through object, `self::`, or `parent::` receivers, and `$this` outside instance
+or static method execution report stable runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
 property reads/writes, class-name constants, class constants, parent method

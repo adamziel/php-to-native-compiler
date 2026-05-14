@@ -419,6 +419,25 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone666`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone666`
   passed.
+- Added Milestone 667, the first named static-method dispatch slice.
+  `ClassName::method(...)` now executes declared or inherited visible static
+  methods through `phpc run`, checks metadata and arity before evaluating
+  positional arguments, runs without `$this`, and preserves the declaring class
+  as the active class context for current `self::class` and static-property
+  access. Static dispatch through `self::`, `parent::`, object receivers, and
+  late-bound `static::method(...)`, broader class constant semantics,
+  typed/default static property metadata, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit. Focused verification:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model named_static_methods_execute_current_public_subset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model named_static_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone666`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone666`,
+  `cargo run -p phpc -- test tests/fixtures/milestone667`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone667`
+  passed.
 
 Next:
 
@@ -430,9 +449,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 667 should take the next object storage/static slice: executable
-  static method dispatch prerequisites, broader class constant semantics,
-  typed/default static property metadata, or a documented blocker.
+- Milestone 668 should take the next object storage/static slice:
+  `self::`/`parent::` static method dispatch prerequisites, broader class
+  constant semantics, typed/default static property metadata, or a documented
+  blocker.
 
 ## 2026-05-12
 

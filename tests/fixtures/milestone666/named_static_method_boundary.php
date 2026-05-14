@@ -1,6 +1,8 @@
 <?php
 class Box {
-    public static function make($value) {}
+    public static function make($value) {
+        return "made:" . $value;
+    }
 }
 
-Box::make(missing_call());
+echo Box::make("ok");

@@ -62,6 +62,25 @@ lets the project move toward that goal while preserving correctness.
 
 The compatibility goal has three tiers.
 
+The goal is complete only when the repository can prove these outcomes with
+committed commands and fixtures:
+
+- PHP language conformance suites are pinned, runnable, and tracked by PHP
+  version, with expected deviations documented.
+- `phpc run` can execute multi-file PHP applications with namespaces,
+  autoloading, dynamic lookup, references, copy-on-write, objects, exceptions,
+  standard library behavior, and extension-backed services sufficient for real
+  applications.
+- `phpc compile` can either produce native executable behavior for a documented
+  subset or reject unsupported constructs before lowering with stable
+  diagnostics; no native path may claim WordPress compatibility by delegating to
+  untracked interpreter behavior.
+- A committed WordPress target can bootstrap, load plugins/themes, exercise
+  representative front-end/admin/REST/WP-CLI flows, and compare observable
+  behavior against stock PHP under documented host assumptions.
+- The project can explain every remaining fallback zone as an explicit
+  compatibility strategy with tests, not as an undocumented escape hatch.
+
 ### Tier 1: PHP Language Compatibility
 
 Support the language behavior needed by current PHP branches, while keeping
@@ -119,7 +138,8 @@ targets with documented environment assumptions.
 Required work includes:
 
 - a committed WordPress compatibility harness using a pinned WordPress core
-  version, then tracking current stable core deliberately;
+  version, starting with WordPress 6.9 as the current compatibility table row
+  to track, then tracking later stable core deliberately;
 - bootstrap/load tests for `wp-settings.php`, plugin/theme loading, hooks,
   filters, shortcode/block registration paths, REST routing, admin/front-end
   request setup, and WP-CLI-shaped execution where feasible;
@@ -141,6 +161,23 @@ External target references checked on 2026-05-14:
 ## Missing Work Reconciled
 
 The major missing areas are not side quests. They are the compatibility roadmap.
+
+For full PHP and WordPress compatibility, the highest-risk missing systems are:
+
+1. Multi-file program structure: include/require, namespaces, aliases,
+   autoloading, source mapping, and path resolution.
+2. PHP value semantics: references, aliasing, copy-on-write, by-reference
+   parameters/returns, and mutation ordering.
+3. Object semantics: executable static dispatch, late static binding, typed and
+   default properties, magic methods, interfaces, traits, enums, cloning,
+   destructors, reflection, and exact visibility behavior.
+4. Error and control behavior: PHP-shaped exceptions, warnings/notices,
+   recoverable errors, output buffering, stack traces, and partial stdout.
+5. Runtime services: standard-library and extension behavior for filesystem,
+   streams, JSON, XML, HTTP, database, encoding, crypto, date/time, sessions,
+   cookies, superglobals, and ini/environment state.
+6. Native execution: runtime ABI, linked binaries, boxed values, stack frames,
+   heap/lifetime management, helper calls, and native diagnostics.
 
 - Native execution is missing linked binaries, runtime ABI, boxed values in
   generated code, stack frames, heap management, runtime helper calls,
@@ -166,10 +203,11 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` with direct
   reads/writes, read-modify-write, `isset`/`empty`, `??`, `??=` forms, and
   stable diagnostics for PHP-forbidden static-property `unset(...)`, now execute through
-  `phpc run`, but interfaces, traits, enums, executable static method dispatch, broader static
-  member semantics, broader class constant semantics, cloning, magic methods,
-  dynamic method/property names, broader
-  `parent::`/`self::`/`static::`, typed/default property compatibility,
+  `phpc run`, but interfaces, traits, enums, broader static method dispatch
+  through `self::`/`parent::`/`static::`, broader static member semantics,
+  broader class constant semantics, cloning, magic methods, dynamic
+  method/property names, broader `parent::`/`self::`/`static::`,
+  typed/default property compatibility,
   broader constructor/inheritance rules, and native object lowering are still
   missing.
   The interpreter object-handle identity slice covers assignment,

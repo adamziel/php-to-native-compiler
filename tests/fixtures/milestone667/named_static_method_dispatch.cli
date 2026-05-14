@@ -1,6 +1,9 @@
 exit: 0
 stdout:
-made:ok
+1
+5
+Base
+ok
 --- stdout end ---
 stderr:
 --- stderr end ---

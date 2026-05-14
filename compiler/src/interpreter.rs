@@ -811,7 +811,7 @@ impl Interpreter {
                 method,
                 args,
                 span,
-            } => self.call_named_static_method(class_name, method, args, *span),
+            } => self.call_named_static_method(class_name, method, args, *span, scope),
             Expr::SelfMethodCall { method, args, span } => {
                 self.call_self_method(method, args, *span, scope)
             }
@@ -2093,11 +2093,12 @@ impl Interpreter {
     }
 
     fn call_named_static_method(
-        &self,
+        &mut self,
         class_name: &str,
         method_name: &str,
-        _args: &[Expr],
+        args: &[Expr],
         span: Span,
+        caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let class_id = self
             .classes
@@ -2125,13 +2126,37 @@ impl Interpreter {
         };
 
         if is_static {
-            return Err(runtime_error(
+            self.ensure_instance_method_visible(
+                declaring_class_id,
+                &declaring_class_name,
+                method_name,
+                visibility,
                 span,
-                RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{method_name}()"),
-                    "static method dispatch through named receivers is not implemented",
-                ),
-            ));
+            )?;
+
+            let function = self
+                .methods
+                .get(&(
+                    declaring_class_id,
+                    _resolved_method_name.to_ascii_lowercase(),
+                ))
+                .cloned()
+                .expect("declared static method metadata should have a stored function body");
+            let function = function.as_ref();
+            ensure_user_function_arity(function, args.len(), span)?;
+            self.ensure_user_function_call_depth(function, span)?;
+
+            let mut values = Vec::with_capacity(args.len());
+            for arg in args {
+                values.push(self.evaluate(arg, caller_scope)?);
+            }
+
+            return self.call_user_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(declaring_class_id),
+            );
         }
 
         self.ensure_instance_method_visible(

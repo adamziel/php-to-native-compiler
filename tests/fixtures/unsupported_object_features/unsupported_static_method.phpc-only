@@ -1,1 +1,1 @@
-phpc intentionally reports a stable runtime boundary before static method dispatch exists.
+phpc intentionally reports a stable runtime boundary before self:: static method dispatch exists.

@@ -3034,38 +3034,46 @@ $box->call();
 }
 
 #[test]
-fn named_static_method_calls_report_current_unsupported_boundaries() {
-    let static_method = runtime_error(
+fn named_static_methods_execute_current_public_subset() {
+    let execution = run_source(
         r#"<?php
-class Box {
-    public static function make($value) {}
-}
-Box::make(missing_call());
-"#,
-    );
-    assert_eq!(static_method.line, 5);
-    assert_eq!(static_method.column, 4);
-    assert_eq!(
-        static_method.message,
-        "unsupported call Box::make(): static method dispatch through named receivers is not implemented"
-    );
+class Counter {
+    public static $count;
 
-    let inherited_static_method = runtime_error(
-        r#"<?php
+    public static function bump($step = 1) {
+        self::$count ??= 0;
+        self::$count += $step;
+        return self::$count;
+    }
+}
 class Base {
-    public static function make() {}
+    public static function name() {
+        return self::class;
+    }
 }
 class Child extends Base {}
-Child::make();
-"#,
-    );
-    assert_eq!(inherited_static_method.line, 6);
-    assert_eq!(inherited_static_method.column, 6);
-    assert_eq!(
-        inherited_static_method.message,
-        "unsupported call Base::make(): static method dispatch through named receivers is not implemented"
-    );
+class Hidden {
+    private static $secret;
 
+    public static function setSecret($value) {
+        self::$secret = $value;
+        return self::$secret;
+    }
+}
+
+echo Counter::bump(), "\n";
+echo Counter::bump(4), "\n";
+echo Child::name(), "\n";
+echo Hidden::setSecret("ok");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\n5\nBase\nok");
+}
+
+#[test]
+fn named_static_method_calls_report_current_unsupported_boundaries() {
     let non_static_method = runtime_error(
         r#"<?php
 class Box {
@@ -3079,6 +3087,67 @@ Box::make();
     assert_eq!(
         non_static_method.message,
         "unsupported call Box::make(): non-static method dispatch through named static receivers is not implemented"
+    );
+
+    let private_method = runtime_error(
+        r#"<?php
+class Box {
+    private static function make() {}
+}
+Box::make();
+"#,
+    );
+    assert_eq!(
+        private_method.message,
+        "unsupported call Box::make(): private method dispatch requires same-class method context"
+    );
+
+    let protected_method = runtime_error(
+        r#"<?php
+class Box {
+    protected static function make() {}
+}
+Box::make();
+"#,
+    );
+    assert_eq!(
+        protected_method.message,
+        "unsupported call Box::make(): protected method dispatch requires same-class or child method context"
+    );
+
+    let self_static_method = runtime_error(
+        r#"<?php
+class Box {
+    public static function make() {}
+
+    public static function call() {
+        self::make();
+    }
+}
+Box::call();
+"#,
+    );
+    assert_eq!(
+        self_static_method.message,
+        "unsupported call self::make(): self method calls require current $this object context"
+    );
+
+    let parent_static_method = runtime_error(
+        r#"<?php
+class Base {
+    public static function make() {}
+}
+class Child extends Base {
+    public static function call() {
+        parent::make();
+    }
+}
+Child::call();
+"#,
+    );
+    assert_eq!(
+        parent_static_method.message,
+        "unsupported call parent::make(): parent method calls require current $this object context"
     );
 
     let missing_method = runtime_error(
