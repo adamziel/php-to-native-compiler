@@ -5613,10 +5613,53 @@ handled.
   record focused verification commands, and identify the next checkpoint point
   where the serialized full gate should run.
 
+## Milestone 630: Compatibility Harness Foundation
+
+- [x] Tests/docs lane: create the first PHP/WordPress compatibility manifest
+  that names target PHP branches, target WordPress core version policy,
+  required host/environment assumptions, smoke-suite commands, and status
+  categories (`pass`, `fail`, `skipped-unsupported`, `not-covered`). This must
+  not claim compatibility; it only makes the missing work measurable. Selected
+  candidate: added `docs/COMPATIBILITY.md` with current PHP/WordPress external
+  targets, current subset smoke commands, status categories, current
+  not-covered WordPress/native/PHP-branch matrix entries, and first blockers to
+  convert into work.
+
+## Milestone 631: PHP Compatibility Smoke Targets
+
+- [ ] Runtime/parser lane: add the first tiny PHP-compatibility smoke fixture
+  group that is intentionally broader than a unit feature slice, compare it
+  against system PHP where feasible, and record every skipped or failing case
+  with a named unsupported reason.
+
+## Milestone 632: WordPress Bootstrap Inventory
+
+- [ ] Tests/docs lane: add a pinned WordPress core compatibility inventory plan
+  that starts with parse/load blockers for `wp-settings.php` and bootstrap
+  dependencies, names required PHP extensions and host state, and defines the
+  first non-networked smoke target. Do not vendor WordPress or claim bootstrap
+  support until a repeatable harness exists.
+
+## Milestone 633: Program Structure Prerequisite
+
+- [ ] Parser/runtime lane: choose the smallest include/require or namespace
+  prerequisite needed by the WordPress bootstrap inventory, implement or tighten
+  its explicit unsupported boundary with CLI coverage, and keep native lowering
+  honest.
+
+## Milestone 634: Native Runtime Prerequisite
+
+- [ ] IR/lowering/compiler-output lane: define the first runtime-backed native
+  execution prerequisite as code or a design artifact with tests: generated-code
+  ABI, boxed value handoff, runtime helper call, link/run command, or a precise
+  rejection boundary that blocks misleading native compatibility claims.
+
 ## Latest Checkpoint
 
 - The current checkpoint records the completed split-lane work through
-  Milestone 624 and opens the next lane queue at Milestones 625-629.
+  Milestone 624 and opens the next lane queue at Milestones 625-629. Milestone
+  630 was closed afterward as a docs/compatibility-manifest step and should be
+  included in the next checkpoint.
 - Checkpoint verification:
   `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-620-624 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
   passed with Rust tests successful, `phpc test` reporting 722 fixture tests

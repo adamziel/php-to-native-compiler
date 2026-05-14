@@ -12947,6 +12947,23 @@ Next:
 
 Next:
 
+- Reconciled the project goal around full PHP and WordPress compatibility
+  without weakening the evidence policy. `GOAL.MD` now names full PHP and
+  WordPress compatibility as the long-term north star, records what the project
+  has actually been building so far, and folds the known missing areas into the
+  compatibility roadmap instead of treating them as unrelated gaps.
+- Added `docs/COMPATIBILITY.md` as the first compatibility manifest. It records
+  the externally checked PHP and WordPress target baselines as of 2026-05-14,
+  status categories, current subset smoke commands, current not-covered entries
+  for PHP branch matrices, php-src-style tests, linked native execution, and
+  WordPress bootstrap/request/plugin/theme targets, plus first blockers to turn
+  into work.
+- Updated `docs/NEXT_TASKS.md` to close Milestone 630 and open compatibility
+  follow-up tasks for PHP smoke fixtures, WordPress bootstrap inventory,
+  program-structure prerequisites, and native runtime prerequisites.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`

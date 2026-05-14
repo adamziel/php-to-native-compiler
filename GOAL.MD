@@ -2,11 +2,18 @@
 
 ## Slash Goal Objective
 
-Build this repository into a real, honest PHP-to-native compiler in stable Rust:
-advance one small verified PHP feature or native-lowering slice at a time, keep
-`phpc run` and `phpc compile` boundaries explicit, keep tests green, and never
-claim support without executable code, CLI coverage, documentation, and named
-unsupported edge cases.
+Build this repository into a real, honest PHP-to-native compiler in stable Rust
+with a long-term target of full PHP and WordPress compatibility. The target
+includes the difficult parts: references, copy-on-write, dynamic lookup,
+multi-file execution, object semantics, standard-library and extension behavior,
+database and filesystem integration, web/SAPI-like runtime state, and native
+runtime integration.
+
+The path to that target remains evidence-driven: advance one small verified PHP
+feature, compatibility harness, runtime semantic, or native-lowering slice at a
+time; keep `phpc run` and `phpc compile` boundaries explicit; keep tests green;
+and never claim support without executable code, CLI coverage, documentation,
+and named unsupported edge cases.
 
 ## Product Target
 
@@ -24,9 +31,139 @@ Its first durable target is a documented PHP subset that can:
 - preserve accurate support documentation for every supported and unsupported
   feature.
 
-Long term, the compiler should support enough PHP semantics to run meaningful
-real-world, framework-shaped code. Dynamic PHP features may use interpreter or
-runtime fallback zones, but those fallback zones must be explicit and tested.
+Long term, the compiler should support enough PHP semantics to run real PHP
+applications, including WordPress core, representative plugins, themes, and
+CLI/admin/front-end request flows. Dynamic PHP features may use interpreter or
+runtime fallback zones, but those fallback zones must be explicit and tested,
+and they must remain stepping stones toward compatibility rather than excuses to
+avoid difficult semantics.
+
+## What We Have Been Doing
+
+The work so far has been building the substrate for compatibility without lying
+about it. That means:
+
+- a real lexer/parser instead of regex parsing;
+- a PHP-shaped runtime value model for scalars, arrays, constants, and a minimal
+  object/class slice;
+- an interpreter path that can execute a growing tested subset through
+  `phpc run`;
+- a native path that deliberately compiles less than the interpreter and rejects
+  unsupported lowering before emitting misleading IR or assembly;
+- fixture and system-PHP comparison infrastructure so new behavior can be
+  checked against PHP rather than guessed;
+- stable unsupported diagnostics so missing features are visible work items,
+  not silent miscompilations.
+
+This is not yet "a PHP compiler that runs WordPress." It is the foundation that
+lets the project move toward that goal while preserving correctness.
+
+## Compatibility North Star
+
+The compatibility goal has three tiers.
+
+### Tier 1: PHP Language Compatibility
+
+Support the language behavior needed by current PHP branches, while keeping
+version-specific behavior explicit. As of 2026-05-14, php.net lists PHP
+8.2-8.5 as supported branches, with 8.2 in security support and 8.3-8.5 in the
+active/security lifecycle. The project should track this moving target in docs
+and tests instead of freezing an obsolete PHP version.
+
+Required work includes:
+
+- full expression, statement, declaration, namespace, include/require, and
+  autoload semantics;
+- references, aliasing, copy-on-write, foreach-by-reference, and mutation
+  ordering;
+- PHP object execution: constructors, methods, `$this`, visibility,
+  inheritance, interfaces, traits, enums, anonymous classes, static members,
+  class constants, magic methods, and object identity;
+- exceptions, errors, warnings, notices, stack traces, output buffering, and
+  partial-output behavior;
+- attributes, typed properties, type declarations, union/intersection types,
+  nullable types, `strict_types`, generators, closures, arrow functions,
+  first-class callables, named arguments, variadics, splat/unpack behavior, and
+  modern control constructs such as `match`;
+- source mapping and version-specific diagnostics that can be compared against
+  system PHP.
+
+### Tier 2: PHP Runtime, Standard Library, And Extensions
+
+Support the runtime services real applications rely on, not only syntax.
+
+Required work includes:
+
+- core standard library behavior across strings, arrays, filesystem, streams,
+  dates, regex, filters, sessions, serialization, hashes, password APIs, and
+  reflection;
+- extension slices used by real applications, with focused support docs for
+  `json`, `mbstring`, `intl`, XML/DOM/SimpleXML, `curl`, `openssl`, `zip`,
+  `zlib`, GD/ImageMagick boundaries, PDO/MySQLi, SQLite, opcache-like
+  assumptions, and cache integrations where applicable;
+- superglobals, request/server environment, cookies, uploaded files, headers,
+  response status, ini settings, locale/timezone behavior, and stream wrappers;
+- exact enough error, warning, coercion, and deprecation behavior to pass
+  compatibility fixtures.
+
+### Tier 3: WordPress Compatibility
+
+Treat WordPress as an explicit application target, not an implied side effect.
+As of 2026-05-14, WordPress.org recommends PHP 8.3 or greater, MariaDB 10.6+
+or MySQL 8.0+, and HTTPS for a modern host baseline; it also documents legacy
+runtime compatibility down to PHP 7.2.24+ for current WordPress. The compiler
+goal is not met until this repo can run committed WordPress compatibility
+targets with documented environment assumptions.
+
+Required work includes:
+
+- a committed WordPress compatibility harness using a pinned WordPress core
+  version, then tracking current stable core deliberately;
+- bootstrap/load tests for `wp-settings.php`, plugin/theme loading, hooks,
+  filters, shortcode/block registration paths, REST routing, admin/front-end
+  request setup, and WP-CLI-shaped execution where feasible;
+- filesystem, database, HTTP, JSON, XML, mbstring/intl, password/hash,
+  serialization, sessions/cookies, object cache, and options/transients
+  behavior required by WordPress core;
+- compatibility fixtures for representative plugins and themes after core
+  bootstrap is credible;
+- documented fallback policy for dynamic extension or host integrations that
+  cannot yet be native-compiled.
+
+External target references checked on 2026-05-14:
+
+- PHP supported branches: https://www.php.net/supported-versions.php
+- WordPress host requirements: https://wordpress.org/about/requirements/
+- WordPress PHP compatibility table:
+  https://make.wordpress.org/core/handbook/references/php-compatibility-and-wordpress-versions/
+
+## Missing Work Reconciled
+
+The major missing areas are not side quests. They are the compatibility roadmap.
+
+- Native execution is missing linked binaries, runtime ABI, boxed values in
+  generated code, stack frames, heap management, runtime helper calls,
+  process-level execution semantics, and native diagnostics.
+- The interpreter is missing large parts of PHP syntax and semantics:
+  namespaces, includes, autoload, references, copy-on-write, closures,
+  generators, exceptions, type declarations, attributes, destructuring, spreads,
+  resources, and exact warning/recovery behavior.
+- Arrays are interpreter-supported for a growing subset but still lack full PHP
+  copy-on-write/reference behavior, by-reference iteration, recursive/nested
+  aliasing semantics, object/resource edge cases, and native lowering.
+- Objects/classes are still minimal: no method dispatch, constructors, `$this`,
+  inheritance, interfaces, traits, enums, static members, class constants,
+  object identity, cloning, magic methods, or full visibility enforcement.
+- Standard-library and extension coverage is broad only in selected array and
+  scalar areas; real app compatibility needs filesystem, streams, regex, JSON,
+  XML, HTTP, database, crypto, encoding, date/time, reflection, sessions, and
+  environment APIs.
+- WordPress compatibility needs a pinned harness, bootstrap fixtures, database
+  and filesystem integration strategy, hook/filter execution confidence,
+  extension coverage, and plugin/theme smoke targets.
+- The support matrix must keep distinguishing four things: parsed syntax,
+  `phpc run` interpreter support, native IR/assembly support, and future
+  native executable support.
 
 ## Current Baseline
 
@@ -46,8 +183,8 @@ The repository already has a working Rust workspace with:
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
-`docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `README.md`, and
-`docs/LOOP_MEMORY.md` when running unattended loop automation.
+`docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,
+`README.md`, and `docs/LOOP_MEMORY.md` when running unattended loop automation.
 
 ## Definition of Done
 
@@ -292,8 +429,10 @@ Scope:
 - start with self-contained scripts using arrays, functions, classes, includes,
   and selected core builtins;
 - then move to framework-shaped examples;
-- treat WordPress compatibility as a later explicit target, not an implied
-  current capability.
+- move to WordPress deliberately: first bootstrap/load targets, then selected
+  admin/front-end/WP-CLI flows, then representative plugin and theme fixtures;
+- keep database, filesystem, HTTP, cache, extension, and host-environment
+  assumptions pinned per target.
 
 Exit criteria:
 
@@ -301,8 +440,34 @@ Exit criteria:
 - `phpc run` behavior is compared against system PHP where feasible.
 - Native compile behavior is either supported, partially supported with
   documented fallback, or rejected with exact diagnostics.
+- WordPress targets record the WordPress version, PHP target version, required
+  extensions, database/filesystem assumptions, and known unsupported behavior.
 
-### 9. Release-Quality Toolchain
+### 9. Compatibility Harnesses
+
+Make compatibility measurable before claiming it.
+
+Scope:
+
+- add a PHP-version compatibility manifest that names target PHP branches,
+  feature groups, fixtures, expected comparison mode, and known unsupported
+  deltas;
+- add a path for importing or mirroring small php-src-style behavioral tests
+  where licensing and scope allow;
+- add a pinned WordPress core compatibility harness that starts with parse/load
+  inventory, then bootstrap fixtures, then request/CLI smoke tests;
+- report compatibility status as data, not prose: pass, fail, skipped with a
+  named unsupported reason, or not-yet-covered.
+
+Exit criteria:
+
+- A single command can run the committed PHP compatibility smoke suite.
+- A single command can run the committed WordPress compatibility smoke suite
+  without requiring undocumented host state.
+- Failures distinguish compiler bugs from intentionally unsupported gaps.
+- `docs/SUPPORT.md` and any generated manifest agree on support status.
+
+### 10. Release-Quality Toolchain
 
 Make the compiler usable outside the test suite.
 
@@ -327,46 +492,25 @@ Exit criteria:
 ## Near-Term Queue
 
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
-unchecked work. The active split-lane queue is:
+unchecked work. Current state:
 
-- Milestone 615: compiler-output lane closed selected-`clang`
-  empty-stdout-with-stderr no-fallback coverage.
-- Milestone 617: parser lane closed the unsupported `interface` declaration
-  boundary.
-- Milestone 616: IR/lowering lane closed native callable lookup folding
-  coverage for `array_filter`.
-- Milestone 618: runtime lane closed finite-integral-float and integral
-  numeric-string mode-flag support for `array_filter`.
-- Milestone 619: tests/docs lane closed the 615-618 implementation batch and
-  opened the 620-624 queue.
-- Milestone 620: compiler-output lane closed selected-`llc`
-  empty-stdout-with-stderr no-`cc`-fallback coverage for the existing native
-  output validation boundary.
-- Milestone 623: runtime lane closed current bool-like scalar autoload flag
-  support for `class_exists`, `interface_exists`, `trait_exists`, and
-  `enum_exists` through `phpc run`.
-- Milestone 622: parser lane closed the unsupported `trait` declaration
-  parse-boundary fixture and focused syntax coverage without widening runtime
-  or native support.
-- Milestone 621: IR/lowering lane closed native callable lookup folding
-  coverage for `array_is_list` while direct `array_is_list(...)` native
-  execution remains rejected.
-- Milestone 624: tests/docs lane, keep the lane queue, focused-test policy,
-  support matrix, and progress records current after the active implementation
-  batch. Closed the 620-623 implementation batch and opened the 625-629 queue.
+- Milestones 615-624 are closed and checkpointed.
 - Milestone 625: compiler-output lane, choose the next deterministic CLI
   artifact or backend contract coverage target from existing native output
   behavior.
-- Milestone 628: runtime lane, choose the next small array/object builtin
-  refinement from documented unsupported gaps.
-- Milestone 627: parser lane, choose the next small syntax or parse-diagnostic
-  boundary without widening runtime or native support claims.
 - Milestone 626: IR/lowering lane, choose the next narrow native IR or lowering
   refinement, or a precise rejection boundary, from already documented
   interpreter behavior.
+- Milestone 627: parser lane, choose the next small syntax or parse-diagnostic
+  boundary without widening runtime or native support claims.
+- Milestone 628: runtime lane, choose the next small array/object builtin
+  refinement from documented unsupported gaps.
 - Milestone 629: tests/docs lane, keep the lane queue, focused-test policy,
   support matrix, and progress records current after the active implementation
   batch.
+- Milestones 630-634 should begin the compatibility-harness turn: convert the
+  full-PHP/WordPress north star into manifests, smoke fixtures, and explicit
+  pass/fail/skipped reporting instead of more prose-only planning.
 
 Prefer depth in one documented subset over breadth across unimplemented PHP
 features.
@@ -400,8 +544,8 @@ tools/checkpoint.sh "short accurate message"
 
 ## Non-Goals For Now
 
-- Full PHP compatibility claims.
-- WordPress compatibility claims.
+- Unproven full PHP compatibility claims.
+- Unproven WordPress compatibility claims.
 - Zend extension loading.
 - Regex parser rewrites.
 - A custom x86-64 backend before the LLVM/runtime path is justified.
