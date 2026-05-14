@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/enum_exists_invalid_autoload.php:2:10: unsupported call enum_exists(): autoload argument must be bool in the current subset, got int
+runtime error at tests/fixtures/runtime_errors/enum_exists_invalid_autoload.php:2:10: unsupported call enum_exists(): autoload argument must be bool-like scalar in the current subset, got array
 --- stderr end ---

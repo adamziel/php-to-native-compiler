@@ -12821,6 +12821,132 @@ Next:
 
 Next:
 
+- Added Milestone 620, compiler-output selected-`llc` `--emit-asm`
+  empty-stdout-with-stderr precedence coverage. The deterministic fake `llc`
+  exits successfully, writes stderr diagnostics, and emits no assembly stdout
+  while `cc` is available and `clang` is unavailable; the CLI snapshot pins the
+  stable `llc emitted empty assembly output` diagnostic, proves successful
+  backend stderr is not surfaced for invalid empty stdout artifacts, and proves
+  fallback recovery is not attempted after selected `llc` returns invalid
+  successful output.
+- Added the Milestone 620 fixture with committed `phpc run` expected output
+  and a failing selected-`llc` `--emit-asm` CLI snapshot. This does not add
+  native lowering, linked native execution, runtime-backed output conversion,
+  backend stderr surfacing on successful starts, or `cc -S` fallback recovery
+  after selected `llc` produces an invalid successful artifact.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-620 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_empty_stdout_stderr_selected_llc_does_not_cc_fallback_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-620 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone620`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-620 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone620`.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or integration batch.
+- No checkpoint or commit was created for this lane slice yet.
+
+Next:
+
+- Added Milestone 621, IR/lowering native callable lookup folding coverage for
+  `array_is_list`. Native direct `function_exists($name)` and
+  `is_callable($name, false)` now have committed `--emit-ir` and `cc -S`
+  fallback `--emit-asm` snapshots for literal, tracked variable, uppercase,
+  and missing string names. Direct `array_is_list(...)` native execution
+  remains rejected by the existing native array/function-call boundary.
+- Added the Milestone 621 fixture with committed `phpc run` output, system PHP
+  comparison, `--emit-ir` snapshot coverage, and `cc -S` fallback `--emit-asm`
+  summary coverage. This does not add native array lowering, runtime-backed
+  callable dispatch, namespace/autoload-aware lookup, linked native execution,
+  or exact native PHP errors for direct `array_is_list(...)` calls.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-621 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_array_is_list_callable_lookup_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-621 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_array_is_list_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-621 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_is_list emit_ir_rejects_array_is_list_until_native_call_lowering_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-621 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone621`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-621 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone621`.
+- Full `tools/run-tests.sh` is deferred under the focused IR/lowering lane
+  policy; run it at the next checkpoint or integration batch.
+- No checkpoint or commit was created for this lane slice yet.
+
+Next:
+
+- Closed Milestone 622, parser lane coverage for the documented unsupported
+  `trait` declaration boundary. `trait Reusable {}` remains rejected at parse
+  time with the stable diagnostic `unsupported trait declaration: trait parsing
+  and trait use execution are not implemented`; this does not widen runtime
+  trait metadata, class trait-use composition, `__TRAIT__` context tracking,
+  inheritance/interface relationship checks, autoloading, reflection, or native
+  lowering.
+- Added syntax-boundary parser coverage, an `emit-ir` parse-boundary assertion,
+  and an unsupported-syntax CLI fixture for `phpc run`.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_trait_declaration_has_stable_parse_errors -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries emit_ir_rejects_trait_declaration_at_parse_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_trait.php`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-622 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/unsupported_syntax_features/unsupported_trait.php --emit-ir`.
+  The direct `run` and `compile --emit-ir` commands returned the expected exit
+  code 1 parse diagnostic. The fixture runner reported 38 passed, 0 failed,
+  and system PHP comparison reported 0 compared and 38 skipped because these
+  are project-specific syntax diagnostics.
+- Full `tools/run-tests.sh` is deferred under the focused parser-lane policy;
+  run it at the next checkpoint or serialized integration batch.
+- No checkpoint or commit was created for this parser-lane slice yet.
+
+Next:
+
+- Added Milestone 623, runtime bool-like scalar autoload flag support for
+  `class_exists`, `interface_exists`, `trait_exists`, and `enum_exists`
+  through `phpc run`. The optional autoload argument now accepts current
+  scalar bool-coercion values (`bool`, `int`, `float`, and `string`) without
+  triggering autoloading; null, arrays, objects, references, exact PHP
+  deprecation/`TypeError` behavior, namespace/import-aware lookup, and native
+  non-bool autoload lowering remain unsupported.
+- Added the Milestone 623 fixture with committed `phpc run` output and system
+  PHP comparison coverage. Updated the existing metadata-exists invalid
+  autoload runtime-error fixtures to use array operands so scalar autoload
+  flags are no longer documented as unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model metadata_exists_accepts_scalar_autoload_flags -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model class_exists_requires_string_name_and_bool_autoload_arguments -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone623`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone623`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-623 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone623/metadata_exists_scalar_autoload_flags.php --emit-ir >/tmp/phpc-runtime-623-ir.out 2>/tmp/phpc-runtime-623-ir.err; status=$?; cat /tmp/phpc-runtime-623-ir.err; test $status -eq 1; grep -Eq "function calls|object/class lowering rejects" /tmp/phpc-runtime-623-ir.err'`.
+- The attempted focused command
+  `cargo test -p phpc --test object_model interface_exists_requires_string_name_and_bool_autoload_arguments trait_exists_requires_string_name_and_bool_autoload_arguments enum_exists_requires_string_name_and_bool_autoload_arguments -- --test-threads=1`
+  was invalid because `cargo test` accepts only one test-name filter; the
+  full `object_model` integration test was run afterward and passed.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next checkpoint or serialized integration batch.
+- No checkpoint or commit was created for this runtime-lane slice yet.
+
+Next:
+
+- Closed Milestone 624, tests/docs split-lane queue refresh after the 620-623
+  implementation batch. The active planning docs now point to the next open
+  slots: compiler-output Milestone 625, IR/lowering Milestone 626, parser
+  Milestone 627, runtime Milestone 628, and tests/docs Milestone 629.
+- Updated `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, and
+  `docs/PROGRESS.md` to align the queue and focused/full-gate policy after the
+  completed 620-623 batch. The support docs were updated narrowly by the
+  implementation lanes where public behavior changed.
+- Verification for this docs refresh: scoped `cargo fmt --check` and
+  `git diff --check` over the shared docs plus Milestone 620-623 code and
+  fixtures. The serialized post-batch full gate
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-620-624 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, with Rust tests successful, `phpc test` reporting 722 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reporting 722 fixture
+  tests passed with 0 failures, 447 system PHP comparisons, and 275 skipped
+  comparisons.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone620/native_assembly_empty_stdout_stderr_llc_precedence.php:0:0: llc emitted empty assembly output
+--- stderr end ---

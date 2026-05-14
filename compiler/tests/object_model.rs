@@ -392,6 +392,29 @@ if ($call("Box", true)) {
 }
 
 #[test]
+fn metadata_exists_accepts_scalar_autoload_flags() {
+    let source = r#"<?php
+class Box {}
+
+var_dump(class_exists("BOX", 1));
+var_dump(class_exists("Missing", 0));
+var_dump(interface_exists("Box", "1"));
+var_dump(trait_exists("Box", "0"));
+var_dump(enum_exists("Box", 0.5));
+
+$call = "class_exists";
+var_dump($call("box", "false"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn class_exists_requires_string_name_and_bool_autoload_arguments() {
     let name_error = runtime_error("<?php\nvar_dump(class_exists(42));\n");
 
@@ -402,13 +425,13 @@ fn class_exists_requires_string_name_and_bool_autoload_arguments() {
         "unsupported call class_exists(): class name argument must be string, got int"
     );
 
-    let autoload_error = runtime_error("<?php\nvar_dump(class_exists(\"Box\", 1));\n");
+    let autoload_error = runtime_error("<?php\nvar_dump(class_exists(\"Box\", []));\n");
 
     assert_eq!(autoload_error.line, 2);
     assert_eq!(autoload_error.column, 10);
     assert_eq!(
         autoload_error.message,
-        "unsupported call class_exists(): autoload argument must be bool in the current subset, got int"
+        "unsupported call class_exists(): autoload argument must be bool-like scalar in the current subset, got array"
     );
 }
 
@@ -451,13 +474,13 @@ fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
         "unsupported call interface_exists(): interface name argument must be string, got int"
     );
 
-    let autoload_error = runtime_error("<?php\nvar_dump(interface_exists(\"Box\", 1));\n");
+    let autoload_error = runtime_error("<?php\nvar_dump(interface_exists(\"Box\", []));\n");
 
     assert_eq!(autoload_error.line, 2);
     assert_eq!(autoload_error.column, 10);
     assert_eq!(
         autoload_error.message,
-        "unsupported call interface_exists(): autoload argument must be bool in the current subset, got int"
+        "unsupported call interface_exists(): autoload argument must be bool-like scalar in the current subset, got array"
     );
 }
 
@@ -500,13 +523,13 @@ fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
         "unsupported call trait_exists(): trait name argument must be string, got int"
     );
 
-    let autoload_error = runtime_error("<?php\nvar_dump(trait_exists(\"Box\", 1));\n");
+    let autoload_error = runtime_error("<?php\nvar_dump(trait_exists(\"Box\", []));\n");
 
     assert_eq!(autoload_error.line, 2);
     assert_eq!(autoload_error.column, 10);
     assert_eq!(
         autoload_error.message,
-        "unsupported call trait_exists(): autoload argument must be bool in the current subset, got int"
+        "unsupported call trait_exists(): autoload argument must be bool-like scalar in the current subset, got array"
     );
 }
 
@@ -549,13 +572,13 @@ fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
         "unsupported call enum_exists(): enum name argument must be string, got int"
     );
 
-    let autoload_error = runtime_error("<?php\nvar_dump(enum_exists(\"Box\", 1));\n");
+    let autoload_error = runtime_error("<?php\nvar_dump(enum_exists(\"Box\", []));\n");
 
     assert_eq!(autoload_error.line, 2);
     assert_eq!(autoload_error.column, 10);
     assert_eq!(
         autoload_error.message,
-        "unsupported call enum_exists(): autoload argument must be bool in the current subset, got int"
+        "unsupported call enum_exists(): autoload argument must be bool-like scalar in the current subset, got array"
     );
 }
 

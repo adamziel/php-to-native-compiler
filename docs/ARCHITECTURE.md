@@ -175,6 +175,9 @@ An `llc` empty-stdout precedence snapshot exposes invalid successful selected
 `llc` output with no assembly stdout while the `cc -S` fallback is also
 available. That pins the same no-recovery boundary for empty selected-`llc`
 artifacts.
+An `llc` empty-stdout-with-stderr precedence snapshot covers the same boundary
+when selected `llc` writes stderr diagnostics but emits no assembly stdout
+while `cc` is available.
 Whitespace-with-stderr fallback snapshots expose deterministic fake `llc` and
 `cc` tools with the same invalid successful-output behavior. That pins the same
 stdout-validation precedence after LLVM fallback selection and after the
@@ -753,9 +756,9 @@ false; user-defined function tables, namespace/autoload-aware lookup,
 extension-loaded functions outside the documented table, dynamic callees, and
 runtime callable dispatch remain outside native lowering.
 The table includes interpreter-only array builtins such as
-`array_change_key_case`, `array_column`, `array_product`, and
-`array_reduce`, and `array_filter`; direct calls to those builtins still
-reject under the array-lowering boundary.
+`array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
+`array_reduce`, and `array_filter`; direct calls to those builtins still reject
+under the array-lowering boundary.
 Direct `strlen($value)` calls fold only when `$value` is an already-lowerable
 known string operand, including tracked string expressions whose possible
 values have one uniform byte length. A selected-`clang` assembly snapshot
@@ -938,17 +941,15 @@ function calls. `get_debug_type($value)` reports current scalar/array type
 names and the declared class name for current object values.
 `class_exists($name[, $autoload])` checks the interpreter's already-registered
 class metadata table by string class name, using the same case-insensitive
-class lookup as instantiation. The autoload flag is accepted only as a boolean
-and does not trigger autoloading in the current subset.
-`interface_exists($name[, $autoload])` accepts the same string-name and boolean
-autoload boundary, returns false for all supported calls because interface
-metadata is not represented yet, and does not trigger autoloading.
-`trait_exists($name[, $autoload])` accepts the same string-name and boolean
-autoload boundary, returns false for all supported calls because trait metadata
-is not represented yet, and does not trigger autoloading.
-`enum_exists($name[, $autoload])` accepts the same string-name and boolean
-autoload boundary, returns false for all supported calls because enum metadata
-is not represented yet, and does not trigger autoloading.
+class lookup as instantiation. The autoload flag accepts current bool-like
+scalar values and does not trigger autoloading in the current subset; `null`,
+arrays, objects, references, and exact PHP deprecation/`TypeError` behavior
+remain unsupported for that flag.
+`interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,
+and `enum_exists($name[, $autoload])` accept the same string-name and
+bool-like scalar autoload boundary, return false for all supported calls
+because interface, trait, and enum metadata are not represented yet, and do not
+trigger autoloading.
 `property_exists($object_or_class, $property)` checks the same declared
 property metadata for current object values or string class names, with
 case-sensitive property names and no autoload side effects.

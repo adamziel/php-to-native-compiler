@@ -637,6 +637,34 @@ fn emit_ir_rejects_interface_declaration_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_trait_declaration_has_stable_parse_errors() {
+    let cases = [(
+        "<?php\ntrait Reusable {}\n",
+        2,
+        1,
+        "unsupported trait declaration: trait parsing and trait use execution are not implemented",
+    )];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_trait_declaration_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\ntrait Reusable {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported trait declaration: trait parsing and trait use execution are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_goto_syntax_has_stable_parse_errors() {
     let cases = [
         ("<?php\ngoto done;\ndone:\necho 'done';\n", 2, 1),

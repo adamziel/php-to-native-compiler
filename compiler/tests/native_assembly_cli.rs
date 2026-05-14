@@ -956,6 +956,44 @@ fn native_array_filter_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_
 
 #[test]
 #[cfg(unix)]
+fn native_array_is_list_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output()
+{
+    let Some(cc_path) = find_command_on_path("cc") else {
+        return;
+    };
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone621/native_array_is_list_callable_lookup.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_cc_only(workspace_root, &cc_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone621/native_array_is_list_callable_lookup_cc_fallback_emit_asm.cli",
+    ))
+    .expect("native array_is_list callable lookup cc fallback CLI snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
 fn native_scalar_is_callable_false_emit_asm_cc_fallback_cli_summary_matches_committed_output() {
     let Some(cc_path) = find_command_on_path("cc") else {
         return;
@@ -3533,6 +3571,41 @@ fn native_scalar_echo_emit_asm_empty_stdout_selected_llc_does_not_cc_fallback_cl
         "tests/fixtures/milestone610/native_assembly_empty_stdout_llc_precedence_emit_asm.cli",
     ))
     .expect("native assembly empty-stdout llc-precedence CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_scalar_echo_emit_asm_empty_stdout_stderr_selected_llc_does_not_cc_fallback_cli_snapshot_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone620/native_assembly_empty_stdout_stderr_llc_precedence.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path =
+        TempPath::with_empty_stdout_stderr_successful_llc_and_available_cc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(workspace_root.join(
+        "tests/fixtures/milestone620/native_assembly_empty_stdout_stderr_llc_precedence_emit_asm.cli",
+    ))
+    .expect("native assembly empty-stdout-with-stderr llc-precedence CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);
@@ -9204,6 +9277,67 @@ exit 119\n",
         std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
         fs::set_permissions(&cc, cc_permissions)
             .expect("temporary empty-stdout llc-precedence cc script can be made executable");
+
+        Self { path }
+    }
+
+    fn with_empty_stdout_stderr_successful_llc_and_available_cc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-empty-stdout-stderr-llc-precedence-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect(
+            "temporary empty-stdout-with-stderr llc-precedence PATH directory can be created",
+        );
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' 'fake llc diagnostic on empty successful assembly' >&2\n\
+exit 0\n",
+        )
+        .expect("temporary empty-stdout-with-stderr llc-precedence script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect("temporary empty-stdout-with-stderr llc-precedence script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions).expect(
+            "temporary empty-stdout-with-stderr llc-precedence script can be made executable",
+        );
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected cc fallback invocation after empty-stdout llc success with stderr' >&2\n\
+exit 120\n",
+        )
+        .expect("temporary empty-stdout-with-stderr llc-precedence cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect(
+                "temporary empty-stdout-with-stderr llc-precedence cc script metadata is readable",
+            )
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions).expect(
+            "temporary empty-stdout-with-stderr llc-precedence cc script can be made executable",
+        );
 
         Self { path }
     }

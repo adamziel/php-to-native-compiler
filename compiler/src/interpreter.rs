@@ -2828,7 +2828,9 @@ impl Interpreter {
                     [Value::String(class_name)] => {
                         Ok(Value::Bool(self.classes.lookup_class(class_name).is_some()))
                     }
-                    [Value::String(class_name), Value::Bool(_autoload)] => {
+                    [Value::String(class_name), autoload] => {
+                        let _autoload =
+                            metadata_exists_autoload_flag("class_exists()", autoload, span)?;
                         Ok(Value::Bool(self.classes.lookup_class(class_name).is_some()))
                     }
                     [other] => Err(runtime_error(
@@ -2843,7 +2845,7 @@ impl Interpreter {
                         RuntimeError::unsupported_call(
                             "class_exists()",
                             format!(
-                                "autoload argument must be bool in the current subset, got {}",
+                                "autoload argument must be bool-like scalar in the current subset, got {}",
                                 other.type_name()
                             ),
                         ),
@@ -2860,7 +2862,11 @@ impl Interpreter {
             }
             "interface_exists" => match args.as_slice() {
                 [Value::String(_interface_name)] => Ok(Value::Bool(false)),
-                [Value::String(_interface_name), Value::Bool(_autoload)] => Ok(Value::Bool(false)),
+                [Value::String(_interface_name), autoload] => {
+                    let _autoload =
+                        metadata_exists_autoload_flag("interface_exists()", autoload, span)?;
+                    Ok(Value::Bool(false))
+                }
                 [other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -2876,7 +2882,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "interface_exists()",
                         format!(
-                            "autoload argument must be bool in the current subset, got {}",
+                            "autoload argument must be bool-like scalar in the current subset, got {}",
                             other.type_name()
                         ),
                     ),
@@ -2892,7 +2898,11 @@ impl Interpreter {
             },
             "trait_exists" => match args.as_slice() {
                 [Value::String(_trait_name)] => Ok(Value::Bool(false)),
-                [Value::String(_trait_name), Value::Bool(_autoload)] => Ok(Value::Bool(false)),
+                [Value::String(_trait_name), autoload] => {
+                    let _autoload =
+                        metadata_exists_autoload_flag("trait_exists()", autoload, span)?;
+                    Ok(Value::Bool(false))
+                }
                 [other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -2905,7 +2915,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "trait_exists()",
                         format!(
-                            "autoload argument must be bool in the current subset, got {}",
+                            "autoload argument must be bool-like scalar in the current subset, got {}",
                             other.type_name()
                         ),
                     ),
@@ -2921,7 +2931,11 @@ impl Interpreter {
             },
             "enum_exists" => match args.as_slice() {
                 [Value::String(_enum_name)] => Ok(Value::Bool(false)),
-                [Value::String(_enum_name), Value::Bool(_autoload)] => Ok(Value::Bool(false)),
+                [Value::String(_enum_name), autoload] => {
+                    let _autoload =
+                        metadata_exists_autoload_flag("enum_exists()", autoload, span)?;
+                    Ok(Value::Bool(false))
+                }
                 [other] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -2934,7 +2948,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "enum_exists()",
                         format!(
-                            "autoload argument must be bool in the current subset, got {}",
+                            "autoload argument must be bool-like scalar in the current subset, got {}",
                             other.type_name()
                         ),
                     ),
@@ -4121,6 +4135,28 @@ fn runtime_visibility(visibility: ClassVisibility) -> Visibility {
 
 fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
+}
+
+fn metadata_exists_autoload_flag(
+    function_name: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<bool> {
+    match value {
+        Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(value.is_truthy())
+        }
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function_name,
+                format!(
+                    "autoload argument must be bool-like scalar in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
 }
 
 fn is_array_callable_syntax_shape(array: &PhpArray) -> bool {

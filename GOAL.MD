@@ -339,17 +339,32 @@ unchecked work. The active split-lane queue is:
   numeric-string mode-flag support for `array_filter`.
 - Milestone 619: tests/docs lane closed the 615-618 implementation batch and
   opened the 620-624 queue.
-- Milestone 620: compiler-output lane, choose the next deterministic CLI
+- Milestone 620: compiler-output lane closed selected-`llc`
+  empty-stdout-with-stderr no-`cc`-fallback coverage for the existing native
+  output validation boundary.
+- Milestone 623: runtime lane closed current bool-like scalar autoload flag
+  support for `class_exists`, `interface_exists`, `trait_exists`, and
+  `enum_exists` through `phpc run`.
+- Milestone 622: parser lane closed the unsupported `trait` declaration
+  parse-boundary fixture and focused syntax coverage without widening runtime
+  or native support.
+- Milestone 621: IR/lowering lane closed native callable lookup folding
+  coverage for `array_is_list` while direct `array_is_list(...)` native
+  execution remains rejected.
+- Milestone 624: tests/docs lane, keep the lane queue, focused-test policy,
+  support matrix, and progress records current after the active implementation
+  batch. Closed the 620-623 implementation batch and opened the 625-629 queue.
+- Milestone 625: compiler-output lane, choose the next deterministic CLI
   artifact or backend contract coverage target from existing native output
   behavior.
-- Milestone 623: runtime lane, choose the next small array/object builtin
+- Milestone 628: runtime lane, choose the next small array/object builtin
   refinement from documented unsupported gaps.
-- Milestone 622: parser lane, choose the next small syntax or parse-diagnostic
+- Milestone 627: parser lane, choose the next small syntax or parse-diagnostic
   boundary without widening runtime or native support claims.
-- Milestone 621: IR/lowering lane, choose the next narrow native IR or lowering
+- Milestone 626: IR/lowering lane, choose the next narrow native IR or lowering
   refinement, or a precise rejection boundary, from already documented
   interpreter behavior.
-- Milestone 624: tests/docs lane, keep the lane queue, focused-test policy,
+- Milestone 629: tests/docs lane, keep the lane queue, focused-test policy,
   support matrix, and progress records current after the active implementation
   batch.
 

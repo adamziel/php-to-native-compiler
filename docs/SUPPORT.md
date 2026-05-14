@@ -532,22 +532,24 @@
   string-valued dynamic function calls. `class_exists($name)` and
   `class_exists($name, $autoload)` accept string class names, perform
   case-insensitive lookup against classes declared in the current parsed
-  program, accept only boolean autoload flags, and are available through
-  string-valued dynamic function calls. The autoload flag does not trigger
-  autoloading in the current subset.
+  program, accept current bool-like scalar autoload flags, and are available
+  through string-valued dynamic function calls. The autoload flag does not
+  trigger autoloading in the current subset.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names, return false for all supported calls because
   interface metadata is not represented yet, and are available through
-  string-valued dynamic function calls. The autoload flag must be boolean and
-  does not trigger autoloading.
+  string-valued dynamic function calls. The autoload flag accepts current
+  bool-like scalar values and does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names, return false for all supported calls because trait metadata is
   not represented yet, and are available through string-valued dynamic function
-  calls. The autoload flag must be boolean and does not trigger autoloading.
+  calls. The autoload flag accepts current bool-like scalar values and does not
+  trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names, return false for all supported calls because enum metadata is not
   represented yet, and are available through string-valued dynamic function
-  calls. The autoload flag must be boolean and does not trigger autoloading.
+  calls. The autoload flag accepts current bool-like scalar values and does not
+  trigger autoloading.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared property metadata with case-sensitive property names, reports
@@ -958,11 +960,11 @@
   constants, division by zero, non-numeric string arithmetic, duplicate class
   metadata, undefined classes, undefined object properties, invalid property
   targets, non-public property access, non-object `get_class` operands,
-  non-string `class_exists` names, non-bool `class_exists` autoload flags,
-  non-string `interface_exists` names, non-bool `interface_exists` autoload
-  flags, non-string `trait_exists` names, non-bool `trait_exists` autoload
-  flags, non-string `enum_exists` names, non-bool `enum_exists` autoload
-  flags,
+  non-string `class_exists` names, null/array/object `class_exists` autoload
+  flags, non-string `interface_exists` names, null/array/object
+  `interface_exists` autoload flags, non-string `trait_exists` names,
+  null/array/object `trait_exists` autoload flags, non-string `enum_exists`
+  names, null/array/object `enum_exists` autoload flags,
   non-bool `is_callable` syntax-only flags,
   non-string `function_exists` names,
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
@@ -1354,9 +1356,9 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `array_change_key_case`, `array_column`, `array_count_values`, and
-  `array_sum`, `array_product`, `array_reduce`, and `array_filter`, fold to `true`, and
-  missing names fold to `false`.
+  `array_change_key_case`, `array_column`, `array_is_list`,
+  `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
+  `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct calls to array builtins such as `array_change_key_case(...)`,
   `array_column(...)`, `array_sum(...)`, `array_product(...)`, and
   callback-driven forms such as `array_reduce(...)` and `array_filter(...)`
@@ -1519,8 +1521,9 @@
   attempted after invalid selected `llc` output. An `llc` empty-stdout
   precedence snapshot exposes the same no-recovery boundary when selected
   `llc` exits successfully without assembly stdout while `cc` is available.
-  Additional
-  whitespace-with-stderr fallback snapshots expose
+  An `llc` empty-stdout-with-stderr precedence snapshot covers the same
+  boundary when selected `llc` writes stderr diagnostics but emits no assembly
+  stdout while `cc` is available. Additional whitespace-with-stderr fallback snapshots expose
   deterministic fake `llc` and `cc` tools with the same invalid
   successful-output behavior, proving stdout validation wins and successful
   backend stderr is not surfaced after fallback selection too.
@@ -1778,20 +1781,22 @@
   `get_debug_type($value)` returns current scalar/array type names and the
   declared class name for current minimal object values. `class_exists($name)`
   and `class_exists($name, $autoload)` accept string class names, return whether
-  the current parsed program declared that class, and accept only boolean
-  autoload flags without triggering autoloading.
+  the current parsed program declared that class, and accept current bool-like
+  scalar autoload flags without triggering autoloading. `null`, arrays,
+  objects, references, and exact PHP deprecation/`TypeError` behavior remain
+  unsupported for that flag.
   `interface_exists($name)` and `interface_exists($name, $autoload)` accept
   string interface names and return false for all supported calls because
-  interface metadata is not represented yet; the autoload flag must be boolean
-  and does not trigger autoloading.
+  interface metadata is not represented yet; the autoload flag accepts current
+  bool-like scalar values and does not trigger autoloading.
   `trait_exists($name)` and `trait_exists($name, $autoload)` accept string
   trait names and return false for all supported calls because trait metadata
-  is not represented yet; the autoload flag must be boolean and does not
-  trigger autoloading.
+  is not represented yet; the autoload flag accepts current bool-like scalar
+  values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
   names and return false for all supported calls because enum metadata is not
-  represented yet; the autoload flag must be boolean and does not trigger
-  autoloading.
+  represented yet; the autoload flag accepts current bool-like scalar values
+  and does not trigger autoloading.
   `property_exists($object_or_class, $property)` checks declared property
   metadata for current object values or string class names with case-sensitive
   property names. `method_exists($object_or_class, $method)` checks declared

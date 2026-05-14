@@ -1,2 +1,2 @@
 <?php
-var_dump(enum_exists("Box", 1));
+var_dump(enum_exists("Box", []));
