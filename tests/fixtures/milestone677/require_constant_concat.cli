@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+loaded
+class:WP_Loaded
+--- stdout end ---
+stderr:
+--- stderr end ---

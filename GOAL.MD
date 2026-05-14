@@ -183,7 +183,8 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   generated code, stack frames, heap management, runtime helper calls,
   process-level execution semantics, and native diagnostics.
 - The interpreter is missing large parts of PHP syntax and semantics:
-  namespaces, includes, autoload, references, copy-on-write, closures,
+  namespaces, include/require breadth beyond the first local `require` slice,
+  autoload, references, copy-on-write, closures,
   generators, exceptions, type declarations, attributes, destructuring, spreads,
   resources, and exact warning/recovery behavior.
 - Arrays are interpreter-supported for a growing subset but still lack full PHP
@@ -199,20 +200,19 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   public/inherited public instance `__construct` execution with scoped
   `$this`, plus narrow `ClassName::class`, `self::class`, and `parent::class`
   resolution and narrow class constants through `ClassName::CONST`,
-  `self::CONST`, `parent::CONST`, and late-bound `static::CONST`, plus narrow static properties through
-  `ClassName::$prop`, `self::$prop`, and `parent::$prop` with direct
-  reads/writes, read-modify-write, `isset`/`empty`, `??`, `??=` forms, and
-  stable diagnostics for PHP-forbidden static-property `unset(...)`, plus
-  visible static-method dispatch through `ClassName::method(...)`,
-  `self::method(...)`, and `parent::method(...)`, plus late-bound
-  `static::$prop` reads/writes and read-modify-write forms in active
-  called-class context, now execute through `phpc run`, but interfaces,
-  traits, enums, broader static member semantics,
-  broader class constant semantics, cloning, magic methods, dynamic
-  method/property names, broader `parent::`/`self::`/`static::`,
-  typed property compatibility and instance property defaults,
-  broader constructor/inheritance rules, and native object lowering are still
-  missing.
+  `self::CONST`, `parent::CONST`, and late-bound `static::CONST`, plus narrow
+  static properties through `ClassName::$prop`, `self::$prop`,
+  `parent::$prop`, and late-bound `static::$prop` with direct reads/writes,
+  read-modify-write, `isset`/`empty`, `??`, `??=` forms, and stable diagnostics
+  for PHP-forbidden static-property `unset(...)`, plus visible static-method
+  dispatch through `ClassName::method(...)`, `$object::method(...)`,
+  `$className::method(...)`, `self::method(...)`, `parent::method(...)`, and
+  late-bound `static::method(...)`, now execute through `phpc run`, but
+  interfaces, traits, enums, object-receiver static properties/constants,
+  non-static dynamic static dispatch, broader class constant semantics,
+  cloning, magic methods, dynamic method/property names, typed property
+  compatibility and instance property defaults, broader constructor/inheritance
+  rules, and native object lowering are still missing.
   The interpreter object-handle identity slice covers assignment,
   argument/return, array, foreach, strict identity, `spl_object_id`, and a
   current-subset `spl_object_hash`, but clone/destruction/reuse and full object

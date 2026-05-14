@@ -53,7 +53,8 @@ Normalized output replaces the local WordPress checkout path with
 `<wordpress-root>` and the compiler executable path with `<phpc>`. The committed
 policy lives in `tests/fixtures/compat/wordpress/source-pin.md`. The repository
 also keeps a synthetic WordPress-shaped inventory fixture so the output format
-and current first bootstrap blocker are tested without vendoring WordPress core.
+and current direct-`wp-settings.php` bootstrap blocker are tested without
+vendoring WordPress core.
 
 ## Inventory Script
 
@@ -81,8 +82,11 @@ cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
 
 The first bootstrap probe is expected to fail. Known blockers include:
 
-- include/require execution; the first pinned boundary is the WordPress-shaped
-  `require ABSPATH . WPINC . '/load.php';` form used by bootstrap loading;
+- include/require breadth beyond the first local `require` slice. The
+  WordPress-shaped `require ABSPATH . WPINC . '/load.php';` path form is now
+  executable in focused fixtures, but real bootstrap still needs broader file
+  loading, `_once`, include-path/autoload behavior, source mapping, and PHP's
+  warning/fatal details;
 - namespace and import resolution;
 - class inheritance, interfaces, traits, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;

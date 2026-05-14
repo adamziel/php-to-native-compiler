@@ -3,7 +3,6 @@ stdout:
 tests/fixtures/milestone74
 tests/fixtures/milestone74
 tests/fixtures/milestone74
-tests/fixtures/milestone74
---- stdout end ---
+tests/fixtures/milestone74--- stdout end ---
 stderr:
 --- stderr end ---

@@ -1,6 +1,8 @@
+use std::fs;
+
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
-use php_compiler::run_source;
+use php_compiler::{run_source, run_source_with_source_file};
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -187,19 +189,11 @@ include_once 'config.php';
         ),
         (
             r#"<?php
-require 'bootstrap.php';
+$ok = require 'bootstrap.php';
 "#,
             2,
-            1,
-            "unsupported require: include/require resolution and execution are not implemented",
-        ),
-        (
-            r#"<?php
-require ABSPATH . WPINC . '/load.php';
-"#,
-            2,
-            1,
-            "unsupported require: include/require resolution and execution are not implemented",
+            7,
+            "unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files",
         ),
         (
             r#"<?php
@@ -217,6 +211,117 @@ $ok = require_once 'bootstrap.php';
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
     }
+}
+
+#[test]
+fn require_executes_local_files_with_constant_concat_paths() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-require-{}-{}",
+        std::process::id(),
+        "constant-concat"
+    ));
+    let wp_includes = root.join("wp-includes");
+    fs::create_dir_all(&wp_includes).expect("create require fixture directory");
+    let main = root.join("index.php");
+    let load = wp_includes.join("load.php");
+
+    fs::write(
+        &load,
+        r#"<?php
+$from = $from . ":load";
+function loaded_label() {
+    return "loaded";
+}
+class Loaded {
+    public static function name() {
+        return "class:" . static::class;
+    }
+}
+"#,
+    )
+    .expect("write required file");
+
+    let source = format!(
+        r#"<?php
+const ABSPATH = '{}';
+const WPINC = 'wp-includes';
+$from = "main";
+require ABSPATH . WPINC . '/load.php';
+echo loaded_label(), "\n";
+echo Loaded::name(), "\n";
+echo $from;
+"#,
+        root.to_string_lossy().replace('\\', "\\\\") + "/"
+    );
+
+    fs::write(&main, &source).expect("write main file");
+    let execution = run_source_with_source_file(&source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "loaded\nclass:Loaded\nmain:load");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn require_executes_relative_to_current_source_file_and_restores_source_mapping() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-require-{}-{}",
+        std::process::id(),
+        "relative-source"
+    ));
+    fs::create_dir_all(&root).expect("create require fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("lib.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+echo __FILE__, "\n";
+$value = "from-lib";
+"#,
+    )
+    .expect("write required file");
+
+    let source = r#"<?php
+require 'lib.php';
+echo __FILE__, "\n";
+echo $value;
+"#;
+    fs::write(&main, source).expect("write main file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        format!("{}\n{}\nfrom-lib", lib.display(), main.display())
+    );
+}
+
+#[test]
+fn require_reports_current_boundaries() {
+    let non_string = runtime_error("<?php\nrequire 123;\n");
+    assert_eq!(
+        non_string.message,
+        "unsupported call require: require path must evaluate to a string in the current subset"
+    );
+
+    let stream = runtime_error("<?php\nrequire 'https://example.com/file.php';\n");
+    assert_eq!(
+        stream.message,
+        "unsupported call require: stream and URL require paths are not implemented"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_require_until_native_multifile_lowering_exists() {
+    let error = emit_ir_source("<?php\nrequire 'bootstrap.php';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("include/require lowering rejects multi-file execution"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]

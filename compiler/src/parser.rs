@@ -125,6 +125,7 @@ impl Parser {
                 }
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset") => self.parse_unset(),
+            TokenKind::Require => self.parse_require(),
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
             }
@@ -518,6 +519,15 @@ impl Parser {
         let construct =
             include_require_name(&token.kind).expect("caller checks include/require keyword");
         Err(self.error_at(token.span, unsupported_include_require_message(construct)))
+    }
+
+    fn parse_require(&mut self) -> CompileResult<Stmt> {
+        let span = self
+            .consume_keyword(TokenKind::Require, "expected 'require'")?
+            .span;
+        let path = self.parse_expression()?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after require")?;
+        Ok(Stmt::Require { path, span })
     }
 
     fn parse_echo(&mut self) -> CompileResult<Stmt> {
@@ -2433,7 +2443,7 @@ impl Parser {
                 unsupported_include_require_message("include_once"),
             )),
             TokenKind::Require => {
-                Err(self.error_at(token.span, unsupported_include_require_message("require")))
+                Err(self.error_at(token.span, unsupported_require_expression_message()))
             }
             TokenKind::RequireOnce => Err(self.error_at(
                 token.span,
@@ -3726,6 +3736,10 @@ fn include_require_name(kind: &TokenKind) -> Option<&'static str> {
 
 fn unsupported_include_require_message(construct: &str) -> String {
     format!("unsupported {construct}: include/require resolution and execution are not implemented")
+}
+
+fn unsupported_require_expression_message() -> &'static str {
+    "unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files"
 }
 
 fn is_parameter_type_start(kind: &TokenKind) -> bool {

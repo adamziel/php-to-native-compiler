@@ -119,6 +119,10 @@ pub enum Stmt {
         declarations: Vec<ConstDeclarator>,
         span: Span,
     },
+    Require {
+        path: Expr,
+        span: Span,
+    },
     Function(FunctionDecl),
     Class(ClassDecl),
     Return {

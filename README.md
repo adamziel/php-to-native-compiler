@@ -94,6 +94,9 @@ incorrect native code.
   append writes, offset removal, and array iteration
 - top-level constants, selected built-in constants, runtime-defined constants,
   and executable magic constants documented in the support matrix
+- narrow `require` statement execution for local string paths, including
+  constant/string-concatenated paths resolved relative to the current source
+  file and included files executing in caller scope
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -121,7 +124,8 @@ incorrect native code.
   callability checks, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
-references, copy-on-write, namespaces/imports, includes/requires, eval,
+references, copy-on-write, namespaces/imports, include/require breadth beyond
+the current narrow local `require` statement slice, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
@@ -151,10 +155,10 @@ The current native path is focused on straight-line scalar lowering:
   callability/function-existence checks, selected metadata-existence checks, and
   selected constant-existence checks
 
-Native lowering rejects arrays, objects, user functions, broad control flow,
-mutation forms that require symbol-table effects, dynamic calls, runtime
-constant tables, PHP-wide coercions, references, copy-on-write, linking, and
-execution until those semantics exist in generated code.
+Native lowering rejects arrays, objects, user functions, include/require,
+broad control flow, mutation forms that require symbol-table effects, dynamic
+calls, runtime constant tables, PHP-wide coercions, references, copy-on-write,
+linking, and execution until those semantics exist in generated code.
 
 ### Tests And Fixtures
 

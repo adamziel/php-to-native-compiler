@@ -21,6 +21,6 @@ Committed inventory snapshots must use normalized output so local paths and
 
 Do not commit WordPress core source into this repository until a separate size,
 license, update, and checksum policy is accepted. The committed synthetic
-inventory fixture proves the output format and current first bootstrap blocker;
-external WordPress source runs remain an operator-supplied compatibility
-measurement.
+inventory fixture proves the output format and current direct-`wp-settings.php`
+bootstrap blocker; external WordPress source runs remain an operator-supplied
+compatibility measurement.

@@ -10,4 +10,4 @@ function default_file($file = __FILE__) {
 const DECLARED_FILE = __FILE__;
 
 default_file();
-echo DECLARED_FILE, "\n";
+echo DECLARED_FILE;

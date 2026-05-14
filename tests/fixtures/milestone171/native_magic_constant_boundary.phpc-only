@@ -1,1 +1,1 @@
-phpc run uses path-less library execution for ordinary fixture stdout; the CLI snapshot records source-file magic values.
+phpc run fixture execution uses a normalized source path; system PHP receives the runner's host path.

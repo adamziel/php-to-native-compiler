@@ -450,8 +450,12 @@
   `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
   `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
+- narrow `require` statement execution for local string paths, including
+  constant/string concatenation, source-file-relative path resolution, included
+  file declaration registration, and caller-scope execution. Declaration-order
+  dependencies across required files remain outside this slice.
 - explicit parse diagnostics for unsupported include/require syntax:
-  `include`, `include_once`, `require`, and `require_once`
+  `include`, `include_once`, expression-form `require`, and `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - explicit parse diagnostics for unsupported namespace and top-level `use`
   declaration syntax
@@ -562,14 +566,17 @@
   append-offset `??=` targets, dynamic property names, magic methods,
   unparenthesized chained coalescing, references/copy-on-write, exact native
   error objects, and native lowering remain unsupported.
-- Include/require: `include`, `include_once`, `require`, and `require_once`
-  are reserved by the lexer/parser and rejected with stable parse diagnostics.
-  The planned first executable slice resolves string paths relative to the
-  including file, executes included files in caller scope, and tracks `_once`
-  files by canonical absolute path when possible. Execution, include-path
-  lookup, current-working-directory fallback, stream wrappers, URL includes,
-  `phar://`, opcache behavior, autoload interaction, and PHP's exact
-  warning-vs-fatal recovery behavior are not implemented.
+- Include/require: `require path;` executes for paths that evaluate to strings
+  in the current subset, including constant and string-concatenated paths such
+  as `ABSPATH . WPINC . '/load.php'`. Absolute paths resolve directly;
+  relative paths resolve against the source file containing the `require`.
+  Included files are parsed with `<?php`, register top-level functions/classes,
+  run in the caller symbol table, and treat top-level `return` as returning to
+  the including file. `include`, `include_once`, expression-form `require`,
+  `require_once`, include-path lookup, stream wrappers, URL includes,
+  `phar://`, opcache behavior, autoload interaction, `_once` de-duplication,
+  include return values, source mapping for functions/classes after include,
+  and PHP's exact warning-vs-fatal recovery behavior are not implemented.
 - Eval: direct `eval(...)` syntax is reserved by the lexer/parser and rejected
   with a stable parse diagnostic. The planned first executable slice treats
   `eval` as a language construct with one string-valued argument, parses that
@@ -1590,6 +1597,10 @@
   codegen diagnostic until generated code has native array storage layout, key
   normalization, copy-on-write containers, references, callback dispatch, and
   exact native error objects.
+  Native `require` statements and other include/require forms are rejected
+  before file loading until generated code has multi-file loading, source-map
+  handoff, caller-scope effects, declaration registration, include return
+  values, and exact native error objects.
   Native `if`/`elseif`/`else`, `while`, `for`, `do ... while`, `switch`,
   `break`, and `continue` are rejected before condition, body, case, or
   loop-control lowering with a specific codegen diagnostic until generated
@@ -2626,8 +2637,11 @@
 - nested/complex array assignment lvalues
 - string offset access
 - references
-- include/require execution; `include`, `include_once`, `require`, and
-  `require_once` currently fail with stable parse diagnostics
+- include/require forms outside the narrow local `require path;` statement:
+  `include`, `include_once`, expression-form `require`, `require_once`,
+  include-path lookup, streams/URLs, `_once` de-duplication, declaration-order
+  dependencies across required files, and exact PHP warning/fatal recovery
+  behavior remain unsupported
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
 - namespace and top-level `use` declarations, plus namespace-qualified

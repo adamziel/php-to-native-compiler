@@ -3,7 +3,6 @@ stdout:
 tests/fixtures/milestone73/magic_file.php
 tests/fixtures/milestone73/magic_file.php
 tests/fixtures/milestone73/magic_file.php
-tests/fixtures/milestone73/magic_file.php
---- stdout end ---
+tests/fixtures/milestone73/magic_file.php--- stdout end ---
 stderr:
 --- stderr end ---

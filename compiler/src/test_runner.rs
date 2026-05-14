@@ -1,9 +1,10 @@
+use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{CompileResult, Diagnostic, Phase};
-use crate::run_source;
+use crate::run_source_with_source_file;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestSummary {
@@ -114,7 +115,7 @@ fn run_fixture(path: &Path, php_comparison: PhpComparison) -> Result<(), String>
         .parse::<i32>()
         .unwrap_or(0);
 
-    let actual = match run_source(&source) {
+    let actual = match run_source_with_source_file(&source, fixture_source_name(path)) {
         Ok(execution) => FixtureOutput {
             stdout: execution.stdout,
             stderr: execution.stderr,
@@ -174,6 +175,52 @@ fn run_fixture(path: &Path, php_comparison: PhpComparison) -> Result<(), String>
     } else {
         Err(format!("{}\n{}", path.display(), differences.join("\n")))
     }
+}
+
+fn fixture_source_name(path: &Path) -> String {
+    let normalized = normalize_path_for_display(path);
+    path_from_tests_fixtures(&normalized)
+        .unwrap_or(normalized)
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn normalize_path_for_display(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
+}
+
+fn path_from_tests_fixtures(path: &Path) -> Option<PathBuf> {
+    let parts = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let start = parts.windows(2).position(|window| {
+        window[0] == OsStr::new("tests") && window[1] == OsStr::new("fixtures")
+    })?;
+
+    let mut relative = PathBuf::new();
+    for part in &parts[start..] {
+        relative.push(part);
+    }
+    Some(relative)
 }
 
 fn run_system_php(path: &Path) -> Result<FixtureOutput, String> {

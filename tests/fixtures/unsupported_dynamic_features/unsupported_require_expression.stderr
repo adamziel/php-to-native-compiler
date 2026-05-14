@@ -1,0 +1,2 @@
+parse error at 2:7: unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files
+

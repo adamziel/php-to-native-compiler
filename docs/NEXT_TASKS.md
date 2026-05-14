@@ -6182,24 +6182,31 @@ handled.
 
 ## Milestone 677: Object Static / WordPress Bridge Continuation
 
-- [ ] Runtime/object lane: choose the next static/member or WordPress bridge
-  slice: object receiver static property/constant boundaries, broader class
-  constant semantics, typed static property metadata design, narrow
-  require/bootstrap execution, namespace/import resolution, or a documented
-  blocker. Keep trait composition, magic methods, references/copy-on-write,
-  exact native error objects, and native lowering explicit.
+- [x] Runtime/WordPress bridge lane: implement the first narrow
+  `require path;` execution slice. `require` statements now accept paths that
+  evaluate to strings, including constant/string concatenation such as
+  `ABSPATH . WPINC . '/load.php'`, resolve local paths relative to the current
+  source file, register top-level functions/classes from required files, and
+  execute included statements in caller scope. Kept `include`, `include_once`,
+  expression-form `require`, `require_once`, include-path lookup, stream/URL
+  paths, `_once` de-duplication, exact include return values, autoload/opcache
+  behavior, exact PHP warning/fatal recovery, and native lowering explicit.
+
+## Milestone 678: WordPress Bridge Continuation
+
+- [ ] Runtime/WordPress bridge lane: run the normalized WordPress inventory
+  against an operator-supplied WordPress 6.9.4 checkout after the narrow
+  `require` slice, record the new first bootstrap blocker, and choose the next
+  compatibility slice: `_once`, include-path/autoload behavior,
+  namespace/import resolution, interfaces/traits, exceptions, or a documented
+  blocker. Keep references/copy-on-write, exact native error objects, and
+  native lowering explicit.
 
 ## Latest Checkpoint
 
-- The current checkpoint records the completed split-lane work through
-  Milestone 624 and opens the next lane queue at Milestones 625-629. Milestone
-  630 was closed afterward as a docs/compatibility-manifest step and should be
-  included in the next checkpoint.
-- Checkpoint verification:
-  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-620-624 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
-  passed with Rust tests successful, `phpc test` reporting 722 fixture tests
-  passed with 0 failures, and `phpc test --compare-php` reporting 722 fixture
-  tests passed with 0 failures, 447 system PHP comparisons, and 275 skipped
+- The latest committed checkpoint before the current Milestone 677 batch is
+  `3ddea44 objects: add dynamic static method receivers`, covering Milestone
+  676. Milestone 677 is staged for checkpoint after the full gate passes.
   comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations

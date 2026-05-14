@@ -15,8 +15,9 @@ Implemented:
   before generated code can truthfully call these helpers across targets.
 - Added Milestone 638, a committed WordPress inventory snapshot harness. The
   inventory tool now supports normalized output for stable snapshots, and a
-  synthetic WordPress-shaped CLI test pins the inventory format and current
-  unsupported `require` bootstrap blocker without vendoring WordPress core.
+  synthetic WordPress-shaped CLI test pins the inventory format and the
+  then-current unsupported `require` bootstrap blocker without vendoring
+  WordPress core.
 - Added Milestone 640, interpreter object handle identity. Current object values
   now clone as process-local handles instead of inline payload copies, preserving
   shared public property slots through assignment, function argument/return,
@@ -602,6 +603,39 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone676`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone676`
   passed.
+- Added Milestone 677, the first narrow `require path;` execution slice for
+  WordPress-shaped local bootstrap loading. `require` statements now accept
+  string-valued paths, including constant/string concatenation such as
+  `ABSPATH . WPINC . '/load.php'`, resolve absolute paths directly and
+  relative paths against the current source file, parse required PHP files,
+  register top-level functions/classes, execute included statements in caller
+  scope, and restore source mapping for the including file after the require.
+  The fixture runner now passes the fixture path into `phpc run` so source-file
+  relative `require`, `__FILE__`, and `__DIR__` behavior can be exercised by
+  committed fixtures.
+  `include`, `include_once`, expression-form `require`, `require_once`,
+  include-path lookup, streams/URLs, `_once` de-duplication, exact include
+  return values, autoload/opcache behavior, exact PHP warning/fatal recovery,
+  declaration-order dependencies across required files,
+  references/copy-on-write, and native lowering remain explicit. Focused
+  verification so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features require_executes_local_files_with_constant_concat_paths -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features require_executes_relative_to_current_source_file_and_restores_source_mapping -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features require_reports_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features include_require_constructs_are_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features emit_ir_rejects_require_until_native_multifile_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone677`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone677`,
+  `cargo run -p phpc -- test tests/fixtures/milestone73`,
+  `cargo run -p phpc -- test tests/fixtures/milestone74`,
+  `cargo run -p phpc -- test tests/fixtures/milestone171`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test magic_constants_cli -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -613,10 +647,11 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 677 should take the next object/static or WordPress bridge slice:
-  object receiver static property/constant boundaries, broader class constant
-  semantics, typed static property metadata, narrow require/bootstrap
-  execution, namespace/import resolution, or a documented blocker.
+- Milestone 678 should run normalized WordPress inventory against an
+  operator-supplied WordPress 6.9.4 checkout after the narrow `require` slice,
+  record the new first bootstrap blocker, and choose `_once`,
+  include-path/autoload behavior, namespace/import resolution,
+  interfaces/traits, exceptions, or a documented blocker.
 
 ## 2026-05-12
 

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use php_runtime::{
@@ -16,6 +17,7 @@ use crate::ast::{
     UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
+use crate::parser::parse_source;
 
 pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 128;
 
@@ -59,6 +61,12 @@ struct Interpreter {
     stdout: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedRequirePath {
+    read_path: PathBuf,
+    source_file: PathBuf,
+}
+
 #[derive(Debug, Clone)]
 enum Callable {
     Builtin(String),
@@ -81,6 +89,17 @@ fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
         return Some(value);
     }
     trimmed.parse::<f64>().ok().and_then(integral_float_to_i64)
+}
+
+fn repo_root_relative_path(path: &Path) -> Option<PathBuf> {
+    if path.is_absolute() {
+        return None;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir.parent()?;
+    let candidate = repo_root.join(path);
+    candidate.exists().then_some(candidate)
 }
 
 fn integral_float_to_i64(value: f64) -> Option<i64> {
@@ -302,6 +321,55 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    fn register_included_declarations(&mut self, program: &Program) -> CompileResult<()> {
+        for stmt in &program.statements {
+            match stmt {
+                Stmt::Function(function) => {
+                    let key = function.name.to_ascii_lowercase();
+                    if self.functions.contains_key(&key) {
+                        return Err(runtime_error(
+                            function.span,
+                            RuntimeError::duplicate_function(callable_name(&function.name)),
+                        ));
+                    }
+                    self.functions.insert(key, Rc::new(function.clone()));
+                }
+                Stmt::Class(class) => {
+                    register_class_name(&mut self.classes, class)?;
+                }
+                _ => {}
+            }
+        }
+
+        for stmt in &program.statements {
+            let Stmt::Class(class) = stmt else {
+                continue;
+            };
+            let class_id = register_class_members(&mut self.classes, class)?;
+            for member in &class.members {
+                match member {
+                    ClassMember::Constant(constant) => {
+                        self.class_constants
+                            .insert((class_id, constant.name.clone()), constant.clone());
+                    }
+                    ClassMember::Property(property) if property.is_static => {
+                        self.static_properties
+                            .insert((class_id, property.name.clone()), Value::Null);
+                    }
+                    ClassMember::Method(method) => {
+                        self.methods.insert(
+                            (class_id, method.function.name.to_ascii_lowercase()),
+                            Rc::new(method.function.clone()),
+                        );
+                    }
+                    ClassMember::Property(_) => {}
+                }
+            }
+        }
+
+        self.initialize_static_property_defaults(program)
     }
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
@@ -534,6 +602,7 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
+            Stmt::Require { path, span } => self.execute_require(path, *span, scope),
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
@@ -575,6 +644,97 @@ impl Interpreter {
                 Ok(())
             }
         }
+    }
+
+    fn execute_require(
+        &mut self,
+        path: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        let path_value = self.evaluate(path, scope)?;
+        let Value::String(path_value) = path_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "require",
+                    "require path must evaluate to a string in the current subset",
+                ),
+            ));
+        };
+
+        let path = self.resolve_required_path(&path_value, span)?;
+        let source = fs::read_to_string(&path.read_path).map_err(|error| {
+            Diagnostic::new(
+                Phase::Io,
+                span.line,
+                span.column,
+                format!(
+                    "failed to read required file {}: {error}",
+                    path.source_file.display()
+                ),
+            )
+        })?;
+        let program = parse_source(&source).map_err(|error| error.with_file(&path.source_file))?;
+
+        let previous_source_file = self.source_file.clone();
+        self.source_file = Some(path.source_file.display().to_string());
+        let flow = (|| {
+            self.register_included_declarations(&program)?;
+            self.execute_statements(&program.statements, scope)
+        })();
+        self.source_file = previous_source_file;
+
+        match flow? {
+            Flow::Normal | Flow::Return(_) => Ok(Flow::Normal),
+            Flow::Break(span) => Ok(Flow::Break(span)),
+            Flow::Continue(span) => Ok(Flow::Continue(span)),
+        }
+    }
+
+    fn resolve_required_path(&self, path: &str, span: Span) -> CompileResult<ResolvedRequirePath> {
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "require",
+                    "stream and URL require paths are not implemented",
+                ),
+            ));
+        }
+
+        let path = PathBuf::from(path);
+        if path.is_absolute() {
+            return Ok(ResolvedRequirePath {
+                read_path: path.clone(),
+                source_file: path,
+            });
+        }
+
+        let base = self
+            .source_file
+            .as_deref()
+            .and_then(|source_file| {
+                let parent = Path::new(source_file).parent()?;
+                if parent.as_os_str().is_empty() {
+                    None
+                } else {
+                    Some(parent.to_path_buf())
+                }
+            })
+            .unwrap_or_else(|| PathBuf::from("."));
+        let source_file = base.join(path);
+        let read_path = if source_file.exists() {
+            source_file.clone()
+        } else {
+            // Rust fixture tests run from the crate directory while committed
+            // source-map snapshots use repo-relative fixture paths.
+            repo_root_relative_path(&source_file).unwrap_or_else(|| source_file.clone())
+        };
+        Ok(ResolvedRequirePath {
+            read_path,
+            source_file,
+        })
     }
 
     fn execute_switch(

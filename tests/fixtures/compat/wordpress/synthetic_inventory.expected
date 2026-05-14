@@ -19,4 +19,4 @@ bootstrap_probe:
   command: <phpc> run <wordpress-root>/wp-settings.php
   exit: 1
   stdout_bytes: 0
-  first_stderr_line: parse error at <wordpress-root>/wp-settings.php:2:1: unsupported require: include/require resolution and execution are not implemented
+  first_stderr_line: runtime error at <wordpress-root>/wp-settings.php:2:9: undefined constant ABSPATH

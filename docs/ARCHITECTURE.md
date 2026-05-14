@@ -881,11 +881,12 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   subset, including references to previously defined unqualified constants and
   the current built-in constant slice
 
-Only the string-valued dynamic function lookup slice is executable today.
-Variable-variable execution, include/require execution, and `eval` remain design
-boundaries; direct `eval(...)` syntax is reserved and rejected with a stable
-parse diagnostic. Namespace declarations and top-level `use` import
-declarations are also reserved and rejected with stable parse diagnostics.
+String-valued dynamic function lookup and the narrow local `require path;`
+statement slice are executable today. Variable-variable execution and `eval`
+remain design boundaries; direct `eval(...)` syntax is reserved and rejected
+with a stable parse diagnostic.
+Namespace declarations and top-level `use` import declarations are also
+reserved and rejected with stable parse diagnostics.
 First-class callable syntax such as `strlen(...)` and `$callback(...)` also
 stops at a stable parse diagnostic until Closure creation and callable object
 semantics exist.
@@ -1074,28 +1075,31 @@ the named unsupported edge cases.
 
 ## Include/Require Resolution Design
 
-`include`, `include_once`, `require`, and `require_once` are reserved by the
-lexer/parser today and rejected with stable parse diagnostics before execution.
-The first executable include/require slice should use these rules:
+The first executable include/require slice is now a narrow `require path;`
+statement for local files. It uses these rules:
 
-- the interpreter carries the current file path, process working directory, and
-  include stack in runtime execution context
-- only paths that evaluate to PHP strings are accepted at first
+- the interpreter carries the current file path in runtime execution context
+- only paths that evaluate to PHP strings are accepted
 - absolute paths resolve directly
 - relative paths resolve against the directory of the file containing the
-  include/require expression
-- `include_once` and `require_once` de-duplicate by canonical absolute path when
-  the filesystem can canonicalize the target, and by normalized absolute path
-  otherwise
-- included files execute in the caller scope and may return a value through
-  PHP's `return` statement
+  `require` statement
+- included files are parsed as PHP files with `<?php`, register top-level
+  function/class declarations into the active interpreter, and execute in the
+  caller scope
+- top-level `return` in a required file returns to the including file for the
+  current statement form
 - native lowering rejects include/require until file loading, scope effects,
   and return-value behavior have explicit lowering support
 
-Initial unsupported include/require behavior remains: `include_path` lookup,
-current-working-directory fallback, stream wrappers, `phar://`, URL includes,
-autoload interaction, opcache behavior, cycle detection beyond `_once`
-de-duplication, and PHP's warning-vs-fatal recovery details.
+Unsupported include/require behavior remains: `include`, `include_once`,
+expression-form `require`, `require_once`, include return values, `include_path`
+lookup, process-current-working-directory behavior beyond the fallback used
+when no source file is available, stream wrappers, `phar://`, URL includes,
+autoload interaction, opcache
+behavior, `_once` de-duplication, declaration-order dependencies such as a
+required file declaring `class Child extends Base` only after requiring the base
+class, exact source mapping for declarations after include, and PHP's
+warning-vs-fatal recovery details.
 
 ## Eval Fallback Design
 

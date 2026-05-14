@@ -17341,3 +17341,46 @@ injects this file into every prompt. Each Codex pass should update it with:
   focused checks, then checkpoint with
   `tools/checkpoint.sh "objects: add dynamic static method receivers"` if the
   full gate passes.
+
+## Loop Event 2026-05-15T03:35:00Z
+
+- Checkpoint before this task: `3ddea44 objects: add dynamic static method
+  receivers`, pushed to `origin/master`.
+- Task attempted: Milestone 677, first narrow `require path;` execution slice
+  for WordPress-shaped local bootstrap loading.
+- Files changed so far: `GOAL.MD`, `README.md`, `compiler/src/ast.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/parser.rs`, `compiler/src/test_runner.rs`,
+  `compiler/tests/dynamic_features.rs`, `tests/fixtures/milestone677/*`,
+  removed now-stale unsupported `require` fixtures under
+  `tests/fixtures/unsupported_dynamic_features`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features require_executes_local_files_with_constant_concat_paths -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features require_executes_relative_to_current_source_file_and_restores_source_mapping -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features require_reports_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features include_require_constructs_are_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features emit_ir_rejects_require_until_native_multifile_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone677`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone677`,
+  `cargo run -p phpc -- test tests/fixtures/milestone73`,
+  `cargo run -p phpc -- test tests/fixtures/milestone74`,
+  `cargo run -p phpc -- test tests/fixtures/milestone171`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test magic_constants_cli -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: `include`, `include_once`, expression-form
+  `require`, `require_once`, include-path lookup, stream/URL paths, `_once`
+  de-duplication, exact include return values, autoload/opcache behavior,
+  exact PHP warning/fatal recovery, declaration-order dependencies across
+  required files, namespace/import resolution, interfaces/traits, exceptions,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: checkpoint with
+  `tools/checkpoint.sh "dynamic: execute narrow local require"` if the full
+  gate passes.

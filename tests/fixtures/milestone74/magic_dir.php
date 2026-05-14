@@ -10,4 +10,4 @@ function default_dir($dir = __DIR__) {
 const DECLARED_DIR = __DIR__;
 
 default_dir();
-echo DECLARED_DIR, "\n";
+echo DECLARED_DIR;
