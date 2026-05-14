@@ -64,7 +64,7 @@ tools/run-tests.sh
 | Current supported PHP branches 8.2-8.5 | Branch-specific comparison matrix | `not-covered` | The suite does not yet run against a matrix of PHP binaries or branch-specific expected behavior. |
 | php-src-style language compatibility | Imported or mirrored behavioral tests | `not-covered` | No committed php-src compatibility subset exists yet. |
 | Native executable compatibility | Linked native run command | `not-covered` | `phpc compile` emits IR/assembly only; no linked executable path exists yet. |
-| WordPress core parse/load inventory | Pinned WordPress source plus inventory command | `not-covered` | No WordPress source pin or inventory harness exists yet. |
+| WordPress core parse/load inventory | `tools/wordpress-inventory.sh /path/to/wordpress` | `skipped-unsupported` | Inventory command exists for external WordPress 6.9.4 source; committed source pin and expected output policy do not exist yet. |
 | WordPress bootstrap | Non-networked bootstrap smoke command | `not-covered` | Blocked by include/require, namespaces, runtime environment, filesystem, database, and extension coverage. |
 | WordPress request/admin/WP-CLI flows | Pinned smoke fixtures | `not-covered` | Requires a credible bootstrap harness first. |
 | Representative WordPress plugins/themes | Pinned plugin/theme fixtures | `not-covered` | Requires WordPress core bootstrap and extension/environment support first. |
@@ -75,9 +75,7 @@ tools/run-tests.sh
   are available for comparison.
 - Add a small `tests/fixtures/compat/php` smoke group that intentionally spans
   multiple language areas and records unsupported skips by name.
-- Add a non-vendored WordPress inventory script or document a vendoring policy
-  before committing WordPress source.
-- Identify the first WordPress bootstrap blocker by trying to parse/load the
-  pinned bootstrap entry point under a repeatable command.
+- Run `tools/wordpress-inventory.sh` against local WordPress 6.9.4 source and
+  record the first bootstrap blocker under a committed expected-output policy.
 - Define the first native runtime ABI slice before claiming native executable
   compatibility.

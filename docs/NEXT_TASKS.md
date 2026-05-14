@@ -5637,11 +5637,16 @@ handled.
 
 ## Milestone 632: WordPress Bootstrap Inventory
 
-- [ ] Tests/docs lane: add a pinned WordPress core compatibility inventory plan
+- [x] Tests/docs lane: add a pinned WordPress core compatibility inventory plan
   that starts with parse/load blockers for `wp-settings.php` and bootstrap
   dependencies, names required PHP extensions and host state, and defines the
   first non-networked smoke target. Do not vendor WordPress or claim bootstrap
-  support until a repeatable harness exists.
+  support until a repeatable harness exists. Selected candidate: added
+  `docs/WORDPRESS_COMPATIBILITY.md` and `tools/wordpress-inventory.sh`, pinning
+  the first target to external WordPress 6.9.4 source, naming 7.0 as a future
+  update target after its scheduled 2026-05-20 release, and defining the first
+  `wp-settings.php` inventory probe without vendoring WordPress or claiming
+  bootstrap support.
 
 ## Milestone 633: Program Structure Prerequisite
 

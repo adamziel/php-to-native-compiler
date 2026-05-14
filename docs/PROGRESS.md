@@ -12980,6 +12980,23 @@ Next:
 
 Next:
 
+- Added Milestone 632, the first WordPress bootstrap inventory plan and
+  repeatable non-vendored inventory script. `docs/WORDPRESS_COMPATIBILITY.md`
+  pins the first target to external WordPress 6.9.4 source, names WordPress
+  7.0 as a future update target after its scheduled 2026-05-20 release,
+  documents PHP/host assumptions, and defines the first `wp-settings.php`
+  inventory probe without claiming bootstrap support.
+- Added `tools/wordpress-inventory.sh`, which reports detected WordPress
+  version, PHP file count, rough syntax-surface counts, and a `phpc run
+  wp-settings.php` bootstrap probe for an external WordPress tree.
+- Focused script check passed against a synthetic WordPress-shaped tree with
+  `wp-settings.php` and `wp-includes/version.php`; the script detected version
+  `6.9.4`, counted two PHP files, detected one include/require surface, and
+  reported the expected unsupported `require` parse boundary as the first
+  bootstrap blocker.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`
