@@ -323,14 +323,48 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone176`,
   `cargo fmt --check`, and `git diff --check` passed.
 - Remaining semantic gaps: storage-removing static-property unset,
-  `static::$prop`, static methods, typed/default static properties, dynamic
-  static property names, late static binding, trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  remain explicit.
+  `static::$prop`, executable static method dispatch, typed/default static
+  properties, dynamic static property names, late static binding, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit.
 - Next concrete task: run formatting, focused static-property/object tests,
   syntax/native boundary tests, and `git diff --check`, then checkpoint with
   `tools/checkpoint.sh "objects: add static property unset boundary"` if the
   full gate passes.
+
+## Loop Event 2026-05-14T22:15:00Z
+
+- Checkpoint before this task: `45a1455 objects: add static property unset
+  boundary`, pushed to `origin/master`.
+- Task attempted: Milestone 666, named static-method call diagnostics for
+  `ClassName::method(...)`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone666/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_method.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model named_static_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone666`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone666`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Remaining semantic gaps: executable static method dispatch,
+  `static::method(...)`, late static binding, called-class context,
+  typed/default static property metadata, broader class constant semantics,
+  trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering remain explicit.
+- Next concrete task: run full object-model focused tests and `git diff
+  --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: add named static method boundary"` if the full
+  gate passes.
 
 ## Loop Event 2026-05-14T14:15:14Z
 

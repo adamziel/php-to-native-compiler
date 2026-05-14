@@ -29,10 +29,12 @@ chain while reusing the current `$this` object. Explicit `self::method(...)`
 calls are supported from active instance method/constructor context and
 dispatch against the current class and inherited method chain while reusing
 the current `$this` object. Dynamic method/property
-names still fail with explicit parse diagnostics. Static member access through
-`::` outside the current parent/self method-call, class-name constant,
-class-constant, and static-property slices also fails with explicit parse
-diagnostics until static method dispatch and late-bound static members exist.
+names still fail with explicit parse diagnostics. Named
+`ClassName::method(...)` calls parse and report stable runtime diagnostics
+before static dispatch. Static member access through `::` outside the current
+named/self/parent method-call, class-name constant, class-constant, and
+static-property slices still fails with explicit parse diagnostics until
+late-bound static members exist.
 `ClassName::class` resolves to the
 source-spelled class string without requiring class metadata. `self::class`
 and `parent::class` resolve from active instance method/constructor context.
@@ -240,9 +242,9 @@ increment/decrement, `isset`, `empty`, `??`, and `??=` for the current
 untyped/no-default static property slice. `unset(ClassName::$prop)`,
 `unset(self::$prop)`, and `unset(parent::$prop)` are parsed and report a
 stable runtime diagnostic because PHP forbids unsetting static properties; they
-do not remove static storage. Static method expressions such as
-`ClassName::method()` are rejected by the parser instead of falling through to
-generic expression errors.
+do not remove static storage. Named static method expressions such as
+`ClassName::method(...)` report stable runtime diagnostics before argument
+evaluation or static dispatch.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
@@ -260,11 +262,13 @@ static identifier naming a declared or inherited public instance method, a
 private method called from a same-class method context, or a protected method
 called from a same-class/child method context. The receiver is evaluated first,
 arguments are evaluated left to right after metadata checks, and the method
-body runs with `$this` bound to the receiver object handle. Missing methods,
+body runs with `$this` bound to the receiver object handle. Named
+`ClassName::method(...)` calls are accepted only as a non-executable runtime
+boundary for now. Missing methods,
 non-object receivers, private methods outside same-class method context,
 protected methods outside same-class/child context, static methods called
-through an object receiver, and `$this` outside instance method execution
-report stable runtime diagnostics.
+through named, object, `self::`, or `parent::` receivers, and `$this` outside
+instance method execution report stable runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
 property reads/writes, class-name constants, class constants, parent method

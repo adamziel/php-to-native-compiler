@@ -1,1 +1,1 @@
-phpc intentionally rejects static method syntax before dispatch exists.
+phpc intentionally reports a stable runtime boundary before static method dispatch exists.

@@ -395,6 +395,12 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    StaticMethodCall {
+        class_name: String,
+        method: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     SelfMethodCall {
         method: String,
         args: Vec<Expr>,
@@ -490,6 +496,7 @@ impl Expr {
             | Expr::ParentStaticProperty { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
+            | Expr::StaticMethodCall { span, .. }
             | Expr::SelfMethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }

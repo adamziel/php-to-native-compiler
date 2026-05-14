@@ -2154,6 +2154,18 @@ fn emit_ir_rejects_self_method_calls_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nBox::make();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn class_name_constants_execute_current_subset() {
     let execution = run_source(
         r#"<?php
@@ -3022,6 +3034,66 @@ $box->call();
 }
 
 #[test]
+fn named_static_method_calls_report_current_unsupported_boundaries() {
+    let static_method = runtime_error(
+        r#"<?php
+class Box {
+    public static function make($value) {}
+}
+Box::make(missing_call());
+"#,
+    );
+    assert_eq!(static_method.line, 5);
+    assert_eq!(static_method.column, 4);
+    assert_eq!(
+        static_method.message,
+        "unsupported call Box::make(): static method dispatch through named receivers is not implemented"
+    );
+
+    let inherited_static_method = runtime_error(
+        r#"<?php
+class Base {
+    public static function make() {}
+}
+class Child extends Base {}
+Child::make();
+"#,
+    );
+    assert_eq!(inherited_static_method.line, 6);
+    assert_eq!(inherited_static_method.column, 6);
+    assert_eq!(
+        inherited_static_method.message,
+        "unsupported call Base::make(): static method dispatch through named receivers is not implemented"
+    );
+
+    let non_static_method = runtime_error(
+        r#"<?php
+class Box {
+    public function make() {}
+}
+Box::make();
+"#,
+    );
+    assert_eq!(non_static_method.line, 5);
+    assert_eq!(non_static_method.column, 4);
+    assert_eq!(
+        non_static_method.message,
+        "unsupported call Box::make(): non-static method dispatch through named static receivers is not implemented"
+    );
+
+    let missing_method = runtime_error(
+        r#"<?php
+class Box {}
+Box::missing();
+"#,
+    );
+    assert_eq!(missing_method.message, "undefined function Box::missing()");
+
+    let missing_class = runtime_error("<?php\nMissing::make();\n");
+    assert_eq!(missing_class.message, "undefined class Missing");
+}
+
+#[test]
 fn constructor_dispatch_reports_current_unsupported_boundaries() {
     let argument_error = runtime_error(
         r#"<?php
@@ -3602,14 +3674,6 @@ static::VERSION;
             2,
             7,
             "unsupported static:: class constant access: late static binding and class constants are not implemented",
-        ),
-        (
-            r#"<?php
-Box::make();
-"#,
-            2,
-            4,
-            "unsupported static method call: static method dispatch is not implemented",
         ),
     ];
 

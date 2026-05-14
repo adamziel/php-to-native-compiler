@@ -404,6 +404,21 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone665`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone665`
   passed.
+- Added Milestone 666, a named static-method call boundary. The parser now
+  accepts `ClassName::method(...)` calls, and `phpc run` resolves the named
+  class plus declared/inherited method metadata before reporting stable
+  diagnostics without evaluating arguments or dispatching the static method.
+  Missing classes and missing methods reuse existing stable diagnostics, and
+  native lowering rejects the parsed form through the object/class boundary.
+  Executable static method dispatch, `static::method(...)`, late static
+  binding, traits, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit. Focused verification:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model named_static_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone666`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone666`
+  passed.
 
 Next:
 
@@ -415,9 +430,9 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 666 should take the next object storage/static slice: static
-  method boundaries, broader class constant semantics, typed/default static
-  property metadata, or a documented blocker.
+- Milestone 667 should take the next object storage/static slice: executable
+  static method dispatch prerequisites, broader class constant semantics,
+  typed/default static property metadata, or a documented blocker.
 
 ## 2026-05-12
 

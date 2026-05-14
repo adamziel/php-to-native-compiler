@@ -166,7 +166,7 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` with direct
   reads/writes, read-modify-write, `isset`/`empty`, `??`, `??=` forms, and
   stable diagnostics for PHP-forbidden static-property `unset(...)`, now execute through
-  `phpc run`, but interfaces, traits, enums, static methods, broader static
+  `phpc run`, but interfaces, traits, enums, executable static method dispatch, broader static
   member semantics, broader class constant semantics, cloning, magic methods,
   dynamic method/property names, broader
   `parent::`/`self::`/`static::`, typed/default property compatibility,

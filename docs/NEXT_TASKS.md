@@ -6058,11 +6058,24 @@ handled.
 
 ## Milestone 666: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next object storage/static slice: static
-  method boundaries, broader class constant semantics, typed/default static
-  property metadata, or a documented blocker. Keep late static binding, trait
+- [x] Runtime/object lane: add the named static-method call boundary. Parsed
+  `ClassName::method(...)` now reaches runtime, resolves the named class and
+  declared/inherited method metadata, and reports stable diagnostics before
+  argument evaluation or executable static dispatch. Missing classes and
+  missing methods reuse existing stable diagnostics, and native lowering
+  rejects the parsed form through the object/class boundary. Kept executable
+  static method dispatch, `static::method(...)`, late static binding, trait
   composition, magic methods, references/copy-on-write, exact native error
   objects, and native lowering explicit.
+
+## Milestone 667: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next object storage/static slice:
+  executable static method dispatch prerequisites, broader class constant
+  semantics, typed/default static property metadata, or a documented blocker.
+  Keep late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

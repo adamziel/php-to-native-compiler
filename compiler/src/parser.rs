@@ -2657,11 +2657,18 @@ impl Parser {
                     span: operator_span,
                 })
             }
-            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LParen) => {
-                Err(self.error_at(
-                    operator_span,
-                    "unsupported static method call: static method dispatch is not implemented",
-                ))
+            TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                self.advance();
+                self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
+                let args = self.parse_call_arguments_after_open()?;
+                Ok(Expr::StaticMethodCall {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    method,
+                    args,
+                    span: operator_span,
+                })
             }
             TokenKind::Identifier(constant) => {
                 self.advance();
@@ -2885,6 +2892,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
+            | Expr::StaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
@@ -2948,6 +2956,7 @@ impl Parser {
             | Expr::Property { .. }
             | Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
+            | Expr::StaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
@@ -2983,6 +2992,7 @@ impl Parser {
                     || args.iter().any(Self::expr_contains_assignment)
             }
             Expr::ParentMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
+            Expr::StaticMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::SelfMethodCall { args, .. } => args.iter().any(Self::expr_contains_assignment),
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
@@ -3071,6 +3081,9 @@ impl Parser {
             Expr::ParentMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
+            Expr::StaticMethodCall { args, .. } => args
+                .iter()
+                .any(Self::expr_contains_unsupported_assignment_rhs),
             Expr::SelfMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -3146,6 +3159,9 @@ impl Parser {
             Expr::MethodCall { target, args, .. } => Self::find_append_index_span(target)
                 .or_else(|| args.iter().find_map(Self::find_append_index_span)),
             Expr::ParentMethodCall { args, .. } => {
+                args.iter().find_map(Self::find_append_index_span)
+            }
+            Expr::StaticMethodCall { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
             }
             Expr::SelfMethodCall { args, .. } => args.iter().find_map(Self::find_append_index_span),

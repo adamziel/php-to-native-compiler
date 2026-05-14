@@ -1036,8 +1036,8 @@ Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
-Static method syntax through `::`, including `ClassName::method()`, is rejected
-with explicit parse diagnostics until static dispatch exists.
+Named static method syntax through `ClassName::method(...)` is parsed and then
+reports a stable runtime diagnostic until static dispatch exists.
 `ClassName::class` returns the source-spelled class string,
 while `self::class` and `parent::class` resolve from the active class context
 in current instance method execution. Direct `ClassName::CONST`, `self::CONST`,

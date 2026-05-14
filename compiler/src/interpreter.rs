@@ -806,6 +806,12 @@ impl Interpreter {
             Expr::ParentMethodCall { method, args, span } => {
                 self.call_parent_method(method, args, *span, scope)
             }
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                span,
+            } => self.call_named_static_method(class_name, method, args, *span),
             Expr::SelfMethodCall { method, args, span } => {
                 self.call_self_method(method, args, *span, scope)
             }
@@ -2084,6 +2090,65 @@ impl Interpreter {
         }
 
         self.call_user_function_with_this(function, this_object, values, Some(class_id))
+    }
+
+    fn call_named_static_method(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        _args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        let receiver_class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
+        let Some((
+            declaring_class_id,
+            declaring_class_name,
+            _resolved_method_name,
+            visibility,
+            is_static,
+        )) = self.resolve_instance_method(class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    receiver_class.name()
+                )),
+            ));
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{declaring_class_name}::{method_name}()"),
+                    "static method dispatch through named receivers is not implemented",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            method_name,
+            visibility,
+            span,
+        )?;
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{declaring_class_name}::{method_name}()"),
+                "non-static method dispatch through named static receivers is not implemented",
+            ),
+        ))
     }
 
     fn evaluate_self_class_name_constant(&self, span: Span) -> CompileResult<Value> {

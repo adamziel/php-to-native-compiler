@@ -500,7 +500,7 @@
   unsupported `clone` expressions, unsupported
   `instanceof` expressions,
   unsupported magic static receiver forms such as `static::`,
-  anonymous class expressions, dynamic property names, static method calls,
+  anonymous class expressions, dynamic property names,
   `static::$prop` late-bound static property access, and `static::CONST`
   late-bound class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
@@ -714,11 +714,12 @@
   `get_declared_traits()` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented yet, and is
   available through string-valued dynamic calls.
-  Static method expressions through `::`, including `ClassName::method()`,
-  fail with stable parse diagnostics. `clone $object` expressions fail with a
-  stable parse diagnostic before object handle copying or `__clone` dispatch is
-  implemented. `$object instanceof ClassName` expressions fail with a stable
-  parse diagnostic before class/interface relationship checks exist.
+  Named static method expressions such as `ClassName::method(...)` parse and
+  report stable runtime diagnostics before argument evaluation or static
+  dispatch. `clone $object` expressions fail with a stable parse diagnostic
+  before object handle copying or `__clone` dispatch is implemented.
+  `$object instanceof ClassName` expressions fail with a stable parse
+  diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions return the source-spelled class string without
   requiring class metadata. `self::class` resolves to the active declaring
   class name and `parent::class` resolves to that class's immediate parent
@@ -744,10 +745,12 @@
   properties, dynamic names, storage-removing static-property unset, and
   `static::$prop` remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
-  receiver slices.
+  receiver slices for instance-method dispatch; resolved static methods through
+  those receivers remain runtime diagnostics.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
-  `$this` binding. Dynamic method names, dynamic property names, non-public
+  `$this` binding. Named `ClassName::method(...)` calls are diagnostic-only
+  until executable static method dispatch exists. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant
   semantics, shallow/deep clone property copying, `__clone`,
@@ -2628,8 +2631,9 @@
   typed static properties, late-bound static properties, storage-removing
   static-property unset,
   and anonymous classes
-- static method calls, late-bound `static::class`, `static::$prop`,
-  `static::CONST`, and broader `static::` through `::`
+- executable static method dispatch, late-bound `static::class`,
+  `static::method(...)`, `static::$prop`, `static::CONST`, and broader
+  `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
