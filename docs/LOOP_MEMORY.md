@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T23:45:00Z
+
+- Checkpoint before this task: `58fa831 tests: bound namespaced parent metadata`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 711, bounded normal-path `try` execution for the
+  synthetic WordPress reached-try blocker at `<bootstrap-shim>:9:1`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/exception_boundaries.rs`,
+  `tests/fixtures/milestone698/try_reached.*`,
+  `tests/fixtures/milestone711/*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test exception_boundaries -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone711`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone711`,
+  `cargo run -p phpc -- test tests/fixtures/milestone698`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone698`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: exception objects/state/methods, `Throwable`, catch
+  matching and variable binding, stack unwinding, finally during
+  exception/error unwinding, exact PHP diagnostics, partial-output behavior,
+  and native lowering remain explicit. The synthetic WordPress shim now reaches
+  the anonymous-closure value blocker at `<bootstrap-shim>:9:19`.
+- Next concrete task: run `cargo fmt --check`, `cargo check -p phpc`,
+  `git diff --check`, additional closure/native focused tests if needed, then
+  checkpoint with `tools/checkpoint.sh "runtime: execute normal try paths"` if
+  the full gate passes. Milestone 712 should bound the anonymous closure value
+  blocker.
+
 ## Loop Event 2026-05-14T23:20:00Z
 
 - Checkpoint before this task: `506dbe9 parser: accept arrow function syntax`,

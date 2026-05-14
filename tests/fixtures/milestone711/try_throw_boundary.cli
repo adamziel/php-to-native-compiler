@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone711/try_throw_boundary.php:3:5: unsupported call throw: exception objects and stack unwinding are not implemented
+--- stderr end ---

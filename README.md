@@ -105,9 +105,10 @@ incorrect native code.
   can parse and be skipped, while reached throws report a stable runtime
   diagnostic without constructing exception objects or unwinding the stack
 - statement-form `try`/`catch`/`finally` blocks as a bounded exception
-  boundary: guarded or declaration-contained blocks can parse and be skipped,
-  while reached try blocks report a stable runtime diagnostic without executing
-  exception control flow
+  boundary: non-throwing try bodies execute, catch bodies are skipped without a
+  thrown exception, finally bodies execute after normal try completion, and
+  reached throws still report a stable runtime diagnostic before catch matching
+  or unwinding exists
 - narrow `require`, `require_once`, `include`, and `include_once` statement
   execution for local string paths, including constant/string-concatenated
   paths resolved relative to the current source file, included files executing
@@ -162,7 +163,7 @@ generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
 interface inheritance/implementation enforcement, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
-try/catch/finally exception execution, exception objects and stack unwinding,
+catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
 array destructuring beyond simple positional statement-form `list(...)`,
 constructor behavior beyond public/inherited public instance `__construct`

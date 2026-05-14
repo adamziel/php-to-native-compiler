@@ -42,47 +42,58 @@ echo "after";
 }
 
 #[test]
-fn reached_try_statement_reports_current_runtime_boundary() {
-    let error = run_source(
+fn reached_try_statement_executes_body_and_skips_catch_without_throw() {
+    let execution = run_source(
         r#"<?php
 try {
     echo "try";
 } catch (Exception $e) {
     echo "catch";
 }
+echo "after";
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call try: exception handling and stack unwinding are not implemented"
-    );
+    assert_eq!(execution.stdout, "tryafter");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn try_finally_without_catch_reports_current_runtime_boundary() {
-    let error = run_source(
+fn try_finally_without_catch_executes_body_and_finally_without_throw() {
+    let execution = run_source(
         r#"<?php
 try {
     echo "try";
 } finally {
     echo "finally";
 }
+echo "after";
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call try: exception handling and stack unwinding are not implemented"
-    );
+    assert_eq!(execution.stdout, "tryfinallyafter");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn try_catch_finally_skips_catch_and_runs_finally_without_throw() {
+    let execution = run_source(
+        r#"<?php
+try {
+    echo "try";
+} catch (Throwable|Exception $e) {
+    echo "catch";
+} finally {
+    echo "finally";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "tryfinally");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -123,6 +134,30 @@ throw MISSING_EXCEPTION_VALUE;
 }
 
 #[test]
+fn throw_inside_try_still_reports_throw_boundary_before_catch_matching() {
+    let error = run_source(
+        r#"<?php
+try {
+    throw MISSING_EXCEPTION_VALUE;
+} catch (Exception $e) {
+    echo "catch";
+} finally {
+    echo "finally";
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 5);
+    assert_eq!(
+        error.message,
+        "unsupported call throw: exception objects and stack unwinding are not implemented"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_throw_statements_until_native_exceptions_exist() {
     let error = emit_ir_source("<?php\nthrow new Exception('boom');\n").unwrap_err();
 
@@ -141,6 +176,23 @@ fn emit_asm_rejects_throw_statements_before_backend_execution() {
 #[test]
 fn emit_ir_rejects_try_blocks_until_native_exceptions_exist() {
     let error = emit_ir_source(
+        r#"<?php
+try {
+    echo "try";
+} catch (Exception $e) {
+    echo "catch";
+}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_EXCEPTION_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_try_blocks_before_backend_execution() {
+    let error = emit_asm_source(
         r#"<?php
 try {
     echo "try";

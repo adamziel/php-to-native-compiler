@@ -25,4 +25,4 @@ bootstrap_shim_probe:
   command: <phpc> run <bootstrap-shim>
   exit: 1
   stdout_bytes: 0
-  first_stderr_line: runtime error at <bootstrap-shim>:9:1: unsupported call try: exception handling and stack unwinding are not implemented
+  first_stderr_line: runtime error at <bootstrap-shim>:9:19: unsupported call closure: anonymous function values and invocation are not implemented

@@ -162,9 +162,12 @@
 - `try { ... } catch (...) { ... } finally { ... }` blocks parse as statement
   syntax with class-name catch type lists and optional catch variables. Guarded
   or declaration-contained try blocks can be skipped by existing control flow.
-  If execution reaches a try block, `phpc run` reports the stable runtime
-  boundary `unsupported call try: exception handling and stack unwinding are
-  not implemented` without executing the try, catch, or finally bodies.
+  If execution reaches a try block, `phpc run` executes the try body on the
+  normal no-throw path, skips catch bodies when no exception is thrown, and
+  executes a finally body after normal try completion. Reached `throw`
+  statements inside try bodies still report the current throw runtime boundary
+  before catch matching, exception unwinding, or finally-during-exception
+  execution exists.
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
 - top-level `global $name, ...;` declarations as no-op/import-compatible
@@ -2904,8 +2907,9 @@
   references/copy-on-write, or exact native error behavior
 - exception execution beyond the current statement boundaries: reached
   `throw expr;` statements fail with a stable runtime diagnostic before
-  evaluating the operand, and reached `try` blocks fail before executing try,
-  catch, or finally bodies. Throw expressions, malformed try syntax, and
+  evaluating the operand; reached `try` blocks execute only the normal no-throw
+  path, skip catch bodies without a thrown exception, and run finally bodies
+  after normal try completion. Throw expressions, malformed try syntax, and
   standalone `catch`/`finally` still fail with stable parse diagnostics.
   `Exception` is seeded as a metadata-only built-in class: `class_exists`,
   `get_declared_classes`, no-argument `new Exception()`, and user classes
@@ -2913,8 +2917,9 @@
   `Throwable` interface metadata, `Exception` constructor state (`message`,
   `code`, previous exception), `Exception` methods such as `getMessage()`,
   stack unwinding, catch matching, catch variable binding, multi-catch
-  semantics beyond parsed type lists, `finally` execution, stack traces, exact
-  native error objects, and native lowering do not exist yet.
+  semantics beyond parsed type lists, finally execution during exception/error
+  unwinding, stack traces, exact native error objects, and native lowering do
+  not exist yet.
 - PHP 8 `match` expressions currently fail with a stable parse diagnostic
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
@@ -3544,8 +3549,8 @@
 - closure values/invocation, capture binding semantics, arrow function
   execution, and callable integration
 - configurable recursion/call-stack limits matching PHP deployments
-- exception objects and exception handling beyond the current throw/try runtime
-  boundaries
+- exception objects and exception handling beyond the current throw/normal-try
+  runtime boundaries
 - interface inheritance/implementation enforcement, trait composition, and enum
   case objects/backed values/methods/interfaces
 - generator functions, generator objects, `yield`, `yield from`, key/value

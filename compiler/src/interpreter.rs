@@ -806,13 +806,9 @@ impl Interpreter {
                     "exception objects and stack unwinding are not implemented",
                 ),
             )),
-            Stmt::Try { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "try",
-                    "exception handling and stack unwinding are not implemented",
-                ),
-            )),
+            Stmt::Try {
+                body, finally_body, ..
+            } => self.execute_try_statement(body, finally_body.as_deref(), scope),
             Stmt::Break { span } => Ok(Flow::Break(*span)),
             Stmt::Continue { span } => Ok(Flow::Continue(*span)),
             Stmt::Global { span, .. } => {
@@ -873,6 +869,22 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    fn execute_try_statement(
+        &mut self,
+        body: &[Stmt],
+        finally_body: Option<&[Stmt]>,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        let try_flow = self.execute_statements(body, scope)?;
+        if let Some(finally_body) = finally_body {
+            let finally_flow = self.execute_statements(finally_body, scope)?;
+            if !matches!(finally_flow, Flow::Normal) {
+                return Ok(finally_flow);
+            }
+        }
+        Ok(try_flow)
     }
 
     fn execute_for_action(

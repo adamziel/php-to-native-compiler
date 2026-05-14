@@ -140,8 +140,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `<bootstrap-shim>:9:10` is covered for the current syntax-only closure
   boundary by Milestone 709. The previous missing-parent class blocker at
   `<bootstrap-shim>:7:1` is covered for already-declared namespaced parents by
-  Milestone 710. The shim probe now reaches
-  `runtime error at <bootstrap-shim>:9:1: unsupported call try: exception handling and stack unwinding are not implemented`.
+  Milestone 710. The previous reached `try` blocker at `<bootstrap-shim>:9:1`
+  is covered for non-throwing try-body execution by Milestone 711. The shim
+  probe now reaches
+  `runtime error at <bootstrap-shim>:9:19: unsupported call closure: anonymous function values and invocation are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

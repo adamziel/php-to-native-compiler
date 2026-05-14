@@ -1205,14 +1205,16 @@ Statement-form `throw expr;` and `try`/`catch`/`finally` blocks build AST nodes
 so guarded WordPress compatibility code can parse and be skipped by normal
 control flow. If execution reaches a throw statement, the interpreter reports a
 stable unsupported runtime boundary without evaluating the throw operand. If
-execution reaches a try block, the interpreter reports a stable unsupported
-runtime boundary without executing any try, catch, or finally body.
+execution reaches a try block, the interpreter executes the normal no-throw
+body path, skips catch bodies when no exception is thrown, and runs finally
+bodies after normal try completion. Reached throws and other runtime errors do
+not unwind into catch/finally handling in this slice.
 
 Throw expressions, malformed try blocks, and standalone `catch`/`finally`
 remain parse boundaries. Native lowering rejects exception statements before
 emitting LLVM IR or assembly until `Throwable`/`Exception` objects, stack
-unwinding, catch matching, `finally` execution, stack traces, and exact native
-error behavior have explicit runtime and IR semantics.
+unwinding, catch matching, finally execution during exception unwinding, stack
+traces, and exact native error behavior have explicit runtime and IR semantics.
 
 ## Match Expression Boundary
 

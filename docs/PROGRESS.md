@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 711, a bounded normal-path `try` execution slice through
+  `phpc run`. Reached `try` blocks now execute their body when no throw is
+  reached, skip catch bodies when no exception is thrown, and execute finally
+  bodies after normal try completion. Reached `throw` statements still report
+  the existing stable runtime boundary before operand evaluation, catch
+  matching, exception unwinding, or finally-during-exception behavior exists.
+  Native lowering still rejects all `throw` and `try`/`catch`/`finally`
+  statements before backend execution. The synthetic WordPress inventory now
+  advances to
+  `runtime error at <bootstrap-shim>:9:19: unsupported call closure: anonymous function values and invocation are not implemented`.
+  Exception objects/state/methods, `Throwable`, catch matching and variable
+  binding, stack unwinding, finally during exception/error unwinding, exact PHP
+  diagnostics, partial-output behavior, and native lowering remain explicit.
+  Focused verification so far:
+  `cargo test -p phpc --test exception_boundaries -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone711`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone711`,
+  `cargo run -p phpc -- test tests/fixtures/milestone698`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone698`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed.
 - Added Milestone 710, an explicit namespaced-parent class metadata slice for
   the current WordPress synthetic missing-parent blocker. The object metadata
   tests and CLI fixtures now prove that `namespace Synthetic\WordPress; class
