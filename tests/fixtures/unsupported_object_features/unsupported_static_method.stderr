@@ -1,2 +1,2 @@
-runtime error at 6:13: unsupported call Box::make(): static method dispatch through self:: is not implemented
+runtime error at 7:1: unsupported call Box::make(): static method dispatch through object receivers is not implemented
 

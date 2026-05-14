@@ -177,18 +177,19 @@
   parameter/default/return subset.
 - explicit parent method calls by static method name:
   `parent::method(...)` and `parent::__construct(...)` are supported in active
-  instance method/constructor context when the current class has a parent and
-  the resolved parent-chain method is public or protected under the current
-  visibility rules. The call reuses the current `$this` object, evaluates
-  positional arguments left-to-right, and executes the resolved parent method
-  body with the declaring parent class as the active method context.
+  class method/constructor context when the current class has a parent and the
+  resolved parent-chain method is visible under the current rules. Static
+  methods execute without `$this`; non-static methods reuse the current
+  `$this` object. Positional arguments are evaluated left-to-right after
+  metadata and arity checks, and the resolved method body runs with the
+  declaring parent class as the active method context.
 - explicit self method calls by static method name:
-  `self::method(...)` is supported in active instance method/constructor
-  context when the resolved current-class or inherited method is a non-static
-  public/protected/private instance method visible under the current rules.
-  The call reuses the current `$this` object, evaluates positional arguments
-  left-to-right, and executes the resolved method body with the declaring class
-  as the active method context.
+  `self::method(...)` is supported in active class method/constructor context
+  when the resolved current-class or inherited method is visible under the
+  current rules. Static methods execute without `$this`; non-static methods
+  reuse the current `$this` object. Positional arguments are evaluated
+  left-to-right after metadata and arity checks, and the resolved method body
+  runs with the declaring class as the active method context.
 - named static method calls by static method name:
   `ClassName::method(...)` is supported for declared or inherited static
   methods visible under the current public/protected/private rules. The call
@@ -723,9 +724,10 @@
   available through string-valued dynamic calls.
   Named static method expressions such as `ClassName::method(...)` execute for
   declared or inherited visible static methods under the current positional
-  argument/default-parameter subset. `clone $object` expressions fail with a
-  stable parse diagnostic before object handle copying or `__clone` dispatch is
-  implemented.
+  argument/default-parameter subset, and `self::method(...)` /
+  `parent::method(...)` execute resolved visible static methods while an active
+  class context exists. `clone $object` expressions fail with a stable parse
+  diagnostic before object handle copying or `__clone` dispatch is implemented.
   `$object instanceof ClassName` expressions fail with a stable parse
   diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions return the source-spelled class string without
@@ -753,12 +755,13 @@
   properties, dynamic names, storage-removing static-property unset, and
   `static::$prop` remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
-  receiver slices for instance-method dispatch; resolved static methods through
-  those receivers remain runtime diagnostics.
+  receiver slices for visible non-static or static method dispatch from active
+  class context; non-static methods still require current `$this`.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
-  `$this` binding. Named `ClassName::method(...)` static method dispatch is
-  supported for the current visible declared/inherited static-method subset.
+  `$this` binding. Named `ClassName::method(...)`, `self::method(...)`, and
+  `parent::method(...)` static method dispatch is supported for the current
+  visible declared/inherited static-method subset.
   Dynamic method names, dynamic property names, non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant

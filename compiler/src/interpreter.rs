@@ -2034,19 +2034,6 @@ impl Interpreter {
             ));
         };
 
-        let this_object = match caller_scope.read_named("this") {
-            Some(Value::Object(object)) => object.clone(),
-            _ => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        format!("parent::{method_name}()"),
-                        "parent method calls require current $this object context",
-                    ),
-                ));
-            }
-        };
-
         let parent_class = self
             .classes
             .get(parent_class_id)
@@ -2062,16 +2049,6 @@ impl Interpreter {
                 )),
             ));
         };
-
-        if is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "static method dispatch through parent:: is not implemented",
-                ),
-            ));
-        }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
@@ -2089,7 +2066,23 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_this(function, this_object, values, Some(class_id))
+        if is_static {
+            self.call_user_function_with_checked_values(function, values, None, Some(class_id))
+        } else {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            self.call_user_function_with_this(function, this_object, values, Some(class_id))
+        }
     }
 
     fn call_named_static_method(
@@ -2768,19 +2761,6 @@ impl Interpreter {
             ));
         };
 
-        let this_object = match caller_scope.read_named("this") {
-            Some(Value::Object(object)) => object.clone(),
-            _ => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        format!("self::{method_name}()"),
-                        "self method calls require current $this object context",
-                    ),
-                ));
-            }
-        };
-
         let current_class = self
             .classes
             .get(current_class_id)
@@ -2796,16 +2776,6 @@ impl Interpreter {
                 )),
             ));
         };
-
-        if is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "static method dispatch through self:: is not implemented",
-                ),
-            ));
-        }
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
@@ -2823,7 +2793,23 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_this(function, this_object, values, Some(class_id))
+        if is_static {
+            self.call_user_function_with_checked_values(function, values, None, Some(class_id))
+        } else {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through self:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            self.call_user_function_with_this(function, this_object, values, Some(class_id))
+        }
     }
 
     fn resolve_instance_method(

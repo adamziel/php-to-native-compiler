@@ -2886,26 +2886,25 @@ $child->call();
         "unsupported call Base::hide(): private method dispatch requires same-class method context"
     );
 
-    let static_parent_method = runtime_error(
+    let non_static_parent_method_without_this = runtime_error(
         r#"<?php
 class Base {
-    public static function make() {}
+    public function make() {}
 }
 class Child extends Base {
-    public function call() {
+    public static function call() {
         parent::make();
     }
 }
-$child = new Child();
-$child->call();
+Child::call();
 "#,
     );
 
-    assert_eq!(static_parent_method.line, 7);
-    assert_eq!(static_parent_method.column, 15);
+    assert_eq!(non_static_parent_method_without_this.line, 7);
+    assert_eq!(non_static_parent_method_without_this.column, 15);
     assert_eq!(
-        static_parent_method.message,
-        "unsupported call Base::make(): static method dispatch through parent:: is not implemented"
+        non_static_parent_method_without_this.message,
+        "unsupported call Base::make(): non-static method dispatch through parent:: requires current $this object context"
     );
 }
 
@@ -3011,26 +3010,69 @@ $child->call();
         "unsupported call Base::hide(): private method dispatch requires same-class method context"
     );
 
-    let static_self_method = runtime_error(
+    let non_static_self_method_without_this = runtime_error(
         r#"<?php
 class Box {
-    public static function make() {}
+    public function make() {}
 
-    public function call() {
+    public static function call() {
         self::make();
     }
 }
-$box = new Box();
-$box->call();
+Box::call();
 "#,
     );
 
-    assert_eq!(static_self_method.line, 6);
-    assert_eq!(static_self_method.column, 13);
+    assert_eq!(non_static_self_method_without_this.line, 6);
+    assert_eq!(non_static_self_method_without_this.column, 13);
     assert_eq!(
-        static_self_method.message,
-        "unsupported call Box::make(): static method dispatch through self:: is not implemented"
+        non_static_self_method_without_this.message,
+        "unsupported call Box::make(): non-static method dispatch through self:: requires current $this object context"
     );
+}
+
+#[test]
+fn self_and_parent_static_methods_execute_from_class_context() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public static $count;
+
+    public static function bump($step = 1) {
+        self::$count ??= 0;
+        self::$count += $step;
+        return self::$count;
+    }
+
+    protected static function prefix() {
+        return self::class;
+    }
+
+    public static function label() {
+        return self::prefix();
+    }
+}
+
+class Child extends Base {
+    public static function parentBump($step) {
+        return parent::bump($step);
+    }
+
+    public static function parentPrefix() {
+        return parent::prefix();
+    }
+}
+
+echo Base::bump(), "\n";
+echo Child::parentBump(4), "\n";
+echo Base::label(), "\n";
+echo Child::parentPrefix();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\n5\nBase\nBase");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -3113,41 +3155,6 @@ Box::make();
     assert_eq!(
         protected_method.message,
         "unsupported call Box::make(): protected method dispatch requires same-class or child method context"
-    );
-
-    let self_static_method = runtime_error(
-        r#"<?php
-class Box {
-    public static function make() {}
-
-    public static function call() {
-        self::make();
-    }
-}
-Box::call();
-"#,
-    );
-    assert_eq!(
-        self_static_method.message,
-        "unsupported call self::make(): self method calls require current $this object context"
-    );
-
-    let parent_static_method = runtime_error(
-        r#"<?php
-class Base {
-    public static function make() {}
-}
-class Child extends Base {
-    public static function call() {
-        parent::make();
-    }
-}
-Child::call();
-"#,
-    );
-    assert_eq!(
-        parent_static_method.message,
-        "unsupported call parent::make(): parent method calls require current $this object context"
     );
 
     let missing_method = runtime_error(

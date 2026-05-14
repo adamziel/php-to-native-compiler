@@ -6083,10 +6083,22 @@ handled.
 
 ## Milestone 668: Object Static Continuation
 
+- [x] Runtime/object lane: implement `self::`/`parent::` static method
+  dispatch prerequisites. `self::method(...)` and `parent::method(...)` now
+  execute resolved visible static methods from active class context without
+  binding `$this`, preserve the resolved declaring class as active class
+  context, and keep non-static calls without current `$this` as stable runtime
+  diagnostics. Kept object-receiver static method dispatch, late-bound
+  `static::method(...)`, late static binding, trait composition, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering explicit.
+
+## Milestone 669: Object Static Continuation
+
 - [ ] Runtime/object lane: choose the next object storage/static slice:
-  `self::`/`parent::` static method dispatch prerequisites, broader class
-  constant semantics, typed/default static property metadata, or a documented
-  blocker. Keep late static binding, trait composition, magic methods,
+  late-bound `static::method(...)` diagnostics/execution prerequisites,
+  typed/default static property metadata, broader class constant semantics, or
+  a documented blocker. Keep trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
 

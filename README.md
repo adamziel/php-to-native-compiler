@@ -124,8 +124,8 @@ and explicit parent calls, broader `self::`, all `static::` execution and late
 static binding, visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed/default property compatibility,
-typed or multi-declarator class constants, broader static method dispatch through
-`self::`/`parent::`/`static::`, `static::`
+typed or multi-declarator class constants, late-bound static method dispatch
+through `static::`, `static::`
 late-bound property access, dynamic method/property names, resources, and
 native extension integration.
 

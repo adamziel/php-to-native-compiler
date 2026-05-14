@@ -438,6 +438,28 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone667`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone667`
   passed.
+- Added Milestone 668, static method dispatch through active `self::` and
+  `parent::` class receivers. `self::method(...)` and `parent::method(...)`
+  now execute resolved visible static methods from active class context without
+  binding `$this`, evaluate positional arguments after metadata/arity checks,
+  and preserve the resolved declaring class as active class context for
+  current static-property, class-name, and class-constant lookup. Non-static
+  `self::`/`parent::` calls without current `$this`, object-receiver static
+  method calls, late-bound `static::method(...)`, typed/default static
+  property metadata, traits, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering remain explicit. Focused
+  verification: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model self_and_parent_static_methods_execute_from_class_context -- --test-threads=1`,
+  `cargo test -p phpc --test object_model self_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model parent_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model named_static_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone668`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone668`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 

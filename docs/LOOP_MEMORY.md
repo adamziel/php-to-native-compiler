@@ -403,6 +403,40 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "objects: add named static method dispatch"` if the full
   gate passes.
 
+## Loop Event 2026-05-14T23:10:00Z
+
+- Checkpoint before this task: `da38bea objects: add named static method
+  dispatch`, pushed to `origin/master`.
+- Task attempted: Milestone 668, static method dispatch through active
+  `self::` and `parent::` receivers.
+- Files changed so far: `GOAL.MD`, `README.md`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone668/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_method.*`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/ARCHITECTURE.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model self_and_parent_static_methods_execute_from_class_context -- --test-threads=1`,
+  `cargo test -p phpc --test object_model self_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model parent_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model named_static_method_calls_report_current_unsupported_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone668`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone668`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: static method dispatch through object receivers and
+  late-bound `static::method(...)`, late static binding, called-class context,
+  typed/default static property metadata, broader class constant semantics,
+  trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, then
+  checkpoint with
+  `tools/checkpoint.sh "objects: add self parent static dispatch"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

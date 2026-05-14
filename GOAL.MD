@@ -202,9 +202,11 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   `self::CONST`, and `parent::CONST`, plus narrow static properties through
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` with direct
   reads/writes, read-modify-write, `isset`/`empty`, `??`, `??=` forms, and
-  stable diagnostics for PHP-forbidden static-property `unset(...)`, now execute through
-  `phpc run`, but interfaces, traits, enums, broader static method dispatch
-  through `self::`/`parent::`/`static::`, broader static member semantics,
+  stable diagnostics for PHP-forbidden static-property `unset(...)`, plus
+  visible static-method dispatch through `ClassName::method(...)`,
+  `self::method(...)`, and `parent::method(...)`, now execute through
+  `phpc run`, but interfaces, traits, enums, late-bound static method dispatch
+  through `static::`, broader static member semantics,
   broader class constant semantics, cloning, magic methods, dynamic
   method/property names, broader `parent::`/`self::`/`static::`,
   typed/default property compatibility,

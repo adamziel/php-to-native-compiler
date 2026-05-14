@@ -1036,10 +1036,10 @@ Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
-Named static method syntax through `ClassName::method(...)` executes declared
-or inherited visible static methods in the interpreter without binding `$this`;
-`self::`/`parent::` static dispatch and late-bound `static::method(...)` remain
-unsupported.
+Named static method syntax through `ClassName::method(...)`,
+`self::method(...)`, and `parent::method(...)` executes declared or inherited
+visible static methods in the interpreter without binding `$this`;
+late-bound `static::method(...)` remains unsupported.
 `ClassName::class` returns the source-spelled class string,
 while `self::class` and `parent::class` resolve from the active class context
 in current instance method execution. Direct `ClassName::CONST`, `self::CONST`,
