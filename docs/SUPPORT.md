@@ -225,23 +225,26 @@
   offset operands, and direct object-variable public-property operands over
   the current value model
 - null coalescing `??` for direct static variables, direct array-variable
-  offset operands, and direct object-variable public-property operands over the
-  current value model; undefined variables, missing array keys, missing public
-  properties, non-array/non-object targets, null variables, null array values,
-  and null public property values evaluate the fallback, while falsey non-null
-  values such as `false`, `0`, `""`, and `"0"` are returned without evaluating
-  the fallback
+  offset operands, direct object-variable public-property operands, and
+  exact-class private/protected object-property operands in active same-class
+  method context over the current value model; undefined variables, missing
+  array keys, missing supported object properties, non-array/non-object
+  targets, null variables, null array values, and null supported object
+  property values evaluate the fallback, while falsey non-null values such as
+  `false`, `0`, `""`, and `"0"` are returned without evaluating the fallback
 - null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`, and
-  `$object->publicProperty ??= expr` for direct static variables, direct
-  array-variable offset operands, and direct object-variable public-property
-  operands, in statement position and parenthesized expression position;
-  undefined and `null` variables, undefined/null arrays, missing array keys,
-  null array values, and null public property values evaluate and store the
-  right-hand expression, while existing non-null values are preserved without
-  evaluating the right-hand expression. Expression forms return the assigned
-  or existing value. Undefined object targets, non-object property targets,
-  and missing property names fail with stable runtime diagnostics instead of
-  materializing objects or dynamic properties
+  `$object->property ??= expr` for direct static variables, direct
+  array-variable offset operands, direct object-variable public-property
+  operands, and exact-class private/protected object-property operands in
+  active same-class method context, in statement position and parenthesized
+  expression position; undefined and `null` variables, undefined/null arrays,
+  missing array keys, null array values, and null supported object property
+  values evaluate and store the right-hand expression, while existing
+  non-null values are preserved without evaluating the right-hand expression.
+  Expression forms return the assigned or existing value. Undefined object
+  targets, non-object property targets, and missing property names fail with
+  stable runtime diagnostics instead of materializing objects or dynamic
+  properties
 - builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
   `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -2399,9 +2402,8 @@
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected visibility outside
   same-class/child method contexts, non-public property access outside
-  same-class method context, inherited non-public property slots,
-  non-public property null-coalescing visibility context, broader constructor
-  visibility context, static member
+  same-class method context, inherited non-public property slots, broader
+  constructor visibility context, static member
   execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,

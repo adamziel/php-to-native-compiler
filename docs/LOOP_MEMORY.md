@@ -256,6 +256,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: rerun focused checks after docs, then checkpoint if the
   full gate passes.
 
+## Loop Event 2026-05-14T16:20:00Z
+
+- Checkpoint: `1c80d30 objects: support same-class non-public read-modify-write`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 655, same-class non-public property null
+  coalescing.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/null_coalescing.rs`,
+  `tests/fixtures/milestone655/same_class_non_public_property_null_coalescing.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model same_class_non_public_instance_properties_support_null_coalescing -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing non_public_object_properties -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone655`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone655`,
+  and `git diff --check` passed after docs updates.
+- Remaining semantic gaps: inherited non-public property slots, child-context
+  protected property access, static properties, class constants, property
+  override compatibility, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering remain explicit.
+- Next concrete task: rerun focused checks after docs, then checkpoint if the
+  full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

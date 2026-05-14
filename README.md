@@ -97,12 +97,13 @@ incorrect native code.
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, same-class private/protected property
-  reads/writes, `isset`/`empty`, and read-modify-write forms, inherited public
-  property slots, public and same-class private instance method calls,
-  inherited public method calls, protected same-class/child method calls,
-  explicit `parent::method()` and `parent::__construct()` calls in instance
-  context, narrow `self::method()` calls in instance context, single-parent
-  metadata, object `isset` and `empty`, and selected metadata builtins
+  reads/writes, `isset`/`empty`, read-modify-write, and null-coalescing forms,
+  inherited public property slots, public and same-class private instance
+  method calls, inherited public method calls, protected same-class/child
+  method calls, explicit `parent::method()` and `parent::__construct()` calls
+  in instance context, narrow `self::method()` calls in instance context,
+  single-parent metadata, object `isset` and `empty`, and selected metadata
+  builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 

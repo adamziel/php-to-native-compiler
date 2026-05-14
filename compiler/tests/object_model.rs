@@ -262,6 +262,45 @@ echo $second->describe();
 }
 
 #[test]
+fn same_class_non_public_instance_properties_support_null_coalescing() {
+    let source = r#"<?php
+class Box {
+    private $secret;
+    protected $label;
+
+    public function seed($secret, $label) {
+        $this->secret = $secret;
+        $this->label = $label;
+    }
+
+    public function coalesce($other) {
+        echo ($this->secret ?? "secret-fallback"), "\n";
+        echo ($this->missing ?? "missing-fallback"), "\n";
+        $this->secret ??= "secret-assigned";
+        $this->label ??= "label-replaced";
+        $other->secret ??= "peer-secret";
+        $other->label ??= "peer-label";
+        echo $this->secret, ":", $this->label, "\n";
+        echo $other->secret, ":", $other->label;
+    }
+}
+
+$first = new Box();
+$second = new Box();
+$first->seed(null, "kept");
+$second->seed("existing", null);
+$first->coalesce($second);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "secret-fallback\nmissing-fallback\nsecret-assigned:kept\nexisting:peer-label"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn object_handles_preserve_identity_across_supported_value_copies() {
     let source = r#"<?php
 class Box {

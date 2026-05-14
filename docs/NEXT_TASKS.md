@@ -5905,13 +5905,27 @@ handled.
 
 ## Milestone 655: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next smallest object property slice:
+- [x] Runtime/object lane: choose the next smallest object property slice:
   same-class non-public null coalescing / `??=` forms, property declaration
   ownership metadata needed for inherited non-public slots, or a documented
-  blocker for child protected property visibility. Keep static properties,
-  class constants, property override compatibility, trait composition, magic
+  blocker for child protected property visibility. Implemented direct
+  null-coalescing and null-coalescing assignment for exact-class
+  private/protected property slots in active same-class method context,
+  including same-class peer objects. Kept inherited non-public property
+  slots, child-context protected property access, static properties, class
+  constants, property override compatibility, trait composition, magic
   methods, references/copy-on-write, exact native error objects, and native
   lowering explicit.
+
+## Milestone 656: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next object-model ownership slice:
+  property declaration ownership metadata needed for inherited non-public
+  slots, child protected property visibility, or a documented blocker if the
+  current flat object slot representation must change first. Keep static
+  properties, class constants, property override compatibility, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

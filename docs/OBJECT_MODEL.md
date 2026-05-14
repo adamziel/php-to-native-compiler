@@ -106,6 +106,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   work for public slots and exact-class private/protected slots in active
   same-class method context, reusing the current scalar helper behavior and
   return-value rules;
+- direct object-property null coalescing and null coalescing assignment work
+  for public slots and exact-class private/protected slots in active
+  same-class method context, preserving the current lazy fallback and
+  null-vs-falsey behavior;
 - public, same-class private, and protected same-class/child instance method
   calls use case-insensitive declared-or-inherited method lookup, evaluate
   arguments left to right, bind `$this` to the receiver object handle, and
@@ -261,8 +265,7 @@ cloning, destructors, serialization hooks, visibility enforcement,
 slices, constructor behavior beyond public/inherited public instance
 `__construct` and explicit parent calls, constructor arguments for classes without constructors,
 non-public inherited property slots, property override compatibility,
-non-public property access outside same-class method context, broader
-non-public property forms such as null coalescing,
+non-public property access outside same-class method context,
 non-public constructor access beyond the current constructor slice, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,

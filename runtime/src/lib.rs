@@ -2121,6 +2121,26 @@ impl PhpObject {
         Ok(Some(property.value.clone()))
     }
 
+    pub fn read_property_for_isset_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<Option<Value>> {
+        let properties = self.properties.borrow();
+        let Some(property) = properties.iter().find(|property| property.name == name) else {
+            return Ok(None);
+        };
+
+        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        Ok(Some(property.value.clone()))
+    }
+
     pub fn read_current_public_property(&self, name: &str) -> Option<Value> {
         self.properties
             .borrow()

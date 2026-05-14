@@ -213,6 +213,20 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone654`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone654`,
   and `git diff --check` passed.
+- Added Milestone 655, same-class non-public property null coalescing.
+  Direct `??` and `??=` now work for exact-class private/protected property
+  slots while executing a method on that same class, including same-class peer
+  objects, with the current lazy fallback and null-vs-falsey behavior.
+  External non-public object-property null coalescing still fails with stable
+  diagnostics, and inherited non-public property slots, child-context
+  protected property access, property override compatibility, exact native
+  error objects, and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model same_class_non_public_instance_properties_support_null_coalescing -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing non_public_object_properties -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone655`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone655`,
+  and `git diff --check` passed.
 
 Next:
 

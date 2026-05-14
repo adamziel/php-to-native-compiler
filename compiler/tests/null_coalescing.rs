@@ -389,6 +389,46 @@ fn null_coalescing_assignment_rejects_non_array_offset_targets() {
 }
 
 #[test]
+fn null_coalescing_rejects_external_non_public_object_properties() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $secret;
+}
+$box = new Box();
+echo $box->secret ?? "fallback";
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
+    );
+}
+
+#[test]
+fn null_coalescing_assignment_rejects_external_non_public_object_properties() {
+    let error = runtime_error(
+        r#"<?php
+class Box {
+    private $secret;
+}
+$box = new Box();
+$box->secret ??= "fallback";
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
+    );
+}
+
+#[test]
 fn complex_null_coalescing_left_operands_remain_explicitly_unsupported() {
     let error = runtime_error("<?php\n$items = [[1]];\necho $items[0][0] ?? 'fallback';\n");
 
