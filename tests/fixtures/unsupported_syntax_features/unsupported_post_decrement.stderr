@@ -1,2 +1,2 @@
-parse error at 3:1: unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented
+parse error at 3:1: unsupported increment/decrement target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented
 

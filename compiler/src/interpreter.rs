@@ -95,8 +95,18 @@ fn integral_float_to_i64(value: f64) -> Option<i64> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CompoundAssignmentPlace {
     Variable(String),
-    ArrayIndex { name: String, key: ArrayKey },
-    ObjectProperty { object: String, property: String },
+    ArrayIndex {
+        name: String,
+        key: ArrayKey,
+    },
+    ObjectProperty {
+        object: String,
+        property: String,
+    },
+    StaticProperty {
+        declaring_class_id: ClassId,
+        property: String,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1165,13 +1175,17 @@ impl Interpreter {
             },
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "compound assignment",
-                    "static property targets are not implemented",
-                ),
-            )),
+            | AssignTarget::ParentStaticProperty { .. } => {
+                let (declaring_class_id, property, value) =
+                    self.read_static_property_target(target, span)?;
+                Ok((
+                    CompoundAssignmentPlace::StaticProperty {
+                        declaring_class_id,
+                        property,
+                    },
+                    value,
+                ))
+            }
         }
     }
 
@@ -1226,6 +1240,14 @@ impl Interpreter {
                         )),
                     )),
                 }
+            }
+            CompoundAssignmentPlace::StaticProperty {
+                declaring_class_id,
+                property,
+            } => {
+                self.static_properties
+                    .insert((declaring_class_id, property), value);
+                Ok(())
             }
         }
     }
@@ -1369,13 +1391,17 @@ impl Interpreter {
             },
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "increment/decrement",
-                    "static property targets are not implemented",
-                ),
-            )),
+            | AssignTarget::ParentStaticProperty { .. } => {
+                let (declaring_class_id, property, value) =
+                    self.read_static_property_target(target, span)?;
+                Ok((
+                    CompoundAssignmentPlace::StaticProperty {
+                        declaring_class_id,
+                        property,
+                    },
+                    value,
+                ))
+            }
         }
     }
 
@@ -1399,7 +1425,7 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "increment/decrement",
                         format!(
-                            "only int and float variables, array offsets, or object properties are implemented, got {}",
+                            "only int and float variables, array offsets, object properties, or static properties are implemented, got {}",
                             other.type_name()
                         ),
                     ),
@@ -1535,13 +1561,18 @@ impl Interpreter {
             }
             AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
-            | AssignTarget::ParentStaticProperty { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "??=",
-                    "static property targets are not implemented",
-                ),
-            )),
+            | AssignTarget::ParentStaticProperty { span, .. } => {
+                let (declaring_class_id, property, current) =
+                    self.read_static_property_target(target, *span)?;
+                if !matches!(current, Value::Null) {
+                    return Ok(current);
+                }
+
+                let value = self.evaluate(expr, scope)?;
+                self.static_properties
+                    .insert((declaring_class_id, property), value.clone());
+                Ok(value)
+            }
         }
     }
 
@@ -2050,6 +2081,59 @@ impl Interpreter {
         )
     }
 
+    fn read_static_property_target(
+        &self,
+        target: &AssignTarget,
+        span: Span,
+    ) -> CompileResult<(ClassId, String, Value)> {
+        let (class_id, class_name, property) = match target {
+            AssignTarget::StaticProperty {
+                class_name,
+                property,
+                ..
+            } => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                (class_id, class_name.clone(), property.clone())
+            }
+            AssignTarget::SelfStaticProperty { property, .. } => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("self::${property}"),
+                            "self static property access requires instance method context",
+                        ),
+                    ));
+                };
+                let class_name = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata")
+                    .name()
+                    .to_string();
+                (current_class_id, class_name, property.clone())
+            }
+            AssignTarget::ParentStaticProperty { property, .. } => {
+                let (parent_class_id, parent_class_name) =
+                    self.resolve_parent_static_property_context(property, span)?;
+                (parent_class_id, parent_class_name, property.clone())
+            }
+            _ => unreachable!("static property target helper called for non-static target"),
+        };
+
+        let (declaring_class_id, _declaring_class_name) =
+            self.resolve_static_property_storage(class_id, &class_name, &property, span)?;
+        let value = self
+            .static_properties
+            .get(&(declaring_class_id, property.clone()))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        Ok((declaring_class_id, property, value))
+    }
+
     fn resolve_parent_static_property_context(
         &self,
         property: &str,
@@ -2095,19 +2179,8 @@ impl Interpreter {
         property: &str,
         span: Span,
     ) -> CompileResult<Value> {
-        let (declaring_class_id, declaring_class_name, visibility) = self
-            .resolve_static_property(class_id, property)
-            .ok_or_else(|| {
-                runtime_error(span, RuntimeError::undefined_property(class_name, property))
-            })?;
-
-        self.ensure_static_property_visible(
-            declaring_class_id,
-            &declaring_class_name,
-            property,
-            visibility,
-            span,
-        )?;
+        let (declaring_class_id, _declaring_class_name) =
+            self.resolve_static_property_storage(class_id, class_name, property, span)?;
 
         Ok(self
             .static_properties
@@ -2124,6 +2197,21 @@ impl Interpreter {
         value: Value,
         span: Span,
     ) -> CompileResult<Value> {
+        let (declaring_class_id, _declaring_class_name) =
+            self.resolve_static_property_storage(class_id, class_name, property, span)?;
+
+        self.static_properties
+            .insert((declaring_class_id, property.to_string()), value.clone());
+        Ok(value)
+    }
+
+    fn resolve_static_property_storage(
+        &self,
+        class_id: ClassId,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<(ClassId, String)> {
         let (declaring_class_id, declaring_class_name, visibility) = self
             .resolve_static_property(class_id, property)
             .ok_or_else(|| {
@@ -2138,9 +2226,7 @@ impl Interpreter {
             span,
         )?;
 
-        self.static_properties
-            .insert((declaring_class_id, property.to_string()), value.clone());
-        Ok(value)
+        Ok((declaring_class_id, declaring_class_name))
     }
 
     fn resolve_static_property(

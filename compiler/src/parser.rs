@@ -662,20 +662,16 @@ impl Parser {
     fn parse_for_action(&mut self) -> CompileResult<ForAction> {
         let operator_span = self.peek().span;
         if let Some(op) = self.match_increment_decrement_operator() {
-            if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            let expr = self.parse_postfix()?;
+            if matches!(expr, Expr::IncrementDecrement { .. }) {
                 return Err(self.error_at(
                     operator_span,
-                    unsupported_increment_decrement_target_message(),
+                    unsupported_increment_decrement_expression_message(),
                 ));
             }
-
-            let target = self.parse_assignment_target()?;
-            if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
-                return Err(self.error_at(
-                    target.span(),
-                    unsupported_increment_decrement_target_message(),
-                ));
-            }
+            let target = self
+                .increment_decrement_target_from_expr(expr)
+                .map_err(|message| self.error_at(operator_span, message))?;
             Self::ensure_supported_increment_decrement_target(&target)
                 .map_err(|message| self.error_at(target.span(), message))?;
 
@@ -1072,20 +1068,25 @@ impl Parser {
             return Ok(None);
         };
 
-        if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+        let expr = self.parse_postfix()?;
+        if matches!(expr, Expr::IncrementDecrement { .. }) {
             return Err(self.error_at(
                 operator_span,
-                unsupported_increment_decrement_target_message(),
+                unsupported_increment_decrement_expression_message(),
             ));
         }
-
-        let target = self.parse_assignment_target()?;
+        let target = self
+            .increment_decrement_target_from_expr(expr)
+            .map_err(|message| self.error_at(operator_span, message))?;
         if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
             if matches!(
                 target,
                 AssignTarget::Variable { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
                     | AssignTarget::Property { .. }
+                    | AssignTarget::StaticProperty { .. }
+                    | AssignTarget::SelfStaticProperty { .. }
+                    | AssignTarget::ParentStaticProperty { .. }
             ) {
                 self.current = saved;
                 return Ok(None);
@@ -1256,11 +1257,11 @@ impl Parser {
         match target {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
-            | AssignTarget::Property { .. } => Ok(()),
-            AssignTarget::ArrayIndex { index: None, .. }
+            | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => {
+            | AssignTarget::ParentStaticProperty { .. } => Ok(()),
+            AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
         }
@@ -1272,13 +1273,62 @@ impl Parser {
         match target {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
-            | AssignTarget::Property { .. } => Ok(()),
-            AssignTarget::ArrayIndex { index: None, .. }
+            | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => {
+            | AssignTarget::ParentStaticProperty { .. } => Ok(()),
+            AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
+        }
+    }
+
+    fn increment_decrement_target_from_expr(
+        &self,
+        expr: Expr,
+    ) -> Result<AssignTarget, &'static str> {
+        match expr {
+            Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match *target {
+                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                    name,
+                    index: Some(*index),
+                    span,
+                }),
+                _ => Err(unsupported_increment_decrement_target_message()),
+            },
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => match *target {
+                Expr::Variable(object, _) => Ok(AssignTarget::Property {
+                    object,
+                    property,
+                    span,
+                }),
+                _ => Err(unsupported_increment_decrement_target_message()),
+            },
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            }),
+            Expr::SelfStaticProperty { property, span } => {
+                Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                Ok(AssignTarget::ParentStaticProperty { property, span })
+            }
+            _ => Err(unsupported_increment_decrement_target_message()),
         }
     }
 
@@ -1313,6 +1363,21 @@ impl Parser {
                 }),
                 _ => Err(unsupported_compound_assignment_target_message()),
             },
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            }),
+            Expr::SelfStaticProperty { property, span } => {
+                Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                Ok(AssignTarget::ParentStaticProperty { property, span })
+            }
             _ => Err(unsupported_compound_assignment_target_message()),
         }
     }
@@ -1406,6 +1471,21 @@ impl Parser {
                 }),
                 _ => Err(unsupported_null_coalescing_assignment_message()),
             },
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            }),
+            Expr::SelfStaticProperty { property, span } => {
+                Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                Ok(AssignTarget::ParentStaticProperty { property, span })
+            }
             _ => Err(unsupported_null_coalescing_assignment_message()),
         }
     }
@@ -1996,20 +2076,16 @@ impl Parser {
     fn parse_unary(&mut self) -> CompileResult<Expr> {
         let operator_span = self.peek().span;
         if let Some(op) = self.match_increment_decrement_operator() {
-            if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            let expr = self.parse_postfix()?;
+            if matches!(expr, Expr::IncrementDecrement { .. }) {
                 return Err(self.error_at(
                     operator_span,
-                    unsupported_increment_decrement_target_message(),
+                    unsupported_increment_decrement_expression_message(),
                 ));
             }
-
-            let target = self.parse_assignment_target()?;
-            if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
-                return Err(self.error_at(
-                    target.span(),
-                    unsupported_increment_decrement_target_message(),
-                ));
-            }
+            let target = self
+                .increment_decrement_target_from_expr(expr)
+                .map_err(|message| self.error_at(operator_span, message))?;
             Self::ensure_supported_increment_decrement_target(&target)
                 .map_err(|message| self.error_at(target.span(), message))?;
 
@@ -2123,45 +2199,10 @@ impl Parser {
             }
 
             if self.check_increment_decrement_operator() {
-                let target = match expr {
-                    Expr::Variable(name, span) => AssignTarget::Variable { name, span },
-                    Expr::Index {
-                        target,
-                        index,
-                        span,
-                    } => match *target {
-                        Expr::Variable(name, _) => AssignTarget::ArrayIndex {
-                            name,
-                            index: Some(*index),
-                            span,
-                        },
-                        _ => {
-                            return Err(self
-                                .error_at(span, unsupported_increment_decrement_target_message()));
-                        }
-                    },
-                    Expr::Property {
-                        target,
-                        property,
-                        span,
-                    } => match *target {
-                        Expr::Variable(object, _) => AssignTarget::Property {
-                            object,
-                            property,
-                            span,
-                        },
-                        _ => {
-                            return Err(self
-                                .error_at(span, unsupported_increment_decrement_target_message()));
-                        }
-                    },
-                    _ => {
-                        return Err(self.error_at(
-                            expr.span(),
-                            unsupported_increment_decrement_target_message(),
-                        ));
-                    }
-                };
+                let span = expr.span();
+                let target = self
+                    .increment_decrement_target_from_expr(expr)
+                    .map_err(|message| self.error_at(span, message))?;
                 let op = self
                     .match_increment_decrement_operator()
                     .expect("caller checked increment/decrement operator");
@@ -3572,7 +3613,7 @@ fn unsupported_chained_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_compound_assignment_target_message() -> &'static str {
-    "unsupported compound assignment target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented"
+    "unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented"
 }
 
 fn unsupported_increment_decrement_expression_message() -> &'static str {
@@ -3580,7 +3621,7 @@ fn unsupported_increment_decrement_expression_message() -> &'static str {
 }
 
 fn unsupported_increment_decrement_target_message() -> &'static str {
-    "unsupported increment/decrement target: only direct static variables, direct array offsets, and direct object properties are implemented for integer and float values; append offsets and nested targets are not implemented"
+    "unsupported increment/decrement target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented"
 }
 
 fn unsupported_namespace_message() -> &'static str {

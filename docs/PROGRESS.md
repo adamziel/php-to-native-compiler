@@ -346,6 +346,24 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
   passed.
+- Added Milestone 663, narrow static property mutation for the existing
+  static-property storage slice. `phpc run` now supports compound assignment,
+  pre/post increment/decrement, and `??=` for declared untyped/no-default
+  static properties through `ClassName::$prop`, `self::$prop`, and
+  `parent::$prop`, reusing inherited declaring-class storage and current
+  public/protected/private visibility checks. `static::$prop`, static methods,
+  typed/default static properties, dynamic static property names,
+  static-property `isset`/`empty`/`??`, late static binding, traits, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering remain explicit. Focused verification:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties -- --test-threads=1`,
+  `cargo test -p phpc --test compound_assignment static_property -- --test-threads=1`,
+  `cargo test -p phpc --test increment_decrement static_property -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing static_property -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone663`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone663`
+  passed.
 
 Next:
 
@@ -357,10 +375,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 663 should take the next object storage/static slice: static method
-  boundaries, broader static property mutation, broader class constant
-  semantics, or a documented blocker if typed/default property metadata must
-  land first.
+- Milestone 664 should take the next object storage/static slice: static
+  method boundaries, static-property `isset`/`empty`/`??`, broader class
+  constant semantics, or a documented blocker if typed/default property
+  metadata must land first.
 
 ## 2026-05-12
 

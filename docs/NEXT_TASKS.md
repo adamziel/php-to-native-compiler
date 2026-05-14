@@ -6011,19 +6011,33 @@ handled.
   initialized to `null`, plus case-sensitive `ClassName::$prop`,
   `self::$prop`, and `parent::$prop` reads and direct writes with inherited
   slot lookup and current visibility checks. Kept `static::$prop`, static
-  methods, typed/default static properties, compound assignment,
-  increment/decrement, `??=`, dynamic static property names, late static
-  binding, trait composition, magic methods, references/copy-on-write, exact
-  native error objects, and native lowering explicit.
+  methods, typed/default static properties, dynamic static property names,
+  late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Milestone 663: Object Static Continuation
 
+- [x] Runtime/object lane: implement the next static-property mutation slice.
+  Added compound assignment, pre/post increment/decrement, and `??=` for
+  declared untyped/no-default static properties through `ClassName::$prop`,
+  `self::$prop`, and `parent::$prop`, including inherited declaring-class
+  storage, current visibility checks, expression results, C-style `for`
+  expression coverage, CLI fixture coverage, system PHP comparison, and native
+  mutation rejection tests. Kept `static::$prop`, static methods,
+  typed/default static properties, dynamic static property names,
+  static-property `isset`/`empty`/`??`, late static binding, trait composition,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering explicit.
+
+## Milestone 664: Object Static Continuation
+
 - [ ] Runtime/object lane: choose the next object storage/static slice: static
-  method boundaries, broader static property mutation, broader class constant
-  semantics, or a documented blocker if typed/default property metadata must
-  land first. Keep late static binding, trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  explicit.
+  method boundaries, static-property `isset`/`empty`/`??`, broader class
+  constant semantics, or a documented blocker if typed/default property
+  metadata must land first. Keep late static binding, trait composition, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  lowering explicit.
 
 ## Latest Checkpoint
 

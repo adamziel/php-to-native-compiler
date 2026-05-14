@@ -235,10 +235,10 @@ target variables, while `empty` returns true for falsey slots, missing
 property names, undefined target variables, and non-object target variables.
 Static properties are recorded as metadata and stored per declaring class, but
 are not stored in object values. `ClassName::$prop`, `self::$prop`, and
-`parent::$prop` support direct reads and writes for the current untyped/no-default
-static property slice. Static method expressions such as `ClassName::method()`
-are rejected by the parser instead of falling through to generic expression
-errors.
+`parent::$prop` support direct reads and writes, compound assignment, pre/post
+increment/decrement, and `??=` for the current untyped/no-default static
+property slice. Static method expressions such as `ClassName::method()` are
+rejected by the parser instead of falling through to generic expression errors.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
@@ -247,9 +247,9 @@ Class constants are accepted as `const NAME = value;` or
 multiple constants in one declaration, `static::CONST`, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
 outside the current slice.
-Static property defaults, typed static properties, compound assignment,
-increment/decrement, `??=`, dynamic property names, and `static::$prop` are
-outside the current slice.
+Static property defaults, typed static properties, dynamic property names,
+`isset`/`empty`/`??` on static properties, and `static::$prop` are outside the
+current slice.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
 static identifier naming a declared or inherited public instance method, a
@@ -303,8 +303,7 @@ conditional class declarations, interfaces, traits,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 default property values, multiple properties in one declaration, typed or
 multi-declarator class constants, static property defaults, typed static
-properties, compound/null-coalescing static property mutation, late static
-binding, magic methods, namespaces,
+properties, late static binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, broader visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call,

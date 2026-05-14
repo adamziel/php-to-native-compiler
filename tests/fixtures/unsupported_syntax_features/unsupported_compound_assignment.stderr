@@ -1,2 +1,2 @@
-parse error at 3:1: unsupported compound assignment target: only direct static variables, direct array offsets, and direct object properties are implemented; append offsets and nested targets are not implemented
+parse error at 3:1: unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented
 

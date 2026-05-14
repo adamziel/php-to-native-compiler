@@ -1,0 +1,17 @@
+exit: 0
+stdout:
+5
+5
+7
+ab
+first
+first
+7
+8
+9
+9:child
+loop0
+loop1
+--- stdout end ---
+stderr:
+--- stderr end ---

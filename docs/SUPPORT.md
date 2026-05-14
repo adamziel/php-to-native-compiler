@@ -197,10 +197,11 @@
   and return null, bool, int, float, string, or array values.
 - static property reads and direct writes for untyped/no-default declared
   static properties through `ClassName::$name`, `self::$name`, and
-  `parent::$name`. Storage is class-level, initialized to `null`, inherited
-  static properties share the declaring class slot unless redeclared, names
-  are case-sensitive, and current public/protected/private visibility checks
-  apply in active class context.
+  `parent::$name`, plus compound assignment, pre/post increment/decrement,
+  and `??=` for those same static property forms. Storage is class-level,
+  initialized to `null`, inherited static properties share the declaring class
+  slot unless redeclared, names are case-sensitive, and current
+  public/protected/private visibility checks apply in active class context.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class and protected property operands owned by the active class or
@@ -250,11 +251,12 @@
   targets, null variables, null array values, and null supported object
   property values evaluate the fallback, while falsey non-null values such as
   `false`, `0`, `""`, and `"0"` are returned without evaluating the fallback
-- null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`, and
-  `$object->property ??= expr` for direct static variables, direct
-  array-variable offset operands, direct object-variable public-property
-  operands, and private object-property operands owned by the active declaring
-  class plus protected operands owned by the active class or an ancestor, in
+- null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`,
+  `$object->property ??= expr`, `ClassName::$prop ??= expr`,
+  `self::$prop ??= expr`, and `parent::$prop ??= expr` for direct static
+  variables, direct array-variable offset operands, direct object-variable
+  public-property operands, supported private/protected object-property
+  operands in active class context, and supported static property operands, in
   statement position and parenthesized
   expression position; undefined and `null` variables, undefined/null arrays,
   missing array keys, null array values, and null supported object property
@@ -474,11 +476,12 @@
   outside direct static-variable `$name = expr`, including append-offset
   chained assignments and complex/nested targets
 - explicit parse diagnostics for unsupported compound assignment targets
-  outside direct static variables, direct array offsets, and direct object
-  properties
+  outside direct static variables, direct array offsets, direct object
+  properties, and supported static properties
 - explicit parse diagnostics for unsupported increment/decrement targets
-  outside direct static variables, direct array offsets, and direct object
-  properties, plus chained increment/decrement expressions
+  outside direct static variables, direct array offsets, direct object
+  properties, and supported static properties, plus chained
+  increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
@@ -528,12 +531,15 @@
   missing, or null. Direct array-offset `??=` materializes undefined/null
   target variables as arrays; existing non-array targets fail with the current
   stable invalid-array-access diagnostic. Direct object-property `??=` writes
-  only existing declared public properties on existing object values; missing
-  properties, undefined target variables, and non-object target variables fail
-  with stable diagnostics. Complex or nested `??` left operands, append-offset
-  `??=` targets, dynamic property names, non-public visibility context, magic
-  methods, unparenthesized chained coalescing, references/copy-on-write, exact
-  native error objects, and native lowering remain unsupported.
+  only existing declared public properties on existing object values. Supported
+  static-property `??=` writes only declared untyped/no-default static
+  properties through `ClassName::$prop`, `self::$prop`, and `parent::$prop`
+  after current visibility checks. Missing properties, undefined target
+  variables, non-object target variables, and unsupported static-property
+  contexts fail with stable diagnostics. Complex or nested `??` left operands,
+  append-offset `??=` targets, dynamic property names, static property `??`,
+  magic methods, unparenthesized chained coalescing, references/copy-on-write,
+  exact native error objects, and native lowering remain unsupported.
 - Include/require: `include`, `include_once`, `require`, and `require_once`
   are reserved by the lexer/parser and rejected with stable parse diagnostics.
   The planned first executable slice resolves string paths relative to the
@@ -723,12 +729,12 @@
   context. Typed constants, multiple constants in one class declaration,
   `static::CONST`, dynamic `constant("Class::CONST")`/`defined("Class::CONST")`
   lookup, and native lowering remain unsupported.
-  Static property reads and direct writes through `ClassName::$prop`,
-  `self::$prop`, and `parent::$prop` use class-level storage initialized to
-  `null`, resolve inherited properties case-sensitively, and enforce current
-  visibility checks; compound assignment, increment/decrement, `??=`,
-  defaults, typed properties, dynamic names, and `static::$prop` remain
-  unsupported.
+  Static property reads, direct writes, compound assignment, pre/post
+  increment/decrement, and `??=` through `ClassName::$prop`, `self::$prop`,
+  and `parent::$prop` use class-level storage initialized to `null`, resolve
+  inherited properties case-sensitively, and enforce current visibility
+  checks; defaults, typed properties, dynamic names, `isset`/`empty`/`??`,
+  and `static::$prop` remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices.
   Public, same-class private, and protected same-class/child instance method
@@ -2699,9 +2705,12 @@
   object properties as `$object->property = expr`, direct append offsets as
   `$array[] = expr`, and null coalescing assignment expressions
   `($name ??= expr)`, `($array[$key] ??= expr)`, and
-  `($object->property ??= expr)`. They write the active scope's static
-  variable, current ordered array offset, appended array slot, or existing
-  declared public property slot and return the assigned or existing value.
+  `($object->property ??= expr)`, plus supported static-property mutation
+  expressions such as `(ClassName::$prop += expr)`, `(self::$prop++)`, and
+  `(parent::$prop ??= expr)`. They write the active scope's static variable,
+  current ordered array offset, appended array slot, existing declared public
+  property slot, or declared static property slot and return the assigned,
+  updated, previous, or existing value according to the operator.
   Direct static-variable, direct array-offset, and direct public
   object-property assignment expressions can be chained with right-to-left
   result semantics, so `$left = $right = expr`, `$left = $array[$key] = expr`,
@@ -2736,8 +2745,10 @@
   native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
   array-variable offsets, direct public object properties, private properties
-  in active declaring-class method context, and protected properties owned by
-  the active class or an ancestor over the current scalar/object value model.
+  in active declaring-class method context, protected properties owned by the
+  active class or an ancestor, and declared static properties through
+  `ClassName::$prop`, `self::$prop`, and `parent::$prop` over the current
+  scalar/object value model.
   The
   read-modify-write operation reuses the existing PHP-shaped scalar arithmetic,
   modulo, bitwise/shift, and string concatenation helpers, so undefined
@@ -2746,17 +2757,19 @@
   current private/protected visibility context, division by
   zero, modulo by zero, non-numeric strings, arrays, and objects as operand
   values fail through existing stable runtime diagnostics.
-  Statement forms, expression forms such as `($name += expr)` and
-  `($array[$key] += expr)` and `($object->property += expr)`, and single
-  C-style `for` initializer/increment actions are supported for those direct
-  targets; expression forms return the updated value. Append offsets, nested
-  offsets/properties, dynamic property names, non-public visibility context,
-  references/copy-on-write, PHP warning recovery, exact native error objects,
-  and native lowering are not implemented.
+  Statement forms, expression forms such as `($name += expr)`,
+  `($array[$key] += expr)`, `($object->property += expr)`, and
+  `(ClassName::$prop += expr)`, and single C-style `for`
+  initializer/increment actions are supported for those direct targets;
+  expression forms return the updated value. Append offsets, nested
+  offsets/properties, dynamic property names, unsupported static-property
+  contexts, references/copy-on-write, PHP warning recovery, exact native error
+  objects, and native lowering are not implemented.
 - Pre/post increment and decrement is limited to direct static variables,
-  direct array offsets, and direct public object properties whose current
-  values are integers or floats, either as standalone statements,
-  expressions, or single C-style `for` initializer/increment actions.
+  direct array offsets, direct public object properties, and supported static
+  properties whose current values are integers or floats, either as standalone
+  statements, expressions, or single C-style `for` initializer/increment
+  actions.
   Expression pre forms return the updated value and expression post forms
   return the previous value. Strings, arrays/objects as current values,
   undefined variables, missing array keys, non-array offset targets, append
@@ -2768,12 +2781,15 @@
 - Null coalescing is limited to direct static variables, direct array-variable
   offsets, and direct object-variable public properties on the left side, plus
   direct-variable `$name ??= expr`, direct array-offset `$array[$key] ??=
-  expr`, and direct public object-property `$object->property ??= expr`
-  statements and parenthesized expression forms. `??=` expression forms return
-  the assigned fallback or existing non-null value. Object-property `??=`
-  writes only existing declared public properties on existing object values;
-  missing properties, undefined target variables, and non-object target
-  variables fail with stable diagnostics.
+  expr`, direct public object-property `$object->property ??= expr`, and
+  supported static-property `ClassName::$prop ??= expr`, `self::$prop ??=
+  expr`, and `parent::$prop ??= expr` statements and parenthesized expression
+  forms. `??=` expression forms return the assigned fallback or existing
+  non-null value. Object-property `??=` writes only existing declared public
+  properties on existing object values; static-property `??=` writes only
+  declared static property slots after current visibility checks. Missing
+  properties, undefined target variables, non-object target variables, and
+  unsupported static-property contexts fail with stable diagnostics.
   Complex or nested `??` left operands, append-offset `??=` targets, dynamic
   property names, non-public visibility context, magic methods,
   unparenthesized chained coalescing, precedence interactions beyond the

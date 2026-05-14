@@ -219,12 +219,42 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
   passed.
 - Remaining semantic gaps: `static::$prop`, static methods, typed/default
-  static properties, compound assignment, increment/decrement, `??=`, dynamic
-  static property names, late static binding, trait composition, magic
-  methods, references/copy-on-write, exact native error objects, and native
-  lowering remain explicit.
+  static properties, dynamic static property names, late static binding, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit.
 - Next concrete task: push the resulting checkpoint, clean the dedicated target
   dirs, then continue with Milestone 663.
+
+## Loop Event 2026-05-14T22:10:00Z
+
+- Checkpoint before this task: `596e341 objects: add static properties`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 663, narrow static property mutation for the
+  existing static-property storage slice.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `compiler/tests/null_coalescing.rs`, `tests/fixtures/milestone663/*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties -- --test-threads=1`,
+  `cargo test -p phpc --test compound_assignment static_property -- --test-threads=1`,
+  `cargo test -p phpc --test increment_decrement static_property -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing static_property -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone663`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone663`
+  passed, along with `cargo fmt --check` and `git diff --check`.
+- Remaining semantic gaps: `static::$prop`, static methods, typed/default
+  static properties, dynamic static property names, static-property
+  `isset`/`empty`/`??`, late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: use
+  `tools/checkpoint.sh "objects: add static property mutation"` if the full
+  gate passes.
 
 ## Loop Event 2026-05-14T14:15:14Z
 

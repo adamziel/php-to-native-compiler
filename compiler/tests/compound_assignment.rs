@@ -487,3 +487,13 @@ fn emit_ir_rejects_object_property_compound_assignment_until_native_lowering_exi
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
+
+#[test]
+fn emit_ir_rejects_static_property_compound_assignment_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\nCounter::$count += 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 8);
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+}

@@ -108,7 +108,8 @@ incorrect native code.
   `self::class`, and `parent::class` resolution, narrow class constants
   through `ClassName::CONST`, `self::CONST`, and `parent::CONST`,
   narrow static properties through `ClassName::$prop`, `self::$prop`, and
-  `parent::$prop`,
+  `parent::$prop` with direct reads/writes, compound assignment,
+  pre/post increment/decrement, and `??=`,
   single-parent metadata, object `isset` and `empty`, and selected metadata
   builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
