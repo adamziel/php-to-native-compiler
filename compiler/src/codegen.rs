@@ -6067,6 +6067,7 @@ fn is_native_known_function_name(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "define"
             | "strlen"
+            | "dirname"
             | "count"
             | "constant"
             | "defined"

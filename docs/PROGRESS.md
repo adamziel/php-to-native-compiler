@@ -900,13 +900,35 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone693`, and
   `PHPC_BIN=/tmp/phpc-target-693/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 694, bounded `dirname()` execution for the current
+  interpreter/runtime path policy. `phpc run` now accepts string paths and an
+  optional positive integer level count, performs lexical Unix-style slash
+  parent-directory extraction, exposes `dirname` through `function_exists`,
+  `is_callable`, and string-valued dynamic calls, and covers the WordPress
+  sodium compat loader's `dirname(__FILE__) . '/autoload-php7.php'` path
+  construction shape. Native function-table introspection recognizes
+  `dirname`, but direct native `dirname(...)` calls still reject under the
+  function-call boundary. Windows drive/UNC paths, stream wrappers, filesystem
+  canonicalization, symlink resolution, null-byte behavior, broad scalar
+  coercions, exact PHP `ValueError`/`TypeError` diagnostics, and native path
+  lowering remain explicit. The real WordPress 6.9.4 bootstrap-shim inventory
+  now reaches `<bootstrap-shim>:9:1`, undefined function
+  `spl_autoload_register()`. Focused verification so far:
+  `cargo test -p phpc --test path_builtins`,
+  `cargo test -p phpc --test type_introspection_builtins`,
+  `cargo test -p phpc --test native_function_call_boundary`,
+  `cargo run -p phpc -- test tests/fixtures/milestone694`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone694`, and
+  `PHPC_BIN=/tmp/phpc-target-694/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 694 should implement or explicitly bound `dirname()` for
-  WordPress's bootstrap path construction, while keeping filesystem path
-  normalization policy, Windows path behavior, stream wrappers, exact PHP
-  diagnostics, and native lowering explicit unless proven.
+- Milestone 695 should implement or explicitly bound
+  `spl_autoload_register()` for WordPress's sodium compat loader, while keeping
+  closure value/runtime semantics, autoload stack behavior, namespace/class
+  resolution, exact PHP diagnostics, and native lowering explicit unless
+  proven.
 
 ## 2026-05-12
 

@@ -6340,15 +6340,23 @@ handled.
 
 ## Milestone 694: WordPress Bridge Continuation
 
-- [ ] Runtime/path builtin lane: implement or explicitly bound `dirname()` for
+- [x] Runtime/path builtin lane: implement or explicitly bound `dirname()` for
   WordPress's bootstrap path construction, with tests, CLI coverage, docs, and
   named unsupported edges for path normalization policy, Windows paths, stream
   wrappers, exact PHP diagnostics, and native lowering.
 
+## Milestone 695: WordPress Bridge Continuation
+
+- [ ] Runtime/autoload lane: implement or explicitly bound
+  `spl_autoload_register()` for WordPress's sodium compat loader, with tests,
+  CLI coverage, docs, and named unsupported edges for closure value/runtime
+  semantics, autoload stack behavior, namespace/class resolution, exact PHP
+  diagnostics, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 693 work, the latest committed checkpoint is
-  `9b78093 runtime: add bounded extension_loaded`, covering Milestone 692.
+- Before the current Milestone 694 work, the latest committed checkpoint is
+  `9391a37 runtime: add bounded PHP_VERSION_ID`, covering Milestone 693.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

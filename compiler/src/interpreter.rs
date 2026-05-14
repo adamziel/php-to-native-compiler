@@ -4037,6 +4037,62 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
+            "dirname" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "dirname()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                let path = match &args[0] {
+                    Value::String(path) => path,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "dirname()",
+                                format!(
+                                    "path argument must be string in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+
+                let levels = match args.get(1) {
+                    Some(Value::Int(levels)) if *levels >= 1 => *levels,
+                    Some(Value::Int(_)) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "dirname()",
+                                "levels argument must be greater than or equal to 1 in the current subset",
+                            ),
+                        ));
+                    }
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "dirname()",
+                                format!(
+                                    "levels argument must be int in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                    None => 1,
+                };
+
+                Ok(Value::String(dirname_path(path, levels)))
+            }
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -6780,6 +6836,7 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "dirname"
             | "count"
             | "constant"
             | "defined"
@@ -6855,6 +6912,48 @@ fn is_builtin(name: &str) -> bool {
             | "var_dump"
             | "print_r"
     )
+}
+
+fn dirname_path(path: &str, levels: i64) -> String {
+    let mut current = path.to_string();
+    for _ in 0..levels {
+        current = dirname_once(&current);
+    }
+    current
+}
+
+fn dirname_once(path: &str) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+
+    let bytes = path.as_bytes();
+    let mut end = bytes.len();
+    while end > 1 && bytes[end - 1] == b'/' {
+        end -= 1;
+    }
+
+    if end == 1 && bytes[0] == b'/' {
+        return "/".to_string();
+    }
+
+    let trimmed = &path[..end];
+    match trimmed.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(position) => {
+            let mut parent_end = position;
+            let parent_bytes = trimmed.as_bytes();
+            while parent_end > 1 && parent_bytes[parent_end - 1] == b'/' {
+                parent_end -= 1;
+            }
+            if parent_end == 0 {
+                ".".to_string()
+            } else {
+                trimmed[..parent_end].to_string()
+            }
+        }
+        None => ".".to_string(),
+    }
 }
 
 fn builtin_global_constant_value(name: &str) -> Option<i64> {

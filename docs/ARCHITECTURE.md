@@ -774,6 +774,11 @@ builtin table. Documented builtin names fold to true and missing names fold to
 false; user-defined function tables, namespace/autoload-aware lookup,
 extension-loaded functions outside the documented table, dynamic callees, and
 runtime callable dispatch remain outside native lowering.
+`dirname()` is currently an interpreter-only path builtin for lexical
+Unix-style local paths. Native `function_exists("dirname")` and
+`is_callable("dirname")` use the known-function table, but direct native
+`dirname(...)` calls still reject under the function-call boundary until native
+path policy and string-return lowering are proven.
 Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`
 PHP 8.3 compatibility-target constant in the built-in answer table. Bare global
 constant reads and `constant($name)` still stay behind the native

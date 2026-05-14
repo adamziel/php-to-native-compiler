@@ -17844,3 +17844,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `cargo check -p phpc`, any updated focused gates,
   then checkpoint with `tools/checkpoint.sh "runtime: add bounded PHP_VERSION_ID"`
   if the full gate passes.
+
+## Loop Event 2026-05-14T04:00:00Z
+
+- Checkpoint before this task: `9391a37 runtime: add bounded PHP_VERSION_ID`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 694, bounded `dirname()` execution for WordPress's
+  sodium compat loader path construction.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/path_builtins.rs`,
+  `compiler/tests/type_introspection_builtins.rs`,
+  `compiler/tests/native_function_call_boundary.rs`,
+  `tests/fixtures/milestone694/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `git diff --check`,
+  `cargo test -p phpc --test path_builtins`,
+  `cargo test -p phpc --test type_introspection_builtins`,
+  `cargo run -p phpc -- test tests/fixtures/milestone694`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone694`, and
+  `PHPC_BIN=/tmp/phpc-target-694/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed. The pinned WordPress checkout had to be recreated from
+  `https://wordpress.org/wordpress-6.9.4.tar.gz` before the inventory run.
+- Remaining semantic gaps: Windows drive/UNC paths, stream wrappers,
+  filesystem canonicalization, symlink resolution, null-byte behavior, broad
+  scalar coercions, exact `ValueError`/`TypeError` diagnostics,
+  `spl_autoload_register()`, closure value/runtime behavior, WordPress
+  bootstrap environment, exact native errors, and native behavior beyond
+  function-table introspection remain explicit.
+- Next concrete task: run `cargo check -p phpc`, the updated focused gates,
+  then checkpoint with `tools/checkpoint.sh "runtime: add bounded dirname"` if
+  the full gate passes.

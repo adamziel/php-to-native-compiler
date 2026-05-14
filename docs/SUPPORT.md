@@ -290,7 +290,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `isset`, `empty`, `count`,
+- builtins for the documented subset: `strlen`, `dirname`, `isset`, `empty`, `count`,
   `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -339,6 +339,12 @@
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
+  `dirname($path, $levels = 1)` accepts string paths and an optional positive
+  integer level count. It performs lexical Unix-style slash parent-directory
+  extraction for local paths used by the current WordPress bootstrap probes;
+  it does not resolve the filesystem, symlinks, include paths, stream wrappers,
+  Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
+  `ValueError` behavior.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic empty compiler/runtime extension registry. It
   returns `false` for all names, including WordPress probe names such as
@@ -1549,7 +1555,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `array_change_key_case`, `array_column`, `array_is_list`,
+  `dirname`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
@@ -1836,7 +1842,7 @@
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `get_class`,
+  `function_exists`, `dirname`, `extension_loaded`, `get_class`,
   `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -1946,7 +1952,7 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `extension_loaded`, `get_class`, `is_object`, `get_debug_type`,
+  `dirname`, `extension_loaded`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
@@ -2001,6 +2007,9 @@
   accepts string extension names, returns `false` from the current deterministic
   empty extension registry, and rejects non-string names. Its native folding is
   limited to direct false folding for already-lowerable string names.
+  `dirname` accepts the same current lexical Unix-style local path subset as
+  the builtin section above; direct native `dirname(...)` calls still reject
+  under the function-call boundary.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -3444,6 +3453,11 @@
   extension-loaded functions beyond documented builtins, exact native
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
+- `dirname()` path behavior outside the current lexical Unix-style local path
+  subset, including Windows drive and UNC paths, stream wrappers, filesystem
+  canonicalization, symlink resolution, null-byte behavior, broad scalar
+  coercions, exact `ValueError`/`TypeError` diagnostics, and native lowering
+  beyond function-table introspection
 - `extension_loaded()` behavior outside the deterministic empty extension
   registry, including exact extension inventory policy, aliases, host
   PHP/module discovery, dynamic loading side effects, `php.ini`/SAPI

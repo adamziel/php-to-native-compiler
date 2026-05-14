@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+/tmp/wordpress/wp-includes/sodium_compat
+/tmp/wordpress/wp-includes
+[.]
+/a
+/a/b--- stdout end ---
+stderr:
+--- stderr end ---
