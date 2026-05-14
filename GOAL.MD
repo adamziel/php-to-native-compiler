@@ -184,8 +184,8 @@ The repository already has a working Rust workspace with:
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,
-`docs/WORDPRESS_COMPATIBILITY.md`, `README.md`, and `docs/LOOP_MEMORY.md` when
-running unattended loop automation.
+`docs/NATIVE_RUNTIME_ABI.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `README.md`,
+and `docs/LOOP_MEMORY.md` when running unattended loop automation.
 
 ## Definition of Done
 

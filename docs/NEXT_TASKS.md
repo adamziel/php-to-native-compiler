@@ -5660,10 +5660,21 @@ handled.
 
 ## Milestone 634: Native Runtime Prerequisite
 
-- [ ] IR/lowering/compiler-output lane: define the first runtime-backed native
+- [x] IR/lowering/compiler-output lane: define the first runtime-backed native
   execution prerequisite as code or a design artifact with tests: generated-code
   ABI, boxed value handoff, runtime helper call, link/run command, or a precise
   rejection boundary that blocks misleading native compatibility claims.
+  Selected candidate: added the first `php_runtime` C-compatible scalar ABI
+  surface for `null`, booleans, integers, and floats, with exported constructor
+  symbols, runtime `Value` conversion, focused unit tests, and
+  `docs/NATIVE_RUNTIME_ABI.md` documenting the remaining native-execution gaps.
+
+## Milestone 635: Native Runtime ABI Follow-up
+
+- [ ] IR/lowering/compiler-output lane: choose the next smallest runtime ABI
+  bridge after scalar value construction: generated LLVM declaration/use of one
+  exported runtime helper, string ownership design, echo helper handoff, or a
+  link-command prototype that still reports unsupported executable mode clearly.
 
 ## Latest Checkpoint
 

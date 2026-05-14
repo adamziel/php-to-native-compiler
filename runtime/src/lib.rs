@@ -4,6 +4,95 @@ use std::fmt;
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeScalarTag {
+    Null = 0,
+    Bool = 1,
+    Int = 2,
+    Float = 3,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NativeScalarValue {
+    tag: NativeScalarTag,
+    bool_value: u8,
+    int_value: i64,
+    float_value: f64,
+}
+
+impl NativeScalarValue {
+    pub const fn null() -> Self {
+        Self {
+            tag: NativeScalarTag::Null,
+            bool_value: 0,
+            int_value: 0,
+            float_value: 0.0,
+        }
+    }
+
+    pub const fn bool(value: bool) -> Self {
+        Self {
+            tag: NativeScalarTag::Bool,
+            bool_value: value as u8,
+            int_value: 0,
+            float_value: 0.0,
+        }
+    }
+
+    pub const fn int(value: i64) -> Self {
+        Self {
+            tag: NativeScalarTag::Int,
+            bool_value: 0,
+            int_value: value,
+            float_value: 0.0,
+        }
+    }
+
+    pub const fn float(value: f64) -> Self {
+        Self {
+            tag: NativeScalarTag::Float,
+            bool_value: 0,
+            int_value: 0,
+            float_value: value,
+        }
+    }
+
+    pub fn tag(&self) -> NativeScalarTag {
+        self.tag
+    }
+
+    pub fn to_value(self) -> Value {
+        match self.tag {
+            NativeScalarTag::Null => Value::Null,
+            NativeScalarTag::Bool => Value::Bool(self.bool_value != 0),
+            NativeScalarTag::Int => Value::Int(self.int_value),
+            NativeScalarTag::Float => Value::Float(self.float_value),
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_null() -> NativeScalarValue {
+    NativeScalarValue::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_bool(value: bool) -> NativeScalarValue {
+    NativeScalarValue::bool(value)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_int(value: i64) -> NativeScalarValue {
+    NativeScalarValue::int(value)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_float(value: f64) -> NativeScalarValue {
+    NativeScalarValue::float(value)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeError {
     kind: RuntimeErrorKind,
@@ -2608,6 +2697,32 @@ mod tests {
         assert_eq!(Value::Int(42).echo_string(), "42");
         assert_eq!(Value::Float(1.5).echo_string(), "1.5");
         assert_eq!(Value::String("x".to_string()).echo_string(), "x");
+    }
+
+    #[test]
+    fn native_scalar_abi_tags_are_stable() {
+        assert_eq!(NativeScalarTag::Null as u8, 0);
+        assert_eq!(NativeScalarTag::Bool as u8, 1);
+        assert_eq!(NativeScalarTag::Int as u8, 2);
+        assert_eq!(NativeScalarTag::Float as u8, 3);
+    }
+
+    #[test]
+    fn native_scalar_abi_converts_to_runtime_values() {
+        assert_eq!(phpc_native_null().to_value(), Value::Null);
+        assert_eq!(phpc_native_bool(false).to_value(), Value::Bool(false));
+        assert_eq!(phpc_native_bool(true).to_value(), Value::Bool(true));
+        assert_eq!(phpc_native_int(-42).to_value(), Value::Int(-42));
+        assert_eq!(phpc_native_float(1.5).to_value(), Value::Float(1.5));
+    }
+
+    #[test]
+    fn native_scalar_abi_normalizes_bool_payloads() {
+        let mut value = NativeScalarValue::bool(false);
+        value.bool_value = 7;
+
+        assert_eq!(value.tag(), NativeScalarTag::Bool);
+        assert_eq!(value.to_value(), Value::Bool(true));
     }
 
     #[test]

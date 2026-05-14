@@ -13013,6 +13013,23 @@ Next:
 
 Next:
 
+- Added Milestone 634, the first native runtime ABI prerequisite. `php_runtime`
+  now exposes a C-compatible `NativeScalarValue` and stable `NativeScalarTag`
+  discriminants for `null`, booleans, integers, and floats, plus exported
+  constructor symbols `phpc_native_null`, `phpc_native_bool`,
+  `phpc_native_int`, and `phpc_native_float`.
+- Added conversion from the native scalar ABI value back into the interpreter
+  `Value` model. This is only a scalar handoff seed for future generated-code
+  runtime helper calls; strings, arrays, objects, references, copy-on-write,
+  diagnostics, link commands, and native executable support remain unsupported.
+- Added `docs/NATIVE_RUNTIME_ABI.md` and linked it from the goal,
+  architecture, compatibility, and next-task docs.
+- Focused checks passed:
+  `cargo test -p php_runtime native_scalar_abi -- --test-threads=1` and
+  `cargo test -p php_runtime echo_conversions_match_php_scalars_for_supported_values -- --test-threads=1`.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`

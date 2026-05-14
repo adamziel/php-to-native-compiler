@@ -70,6 +70,14 @@ Planned runtime values and semantics:
 - `$this`, constructor calls, visibility enforcement for non-public properties,
   method dispatch, and PHP object handle identity
 
+The first native-runtime ABI prerequisite lives in
+`docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
+`null`, booleans, integers, and floats, plus exported constructor symbols in
+`php_runtime`. This is intentionally only an ABI seed for future generated-code
+runtime helper calls; linked native execution, strings, arrays, objects,
+references, copy-on-write, stack frames, and diagnostics are still not
+implemented.
+
 ## Native Codegen
 
 The first backend emits LLVM IR text and shells out to `clang` for assembly.

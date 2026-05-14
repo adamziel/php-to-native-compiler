@@ -63,7 +63,7 @@ tools/run-tests.sh
 | Cross-feature PHP smoke fixture | `cargo run -p phpc -- test --compare-php tests/fixtures/compat/php` | `pass` | One committed smoke fixture spans constants, functions, arrays, callback builtin use, class metadata, public properties, conditionals, foreach, and system PHP comparison. |
 | Current supported PHP branches 8.2-8.5 | Branch-specific comparison matrix | `not-covered` | The suite does not yet run against a matrix of PHP binaries or branch-specific expected behavior. |
 | php-src-style language compatibility | Imported or mirrored behavioral tests | `not-covered` | No committed php-src compatibility subset exists yet. |
-| Native executable compatibility | Linked native run command | `not-covered` | `phpc compile` emits IR/assembly only; no linked executable path exists yet. |
+| Native executable compatibility | Linked native run command | `not-covered` | `phpc compile` emits IR/assembly only; no linked executable path exists yet. The first scalar runtime ABI prerequisite is documented in `docs/NATIVE_RUNTIME_ABI.md`. |
 | WordPress core parse/load inventory | `tools/wordpress-inventory.sh /path/to/wordpress` | `skipped-unsupported` | Inventory command exists for external WordPress 6.9.4 source; committed source pin and expected output policy do not exist yet. |
 | WordPress bootstrap | Non-networked bootstrap smoke command | `not-covered` | Blocked by include/require, namespaces, runtime environment, filesystem, database, and extension coverage. |
 | WordPress request/admin/WP-CLI flows | Pinned smoke fixtures | `not-covered` | Requires a credible bootstrap harness first. |
