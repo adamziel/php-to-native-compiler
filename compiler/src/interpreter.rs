@@ -1065,7 +1065,7 @@ impl Interpreter {
             } => match scope.read_named(object) {
                 Some(Value::Object(value)) => {
                     let left = value
-                        .read_public_property(property)
+                        .read_property_from_context(property, self.class_context.last().copied())
                         .map_err(|error| runtime_error(span, error))?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -1124,7 +1124,11 @@ impl Interpreter {
 
                 match slot {
                     Value::Object(object) => object
-                        .write_public_property(&property, value)
+                        .write_property_from_context(
+                            &property,
+                            value,
+                            self.class_context.last().copied(),
+                        )
                         .map_err(|error| runtime_error(span, error)),
                     other => Err(runtime_error(
                         span,
@@ -1247,7 +1251,7 @@ impl Interpreter {
             } => match scope.read_named(object) {
                 Some(Value::Object(value)) => {
                     let left = value
-                        .read_public_property(property)
+                        .read_property_from_context(property, self.class_context.last().copied())
                         .map_err(|error| runtime_error(span, error))?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {

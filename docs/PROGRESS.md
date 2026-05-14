@@ -198,6 +198,21 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
   `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
   `git diff --check` passed.
+- Added Milestone 654, same-class non-public property read-modify-write.
+  Compound assignment and pre/post increment/decrement now work for
+  exact-class private/protected property slots while executing a method on
+  that same class, including same-class peer objects. External non-public
+  compound/increment access still fails with stable diagnostics, and inherited
+  non-public property slots, child-context protected property access,
+  null-coalescing forms, property override compatibility, exact native error
+  objects, and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model same_class_non_public_instance_properties_support_read_modify_write -- --test-threads=1`,
+  `cargo test -p phpc --test compound_assignment object_property_compound_assignment_reports_non_public_properties -- --test-threads=1`,
+  `cargo test -p phpc --test increment_decrement object_property_increment_decrement_reports_non_public_properties -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone654`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone654`,
+  and `git diff --check` passed.
 
 Next:
 

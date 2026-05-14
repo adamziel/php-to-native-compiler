@@ -228,6 +228,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: rerun focused checks after docs, then checkpoint if the
   full gate passes.
 
+## Loop Event 2026-05-14T16:02:00Z
+
+- Checkpoint: `56d9b5f objects: support same-class non-public isset empty`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 654, same-class non-public property
+  read-modify-write.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `tests/fixtures/milestone654/same_class_non_public_property_read_modify_write.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model same_class_non_public_instance_properties_support_read_modify_write -- --test-threads=1`,
+  `cargo test -p phpc --test compound_assignment object_property_compound_assignment_reports_non_public_properties -- --test-threads=1`,
+  `cargo test -p phpc --test increment_decrement object_property_increment_decrement_reports_non_public_properties -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone654`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone654`,
+  and `git diff --check` passed after docs updates.
+- Remaining semantic gaps: inherited non-public property slots, child-context
+  protected property access, non-public null-coalescing forms, static
+  properties, class constants, property override compatibility, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: rerun focused checks after docs, then checkpoint if the
+  full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

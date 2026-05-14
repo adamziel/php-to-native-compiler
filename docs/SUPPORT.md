@@ -53,8 +53,9 @@
 - direct public object-property compound assignment `$object->property +=
   expr`, `$object->property -= expr`, `$object->property *= expr`,
   `$object->property /= expr`, `$object->property %= expr`, and
-  `$object->property .= expr` over existing declared public property slots,
-  plus bitwise/shift compound forms
+  `$object->property .= expr` over existing declared public property slots and
+  exact-class private/protected property slots in active same-class method
+  context, plus bitwise/shift compound forms
   `$object->property &= expr`, `$object->property |= expr`,
   `$object->property ^= expr`, `$object->property <<= expr`, and
   `$object->property >>= expr`, in statement position, expression position,
@@ -70,9 +71,10 @@
   position, expression position, and C-style `for` initializer/increment
   slots: `++$object->property`, `$object->property++`,
   `--$object->property`, and `$object->property--` for existing declared
-  public property slots whose current values are integers or floats. In
-  expressions, pre forms return the updated value and post forms return the
-  previous value.
+  public property slots and exact-class private/protected property slots in
+  active same-class method context whose current values are integers or
+  floats. In expressions, pre forms return the updated value and post forms
+  return the previous value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer
@@ -104,7 +106,7 @@
   string remains valid UTF-8, and bitwise precedence is additive before
   shifts, then concatenation, comparisons/equality before `&`, then `^`, then
   `|`, then `&&` and `||`. Direct static-variable, direct array-offset, and
-  direct public object-property compound assignments support `&=`, `|=`,
+  supported direct object-property compound assignments support `&=`, `|=`,
   `^=`, `<<=`, and `>>=` through the same runtime helper semantics.
 - full ternary conditional expressions `$condition ? $if_true : $if_false`
   and short ternary expressions `$value ?: $fallback` over the current
@@ -2398,8 +2400,8 @@
   dynamic property names, dynamic method names, protected visibility outside
   same-class/child method contexts, non-public property access outside
   same-class method context, inherited non-public property slots,
-  non-public property compound/increment/null-coalescing visibility context,
-  broader constructor visibility context, static member
+  non-public property null-coalescing visibility context, broader constructor
+  visibility context, static member
   execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
@@ -2681,12 +2683,14 @@
   assignment, copy-on-write container aliasing, exact native error objects, and
   native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
-  array-variable offsets, and direct public object properties over the current
-  scalar/object value model. The
+  array-variable offsets, direct public object properties, and exact-class
+  private/protected object properties in active same-class method context over
+  the current scalar/object value model. The
   read-modify-write operation reuses the existing PHP-shaped scalar arithmetic,
   modulo, bitwise/shift, and string concatenation helpers, so undefined
   left-hand variables, missing array keys, missing object properties, non-array
-  targets, non-object property targets, non-public properties, division by
+  targets, non-object property targets, non-public properties outside
+  same-class method context, division by
   zero, modulo by zero, non-numeric strings, arrays, and objects as operand
   values fail through existing stable runtime diagnostics.
   Statement forms, expression forms such as `($name += expr)` and

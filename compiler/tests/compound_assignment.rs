@@ -337,7 +337,7 @@ fn object_property_compound_assignment_reports_non_public_properties() {
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
     );
 }
 

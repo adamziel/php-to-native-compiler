@@ -223,6 +223,45 @@ $first->checks($second);
 }
 
 #[test]
+fn same_class_non_public_instance_properties_support_read_modify_write() {
+    let source = r#"<?php
+class Counter {
+    private $count;
+    protected $score;
+
+    public function seed($count, $score) {
+        $this->count = $count;
+        $this->score = $score;
+    }
+
+    public function bump($other) {
+        $this->count += 4;
+        $this->score *= 3;
+        echo $this->count, ":", $this->score, "\n";
+        echo $other->count++, "\n";
+        echo ++$other->score, "\n";
+        $other->count .= "!";
+    }
+
+    public function describe() {
+        return $this->count . ":" . $this->score;
+    }
+}
+
+$first = new Counter();
+$second = new Counter();
+$first->seed(6, 2);
+$second->seed(10, 20);
+$first->bump($second);
+echo $second->describe();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "10:6\n10\n21\n11!:21");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn object_handles_preserve_identity_across_supported_value_copies() {
     let source = r#"<?php
 class Box {
