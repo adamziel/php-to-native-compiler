@@ -1,1 +1,1 @@
-phpc intentionally rejects object method calls before dispatch execution exists.
+phpc intentionally rejects dynamic method names before dynamic object dispatch exists.

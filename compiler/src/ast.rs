@@ -296,6 +296,12 @@ pub enum Expr {
         property: String,
         span: Span,
     },
+    MethodCall {
+        target: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -375,6 +381,7 @@ impl Expr {
             | Expr::Index { span, .. }
             | Expr::AppendIndex { span, .. }
             | Expr::Property { span, .. }
+            | Expr::MethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::New { span, .. }

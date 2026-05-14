@@ -1203,7 +1203,7 @@ impl Parser {
             let operator_span = self.previous().span;
             let property = self.consume_object_property_name(operator_span)?;
             if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                return Err(self.error_at(operator_span, unsupported_method_call_message()));
+                return Ok(AssignTarget::Variable { name, span });
             }
             return Ok(AssignTarget::Property {
                 object: name,
@@ -2044,15 +2044,23 @@ impl Parser {
 
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let operator_span = self.previous().span;
-                let property = self.consume_object_property_name(operator_span)?;
-                if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                    return Err(self.error_at(operator_span, unsupported_method_call_message()));
+                let member = self.consume_object_property_name(operator_span)?;
+                if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+                    let span = expr.span();
+                    let args = self.parse_call_arguments_after_open()?;
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        method: member,
+                        args,
+                        span,
+                    };
+                    continue;
                 }
 
                 let span = expr.span();
                 expr = Expr::Property {
                     target: Box::new(expr),
-                    property,
+                    property: member,
                     span,
                 };
                 continue;
@@ -2126,12 +2134,7 @@ impl Parser {
             TokenKind::Int(value) => Ok(Expr::Int(value, token.span)),
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::StringLiteral(value) => Ok(Expr::String(value, token.span)),
-            TokenKind::Variable(name) => {
-                if name.eq_ignore_ascii_case("this") {
-                    return Err(self.error_at(token.span, unsupported_this_message()));
-                }
-                Ok(Expr::Variable(name, token.span))
-            }
+            TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LBracket => {
                 self.parse_array_literal(token.span, ArrayLiteralDelimiter::Short)
             }
@@ -2549,6 +2552,7 @@ impl Parser {
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
+            | Expr::MethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
@@ -2601,6 +2605,7 @@ impl Parser {
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
+            | Expr::MethodCall { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Assign { .. }
@@ -2630,6 +2635,10 @@ impl Parser {
             }
             Expr::AppendIndex { target, .. } => Self::expr_contains_assignment(target),
             Expr::Property { target, .. } => Self::expr_contains_assignment(target),
+            Expr::MethodCall { target, args, .. } => {
+                Self::expr_contains_assignment(target)
+                    || args.iter().any(Self::expr_contains_assignment)
+            }
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
             }
@@ -2699,6 +2708,12 @@ impl Parser {
                 Self::expr_contains_unsupported_assignment_rhs(target)
             }
             Expr::Property { target, .. } => Self::expr_contains_unsupported_assignment_rhs(target),
+            Expr::MethodCall { target, args, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(target)
+                    || args
+                        .iter()
+                        .any(Self::expr_contains_unsupported_assignment_rhs)
+            }
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -2759,6 +2774,8 @@ impl Parser {
                 Self::find_append_index_span(target).or_else(|| Self::find_append_index_span(index))
             }
             Expr::Property { target, .. } => Self::find_append_index_span(target),
+            Expr::MethodCall { target, args, .. } => Self::find_append_index_span(target)
+                .or_else(|| args.iter().find_map(Self::find_append_index_span)),
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
             }
@@ -3413,14 +3430,6 @@ fn unsupported_enum_declaration_message() -> &'static str {
 
 fn unsupported_class_modifier_declaration_message() -> &'static str {
     "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented"
-}
-
-fn unsupported_method_call_message() -> &'static str {
-    "unsupported method call: method dispatch is not implemented"
-}
-
-fn unsupported_this_message() -> &'static str {
-    "unsupported object context: $this requires method execution and object binding, which are not implemented"
 }
 
 fn unsupported_clone_message() -> &'static str {

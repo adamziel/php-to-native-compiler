@@ -76,7 +76,8 @@ Required work includes:
   autoload semantics;
 - references, aliasing, copy-on-write, foreach-by-reference, and mutation
   ordering;
-- PHP object execution: constructors, methods, `$this`, visibility,
+- PHP object execution beyond the current public instance-method slice:
+  constructors, non-public/static/dynamic methods, visibility,
   inheritance, interfaces, traits, enums, anonymous classes, static members,
   class constants, magic methods, and object identity;
 - exceptions, errors, warnings, notices, stack traces, output buffering, and
@@ -151,13 +152,14 @@ The major missing areas are not side quests. They are the compatibility roadmap.
 - Arrays are interpreter-supported for a growing subset but still lack full PHP
   copy-on-write/reference behavior, by-reference iteration, recursive/nested
   aliasing semantics, object/resource edge cases, and native lowering.
-- Objects/classes are still minimal: no method dispatch, constructors, `$this`,
-  inheritance, interfaces, traits, enums, static members, class constants,
-  cloning, magic methods, or full visibility enforcement. A first interpreter
-  object-handle identity slice exists for assignment, argument/return, array,
-  foreach, strict identity, `spl_object_id`, and a current-subset
-  `spl_object_hash`, but clone/destruction/reuse and full object execution are
-  still missing.
+- Objects/classes are still minimal: public instance method calls with scoped
+  `$this` now execute through `phpc run`, but constructors, inheritance,
+  interfaces, traits, enums, static members, class constants, cloning, magic
+  methods, dynamic method/property names, non-public visibility enforcement,
+  and native object lowering are still missing. The interpreter object-handle
+  identity slice covers assignment, argument/return, array, foreach, strict
+  identity, `spl_object_id`, and a current-subset `spl_object_hash`, but
+  clone/destruction/reuse and full object execution are still missing.
 - Standard-library and extension coverage is broad only in selected array and
   scalar areas; real app compatibility needs filesystem, streams, regex, JSON,
   XML, HTTP, database, crypto, encoding, date/time, reflection, sessions, and
@@ -350,7 +352,7 @@ semantics.
 
 Scope:
 
-- `$this` binding and method dispatch;
+- broader method dispatch beyond public static-name instance calls;
 - constructor execution and constructor arguments;
 - visibility enforcement for public/protected/private access;
 - static properties, static methods, class constants, and `::class`;
@@ -360,7 +362,8 @@ Scope:
 
 Exit criteria:
 
-- Method calls execute through `phpc run` with scoped `$this`.
+- Public static-name instance method calls execute through `phpc run` with
+  scoped `$this`; broader dispatch remains named and tested as unsupported.
 - Constructor and visibility behavior have fixtures and stable errors.
 - Introspection builtins are updated to reflect implemented object semantics.
 - Native object lowering remains explicit: implemented subset or precise

@@ -3,9 +3,9 @@ use std::path::Path;
 use std::rc::Rc;
 
 use php_runtime::{
-    ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, Comparison, ObjectProperty, PhpArray,
-    PhpClassTable, PhpMethodMetadata, PhpObject, PhpPropertyMetadata, RuntimeError, RuntimeResult,
-    Value, Visibility,
+    ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
+    PhpArray, PhpClassTable, PhpMethodMetadata, PhpObject, PhpPropertyMetadata, RuntimeError,
+    RuntimeResult, Value, Visibility,
 };
 
 use crate::ast::{
@@ -43,6 +43,7 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
+    methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
     classes: PhpClassTable,
     constants: ConstantTable,
     source_file: Option<String>,
@@ -189,6 +190,7 @@ enum Flow {
 impl Interpreter {
     fn from_program(program: &Program, source_file: Option<String>) -> CompileResult<Self> {
         let mut functions = HashMap::new();
+        let mut methods = HashMap::new();
         let mut classes = PhpClassTable::new();
         for stmt in &program.statements {
             match stmt {
@@ -202,13 +204,24 @@ impl Interpreter {
                     }
                     functions.insert(key, Rc::new(function.clone()));
                 }
-                Stmt::Class(class) => register_class(&mut classes, class)?,
+                Stmt::Class(class) => {
+                    let class_id = register_class(&mut classes, class)?;
+                    for member in &class.members {
+                        if let ClassMember::Method(method) = member {
+                            methods.insert(
+                                (class_id, method.function.name.to_ascii_lowercase()),
+                                Rc::new(method.function.clone()),
+                            );
+                        }
+                    }
+                }
                 _ => {}
             }
         }
 
         Ok(Self {
             functions,
+            methods,
             classes,
             constants: ConstantTable::new(),
             source_file,
@@ -598,7 +611,18 @@ impl Interpreter {
             Expr::Int(value, _) => Ok(Value::Int(*value)),
             Expr::Float(value, _) => Ok(Value::Float(*value)),
             Expr::String(value, _) => Ok(Value::String(value.clone())),
-            Expr::Variable(name, span) => scope.read_static(name, *span),
+            Expr::Variable(name, span) => {
+                if name.eq_ignore_ascii_case("this") && scope.read_named("this").is_none() {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "$this",
+                            "object context is only available during instance method execution",
+                        ),
+                    ));
+                }
+                scope.read_static(name, *span)
+            }
             Expr::MagicLine { span } => Ok(Value::Int(span.line as i64)),
             Expr::MagicFile { .. } => {
                 Ok(Value::String(self.source_file.clone().unwrap_or_default()))
@@ -623,6 +647,12 @@ impl Interpreter {
                 property,
                 span,
             } => self.evaluate_property_read(target, property, *span, scope),
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.call_instance_method(target, method, args, *span, scope),
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
@@ -1462,6 +1492,76 @@ impl Interpreter {
         }
     }
 
+    fn call_instance_method(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let target_value = self.evaluate(target, caller_scope)?;
+        let object = match target_value {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{method_name}()"),
+                        format!("receiver must be object, got {}", other.type_name()),
+                    ),
+                ));
+            }
+        };
+
+        let class = self
+            .classes
+            .get(object.class_id())
+            .expect("object class id should resolve to class metadata");
+        let Some(method) = class.method(method_name) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{}::{method_name}()", class.name())),
+            ));
+        };
+
+        if method.is_static() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::{method_name}()", class.name()),
+                    "static method dispatch through object receivers is not implemented",
+                ),
+            ));
+        }
+
+        if method.visibility() != Visibility::Public {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::{method_name}()", class.name()),
+                    "non-public method dispatch requires visibility enforcement, which is not implemented",
+                ),
+            ));
+        }
+
+        let function = self
+            .methods
+            .get(&(class.id(), method.name().to_ascii_lowercase()))
+            .cloned()
+            .expect("declared method metadata should have a stored function body");
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+
+        self.call_user_function_with_this(function, object, values)
+    }
+
     fn evaluate_array_key(
         &mut self,
         expr: &Expr,
@@ -1574,7 +1674,7 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_checked_values(function, values)
+        self.call_user_function_with_checked_values(function, values, None)
     }
 
     fn call_user_function_with_values(
@@ -1586,16 +1686,20 @@ impl Interpreter {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
-        self.call_user_function_with_checked_values(function, args)
+        self.call_user_function_with_checked_values(function, args, None)
     }
 
     fn call_user_function_with_checked_values(
         &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
+        this_object: Option<PhpObject>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         let mut local_scope = SymbolTable::new();
+        if let Some(this_object) = this_object {
+            local_scope.write_static("this", Value::Object(this_object));
+        }
         for (index, param) in function.params.iter().enumerate() {
             let value = if let Some(arg) = args.get(index) {
                 arg.clone()
@@ -1633,6 +1737,15 @@ impl Interpreter {
             )),
             Flow::Return(value) => Ok(value),
         }
+    }
+
+    fn call_user_function_with_this(
+        &mut self,
+        function: &FunctionDecl,
+        this_object: PhpObject,
+        args: Vec<Value>,
+    ) -> CompileResult<Value> {
+        self.call_user_function_with_checked_values(function, args, Some(this_object))
     }
 
     fn ensure_user_function_call_depth(
@@ -4082,7 +4195,7 @@ impl Interpreter {
     }
 }
 
-fn register_class(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<()> {
+fn register_class(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
     let id = classes
         .declare_class(&class.name)
         .map_err(|error| runtime_error(class.span, error))?;
@@ -4117,7 +4230,7 @@ fn register_class(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResu
         }
     }
 
-    Ok(())
+    Ok(id)
 }
 
 fn runtime_visibility(visibility: ClassVisibility) -> Visibility {

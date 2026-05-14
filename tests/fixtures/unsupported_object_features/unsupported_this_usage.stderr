@@ -1,2 +1,2 @@
-parse error at 4:16: unsupported object context: $this requires method execution and object binding, which are not implemented
+runtime error at 2:6: unsupported call $this: object context is only available during instance method execution
 

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-codegen error at tests/fixtures/milestone173/native_object_class_boundary.php:2:1: LLVM object/class lowering rejects class declarations, object instantiation, public property reads/writes, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior
+codegen error at tests/fixtures/milestone173/native_object_class_boundary.php:2:1: LLVM object/class lowering rejects class declarations, object instantiation, public property reads/writes, public instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior
 --- stderr end ---

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_object_access.php:6:5: unsupported method call: method dispatch is not implemented
+parse error at tests/fixtures/unsupported_object_features/unsupported_object_access.php:7:7: unsupported dynamic property access: dynamic property names are not implemented
 --- stderr end ---

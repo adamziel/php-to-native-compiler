@@ -54,7 +54,9 @@ Implemented now:
 - `String`
 - ordered PHP arrays with integer/string keys
 - class metadata, object-shape descriptors, and minimal object values for
-  `new ClassName()` over declared constructor-free classes
+  `new ClassName()` over declared constructor-free classes, process-local
+  object handles, public instance properties, and public instance method
+  dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -67,8 +69,9 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
-- `$this`, constructor calls, visibility enforcement for non-public properties,
-  method dispatch, and PHP object handle identity
+- constructor calls, inheritance, dynamic method/property names, visibility
+  enforcement for non-public members, static members, magic methods, and exact
+  PHP object lifecycle behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -994,16 +997,18 @@ current-subset hash derived from the handle id; exact system PHP hash formatting
 is not claimed yet, and non-object inputs fail with the current stable
 type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
-stable runtime diagnostics for normal reads/writes. Objects do not bind `$this`,
-execute methods, run constructors, enforce visibility for non-public
-properties, expose reflection, implement dynamic property names, or model PHP
-object handles/aliasing for executable identity builtins. Static member syntax
+stable runtime diagnostics for normal reads/writes. Public instance methods can
+execute through `phpc run` with `$this` bound to the receiver object handle.
+Objects do not run constructors, enforce visibility for non-public members,
+expose reflection, implement dynamic method/property names, inheritance, or
+exact PHP lifecycle behavior. Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
 with explicit parse diagnostics until static storage, dispatch, and class
 constants exist. Native lowering rejects class declarations, object
-instantiation, object property reads/writes, and object metadata builtins with
-a specific object/class codegen diagnostic, except for the narrow direct
+instantiation, object property reads/writes, public instance method calls, and
+object metadata builtins with a specific object/class codegen diagnostic,
+except for the narrow direct
 string-name metadata-exists false-folding slice and string/string
 `property_exists`/`method_exists` false-folding slice plus string/string
 `is_a`/`is_subclass_of` false-folding slice. See `docs/OBJECT_MODEL.md` for

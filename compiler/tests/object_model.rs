@@ -1902,18 +1902,6 @@ fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
         (
             r#"<?php
 class Box {
-    public function name() {}
-}
-$box = new Box();
-$box->name();
-"#,
-            6,
-            5,
-            "unsupported method call: method dispatch is not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
     public $name;
 }
 $box = new Box();
@@ -2164,26 +2152,6 @@ class Box {
         ),
         (
             r#"<?php
-class Box {
-    public function label() {
-        return $this->name;
-    }
-}
-"#,
-            4,
-            16,
-            "unsupported object context: $this requires method execution and object binding, which are not implemented",
-        ),
-        (
-            r#"<?php
-echo $this;
-"#,
-            2,
-            6,
-            "unsupported object context: $this requires method execution and object binding, which are not implemented",
-        ),
-        (
-            r#"<?php
 class Box {}
 $box = new Box();
 $copy = clone $box;
@@ -2294,4 +2262,120 @@ Box::VERSION;
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
     }
+}
+
+#[test]
+fn public_instance_method_dispatch_binds_this_and_preserves_handles() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $name;
+    public $count;
+
+    public function label($prefix = "box") {
+        return $prefix . ":" . $this->name;
+    }
+
+    public function rename($name) {
+        $this->name = $name;
+        $this->count++;
+        return $this->label("renamed");
+    }
+
+    public function touch() {
+        $this->count = $this->count + 1;
+    }
+}
+
+$box = new Box();
+$box->name = "Ada";
+$box->count = 0;
+$alias = $box;
+
+echo $box->label("user"), "\n";
+echo $box->LABEL(), "\n";
+echo $box->rename("Grace"), "\n";
+echo $alias->name, "\n";
+$box->touch();
+echo $box->count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "user:Ada\nbox:Ada\nrenamed:Grace\nGrace\n2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn instance_method_dispatch_reports_current_unsupported_boundaries() {
+    let non_object = runtime_error(
+        r#"<?php
+$value = 1;
+$value->label();
+"#,
+    );
+    assert_eq!(non_object.line, 3);
+    assert_eq!(non_object.column, 1);
+    assert_eq!(
+        non_object.message,
+        "unsupported call label(): receiver must be object, got int"
+    );
+
+    let missing = runtime_error(
+        r#"<?php
+class Box {}
+$box = new Box();
+$box->missing();
+"#,
+    );
+    assert_eq!(missing.line, 4);
+    assert_eq!(missing.column, 1);
+    assert_eq!(missing.message, "undefined function Box::missing()");
+
+    let private_method = runtime_error(
+        r#"<?php
+class Box {
+    private function secret() {}
+}
+$box = new Box();
+$box->secret();
+"#,
+    );
+    assert_eq!(private_method.line, 6);
+    assert_eq!(private_method.column, 1);
+    assert_eq!(
+        private_method.message,
+        "unsupported call Box::secret(): non-public method dispatch requires visibility enforcement, which is not implemented"
+    );
+
+    let static_method = runtime_error(
+        r#"<?php
+class Box {
+    public static function make() {}
+}
+$box = new Box();
+$box->make();
+"#,
+    );
+    assert_eq!(static_method.line, 6);
+    assert_eq!(static_method.column, 1);
+    assert_eq!(
+        static_method.message,
+        "unsupported call Box::make(): static method dispatch through object receivers is not implemented"
+    );
+
+    let top_level_this = runtime_error(
+        r#"<?php
+echo $this;
+"#,
+    );
+    assert_eq!(top_level_this.line, 2);
+    assert_eq!(top_level_this.column, 6);
+    assert_eq!(
+        top_level_this.message,
+        "unsupported call $this: object context is only available during instance method execution"
+    );
 }

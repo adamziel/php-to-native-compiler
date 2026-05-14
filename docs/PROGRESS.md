@@ -22,9 +22,17 @@ Implemented:
   shared public property slots through assignment, function argument/return,
   array storage, and foreach by-value. Strict object identity, `spl_object_id`,
   and a current-subset `spl_object_hash` are executable through `phpc run`;
-  clone/destruction/reuse, exact PHP hash formatting, method dispatch, `$this`,
-  constructors, inheritance, references/copy-on-write, and native object
-  lowering remain unsupported.
+  clone/destruction/reuse, exact PHP hash formatting, constructors,
+  inheritance, references/copy-on-write, and native object lowering remain
+  unsupported.
+- Added Milestone 641, public static-name instance method dispatch. The parser
+  now accepts `$object->method(...)` and method-local `$this`; the interpreter
+  dispatches declared public instance methods case-insensitively, binds `$this`
+  to the receiver object handle in a fresh local scope, preserves caller-visible
+  property mutation through shared handles, and keeps non-object receivers,
+  missing methods, non-public methods, static methods through object receivers,
+  top-level `$this`, dynamic method/property names, constructors, inheritance,
+  magic methods, references/copy-on-write, and native object lowering explicit.
 
 Next:
 
@@ -36,9 +44,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 641 should add public static-name instance method dispatch with
-  scoped `$this` binding, or document the blocker if object-handle plumbing
-  exposes a sharper prerequisite.
+- Milestone 642 should add the next constructor execution slice for public
+  `__construct` methods with scoped `$this`, or document the blocker if
+  constructor ordering, visibility, or argument binding exposes a sharper
+  prerequisite.
 
 ## 2026-05-12
 

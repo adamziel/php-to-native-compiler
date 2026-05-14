@@ -5724,10 +5724,18 @@ handled.
 
 ## Milestone 641: Public Instance Method Dispatch
 
-- [ ] Parser/runtime/object lane: add the next executable object slice:
+- [x] Parser/runtime/object lane: add the next executable object slice:
   static-name public instance method calls with scoped `$this` binding and
   native lowering rejection, while keeping constructors, inheritance, dynamic
   method names, visibility context, magic methods, and references explicit.
+
+## Milestone 642: Object Constructor Dispatch
+
+- [ ] Runtime/object lane: add the next constructor slice for
+  `new ClassName(...)` with declared public `__construct` execution and scoped
+  `$this`, while keeping promoted properties, inheritance/parent constructors,
+  non-public constructor visibility, named arguments, references/copy-on-write,
+  exact native error objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

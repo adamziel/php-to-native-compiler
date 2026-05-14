@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+user:Ada
+box:Ada
+renamed:Grace
+Grace
+2
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -151,6 +151,13 @@
   do not define `__construct` and are called without constructor arguments
 - public instance property reads and direct-variable writes by static property
   name: `$object->name` and `$object->name = ...`
+- public instance method calls by static method name:
+  `$object->method(...)` evaluates the object receiver, checks a declared
+  public instance method case-insensitively, evaluates positional arguments
+  left-to-right, executes the method body in a fresh local scope, and binds
+  `$this` to the current object handle so `$this->property` reads/writes share
+  the caller-visible object slots. Current method calls reuse the existing
+  user-function parameter/default/return subset.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
@@ -427,10 +434,10 @@
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
-  unsupported `$this` usage, unsupported `clone` expressions, unsupported
+  unsupported `clone` expressions, unsupported
   `instanceof` expressions, unsupported `ClassName::class` expressions,
   unsupported magic static receivers such as `self::`, `parent::`, and
-  `static::`, anonymous class expressions, method calls, dynamic property
+  `static::`, anonymous class expressions, dynamic property
   names, static property access, static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
@@ -622,9 +629,10 @@
   class-name constant resolution exists. Magic static receivers such as
   `self::`, `parent::`, and `static::` fail with a stable parse diagnostic
   before class-context, parent-class, or late-static-binding resolution exists.
-  Method dispatch, dynamic property names, `$this` object context binding,
-  visibility enforcement for non-public properties, static storage, class
-  constants, object handle aliasing/identity, shallow/deep clone property
+  Public instance method dispatch supports static method names and scoped
+  `$this` binding. Dynamic method names, dynamic property names, non-public
+  method/property visibility context, static storage, class constants,
+  shallow/deep clone property
   copying, `__clone`, inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
@@ -1420,7 +1428,8 @@
   constant tables, source-order definitions, namespace-aware lookup, and
   exact native error objects.
   Native class declarations, object instantiation, public property reads/writes,
-  and object metadata builtins beyond scalar/null/string `is_object`,
+  public instance method calls, and object metadata builtins beyond
+  scalar/null/string `is_object`,
   scalar/null/string `get_debug_type`, and direct string-name metadata-exists
   false folding, including string/string `property_exists` and
   `method_exists`, and string/string relationship false folding for `is_a` and
@@ -2305,8 +2314,8 @@
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
-- Object/class gaps: nested and conditional class declarations, method calls,
-  `$this`, constructor execution, constructor arguments, inheritance,
+- Object/class gaps: nested and conditional class declarations, constructor
+  execution, constructor arguments, inheritance,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
   interfaces, trait declarations, trait use inside classes,
@@ -2319,11 +2328,11 @@
   methods, readonly properties, typed property storage and enforcement,
   property initialization rules, inheritance interactions, property defaults,
   multiple properties in one declaration, per-property defaults in
-  multi-property declarations, class constant declarations, constants, `$this`
-  object context binding, static property storage, late static binding, magic
-  methods, namespaces, autoloading, anonymous classes, attributes, reflection,
-  dynamic properties, dynamic property names, non-public property access,
-  static member execution
+  multi-property declarations, class constant declarations, constants, static
+  property storage, late static binding, magic methods, namespaces,
+  autoloading, anonymous classes, attributes, reflection, dynamic properties,
+  dynamic property names, dynamic method names, non-public method/property
+  visibility context, static member execution
   through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
@@ -2334,10 +2343,10 @@
   are unsupported.
 - Constructor boundary: declaring a class with `__construct` or supplying
   arguments to `new ClassName(...)` fails with stable runtime diagnostics before
-  any user constructor body executes. `$this` binding, constructor property
-  initialization, visibility checks, inheritance and parent constructor calls,
-  promoted properties, exact PHP `Error` object behavior, and native lowering
-  remain unsupported.
+  any user constructor body executes. Constructor `$this` binding, constructor
+  property initialization, visibility checks, inheritance and parent
+  constructor calls, promoted properties, exact PHP `Error` object behavior,
+  and native lowering remain unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -2453,8 +2462,11 @@
   function/class names such as `App\fn()` and `new App\Box()`; these currently
   fail with stable parse diagnostics before namespace-aware name resolution or
   imports exist
-- method dispatch and dynamic property names; `$object->method()` and
-  `$object->$name` currently fail with stable parse diagnostics
+- dynamic method names and dynamic property names; `$object->$name` and
+  `$object->$method()` currently fail with stable parse diagnostics
+- non-public instance method dispatch, static methods called through object
+  receivers, and `$this` outside instance method execution currently fail with
+  stable runtime diagnostics
 - non-public object property access and property writes to lvalues other than a
   direct variable
 - constructor execution and constructor arguments for `new ClassName()`
@@ -2467,8 +2479,7 @@
   implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  class constant declarations, constants, `$this` object context binding, and
-  anonymous classes
+  class constant declarations, constants, and anonymous classes
 - static property access, static method calls, class constant access,
   class-name constant access, and magic static receivers such as `self::`,
   `parent::`, and `static::` through `::`
@@ -2490,7 +2501,7 @@
 - magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
   `__FUNCTION__`, such as `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
   `__NAMESPACE__`; `__METHOD__` specifically fails with a stable parse
-  diagnostic because method dispatch and method-context tracking are not
+  diagnostic because method-context magic constant tracking is not
   implemented, and `__CLASS__` specifically fails because class-context
   tracking is not implemented. `__TRAIT__` specifically fails because trait
   declarations, trait use, and trait-context tracking are not implemented,
