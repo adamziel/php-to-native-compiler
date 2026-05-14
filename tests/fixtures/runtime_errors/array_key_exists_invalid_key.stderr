@@ -1,2 +1,2 @@
-runtime error at 3:6: invalid array key: bool keys are not supported; only int and string keys are implemented
+runtime error at 3:6: invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented
 

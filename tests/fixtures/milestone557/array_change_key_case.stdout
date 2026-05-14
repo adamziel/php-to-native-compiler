@@ -1,0 +1,27 @@
+Array
+(
+    [name] => lower
+    [7] => seven
+    [mixed] => mixed
+    [02] => numeric string
+)
+Array
+(
+    [NAME] => lower
+    [7] => seven
+    [MIXED] => mixed
+    [02] => numeric string
+)
+lower|seven|mixed|numeric string
+lower|seven|mixed|numeric string
+after
+Array
+(
+    [Name] => Ada
+    [name] => lower
+    [7] => seven
+    [MiXeD] => mixed
+    [02] => numeric string
+)
+lower|1|1
+

@@ -1,0 +1,2 @@
+parse error at 2:10: unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments
+

@@ -48,6 +48,24 @@ echo "after";
 }
 
 #[test]
+fn emit_ir_rejects_function_declarations_with_trailing_parameter_commas() {
+    let error = emit_ir_source(
+        r#"<?php
+function label($value = "Ada",) {
+    return $value;
+}
+echo label();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
+}
+
+#[test]
 fn emit_ir_rejects_function_declarations_before_lowering_bodies() {
     let error = emit_ir_source(
         r#"<?php

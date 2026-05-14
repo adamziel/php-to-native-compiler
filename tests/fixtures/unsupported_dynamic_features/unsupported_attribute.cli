@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+lex error at tests/fixtures/unsupported_dynamic_features/unsupported_attribute.php:2:1: unsupported attribute syntax: PHP attributes are not implemented
+--- stderr end ---

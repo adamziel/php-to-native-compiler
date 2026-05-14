@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+lex error at tests/fixtures/unsupported_syntax_features/unsupported_heredoc.php:2:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented
+--- stderr end ---

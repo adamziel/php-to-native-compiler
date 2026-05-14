@@ -1,0 +1,10 @@
+Array
+(
+    [] => false key
+    [1] => true key
+    [01] => string one
+)
+3
+false key|true key|string one
+false key|true key|string one
+done

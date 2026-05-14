@@ -53,6 +53,96 @@ echo count($empty);
 }
 
 #[test]
+fn array_unique_accepts_sort_string_flag() {
+    let source = r#"<?php
+$items = ["first" => "10", "second" => 10, "third" => "10.0", "fourth" => false, "fifth" => ""];
+$unique = array_unique($items, SORT_STRING);
+print_r($unique);
+echo $unique["first"], "|", $unique["third"], "|", count($unique), "\n";
+
+$call = "array_unique";
+$again = $call($items, constant("SORT_STRING"));
+echo $again["first"], "|", defined("SORT_STRING"), "|", SORT_STRING;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [first] => 10\n    [third] => 10.0\n    [fourth] => \n)\n10|10.0|3\n10|1|2"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_unique_accepts_sort_regular_flag_for_scalar_values() {
+    let source = r#"<?php
+$items = [
+    "s10" => "10",
+    "i10" => 10,
+    "f10" => 10.0,
+    "s10f" => "10.0",
+    "true" => true,
+    "one" => 1,
+    "false" => false,
+    "empty" => "",
+    "null" => null,
+    "zero" => 0,
+    "s0" => "0",
+    "text" => "abc",
+    "dup-text" => "abc",
+];
+
+$unique = array_unique($items, SORT_REGULAR);
+print_r($unique);
+echo $unique["s10"], "|", $unique["one"], "|", $unique["false"], "|", $unique["text"], "|", count($unique), "\n";
+
+$call = "array_unique";
+$again = $call($items, constant("SORT_REGULAR"));
+echo $again["s10"], "|", $again["one"], "|", defined("SORT_REGULAR"), "|", SORT_REGULAR;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [s10] => 10\n    [one] => 1\n    [false] => \n    [text] => abc\n)\n10|1||abc|4\n10|1|1|0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_unique_accepts_sort_numeric_flag_for_numeric_values() {
+    let source = r#"<?php
+$items = [
+    "first" => "10",
+    "second" => 10,
+    "third" => "10.0",
+    "fourth" => 10.5,
+    "fifth" => "010.50",
+    "sixth" => 11,
+    "seventh" => "11.0",
+    "eighth" => 0,
+    "ninth" => false,
+    "tenth" => null,
+];
+
+$unique = array_unique($items, SORT_NUMERIC);
+print_r($unique);
+echo $unique["first"], "|", $unique["fourth"], "|", $unique["sixth"], "|", $unique["eighth"], "|", count($unique), "\n";
+
+$call = "array_unique";
+$again = $call($items, constant("SORT_NUMERIC"));
+echo $again["first"], "|", defined("SORT_NUMERIC"), "|", SORT_NUMERIC;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [first] => 10\n    [fourth] => 10.5\n    [sixth] => 11\n    [eighth] => 0\n)\n10|10.5|11|0|4\n10|1|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_unique_requires_array_argument() {
     let error = runtime_error("<?php\necho array_unique(42);\n");
 
@@ -93,14 +183,38 @@ echo array_unique($items);
 }
 
 #[test]
-fn array_unique_rejects_sort_flags_until_supported() {
-    let error = runtime_error("<?php\n$items = [\"a\"];\necho array_unique($items, 0);\n");
+fn array_unique_sort_numeric_rejects_values_outside_current_numeric_subset() {
+    let string_error = runtime_error(
+        "<?php\n$items = [\"10\", \"not numeric\"];\necho array_unique($items, SORT_NUMERIC);\n",
+    );
+
+    assert_eq!(string_error.line, 3);
+    assert_eq!(string_error.column, 6);
+    assert_eq!(
+        string_error.message,
+        "unsupported call array_unique(): values must be numeric in the current subset, got non-numeric string"
+    );
+
+    let array_error =
+        runtime_error("<?php\n$items = [10, []];\necho array_unique($items, SORT_NUMERIC);\n");
+
+    assert_eq!(array_error.line, 3);
+    assert_eq!(array_error.column, 6);
+    assert_eq!(
+        array_error.message,
+        "unsupported call array_unique(): values must be numeric scalar in the current subset, got array"
+    );
+}
+
+#[test]
+fn array_unique_rejects_sort_flags_outside_supported_subset() {
+    let error = runtime_error("<?php\n$items = [\"a\"];\necho array_unique($items, 3);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_unique(): sort flags are not supported in the current subset"
+        "unsupported call array_unique(): sort flags other than SORT_REGULAR, SORT_NUMERIC, or SORT_STRING are not supported in the current subset"
     );
 }
 

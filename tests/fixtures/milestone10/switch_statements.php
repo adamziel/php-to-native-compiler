@@ -50,3 +50,17 @@ while ($i < 3) {
     $i = $i + 1;
 }
 echo "\n";
+
+$separator = "2";
+switch ($separator) {
+    case 1;
+        echo "one";
+        break;
+    case 2;
+        echo "two";
+    default;
+        echo "-default";
+    case "tail";
+        echo "-tail";
+        break;
+}

@@ -5434,39 +5434,98 @@ handled.
 
 ## Milestone 610: Independent Lane Candidates
 
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected `llc` success with empty stdout remains a final invalid-output
+  diagnostic without falling back to the `cc -S` fallback.
+
+## Milestone 611: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output. Selected candidate:
+  native callable lookup folding coverage for `array_reduce` while direct
+  `array_reduce(...)` native execution remains rejected.
+
+## Milestone 612: Independent Lane Candidates
+
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+  Selected candidate: `instanceof` expressions such as
+  `$object instanceof ClassName` now have focused parser, `--emit-ir`, and
+  `phpc run` fixture coverage for the existing stable parse boundary.
+
+## Milestone 613: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate: `array_filter`
+  mode flags now accept trimmed integer-string values that parse to `0`, `1`,
+  or `2`, covering value-only, value/key, and key-only callback modes plus the
+  null-callback falsey filtering path while native lowering remains rejected.
+
+## Milestone 614: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the split-lane queue after the next
+  implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
+  `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
+  record focused verification commands, and identify the next checkpoint point
+  where the serialized full gate should run. Selected candidate: close the
+  610-613 split-lane batch in planning docs, open the next per-lane queue, and
+  record that `tools/run-tests.sh` should run before checkpointing.
+
+## Milestone 615: Independent Lane Candidates
+
 - [ ] Compiler-output lane: choose the next deterministic CLI artifact or
   backend contract coverage target from existing native output behavior, add
   focused snapshot coverage, and leave production lowering behavior unchanged
   unless the gap is itself in CLI/output handling.
 
-## Milestone 611: Independent Lane Candidates
+## Milestone 616: Independent Lane Candidates
 
 - [ ] IR/lowering lane: choose the next narrow native IR/lowering refinement
   or precise rejection boundary from already documented interpreter behavior,
   add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
   cases rejected before misleading backend output.
 
-## Milestone 612: Independent Lane Candidates
+## Milestone 617: Independent Lane Candidates
 
 - [ ] Parser lane: choose the next small syntax or parse-diagnostic boundary
   from the documented unsupported gaps, add parser/unit coverage plus
   `phpc run` CLI snapshots where applicable, and do not widen runtime or native
   support claims unless another lane implements and tests the behavior.
 
-## Milestone 613: Independent Lane Candidates
+## Milestone 618: Independent Lane Candidates
 
 - [ ] Runtime lane: choose the next small array/object builtin refinement from
   the remaining documented unsupported gaps, implement it through `phpc run`
   with focused fixtures and system PHP comparison where applicable, and keep
   native lowering explicitly rejected.
 
-## Milestone 614: Independent Lane Candidates
+## Milestone 619: Independent Lane Candidates
 
 - [ ] Tests/docs lane: refresh the split-lane queue after the next
   implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
   `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
   record focused verification commands, and identify the next checkpoint point
   where the serialized full gate should run.
+
+## Latest Checkpoint
+
+- The current checkpoint records the completed split-lane work through
+  Milestone 614 and opens the next lane queue at Milestones 615-619.
+- Checkpoint verification:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-610-614 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed with Rust tests successful, `phpc test` reporting 714 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reporting 714 fixture
+  tests passed with 0 failures, 441 system PHP comparisons, and 273 skipped
+  comparisons.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -1,0 +1,16 @@
+Array
+(
+    [0] => ArrayAda
+    [1] => Ada
+    [2] => Grace
+)
+Array
+(
+    [0] => 35
+    [1] => 36
+    [2] => 
+    [3] => 99
+)
+5|ArrayAda|Ada|42
+3|ArrayAda|Ada|Grace
+0

@@ -1,0 +1,2 @@
+parse error at 2:8: unsupported exponentiation operator: ** and **= are not implemented
+

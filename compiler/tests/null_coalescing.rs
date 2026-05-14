@@ -409,7 +409,7 @@ fn emit_ir_rejects_null_coalescing_until_native_lowering_exists() {
     assert_eq!(error.column, 10);
     assert_eq!(
         error.message,
-        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
+        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
     );
 }
 
@@ -422,7 +422,7 @@ fn emit_ir_rejects_object_property_null_coalescing_until_native_lowering_exists(
     assert_eq!(error.column, 10);
     assert_eq!(
         error.message,
-        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
+        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
     );
 }
 

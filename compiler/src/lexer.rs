@@ -74,6 +74,7 @@ pub enum TokenKind {
     Plus,
     Minus,
     Star,
+    StarStar,
     Slash,
     Percent,
     Dot,
@@ -168,7 +169,13 @@ impl<'a> Lexer<'a> {
                         TokenKind::Minus
                     }
                 }
-                '*' => TokenKind::Star,
+                '*' => {
+                    if self.match_char('*') {
+                        TokenKind::StarStar
+                    } else {
+                        TokenKind::Star
+                    }
+                }
                 '/' => TokenKind::Slash,
                 '%' => TokenKind::Percent,
                 '.' => {
@@ -241,6 +248,12 @@ impl<'a> Lexer<'a> {
                     if self.match_char('=') {
                         TokenKind::LessEqual
                     } else if self.match_char('<') {
+                        if self.match_char('<') {
+                            return Err(self.error_at(
+                                span,
+                                "unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented",
+                            ));
+                        }
                         TokenKind::LeftShift
                     } else {
                         TokenKind::Less
@@ -284,6 +297,12 @@ impl<'a> Lexer<'a> {
             }
 
             if self.peek() == Some('#') {
+                if self.peek_next() == Some('[') {
+                    return Err(self.error_at(
+                        self.span(),
+                        "unsupported attribute syntax: PHP attributes are not implemented",
+                    ));
+                }
                 while !matches!(self.peek(), None | Some('\n')) {
                     self.advance();
                 }

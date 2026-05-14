@@ -5,7 +5,9 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const SCALAR_COERCION_ARITHMETIC_REJECTION: &str = "LLVM scalar-coercion arithmetic lowering rejects booleans, nulls, and strings in +, -, and * until native PHP numeric coercion, string numeric parsing, warnings/recovery behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current scalar-coercion arithmetic behavior";
+const DIVISION_REJECTION: &str = "LLVM division lowering rejects / until native PHP division semantics, zero-divisor runtime checks, avoidance of misleading integer truncation, overflow/INF/NAN behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current division behavior";
 
 #[test]
 fn phpc_run_still_handles_numeric_string_arithmetic() {
@@ -29,14 +31,22 @@ fn emit_ir_rejects_string_operands_in_native_arithmetic() {
         "<?php\necho \"2\" + 3;\n",
         "<?php\necho 8 - \"2.5\";\n",
         "<?php\necho \"3e1\" * 2;\n",
-        "<?php\necho 9 / \"3\";\n",
-        "<?php\necho \"8\" % 3;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, ARITHMETIC_REJECTION);
+        assert_eq!(error.message, SCALAR_COERCION_ARITHMETIC_REJECTION);
     }
+
+    let error = emit_ir_source("<?php\necho \"8\" % 3;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ARITHMETIC_REJECTION);
+
+    let error = emit_ir_source("<?php\necho 9 / \"3\";\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -44,7 +54,7 @@ fn emit_asm_rejects_string_arithmetic_before_backend_execution() {
     let error = emit_asm_source("<?php\necho \"2\" + 3;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, SCALAR_COERCION_ARITHMETIC_REJECTION);
 }
 
 #[test]

@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+11111111100000000
+10--- stdout end ---
+stderr:
+--- stderr end ---

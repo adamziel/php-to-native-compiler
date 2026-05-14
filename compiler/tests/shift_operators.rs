@@ -66,12 +66,12 @@ fn shift_non_numeric_string_has_stable_runtime_error() {
 }
 
 #[test]
-fn emit_ir_rejects_shift_operators_until_lowering_exists() {
-    let error = emit_ir_source("<?php\necho 8 << 1;\n").unwrap_err();
+fn emit_ir_rejects_shifts_that_need_runtime_count_diagnostics() {
+    let error = emit_ir_source("<?php\necho 8 << 64;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "LLVM bitwise lowering rejects bitwise and shift operators until native PHP bitwise string semantics and shift diagnostics exist; phpc run handles current bitwise/shift behavior"
+        "LLVM bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior"
     );
 }

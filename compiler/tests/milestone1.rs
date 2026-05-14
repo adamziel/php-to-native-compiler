@@ -79,12 +79,12 @@ echo "done";
 }
 
 #[test]
-fn emit_ir_rejects_integer_arithmetic_until_native_numeric_lowering_exists() {
-    let error = emit_ir_source("<?php\n$x = 1 + 2;\necho $x;\n").unwrap_err();
+fn emit_ir_rejects_integer_division_until_native_numeric_checks_exist() {
+    let error = emit_ir_source("<?php\n$x = 6 / 2;\necho $x;\n").unwrap_err();
 
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("arithmetic lowering"),
+        error.message.contains("division lowering"),
         "{}",
         error.message
     );
@@ -157,6 +157,18 @@ fn emit_ir_rejects_do_while_until_native_loop_lowering_exists() {
 #[test]
 fn emit_ir_rejects_switch_until_native_switch_lowering_exists() {
     let error = emit_ir_source("<?php\nswitch (1) { case 1: echo 1; break; }\n").unwrap_err();
+    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+    assert!(
+        error.message.contains("switch statements"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_alternate_switch_until_native_switch_lowering_exists() {
+    let error =
+        emit_ir_source("<?php\nswitch (1): case 1: echo 1; break; endswitch;\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
         error.message.contains("switch statements"),
@@ -314,7 +326,7 @@ fn emit_asm_through_available_native_toolchain() {
 }
 
 #[test]
-fn emit_asm_rejects_integer_modulo_until_native_numeric_lowering_exists() {
+fn emit_asm_rejects_dynamic_integer_modulo_until_native_runtime_checks_exist() {
     let has_backend = ["clang", "llc", "cc"]
         .iter()
         .any(|command| Command::new(command).arg("--version").output().is_ok());
@@ -322,10 +334,10 @@ fn emit_asm_rejects_integer_modulo_until_native_numeric_lowering_exists() {
         return;
     }
 
-    let error = emit_asm_source("<?php\necho 10 % 4;\n").unwrap_err();
+    let error = emit_asm_source("<?php\n$divisor = 4 - 2;\necho 10 % $divisor;\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("arithmetic lowering"),
+        error.message.contains("modulo lowering"),
         "{}",
         error.message
     );

@@ -5,14 +5,14 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
-const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const DIVISION_REJECTION: &str = "LLVM division lowering rejects / until native PHP division semantics, zero-divisor runtime checks, avoidance of misleading integer truncation, overflow/INF/NAN behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current division behavior";
 
 #[test]
 fn emit_ir_rejects_static_integer_zero_divisor() {
     let error = emit_ir_source("<?php\necho 10 / 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn emit_ir_rejects_static_float_zero_divisor() {
     let error = emit_ir_source("<?php\necho 10 / 0.0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -30,8 +30,8 @@ fn emit_ir_rejects_static_null_and_false_zero_divisors() {
 
     assert_eq!(null_error.phase, Phase::Codegen);
     assert_eq!(false_error.phase, Phase::Codegen);
-    assert_eq!(null_error.message, ARITHMETIC_REJECTION);
-    assert_eq!(false_error.message, ARITHMETIC_REJECTION);
+    assert_eq!(null_error.message, DIVISION_REJECTION);
+    assert_eq!(false_error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn emit_ir_rejects_nonzero_division_until_native_numeric_lowering_exists() {
     let error = emit_ir_source("<?php\necho 10 / 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn emit_ir_rejects_nonzero_literal_variable_divisor_until_native_numeric_lowerin
     let error = emit_ir_source("<?php\n$divisor = 2;\necho 10 / $divisor;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn emit_ir_rejects_dynamic_divisors_until_runtime_checks_exist() {
     let error = emit_ir_source("<?php\n$divisor = 4 - 2;\necho 10 / $divisor;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn emit_asm_rejects_static_zero_divisor_before_backend_execution() {
     let error = emit_asm_source("<?php\necho 10 / 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, DIVISION_REJECTION);
 }
 
 #[test]
@@ -119,6 +119,35 @@ fn native_dynamic_division_emit_ir_cli_snapshot_matches_committed_output() {
         workspace_root.join("tests/fixtures/milestone163/native_dynamic_division_emit_ir.cli"),
     )
     .expect("native dynamic division CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_integer_division_boundary_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join("tests/fixtures/milestone320/native_integer_division.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone320/native_integer_division_emit_ir.cli"),
+    )
+    .expect("native integer division boundary CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

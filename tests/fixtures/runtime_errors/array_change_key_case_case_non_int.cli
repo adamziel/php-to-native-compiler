@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/array_change_key_case_case_non_int.php:3:6: unsupported call array_change_key_case(): case flag must be int in the current subset, got bool
+--- stderr end ---

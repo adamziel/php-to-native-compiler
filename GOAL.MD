@@ -329,17 +329,17 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. The active split-lane queue is:
 
-- Milestone 610: compiler-output lane, choose the next deterministic CLI
+- Milestone 615: compiler-output lane, choose the next deterministic CLI
   artifact or backend contract coverage target from existing native output
   behavior.
-- Milestone 613: runtime lane, choose the next small array/object builtin
+- Milestone 618: runtime lane, choose the next small array/object builtin
   refinement from documented unsupported gaps.
-- Milestone 612: parser lane, choose the next small syntax or parse-diagnostic
+- Milestone 617: parser lane, choose the next small syntax or parse-diagnostic
   boundary without widening runtime or native support claims.
-- Milestone 611: IR/lowering lane, choose the next narrow native IR or lowering
+- Milestone 616: IR/lowering lane, choose the next narrow native IR or lowering
   refinement, or a precise rejection boundary, from already documented
   interpreter behavior.
-- Milestone 614: tests/docs lane, keep the lane queue, focused-test policy,
+- Milestone 619: tests/docs lane, keep the lane queue, focused-test policy,
   support matrix, and progress records current after the active implementation
   batch.
 

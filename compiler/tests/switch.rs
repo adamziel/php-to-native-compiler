@@ -100,3 +100,63 @@ SWITCH (1) {
     assert_eq!(execution.stdout, "one");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn switch_accepts_semicolon_case_and_default_separators() {
+    let execution = run_source(
+        r#"<?php
+$value = "2";
+switch ($value) {
+    case 1;
+        echo "one";
+        break;
+    case 2;
+        echo "two";
+    default;
+        echo "-default";
+    case "tail";
+        echo "-tail";
+        break;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "two-default-tail");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn alternate_switch_reuses_statement_switch_execution() {
+    let execution = run_source(
+        r#"<?php
+$value = "2";
+switch ($value):
+    case 1:
+        echo "one";
+        break;
+    case 2;
+        echo "two";
+    default:
+        echo "-default";
+    case "tail";
+        echo "-tail";
+        break;
+endswitch;
+echo "\n";
+
+$word = "none";
+SWITCH ($word):
+    DEFAULT;
+        echo "fallback";
+    CASE "none":
+        echo "matched";
+        break;
+ENDSWITCH;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "two-default-tail\nmatched");
+    assert_eq!(execution.exit_code, 0);
+}

@@ -562,6 +562,39 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn column_values(
+        &self,
+        column_key: Option<ArrayColumnKey>,
+        index_key: Option<ArrayColumnKey>,
+    ) -> RuntimeResult<Self> {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let value = match &column_key {
+                None => Some(&entry.value),
+                Some(column_key) => array_column_row_value(&entry.value, column_key),
+            };
+
+            if let Some(value) = value {
+                match &index_key {
+                    Some(index_key) => match array_column_row_value(&entry.value, index_key) {
+                        Some(index_value) => {
+                            let key = array_column_index_key_from_value(index_value)?;
+                            array.insert(key, value.clone());
+                        }
+                        None => {
+                            array.append(value.clone())?;
+                        }
+                    },
+                    None => {
+                        array.append(value.clone())?;
+                    }
+                }
+            }
+        }
+
+        Ok(array)
+    }
+
     pub fn reversed_reindexed(&self) -> Self {
         let mut array = Self::new();
         for entry in self.entries.iter().rev() {
@@ -734,6 +767,21 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn keys_with_ascii_case(&self, case: ArrayKeyCase) -> Self {
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let key = match &entry.key {
+                ArrayKey::Int(value) => ArrayKey::Int(*value),
+                ArrayKey::String(value) => match case {
+                    ArrayKeyCase::Lower => ArrayKey::String(value.to_ascii_lowercase()),
+                    ArrayKeyCase::Upper => ArrayKey::String(value.to_ascii_uppercase()),
+                },
+            };
+            array.insert(key, entry.value.clone());
+        }
+        array
+    }
+
     pub fn filled_keys(&self, value: Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -897,6 +945,48 @@ impl PhpArray {
         Ok(array)
     }
 
+    pub fn unique_values_regular(&self) -> RuntimeResult<Self> {
+        let mut seen = Vec::new();
+        let mut array = Self::new();
+        for entry in &self.entries {
+            array_scalar_value_supported("array_unique()", &entry.value)?;
+
+            let mut duplicate = false;
+            for seen_value in &seen {
+                if entry.value.php_cmp_checked(seen_value, Comparison::Eq)? {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if duplicate {
+                continue;
+            }
+
+            seen.push(entry.value.clone());
+            array.insert(entry.key.clone(), entry.value.clone());
+        }
+
+        Ok(array)
+    }
+
+    pub fn unique_values_by_numeric(&self) -> RuntimeResult<Self> {
+        let mut seen = Vec::new();
+        let mut array = Self::new();
+        for entry in &self.entries {
+            let comparison_value = array_numeric_number_from_value("array_unique()", &entry.value)?;
+            if seen.iter().any(|seen_value| {
+                compare_numbers(*seen_value, comparison_value) == Some(Ordering::Equal)
+            }) {
+                continue;
+            }
+
+            seen.push(comparison_value);
+            array.insert(entry.key.clone(), entry.value.clone());
+        }
+
+        Ok(array)
+    }
+
     pub fn count_values(&self) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -1046,6 +1136,11 @@ fn ensure_array_search_values_supported(
 }
 
 fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> RuntimeResult<String> {
+    array_scalar_value_supported(callable, value)?;
+    Ok(value.echo_string())
+}
+
+fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<()> {
     match value {
         Value::Array(_) | Value::Object(_) => Err(RuntimeError::unsupported_call(
             callable,
@@ -1054,9 +1149,7 @@ fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> Runtim
                 value.type_name()
             ),
         )),
-        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-            Ok(value.echo_string())
-        }
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => Ok(()),
     }
 }
 
@@ -1100,12 +1193,27 @@ fn array_flip_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
 
 fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
     match value {
+        Value::Null => Ok(ArrayKey::String(String::new())),
+        Value::Bool(false) => Ok(ArrayKey::String(String::new())),
+        Value::Bool(true) => Ok(ArrayKey::string("1")),
         Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::Float(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value < i64::MAX as f64 =>
+        {
+            Ok(ArrayKey::Int(*value as i64))
+        }
+        Value::Float(_) => Err(RuntimeError::unsupported_call(
+            "array_fill_keys()",
+            "lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented",
+        )),
         Value::String(value) => Ok(ArrayKey::string(value.clone())),
         other => Err(RuntimeError::unsupported_call(
             "array_fill_keys()",
             format!(
-                "key values must be int or string in the current subset, got {}",
+                "key values must be null, bool, int, string, or integral finite float in the current subset, got {}",
                 other.type_name()
             ),
         )),
@@ -1114,12 +1222,27 @@ fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
 
 fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
     match value {
+        Value::Null => Ok(ArrayKey::String(String::new())),
+        Value::Bool(false) => Ok(ArrayKey::String(String::new())),
+        Value::Bool(true) => Ok(ArrayKey::string("1")),
         Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::Float(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value < i64::MAX as f64 =>
+        {
+            Ok(ArrayKey::Int(*value as i64))
+        }
+        Value::Float(_) => Err(RuntimeError::unsupported_call(
+            "array_combine()",
+            "lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented",
+        )),
         Value::String(value) => Ok(ArrayKey::string(value.clone())),
         other => Err(RuntimeError::unsupported_call(
             "array_combine()",
             format!(
-                "key values must be int or string in the current subset, got {}",
+                "key values must be null, bool, int, string, or integral finite float in the current subset, got {}",
                 other.type_name()
             ),
         )),
@@ -1210,6 +1333,106 @@ pub enum ArrayKey {
     String(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArrayKeyCase {
+    Lower,
+    Upper,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArrayColumnKey {
+    Int(i64),
+    String(String),
+}
+
+impl ArrayKeyCase {
+    pub fn from_flag(flag: i64) -> Self {
+        if flag == 0 {
+            Self::Lower
+        } else {
+            Self::Upper
+        }
+    }
+}
+
+impl ArrayColumnKey {
+    pub fn from_value(value: &Value) -> RuntimeResult<Option<Self>> {
+        Self::from_value_named(value, "column key")
+    }
+
+    pub fn index_from_value(value: &Value) -> RuntimeResult<Option<Self>> {
+        Self::from_value_named(value, "index key")
+    }
+
+    fn from_value_named(value: &Value, name: &str) -> RuntimeResult<Option<Self>> {
+        match value {
+            Value::Null => Ok(None),
+            Value::Int(value) => Ok(Some(Self::Int(*value))),
+            Value::String(value) => Ok(Some(Self::String(value.clone()))),
+            other => Err(RuntimeError::unsupported_call(
+                "array_column()",
+                format!(
+                    "{name} must be int, string, or null in the current subset, got {}",
+                    other.type_name()
+                ),
+            )),
+        }
+    }
+
+    fn array_key(&self) -> ArrayKey {
+        match self {
+            Self::Int(value) => ArrayKey::Int(*value),
+            Self::String(value) => ArrayKey::string(value.clone()),
+        }
+    }
+
+    fn property_name(&self) -> Option<&str> {
+        match self {
+            Self::String(value) => Some(value),
+            Self::Int(_) => None,
+        }
+    }
+}
+
+fn array_column_row_value<'a>(row: &'a Value, key: &ArrayColumnKey) -> Option<&'a Value> {
+    match row {
+        Value::Array(row) => row.get(key.array_key()),
+        Value::Object(row) => key
+            .property_name()
+            .and_then(|name| row.read_current_public_property(name)),
+        _ => None,
+    }
+}
+
+fn array_column_index_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+    match value {
+        Value::Null => Ok(ArrayKey::String(String::new())),
+        Value::Bool(false) => Ok(ArrayKey::Int(0)),
+        Value::Bool(true) => Ok(ArrayKey::Int(1)),
+        Value::Int(value) => Ok(ArrayKey::Int(*value)),
+        Value::Float(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value < i64::MAX as f64 =>
+        {
+            Ok(ArrayKey::Int(*value as i64))
+        }
+        Value::Float(_) => Err(RuntimeError::unsupported_call(
+            "array_column()",
+            "lossy or non-finite float index values are not supported; only null, bool, int, string, and integral finite float index values are implemented",
+        )),
+        Value::String(value) => Ok(ArrayKey::string(value.clone())),
+        other => Err(RuntimeError::unsupported_call(
+            "array_column()",
+            format!(
+                "index values must be null, bool, int, string, or integral finite float in the current subset, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
 impl ArrayKey {
     pub fn int(value: i64) -> Self {
         Self::Int(value)
@@ -1225,6 +1448,31 @@ impl ArrayKey {
             Value::String(value) => Ok(Self::string(value.clone())),
             other => Err(RuntimeError::invalid_array_key(format!(
                 "{} keys are not supported; only int and string keys are implemented",
+                other.type_name()
+            ))),
+        }
+    }
+
+    pub fn from_array_key_exists_value(value: &Value) -> RuntimeResult<Self> {
+        match value {
+            Value::Null => Ok(Self::String(String::new())),
+            Value::Bool(false) => Ok(Self::Int(0)),
+            Value::Bool(true) => Ok(Self::Int(1)),
+            Value::Int(value) => Ok(Self::Int(*value)),
+            Value::Float(value)
+                if value.is_finite()
+                    && value.fract() == 0.0
+                    && *value >= i64::MIN as f64
+                    && *value < i64::MAX as f64 =>
+            {
+                Ok(Self::Int(*value as i64))
+            }
+            Value::Float(_) => Err(RuntimeError::invalid_array_key(
+                "lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
+            )),
+            Value::String(value) => Ok(Self::string(value.clone())),
+            other => Err(RuntimeError::invalid_array_key(format!(
+                "{} keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
                 other.type_name()
             ))),
         }
@@ -1621,6 +1869,13 @@ impl PhpObject {
         Ok(Some(&property.value))
     }
 
+    pub fn read_current_public_property(&self, name: &str) -> Option<&Value> {
+        self.properties
+            .iter()
+            .find(|property| property.name == name && property.visibility == Visibility::Public)
+            .map(|property| &property.value)
+    }
+
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
         let Some(property) = self
             .properties
@@ -1677,6 +1932,14 @@ impl ObjectProperty {
 
     pub fn value(&self) -> &Value {
         &self.value
+    }
+
+    pub fn mangled_name(&self, class_name: &str) -> String {
+        match self.visibility {
+            Visibility::Public => self.name.clone(),
+            Visibility::Protected => format!("\0*\0{}", self.name),
+            Visibility::Private => format!("\0{class_name}\0{}", self.name),
+        }
     }
 }
 
@@ -1742,6 +2005,41 @@ impl Value {
             Value::Array(_) => "array",
             Value::Object(_) => "object",
         }
+    }
+
+    pub fn gettype_name(&self) -> &'static str {
+        match self {
+            Value::Null => "NULL",
+            Value::Bool(_) => "boolean",
+            Value::Int(_) => "integer",
+            Value::Float(_) => "double",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        matches!(
+            self,
+            Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_)
+        )
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            Value::Int(_) | Value::Float(_) => true,
+            Value::String(value) => parse_numeric_string(value).is_some(),
+            Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => false,
+        }
+    }
+
+    pub fn is_countable(&self) -> bool {
+        matches!(self, Value::Array(_))
+    }
+
+    pub fn is_iterable(&self) -> bool {
+        matches!(self, Value::Array(_))
     }
 
     pub fn echo_string(&self) -> String {
@@ -2375,6 +2673,44 @@ mod tests {
                 .unwrap(),
             Value::Float(0.75)
         );
+    }
+
+    #[test]
+    fn is_numeric_matches_current_numeric_scalar_subset() {
+        assert!(Value::Int(7).is_numeric());
+        assert!(Value::Float(3.5).is_numeric());
+        assert!(Value::String(" 42 ".to_string()).is_numeric());
+        assert!(Value::String("-.5".to_string()).is_numeric());
+        assert!(Value::String("5.".to_string()).is_numeric());
+        assert!(Value::String("8e2".to_string()).is_numeric());
+
+        assert!(!Value::String(String::new()).is_numeric());
+        assert!(!Value::String(" ".to_string()).is_numeric());
+        assert!(!Value::String("8foo".to_string()).is_numeric());
+        assert!(!Value::String("0x10".to_string()).is_numeric());
+        assert!(!Value::Bool(true).is_numeric());
+        assert!(!Value::Null.is_numeric());
+        assert!(!Value::Array(PhpArray::new()).is_numeric());
+    }
+
+    #[test]
+    fn is_countable_matches_current_array_only_subset() {
+        assert!(Value::Array(PhpArray::new()).is_countable());
+        assert!(!Value::Null.is_countable());
+        assert!(!Value::Bool(false).is_countable());
+        assert!(!Value::Int(0).is_countable());
+        assert!(!Value::Float(3.5).is_countable());
+        assert!(!Value::String(String::new()).is_countable());
+    }
+
+    #[test]
+    fn is_iterable_matches_current_array_only_subset() {
+        assert!(Value::Array(PhpArray::new()).is_iterable());
+        assert!(!Value::Null.is_iterable());
+        assert!(!Value::Bool(false).is_iterable());
+        assert!(!Value::Int(0).is_iterable());
+        assert!(!Value::Float(3.5).is_iterable());
+        assert!(!Value::String(String::new()).is_iterable());
     }
 
     #[test]
@@ -3960,6 +4296,160 @@ mod tests {
     }
 
     #[test]
+    fn array_change_key_case_changes_string_keys_and_preserves_integer_keys() {
+        let mut array = PhpArray::new();
+        array.insert("Name", Value::String("Ada".to_string()));
+        array.insert("name", Value::String("lower".to_string()));
+        array.insert(7, Value::String("seven".to_string()));
+        array.insert("MiXeD", Value::String("mixed".to_string()));
+        array.insert("02", Value::String("numeric string".to_string()));
+
+        let mut lower = array.keys_with_ascii_case(ArrayKeyCase::Lower);
+        let entries = lower.entries();
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value, Value::String("lower".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(7));
+        assert_eq!(entries[1].value, Value::String("seven".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("mixed".to_string()));
+        assert_eq!(entries[2].value, Value::String("mixed".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(
+            entries[3].value,
+            Value::String("numeric string".to_string())
+        );
+        assert_eq!(
+            lower.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(8)
+        );
+
+        let upper = array.keys_with_ascii_case(ArrayKeyCase::Upper);
+        let entries = upper.entries();
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("NAME".to_string()));
+        assert_eq!(entries[0].value, Value::String("lower".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(7));
+        assert_eq!(entries[1].value, Value::String("seven".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("MIXED".to_string()));
+        assert_eq!(entries[2].value, Value::String("mixed".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(
+            array.get("Name"),
+            Some(&Value::String("Ada".to_string())),
+            "array_change_key_case must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_column_can_index_results_by_int_and_string_row_values() {
+        let mut first = PhpArray::new();
+        first.insert("id", Value::Int(10));
+        first.insert("name", Value::String("Ada".to_string()));
+
+        let mut duplicate = PhpArray::new();
+        duplicate.insert("id", Value::String("10".to_string()));
+        duplicate.insert("name", Value::String("Grace".to_string()));
+
+        let mut missing_index = PhpArray::new();
+        missing_index.insert("name", Value::String("NoId".to_string()));
+
+        let mut string_index = PhpArray::new();
+        string_index.insert("id", Value::String("code".to_string()));
+        string_index.insert("name", Value::Null);
+
+        let mut rows = PhpArray::new();
+        rows.append(Value::Array(first)).unwrap();
+        rows.append(Value::Array(duplicate)).unwrap();
+        rows.append(Value::Array(missing_index)).unwrap();
+        rows.append(Value::Array(string_index)).unwrap();
+
+        let result = rows
+            .column_values(
+                Some(ArrayColumnKey::String("name".to_string())),
+                Some(ArrayColumnKey::String("id".to_string())),
+            )
+            .unwrap();
+
+        let entries = result.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, ArrayKey::Int(10));
+        assert_eq!(entries[0].value, Value::String("Grace".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(11));
+        assert_eq!(entries[1].value, Value::String("NoId".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("code".to_string()));
+        assert_eq!(entries[2].value, Value::Null);
+    }
+
+    #[test]
+    fn array_column_can_index_results_by_scalar_coerced_row_values() {
+        let mut true_index = PhpArray::new();
+        true_index.insert("id", Value::Bool(true));
+        true_index.insert("name", Value::String("true".to_string()));
+
+        let mut false_index = PhpArray::new();
+        false_index.insert("id", Value::Bool(false));
+        false_index.insert("name", Value::String("false".to_string()));
+
+        let mut null_index = PhpArray::new();
+        null_index.insert("id", Value::Null);
+        null_index.insert("name", Value::String("null".to_string()));
+
+        let mut float_index = PhpArray::new();
+        float_index.insert("id", Value::Float(1.0));
+        float_index.insert("name", Value::String("float".to_string()));
+
+        let mut missing_index = PhpArray::new();
+        missing_index.insert("name", Value::String("missing".to_string()));
+
+        let mut rows = PhpArray::new();
+        rows.append(Value::Array(true_index)).unwrap();
+        rows.append(Value::Array(false_index)).unwrap();
+        rows.append(Value::Array(null_index)).unwrap();
+        rows.append(Value::Array(float_index)).unwrap();
+        rows.append(Value::Array(missing_index)).unwrap();
+
+        let result = rows
+            .column_values(
+                Some(ArrayColumnKey::String("name".to_string())),
+                Some(ArrayColumnKey::String("id".to_string())),
+            )
+            .unwrap();
+
+        let entries = result.entries();
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::Int(1));
+        assert_eq!(entries[0].value, Value::String("float".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[1].value, Value::String("false".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String(String::new()));
+        assert_eq!(entries[2].value, Value::String("null".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(2));
+        assert_eq!(entries[3].value, Value::String("missing".to_string()));
+    }
+
+    #[test]
+    fn array_column_rejects_unsupported_index_values() {
+        let mut row = PhpArray::new();
+        row.insert("id", Value::Float(1.5));
+        row.insert("name", Value::String("Ada".to_string()));
+
+        let mut rows = PhpArray::new();
+        rows.append(Value::Array(row)).unwrap();
+
+        let error = rows
+            .column_values(
+                Some(ArrayColumnKey::String("name".to_string())),
+                Some(ArrayColumnKey::String("id".to_string())),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.message(),
+            "unsupported call array_column(): lossy or non-finite float index values are not supported; only null, bool, int, string, and integral finite float index values are implemented"
+        );
+    }
+
+    #[test]
     fn array_fill_keys_uses_int_string_values_as_keys_and_overwrites_duplicates() {
         let mut keys = PhpArray::new();
 
@@ -3996,10 +4486,40 @@ mod tests {
     }
 
     #[test]
+    fn array_fill_keys_uses_scalar_values_as_keys_and_overwrites_duplicates() {
+        let mut keys = PhpArray::new();
+        keys.insert("null", Value::Null);
+        keys.insert("false", Value::Bool(false));
+        keys.insert("true", Value::Bool(true));
+        keys.insert("one", Value::Float(1.0));
+        keys.insert("two", Value::Float(2.0));
+        keys.insert("two-string", Value::String("2".to_string()));
+        keys.insert("02", Value::String("02".to_string()));
+        keys.insert("minus", Value::Float(-3.0));
+
+        let filled = keys
+            .filled_keys(Value::String("filled".to_string()))
+            .unwrap();
+        let entries = filled.entries();
+
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries[0].key, ArrayKey::String(String::new()));
+        assert_eq!(entries[0].value, Value::String("filled".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::String("filled".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(2));
+        assert_eq!(entries[2].value, Value::String("filled".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[3].value, Value::String("filled".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(-3));
+        assert_eq!(entries[4].value, Value::String("filled".to_string()));
+    }
+
+    #[test]
     fn array_fill_keys_rejects_unsupported_key_value_types() {
         let mut keys = PhpArray::new();
         keys.insert("ok", Value::String("name".to_string()));
-        keys.insert("bad", Value::Bool(true));
+        keys.insert("bad", Value::Array(PhpArray::new()));
 
         let error = keys
             .filled_keys(Value::String("filled".to_string()))
@@ -4008,19 +4528,33 @@ mod tests {
             error.kind(),
             &RuntimeErrorKind::UnsupportedCall {
                 callable: "array_fill_keys()".to_string(),
-                reason: "key values must be int or string in the current subset, got bool"
+                reason:
+                    "key values must be null, bool, int, string, or integral finite float in the current subset, got array"
                     .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool"
+            "unsupported call array_fill_keys(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+        );
+
+        let mut keys = PhpArray::new();
+        keys.append(Value::Float(1.5)).unwrap();
+        let error = keys
+            .filled_keys(Value::String("filled".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_fill_keys(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
         );
     }
 
     #[test]
-    fn array_combine_uses_int_string_key_values_and_overwrites_duplicates() {
+    fn array_combine_uses_scalar_key_values_and_overwrites_duplicates() {
         let mut keys = PhpArray::new();
+        keys.insert("empty", Value::Null);
+        keys.insert("false", Value::Bool(false));
+        keys.insert("true", Value::Bool(true));
         keys.insert("first", Value::String("name".to_string()));
         keys.insert(5, Value::String("2".to_string()));
         keys.insert("two", Value::Int(2));
@@ -4029,6 +4563,9 @@ mod tests {
         keys.insert("dup-string", Value::String("name".to_string()));
 
         let mut values = PhpArray::new();
+        values.insert("empty", Value::String("null key".to_string()));
+        values.insert("false", Value::String("false key".to_string()));
+        values.insert("true", Value::String("true key".to_string()));
         values.insert("a", Value::String("Ada".to_string()));
         values.insert(10, Value::String("two string".to_string()));
         values.append(Value::String("two int".to_string())).unwrap();
@@ -4041,15 +4578,19 @@ mod tests {
         let mut combined = keys.combined_with(&values).unwrap();
         let entries = combined.entries();
 
-        assert_eq!(entries.len(), 4);
-        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
-        assert_eq!(entries[0].value, Value::String("duplicate".to_string()));
-        assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value, Value::String("two int".to_string()));
-        assert_eq!(entries[2].key, ArrayKey::String("02".to_string()));
-        assert_eq!(entries[2].value, Value::String("zero two".to_string()));
-        assert_eq!(entries[3].key, ArrayKey::Int(-1));
-        assert_eq!(entries[3].value, Value::String("negative".to_string()));
+        assert_eq!(entries.len(), 6);
+        assert_eq!(entries[0].key, ArrayKey::String(String::new()));
+        assert_eq!(entries[0].value, Value::String("false key".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::String("true key".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[2].value, Value::String("duplicate".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::Int(2));
+        assert_eq!(entries[3].value, Value::String("two int".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::String("02".to_string()));
+        assert_eq!(entries[4].value, Value::String("zero two".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::Int(-1));
+        assert_eq!(entries[5].value, Value::String("negative".to_string()));
         assert_eq!(
             combined.append(Value::String("after".to_string())).unwrap(),
             ArrayKey::Int(3)
@@ -4073,6 +4614,34 @@ mod tests {
     }
 
     #[test]
+    fn array_combine_accepts_integral_finite_float_key_values() {
+        let mut keys = PhpArray::new();
+        keys.append(Value::Float(1.0)).unwrap();
+        keys.append(Value::Float(2.0)).unwrap();
+        keys.append(Value::Float(-3.0)).unwrap();
+        keys.append(Value::String("04".to_string())).unwrap();
+
+        let mut values = PhpArray::new();
+        values.append(Value::String("one".to_string())).unwrap();
+        values.append(Value::String("two".to_string())).unwrap();
+        values.append(Value::String("minus".to_string())).unwrap();
+        values.append(Value::String("leading".to_string())).unwrap();
+
+        let combined = keys.combined_with(&values).unwrap();
+        let entries = combined.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::Int(1));
+        assert_eq!(entries[0].value, Value::String("one".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(2));
+        assert_eq!(entries[1].value, Value::String("two".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(-3));
+        assert_eq!(entries[2].value, Value::String("minus".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("04".to_string()));
+        assert_eq!(entries[3].value, Value::String("leading".to_string()));
+    }
+
+    #[test]
     fn array_combine_rejects_length_mismatches_and_unsupported_key_value_types() {
         let mut keys = PhpArray::new();
         keys.append(Value::String("name".to_string())).unwrap();
@@ -4089,7 +4658,7 @@ mod tests {
 
         let mut bad_keys = PhpArray::new();
         bad_keys.append(Value::String("name".to_string())).unwrap();
-        bad_keys.append(Value::Bool(true)).unwrap();
+        bad_keys.append(Value::Array(PhpArray::new())).unwrap();
 
         let mut values = PhpArray::new();
         values.append(Value::String("Ada".to_string())).unwrap();
@@ -4100,13 +4669,25 @@ mod tests {
             error.kind(),
             &RuntimeErrorKind::UnsupportedCall {
                 callable: "array_combine()".to_string(),
-                reason: "key values must be int or string in the current subset, got bool"
-                    .to_string(),
+                reason:
+                    "key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+                        .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "unsupported call array_combine(): key values must be int or string in the current subset, got bool"
+            "unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+        );
+
+        let mut bad_keys = PhpArray::new();
+        bad_keys.append(Value::Float(1.5)).unwrap();
+        let mut values = PhpArray::new();
+        values.append(Value::String("lossy".to_string())).unwrap();
+
+        let error = bad_keys.combined_with(&values).unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_combine(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
         );
     }
 
@@ -4722,6 +5303,77 @@ mod tests {
     }
 
     #[test]
+    fn array_unique_sort_regular_uses_loose_scalar_comparison() {
+        let mut array = PhpArray::new();
+
+        array.insert("s10", Value::String("10".to_string()));
+        array.insert("i10", Value::Int(10));
+        array.insert("f10", Value::Float(10.0));
+        array.insert("s10f", Value::String("10.0".to_string()));
+        array.insert("true", Value::Bool(true));
+        array.insert("one", Value::Int(1));
+        array.insert("false", Value::Bool(false));
+        array.insert("empty", Value::String(String::new()));
+        array.insert("null", Value::Null);
+        array.insert("zero", Value::Int(0));
+        array.insert("s0", Value::String("0".to_string()));
+        array.insert("text", Value::String("abc".to_string()));
+        array.insert("dup-text", Value::String("abc".to_string()));
+
+        let regular = array.unique_values_regular().unwrap();
+        let entries = regular.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("s10".to_string()));
+        assert_eq!(entries[0].value, Value::String("10".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("one".to_string()));
+        assert_eq!(entries[1].value, Value::Int(1));
+        assert_eq!(entries[2].key, ArrayKey::String("false".to_string()));
+        assert_eq!(entries[2].value, Value::Bool(false));
+        assert_eq!(entries[3].key, ArrayKey::String("text".to_string()));
+        assert_eq!(entries[3].value, Value::String("abc".to_string()));
+        assert_eq!(
+            array.get("i10"),
+            Some(&Value::Int(10)),
+            "array_unique SORT_REGULAR must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_unique_sort_numeric_uses_numeric_scalar_comparison() {
+        let mut array = PhpArray::new();
+
+        array.insert("first", Value::String("10".to_string()));
+        array.insert("second", Value::Int(10));
+        array.insert("third", Value::String("10.0".to_string()));
+        array.insert("fourth", Value::Float(10.5));
+        array.insert("fifth", Value::String("010.50".to_string()));
+        array.insert("sixth", Value::Int(11));
+        array.insert("seventh", Value::String("11.0".to_string()));
+        array.insert("eighth", Value::Int(0));
+        array.insert("ninth", Value::Bool(false));
+        array.insert("tenth", Value::Null);
+
+        let numeric = array.unique_values_by_numeric().unwrap();
+        let entries = numeric.entries();
+
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].key, ArrayKey::String("first".to_string()));
+        assert_eq!(entries[0].value, Value::String("10".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("fourth".to_string()));
+        assert_eq!(entries[1].value, Value::Float(10.5));
+        assert_eq!(entries[2].key, ArrayKey::String("sixth".to_string()));
+        assert_eq!(entries[2].value, Value::Int(11));
+        assert_eq!(entries[3].key, ArrayKey::String("eighth".to_string()));
+        assert_eq!(entries[3].value, Value::Int(0));
+        assert_eq!(
+            array.get("second"),
+            Some(&Value::Int(10)),
+            "array_unique SORT_NUMERIC must not mutate the original array"
+        );
+    }
+
+    #[test]
     fn array_unique_rejects_non_scalar_value_comparisons() {
         let mut array = PhpArray::new();
         array.insert("nested", Value::Array(PhpArray::new()));
@@ -4756,6 +5408,33 @@ mod tests {
         assert_eq!(
             error.message(),
             "unsupported call array_unique(): values must be scalar in the current subset, got object"
+        );
+
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array.unique_values_regular().unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_unique(): values must be scalar in the current subset, got array"
+        );
+
+        let mut array = PhpArray::new();
+        array.insert("text", Value::String("not numeric".to_string()));
+
+        let error = array.unique_values_by_numeric().unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_unique(): values must be numeric in the current subset, got non-numeric string"
+        );
+
+        let mut array = PhpArray::new();
+        array.insert("nested", Value::Array(PhpArray::new()));
+
+        let error = array.unique_values_by_numeric().unwrap_err();
+        assert_eq!(
+            error.message(),
+            "unsupported call array_unique(): values must be numeric scalar in the current subset, got array"
         );
     }
 
@@ -5309,6 +5988,43 @@ mod tests {
     }
 
     #[test]
+    fn array_key_exists_keys_accept_current_null_and_bool_coercions() {
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Null).unwrap(),
+            ArrayKey::String(String::new())
+        );
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Bool(false)).unwrap(),
+            ArrayKey::Int(0)
+        );
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Bool(true)).unwrap(),
+            ArrayKey::Int(1)
+        );
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Float(1.0)).unwrap(),
+            ArrayKey::Int(1)
+        );
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Float(-2.0)).unwrap(),
+            ArrayKey::Int(-2)
+        );
+
+        let float_error = ArrayKey::from_array_key_exists_value(&Value::Float(1.5)).unwrap_err();
+        assert_eq!(
+            float_error.message(),
+            "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+        );
+
+        let error =
+            ArrayKey::from_array_key_exists_value(&Value::Array(PhpArray::new())).unwrap_err();
+        assert_eq!(
+            error.message(),
+            "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+        );
+    }
+
+    #[test]
     fn class_table_preserves_names_and_uses_case_insensitive_lookup() {
         let mut classes = PhpClassTable::new();
 
@@ -5445,6 +6161,39 @@ mod tests {
         assert_eq!(object.properties()[1].name(), "payload");
         assert_eq!(object.properties()[1].visibility(), Visibility::Protected);
         assert_eq!(object.properties()[1].value(), &Value::Null);
+    }
+
+    #[test]
+    fn object_properties_expose_php_mangled_names_for_visibility() {
+        let mut classes = PhpClassTable::new();
+        let id = classes.declare_class("Packet").unwrap();
+        let class = classes.get_mut(id).unwrap();
+
+        class
+            .add_property(PhpPropertyMetadata::instance("id", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance(
+                "payload",
+                Visibility::Protected,
+            ))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("secret", Visibility::Private))
+            .unwrap();
+
+        let object = PhpObject::from_class(class);
+        let properties = object.properties();
+
+        assert_eq!(properties[0].mangled_name(object.class_name()), "id");
+        assert_eq!(
+            properties[1].mangled_name(object.class_name()),
+            "\0*\0payload"
+        );
+        assert_eq!(
+            properties[2].mangled_name(object.class_name()),
+            "\0Packet\0secret"
+        );
     }
 
     #[test]

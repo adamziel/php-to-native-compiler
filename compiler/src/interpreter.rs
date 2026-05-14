@@ -64,6 +64,14 @@ enum ArrayFilterMode {
     Key,
 }
 
+fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    trimmed.parse::<i64>().ok()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CompoundAssignmentPlace {
     Variable(String),
@@ -3536,12 +3544,34 @@ impl Interpreter {
                     ),
                 ),
             )),
+            Value::String(value) => match parse_array_filter_string_mode(value) {
+                Some(0) => Ok(ArrayFilterMode::Value),
+                Some(1) => Ok(ArrayFilterMode::Both),
+                Some(2) => Ok(ArrayFilterMode::Key),
+                Some(value) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        format!(
+                            "mode flag string must coerce to integer 0, 1, or 2 in the current subset, got {value}"
+                        ),
+                    ),
+                )),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_filter()",
+                        "mode flag string must be an integer string in the current subset"
+                            .to_string(),
+                    ),
+                )),
+            },
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "array_filter()",
                     format!(
-                        "mode flag must be integer 0, 1, 2, or bool in the current subset, got {}",
+                        "mode flag must be integer 0, 1, 2, bool, or integer string in the current subset, got {}",
                         other.type_name()
                     ),
                 ),

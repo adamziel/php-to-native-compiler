@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+nonempty: true
+contains_main: true
+contains_printf: false
+--- stdout end ---
+stderr:
+--- stderr end ---

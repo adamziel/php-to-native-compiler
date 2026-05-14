@@ -128,6 +128,81 @@ default_items();
 }
 
 #[test]
+fn function_declarations_accept_optional_trailing_commas_in_parameter_lists() {
+    let execution = run_source(
+        r#"<?php
+function identity($value,) {
+    return $value;
+}
+function label($name, $suffix = "!",) {
+    return $name . $suffix;
+}
+class Box {
+    public function method($value,) {
+        return $value;
+    }
+}
+echo identity("Ada"), "\n";
+echo label("Grace"), "\n";
+echo label("Lin", ".");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Ada\nGrace!\nLin.");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn empty_parameter_before_trailing_comma_still_fails_parse() {
+    let error = parse_error(
+        r#"<?php
+function invalid(,) {
+    return null;
+}
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 18);
+    assert_eq!(error.message, "expected parameter name");
+}
+
+#[test]
+fn calls_accept_optional_trailing_commas_in_argument_lists() {
+    let execution = run_source(
+        r#"<?php
+function greet($name, $suffix = "!") {
+    return "hello " . $name . $suffix;
+}
+echo greet("Ada",), "\n";
+echo greet("Lin", ".",), "\n";
+echo strlen("native",), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello Ada!\nhello Lin.\n6\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn empty_call_argument_before_trailing_comma_still_fails_parse() {
+    let error = parse_error(
+        r#"<?php
+function greet($name) {
+    return $name;
+}
+echo greet(,);
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 12);
+    assert_eq!(error.message, "expected expression, found ,");
+}
+
+#[test]
 fn default_parameter_values_can_reference_global_constants() {
     let execution = run_source(
         r#"<?php

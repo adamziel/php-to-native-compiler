@@ -53,6 +53,53 @@ echo count($empty);
 }
 
 #[test]
+fn array_combine_accepts_null_and_bool_key_value_coercions() {
+    let source = r#"<?php
+$keys = [null, false, true, "01"];
+$values = ["null key", "false key", "true key", "string one"];
+$combined = array_combine($keys, $values);
+print_r($combined);
+echo count($combined), "\n";
+echo $combined[""], "|", $combined[1], "|", $combined["01"], "\n";
+
+$call = "array_combine";
+$again = $call($keys, $values);
+echo $again[""], "|", $again[1], "|", $again["01"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [] => false key\n    [1] => true key\n    [01] => string one\n)\n3\nfalse key|true key|string one\nfalse key|true key|string one"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_combine_accepts_integral_float_key_value_coercions() {
+    let source = r#"<?php
+$keys = [1.0, 2.0, -3.0, "04"];
+$values = ["one", "two", "minus", "leading"];
+
+$combined = array_combine($keys, $values);
+print_r($combined);
+echo count($combined), "\n";
+echo $combined[1], "|", $combined[2], "|", $combined[-3], "|", $combined["04"], "\n";
+
+$call = "array_combine";
+$again = $call([0.0, 1.0], ["zero", "one again"]);
+echo $again[0], "|", $again[1];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [1] => one\n    [2] => two\n    [-3] => minus\n    [04] => leading\n)\n4\none|two|minus|leading\nzero|one again"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_combine_requires_array_first_argument() {
     let error = runtime_error("<?php\n$values = [];\necho array_combine(42, $values);\n");
 
@@ -93,14 +140,28 @@ fn array_combine_rejects_length_mismatches() {
 #[test]
 fn array_combine_rejects_unsupported_key_value_types() {
     let error = runtime_error(
-        "<?php\n$keys = [\"ok\", true];\n$values = [\"yes\", \"no\"];\necho array_combine($keys, $values);\n",
+        "<?php\n$keys = [\"ok\", []];\n$values = [\"yes\", \"no\"];\necho array_combine($keys, $values);\n",
     );
 
     assert_eq!(error.line, 4);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_combine(): key values must be int or string in the current subset, got bool"
+        "unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+    );
+}
+
+#[test]
+fn array_combine_rejects_lossy_float_key_value_coercions() {
+    let error = runtime_error(
+        "<?php\n$keys = [1.5];\n$values = [\"lossy\"];\necho array_combine($keys, $values);\n",
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_combine(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
     );
 }
 

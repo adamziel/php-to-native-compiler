@@ -331,6 +331,65 @@ echo count($again), "|", $again["long"];
 }
 
 #[test]
+fn array_filter_accepts_integer_string_mode_flags() {
+    let source = r#"<?php
+function keep_long($value) {
+    return strlen($value) > 3;
+}
+
+function keep_selected_key($key) {
+    if ($key === "long") {
+        return true;
+    }
+    if ($key === 5) {
+        return true;
+    }
+    return false;
+}
+
+function keep_value_and_key($value, $key) {
+    if ($key === "long") {
+        return $value === "Grace";
+    }
+    if ($key === 5) {
+        return $value === "Linus";
+    }
+    return false;
+}
+
+$items = [];
+$items["short"] = "Ada";
+$items["long"] = "Grace";
+$items[5] = "Linus";
+$items[] = "";
+
+$value_mode = array_filter($items, "keep_long", "0");
+print_r(array_keys($value_mode));
+echo count($value_mode), "|", $value_mode["long"], "|", $value_mode[5], "\n";
+
+$both_mode = array_filter($items, "keep_value_and_key", " 1 ");
+print_r(array_keys($both_mode));
+echo count($both_mode), "|", $both_mode["long"], "|", $both_mode[5], "\n";
+
+$call = "array_filter";
+$key_mode = $call($items, "keep_selected_key", "02");
+print_r(array_keys($key_mode));
+echo count($key_mode), "|", $key_mode["long"], "|", $key_mode[5], "\n";
+
+$null_mode = $call(["empty" => "", "zero" => "0", "space" => " "], null, "+1");
+print_r(array_keys($null_mode));
+echo count($null_mode), "|", strlen($null_mode["space"]);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => long\n    [1] => 5\n)\n2|Grace|Linus\nArray\n(\n    [0] => long\n    [1] => 5\n)\n2|Grace|Linus\nArray\n(\n    [0] => long\n    [1] => 5\n)\n2|Grace|Linus\nArray\n(\n    [0] => space\n)\n1|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_filter_requires_array_argument() {
     let error = runtime_error("<?php\necho array_filter(42);\n");
 
@@ -416,14 +475,14 @@ fn array_filter_rejects_unsupported_integer_mode() {
 #[test]
 fn array_filter_rejects_unsupported_non_integer_mode_flags() {
     let error = runtime_error(
-        "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, null, \"0\");\n",
+        "<?php\n$items = [\"Ada\", \"\"];\necho array_filter($items, null, \"not-a-mode\");\n",
     );
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_filter(): mode flag must be integer 0, 1, 2, or bool in the current subset, got string"
+        "unsupported call array_filter(): mode flag string must be an integer string in the current subset"
     );
 }
 
@@ -490,6 +549,15 @@ fn emit_ir_rejects_array_filter_until_native_call_lowering_exists() {
         bool_mode_error.message.contains("function calls"),
         "{}",
         bool_mode_error.message
+    );
+
+    let string_mode_error =
+        emit_ir_source("<?php\necho array_filter([\"name\"], \"strlen\", \"0\");\n").unwrap_err();
+    assert_eq!(string_mode_error.phase, Phase::Codegen);
+    assert!(
+        string_mode_error.message.contains("function calls"),
+        "{}",
+        string_mode_error.message
     );
 
     let constant_error = emit_ir_source("<?php\necho ARRAY_FILTER_USE_KEY;\n").unwrap_err();

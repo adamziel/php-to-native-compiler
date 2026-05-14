@@ -830,7 +830,7 @@ fn get_object_vars_requires_object_argument() {
 }
 
 #[test]
-fn get_mangled_object_vars_lists_current_public_instance_property_values() {
+fn get_mangled_object_vars_lists_current_mangled_instance_property_values() {
     let source = r#"<?php
 class Box {
     public $name;
@@ -844,18 +844,24 @@ $box = new box();
 $box->name = "Ada";
 $box->count = 3;
 $vars = get_mangled_object_vars($box);
-print_r($vars);
-echo count($vars), "|", $vars["name"], "|", $vars["count"], "|", array_key_exists("secret", $vars), "\n";
+$keys = array_keys($vars);
+echo count($vars), "\n";
+echo strlen($keys[0]), "|", $keys[0] === "name", "|", $vars[$keys[0]], "\n";
+echo strlen($keys[1]), "|", $keys[1] === "secret", "|", $vars[$keys[1]] === null, "\n";
+echo strlen($keys[2]), "|", $keys[2] === "token", "|", $vars[$keys[2]] === null, "\n";
+echo strlen($keys[3]), "|", $keys[3] === "count", "|", $vars[$keys[3]], "\n";
+echo array_key_exists("secret", $vars), "|", array_key_exists("token", $vars), "\n";
 
 $call = "get_mangled_object_vars";
 $dynamic = $call($box);
-echo count($dynamic), "|", $dynamic["name"];
+$dynamicKeys = array_keys($dynamic);
+echo count($dynamic), "|", strlen($dynamicKeys[1]), "|", strlen($dynamicKeys[2]), "|", $dynamic[$dynamicKeys[0]];
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [name] => Ada\n    [count] => 3\n)\n2|Ada|3|\n2|Ada"
+        "4\n4|1|Ada\n9||1\n10||1\n5|1|3\n|\n4|9|10|Ada"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1290,6 +1296,56 @@ fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_folds_scalar_is_object_and_get_debug_type_calls() {
+    let ir = php_compiler::emit_ir_source(
+        r#"<?php
+echo is_object(null) ? "1" : "0";
+echo is_object(false) ? "1" : "0";
+echo is_object(7) ? "1" : "0";
+echo is_object(3.5) ? "1" : "0";
+echo is_object("x") ? "1" : "0";
+echo "\n";
+echo get_debug_type(null), "\n";
+echo get_debug_type(false), "\n";
+echo get_debug_type(7), "\n";
+echo get_debug_type(3.5), "\n";
+echo get_debug_type("x");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 5, "{ir}");
+    for expected in [
+        "c\"null\\00\"",
+        "c\"bool\\00\"",
+        "c\"int\\00\"",
+        "c\"float\\00\"",
+        "c\"string\\00\"",
+    ] {
+        assert!(ir.contains(expected), "{ir}");
+    }
+    assert!(!ir.contains("is_object"), "{ir}");
+    assert!(!ir.contains("get_debug_type"), "{ir}");
+}
+
+#[test]
+fn emit_ir_rejects_array_is_object_and_get_debug_type_until_native_array_lowering_exists() {
+    for source in [
+        "<?php\necho is_object([]) ? 1 : 0;\n",
+        "<?php\necho get_debug_type([]);\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("array lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+#[test]
 fn emit_ir_rejects_is_object_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\nclass Box {}\necho is_object(new Box());\n")
         .unwrap_err();
@@ -1320,78 +1376,125 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_class_exists_until_native_object_lowering_exists() {
-    let error = php_compiler::emit_ir_source("<?php\necho class_exists(\"Box\");\n").unwrap_err();
+fn emit_ir_folds_absent_native_class_interface_trait_enum_exists_calls() {
+    let ir = php_compiler::emit_ir_source(
+        r#"<?php
+$name = "Box";
+$autoload = false;
+echo class_exists("Box") ? "1" : "0";
+echo class_exists($name, $autoload) ? "1" : "0";
+echo interface_exists("I") ? "1" : "0";
+echo trait_exists("T", true) ? "1" : "0";
+echo enum_exists("E") ? "1" : "0";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 5, "{ir}");
+    for name in [
+        "class_exists",
+        "interface_exists",
+        "trait_exists",
+        "enum_exists",
+    ] {
+        assert!(!ir.contains(name), "{ir}");
+    }
 }
 
 #[test]
-fn emit_ir_rejects_interface_exists_until_native_object_lowering_exists() {
-    let error =
-        php_compiler::emit_ir_source("<?php\necho interface_exists(\"Box\");\n").unwrap_err();
+fn emit_ir_rejects_metadata_exists_arguments_outside_native_static_subset() {
+    for source in [
+        "<?php\necho class_exists(42);\n",
+        "<?php\necho class_exists(\"Box\", 1);\n",
+        "<?php\necho class_exists();\n",
+        "<?php\necho class_exists(\"Box\", false, false);\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("function calls"),
+            "{}",
+            error.message
+        );
+    }
 }
 
 #[test]
-fn emit_ir_rejects_trait_exists_until_native_object_lowering_exists() {
-    let error = php_compiler::emit_ir_source("<?php\necho trait_exists(\"Box\");\n").unwrap_err();
+fn emit_ir_rejects_array_metadata_exists_names_until_native_array_lowering_exists() {
+    for source in [
+        "<?php\necho class_exists([]);\n",
+        "<?php\necho interface_exists([]);\n",
+        "<?php\necho trait_exists([]);\n",
+        "<?php\necho enum_exists([]);\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("array lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
 }
 
 #[test]
-fn emit_ir_rejects_enum_exists_until_native_object_lowering_exists() {
-    let error = php_compiler::emit_ir_source("<?php\necho enum_exists(\"Box\");\n").unwrap_err();
+fn emit_ir_folds_absent_native_property_and_method_exists_calls() {
+    let ir = php_compiler::emit_ir_source(
+        r#"<?php
+$class = "Box";
+$property = "name";
+$method = "open";
+echo property_exists("Box", "name") ? "1" : "0";
+echo property_exists($class, $property) ? "1" : "0";
+echo method_exists("Box", "open") ? "1" : "0";
+echo method_exists($class, $method) ? "1" : "0";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 4, "{ir}");
+    assert!(!ir.contains("property_exists"), "{ir}");
+    assert!(!ir.contains("method_exists"), "{ir}");
 }
 
 #[test]
-fn emit_ir_rejects_property_exists_until_native_object_lowering_exists() {
-    let error = php_compiler::emit_ir_source("<?php\necho property_exists(\"Box\", \"name\");\n")
-        .unwrap_err();
+fn emit_ir_rejects_member_metadata_exists_arguments_outside_native_static_subset() {
+    for source in [
+        "<?php\necho property_exists(42, \"name\");\n",
+        "<?php\necho property_exists(\"Box\", 42);\n",
+        "<?php\necho property_exists(\"Box\");\n",
+        "<?php\necho method_exists(42, \"open\");\n",
+        "<?php\necho method_exists(\"Box\", 42);\n",
+        "<?php\necho method_exists(\"Box\");\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("function calls"),
+            "{}",
+            error.message
+        );
+    }
 }
 
 #[test]
-fn emit_ir_rejects_method_exists_until_native_object_lowering_exists() {
-    let error = php_compiler::emit_ir_source("<?php\necho method_exists(\"Box\", \"open\");\n")
-        .unwrap_err();
+fn emit_ir_rejects_array_member_metadata_exists_targets_until_native_array_lowering_exists() {
+    for source in [
+        "<?php\necho property_exists([], \"name\");\n",
+        "<?php\necho method_exists([], \"open\");\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("array lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
 }
 
 #[test]
@@ -1471,30 +1574,64 @@ fn emit_ir_rejects_object_property_empty_until_native_object_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_is_a_until_native_object_lowering_exists() {
-    let error =
-        php_compiler::emit_ir_source("<?php\necho is_a(\"Box\", \"Box\", true);\n").unwrap_err();
+fn emit_ir_folds_absent_native_relationship_metadata_calls() {
+    let ir = php_compiler::emit_ir_source(
+        r#"<?php
+$class = "Box";
+$target = "Box";
+$allow = true;
+echo is_a("Box", "Box") ? "1" : "0";
+echo is_a("Box", "Box", true) ? "1" : "0";
+echo is_a($class, $target, $allow) ? "1" : "0";
+echo is_subclass_of("Box", "Box") ? "1" : "0";
+echo is_subclass_of($class, $target, $allow) ? "1" : "0";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 5, "{ir}");
+    assert!(!ir.contains("is_a"), "{ir}");
+    assert!(!ir.contains("is_subclass_of"), "{ir}");
 }
 
 #[test]
-fn emit_ir_rejects_is_subclass_of_until_native_object_lowering_exists() {
-    let error =
-        php_compiler::emit_ir_source("<?php\necho is_subclass_of(\"Box\", \"Box\", true);\n")
-            .unwrap_err();
+fn emit_ir_rejects_relationship_metadata_arguments_outside_native_static_subset() {
+    for source in [
+        "<?php\necho is_a(42, \"Box\");\n",
+        "<?php\necho is_a(\"Box\", 42);\n",
+        "<?php\necho is_a(\"Box\", \"Box\", 1);\n",
+        "<?php\necho is_a(\"Box\");\n",
+        "<?php\necho is_subclass_of(42, \"Box\");\n",
+        "<?php\necho is_subclass_of(\"Box\", 42);\n",
+        "<?php\necho is_subclass_of(\"Box\", \"Box\", 1);\n",
+        "<?php\necho is_subclass_of(\"Box\");\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error.message.contains("object metadata builtins"),
-        "{}",
-        error.message
-    );
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("function calls"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_array_relationship_metadata_targets_until_native_array_lowering_exists() {
+    for source in [
+        "<?php\necho is_a([], \"Box\");\n",
+        "<?php\necho is_subclass_of([], \"Box\");\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("array lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
 }
 
 #[test]

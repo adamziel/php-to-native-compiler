@@ -1,0 +1,1 @@
+Project-specific stable runtime diagnostic for unsupported lossy/non-finite array_fill_keys float key values.

@@ -16382,3 +16382,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-13T10:53:48Z
 
 - Post-round 114 tests passed; running checkpoint for this round.
+
+## Loop Event 2026-05-13T10:54:42Z
+
+- Starting round 115 at 20260513T105442Z from HEAD `c0eba0d`.
+
+## Loop Event 2026-05-13T10:55:42Z
+
+- Pre-round 115 test exit code: `0`.
+
+## Loop Event 2026-05-13T10:56:39Z
+
+- Codex round 115 exit code: `1`. Log: `/home/claude/php-to-native-compiler/.codex-yolo/logs/round-20260513T105442Z-115.log`.
+
+## Loop Event 2026-05-14T12:45:00Z
+
+- Task attempted: integrated the current split-lane php-to-native-compiler
+  work and stopped opening new milestones. The coherent checkpoint scope
+  covers the completed lane batches through Milestone 614: backend-output
+  selected-`llc` invalid-output snapshots, native callable lookup snapshots
+  through `array_reduce`, parser rejection boundaries through `instanceof`,
+  and `array_filter` mode-flag runtime refinements through integer-string
+  modes.
+- Files prepared for checkpoint include the relevant compiler/runtime changes,
+  focused Rust tests, Milestone 590-614 fixture directories, unsupported syntax
+  fixture snapshots for the recent parser boundaries, and the lane planning
+  docs (`GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, and
+  `README.md`).
+- Verification: fixed two stale fixture newline snapshots revealed by the
+  gate (`unsupported_instanceof.stderr` and
+  `milestone613/array_filter_string_mode_flags.stdout`), then
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-610-614 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed. Rust tests completed successfully; `phpc test` reported 714 fixture
+  tests passed with 0 failures; `phpc test --compare-php` reported 714 fixture
+  tests passed with 0 failures, 441 system PHP comparisons, and 273 skipped
+  comparisons.
+- Next concrete task: start the next split-lane queue only after this
+  checkpoint, beginning at Milestones 615-619.
+- Checkpoint: current commit records this integration; final hash is reported
+  by `git log` after commit creation.

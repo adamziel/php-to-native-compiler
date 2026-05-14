@@ -1,0 +1,12 @@
+exit: 0
+stdout:
+Array
+(
+    [1] => float
+    [0] => false
+    [] => null
+    [2] => missing
+)
+4|float|false|null|missing--- stdout end ---
+stderr:
+--- stderr end ---

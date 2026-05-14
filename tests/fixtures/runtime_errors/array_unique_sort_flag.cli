@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_unique_sort_flag.php:3:6: unsupported call array_unique(): sort flags are not supported in the current subset
+runtime error at tests/fixtures/runtime_errors/array_unique_sort_flag.php:3:6: unsupported call array_unique(): sort flags other than SORT_REGULAR, SORT_NUMERIC, or SORT_STRING are not supported in the current subset
 --- stderr end ---

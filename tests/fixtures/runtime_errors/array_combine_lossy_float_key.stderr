@@ -1,0 +1,2 @@
+runtime error at 4:6: unsupported call array_combine(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented
+

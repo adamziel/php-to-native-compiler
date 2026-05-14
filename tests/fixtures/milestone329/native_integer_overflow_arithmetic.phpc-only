@@ -1,0 +1,1 @@
+Project-specific temporary runtime integer overflow behavior; native lowering rejects this boundary until PHP integer overflow promotion and runtime checks exist.

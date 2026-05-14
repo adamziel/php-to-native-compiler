@@ -1,0 +1,8 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+nonempty: true
+contains: Codegen error:
+contains: function-call lowering rejects function calls
+--- stderr end ---

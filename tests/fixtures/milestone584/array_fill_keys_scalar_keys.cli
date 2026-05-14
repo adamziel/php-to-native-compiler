@@ -1,0 +1,17 @@
+exit: 0
+stdout:
+Array
+(
+    [] => x
+    [1] => x
+    [2] => x
+    [02] => x
+    [-3] => x
+)
+5
+x|x|x|x|x
+2
+y|y
+--- stdout end ---
+stderr:
+--- stderr end ---

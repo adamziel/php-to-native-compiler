@@ -31,9 +31,40 @@ echo $builtin("callable");
 #[test]
 fn emit_ir_rejects_direct_builtin_user_and_dynamic_calls_with_specific_boundary() {
     for source in [
-        "<?php\necho strlen(\"abc\");\n",
         "<?php\necho label(\"user\");\nfunction label($value) { return $value; }\n",
         "<?php\n$call = \"strlen\";\necho $call(\"abc\");\n",
+        "<?php\n$call = \"strlen\";\necho $call(\"abc\",);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_folds_direct_strlen_known_strings() {
+    let ir = emit_ir_source(
+        r#"<?php
+$known = "native";
+echo strlen("abc"), "\n";
+echo strlen($known), "\n";
+echo strlen(true ? "same" : "size"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 3)"));
+    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 6)"));
+    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 4)"));
+    assert!(!ir.contains("strlen"));
+}
+
+#[test]
+fn emit_ir_rejects_direct_strlen_unsupported_operands() {
+    for source in [
+        "<?php\necho strlen(123);\n",
+        "<?php\necho strlen(\"abc\", \"extra\");\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
@@ -44,7 +75,9 @@ fn emit_ir_rejects_direct_builtin_user_and_dynamic_calls_with_specific_boundary(
 
 #[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
-    let error = emit_ir_source("<?php\necho strlen([]);\n").unwrap_err();
+    let error =
+        emit_ir_source("<?php\necho label([]);\nfunction label($value) { return $value; }\n")
+            .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
@@ -60,7 +93,9 @@ fn emit_ir_rejects_dynamic_calls_before_lowering_callee_or_arguments() {
 
 #[test]
 fn emit_asm_rejects_function_calls_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho strlen(\"abc\");\n").unwrap_err();
+    let error =
+        emit_asm_source("<?php\necho label(\"abc\");\nfunction label($value) { return $value; }\n")
+            .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
@@ -92,6 +127,35 @@ fn native_function_call_emit_ir_cli_snapshot_matches_committed_output() {
             .join("tests/fixtures/milestone169/native_function_call_boundary_emit_ir.cli"),
     )
     .expect("native function-call CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_strlen_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root.join("tests/fixtures/milestone562/native_strlen.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone562/native_strlen_emit_ir.cli"),
+    )
+    .expect("native strlen IR CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);

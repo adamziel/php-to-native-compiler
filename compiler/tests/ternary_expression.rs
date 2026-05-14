@@ -150,12 +150,15 @@ fn unparenthesized_nested_ternary_remains_an_explicit_unsupported_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_ternary_expression_until_lowering_exists() {
-    let error = emit_ir_source("<?php\necho true ? 1 : 2;\n").unwrap_err();
+fn emit_ir_rejects_ternary_expression_that_needs_php_truthiness() {
+    let error = emit_ir_source(
+        "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$maybe = $flag ? 0 : 5;\necho $maybe ? 1 : 2;\n",
+    )
+    .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
+        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
     );
 }

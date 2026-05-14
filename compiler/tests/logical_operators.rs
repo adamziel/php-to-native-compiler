@@ -91,12 +91,15 @@ echo $left, "\n";
 }
 
 #[test]
-fn emit_ir_rejects_logical_operators_until_lowering_exists() {
-    let error = emit_ir_source("<?php\necho true && false;\n").unwrap_err();
+fn emit_ir_rejects_logical_operators_that_need_php_truthiness() {
+    let error = emit_ir_source(
+        "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho $value && true;\n",
+    )
+    .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "LLVM logical lowering rejects logical operators until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior"
+        "LLVM logical lowering rejects unsupported logical operands until native PHP truthiness and short-circuit semantics exist; phpc run handles current logical operator behavior"
     );
 }

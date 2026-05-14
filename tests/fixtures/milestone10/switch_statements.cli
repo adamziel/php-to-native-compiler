@@ -4,6 +4,6 @@ two-default-tail
 matched
 fallback-after
 zero:one:many:
---- stdout end ---
+two-default-tail--- stdout end ---
 stderr:
 --- stderr end ---

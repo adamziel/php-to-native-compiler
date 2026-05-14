@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_first_class_callable.php:2:20: unsupported first-class callable syntax: Closure creation with ... is not implemented
+--- stderr end ---

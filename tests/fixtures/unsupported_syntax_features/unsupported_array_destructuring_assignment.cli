@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.php:2:10: unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments
+--- stderr end ---

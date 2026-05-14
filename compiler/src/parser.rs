@@ -19,6 +19,12 @@ struct Parser {
     function_body_depth: usize,
 }
 
+#[derive(Clone, Copy)]
+enum SwitchBodyKind {
+    Brace,
+    Alternate,
+}
+
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -102,6 +108,15 @@ impl Parser {
             {
                 self.parse_unsupported_try_catch_finally()
             }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("yield") => {
+                Err(self.error_at(self.peek().span, unsupported_yield_message()))
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("goto") => {
+                self.parse_unsupported_goto()
+            }
+            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
+                self.parse_unsupported_goto_label()
+            }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => {
                 if self.nested_statement_depth == 0 {
                     self.parse_const_declaration()
@@ -179,6 +194,9 @@ impl Parser {
                     span,
                 });
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
+                }
+                if self.check(|kind| matches!(kind, TokenKind::RParen)) {
                     break;
                 }
             }
@@ -398,6 +416,16 @@ impl Parser {
     fn parse_unsupported_match_expression(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
         Err(self.error_at(span, unsupported_match_expression_message()))
+    }
+
+    fn parse_unsupported_goto(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_goto_message()))
+    }
+
+    fn parse_unsupported_goto_label(&mut self) -> CompileResult<Stmt> {
+        let span = self.advance().span;
+        Err(self.error_at(span, unsupported_goto_message()))
     }
 
     fn parse_unsupported_nested_const_declaration(&mut self) -> CompileResult<Stmt> {
@@ -724,21 +752,25 @@ impl Parser {
         let value = self.parse_expression()?;
         self.consume_keyword(TokenKind::RParen, "expected ')' after switch expression")?;
 
-        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
-            return Err(self.error_at(self.previous().span, unsupported_switch_alternate_message()));
-        }
+        let body_kind = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            SwitchBodyKind::Alternate
+        } else {
+            self.consume_keyword(TokenKind::LBrace, "expected switch body")?;
+            SwitchBodyKind::Brace
+        };
 
-        self.consume_keyword(TokenKind::LBrace, "expected switch body")?;
         let mut cases = Vec::new();
         let mut saw_default = false;
 
-        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
-            let label = self.consume_switch_label()?;
+        while !self.check_switch_body_end(body_kind)
+            && !self.check(|kind| matches!(kind, TokenKind::Eof))
+        {
+            let label = self.consume_switch_label(body_kind)?;
             match label {
                 SwitchLabel::Case(label_span) => {
                     let condition = self.parse_expression()?;
-                    self.consume_keyword(TokenKind::Colon, "expected ':' after switch case")?;
-                    let body = self.parse_switch_case_body()?;
+                    self.consume_switch_case_separator("case")?;
+                    let body = self.parse_switch_case_body(body_kind)?;
                     cases.push(SwitchCase {
                         condition: Some(condition),
                         body,
@@ -751,8 +783,8 @@ impl Parser {
                             .error_at(label_span, "duplicate default label in switch statement"));
                     }
                     saw_default = true;
-                    self.consume_keyword(TokenKind::Colon, "expected ':' after switch default")?;
-                    let body = self.parse_switch_case_body()?;
+                    self.consume_switch_case_separator("default")?;
+                    let body = self.parse_switch_case_body(body_kind)?;
                     cases.push(SwitchCase {
                         condition: None,
                         body,
@@ -762,15 +794,27 @@ impl Parser {
             }
         }
 
-        self.consume_keyword(TokenKind::RBrace, "expected '}' after switch body")?;
+        self.consume_switch_body_end(body_kind)?;
         Ok(Stmt::Switch { value, cases, span })
     }
 
-    fn parse_switch_case_body(&mut self) -> CompileResult<Vec<Stmt>> {
+    fn consume_switch_case_separator(&mut self, label: &str) -> CompileResult<()> {
+        if self.match_token(|kind| matches!(kind, TokenKind::Colon | TokenKind::Semicolon)) {
+            Ok(())
+        } else {
+            Err(self.error_at(
+                self.peek().span,
+                format!("expected ':' or ';' after switch {label}"),
+            ))
+        }
+    }
+
+    fn parse_switch_case_body(&mut self, body_kind: SwitchBodyKind) -> CompileResult<Vec<Stmt>> {
         self.nested_statement_depth += 1;
         let result = (|| {
             let mut statements = Vec::new();
-            while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof))
+            while !self.check_switch_body_end(body_kind)
+                && !self.check(|kind| matches!(kind, TokenKind::Eof))
                 && !self.check_switch_label()
             {
                 if self.check(|kind| matches!(kind, TokenKind::Class)) {
@@ -809,7 +853,7 @@ impl Parser {
         result
     }
 
-    fn consume_switch_label(&mut self) -> CompileResult<SwitchLabel> {
+    fn consume_switch_label(&mut self, body_kind: SwitchBodyKind) -> CompileResult<SwitchLabel> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("case") => {
@@ -818,8 +862,34 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("default") => {
                 Ok(SwitchLabel::Default(token.span))
             }
-            _ => Err(self.error_at(token.span, "expected 'case' or 'default' in switch body")),
+            _ => Err(self.error_at(
+                token.span,
+                match body_kind {
+                    SwitchBodyKind::Brace => "expected 'case' or 'default' in switch body",
+                    SwitchBodyKind::Alternate => {
+                        "expected 'case', 'default', or 'endswitch' in alternate switch body"
+                    }
+                },
+            )),
         }
+    }
+
+    fn consume_switch_body_end(&mut self, body_kind: SwitchBodyKind) -> CompileResult<()> {
+        match body_kind {
+            SwitchBodyKind::Brace => {
+                self.consume_keyword(TokenKind::RBrace, "expected '}' after switch body")?;
+            }
+            SwitchBodyKind::Alternate => {
+                if !self.match_identifier("endswitch") {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "expected 'endswitch' after alternate switch body",
+                    ));
+                }
+                self.consume_keyword(TokenKind::Semicolon, "expected ';' after endswitch")?;
+            }
+        }
+        Ok(())
     }
 
     fn parse_break(&mut self) -> CompileResult<Stmt> {
@@ -1244,6 +1314,7 @@ impl Parser {
                 }),
                 _ => Err(unsupported_assignment_expression_target_message()),
             },
+            Expr::Array { .. } => Err(unsupported_array_destructuring_assignment_message()),
             _ => Err(unsupported_assignment_expression_target_message()),
         }
     }
@@ -1842,6 +1913,9 @@ impl Parser {
             if self.check_compound_assignment_operator() {
                 break;
             }
+            if self.check(|kind| matches!(kind, TokenKind::StarStar)) {
+                return Err(self.error_at(self.peek().span, unsupported_exponentiation_message()));
+            }
             let op = if self.match_token(|kind| matches!(kind, TokenKind::Star)) {
                 BinaryOp::Mul
             } else if self.match_token(|kind| matches!(kind, TokenKind::Slash)) {
@@ -2171,6 +2245,12 @@ impl Parser {
                 ) {
                     return Err(self.error_at(token.span, unsupported_try_catch_finally_message()));
                 }
+                if name.eq_ignore_ascii_case("yield") {
+                    return Err(self.error_at(token.span, unsupported_yield_message()));
+                }
+                if name.eq_ignore_ascii_case("goto") {
+                    return Err(self.error_at(token.span, unsupported_goto_message()));
+                }
                 if name.eq_ignore_ascii_case("clone") {
                     return Err(self.error_at(token.span, unsupported_clone_message()));
                 }
@@ -2182,6 +2262,14 @@ impl Parser {
                 {
                     self.consume_keyword(TokenKind::LParen, "expected '(' after array")?;
                     return self.parse_array_literal(token.span, ArrayLiteralDelimiter::Long);
+                }
+                if name.eq_ignore_ascii_case("list")
+                    && self.check(|kind| matches!(kind, TokenKind::LParen))
+                {
+                    return Err(self.error_at(
+                        token.span,
+                        unsupported_array_destructuring_assignment_message(),
+                    ));
                 }
                 if name.eq_ignore_ascii_case("unset")
                     && self.check(|kind| matches!(kind, TokenKind::LParen))
@@ -2296,7 +2384,13 @@ impl Parser {
 
         let token = self.advance().clone();
         let class_name = match token.kind {
+            TokenKind::Static => {
+                return Err(self.error_at(token.span, unsupported_magic_class_name_message()));
+            }
             TokenKind::Identifier(name) => {
+                if is_magic_static_receiver(&name) {
+                    return Err(self.error_at(token.span, unsupported_magic_class_name_message()));
+                }
                 if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -2383,6 +2477,9 @@ impl Parser {
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                     break;
                 }
+                if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                    break;
+                }
             }
         }
         self.consume_keyword(TokenKind::RParen, "expected ')' after arguments")?;
@@ -2392,6 +2489,9 @@ impl Parser {
     fn reject_unsupported_call_argument_syntax(&self) -> CompileResult<()> {
         let token = self.peek();
         match &token.kind {
+            TokenKind::Ellipsis if matches!(self.peek_next().kind, TokenKind::RParen) => {
+                Err(self.error_at(token.span, unsupported_first_class_callable_message()))
+            }
             TokenKind::Ellipsis => Err(self.error_at(
                 token.span,
                 "unsupported argument unpacking: variadic calls are not implemented",
@@ -2795,6 +2895,15 @@ impl Parser {
         )
     }
 
+    fn check_switch_body_end(&self, body_kind: SwitchBodyKind) -> bool {
+        match body_kind {
+            SwitchBodyKind::Brace => self.check(|kind| matches!(kind, TokenKind::RBrace)),
+            SwitchBodyKind::Alternate => self.check(|kind| {
+                matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("endswitch"))
+            }),
+        }
+    }
+
     fn check_instanceof_operator(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Instanceof => true,
@@ -3010,6 +3119,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Plus => "+",
         TokenKind::Minus => "-",
         TokenKind::Star => "*",
+        TokenKind::StarStar => "**",
         TokenKind::Slash => "/",
         TokenKind::Percent => "%",
         TokenKind::Dot => ".",
@@ -3133,8 +3243,16 @@ fn unsupported_try_catch_finally_message() -> &'static str {
     "unsupported try/catch/finally: exception handling and stack unwinding are not implemented"
 }
 
+fn unsupported_yield_message() -> &'static str {
+    "unsupported yield expression: generators and generator object execution are not implemented"
+}
+
 fn unsupported_match_expression_message() -> &'static str {
     "unsupported match expression: expression-form branching is not implemented"
+}
+
+fn unsupported_goto_message() -> &'static str {
+    "unsupported goto: goto statements and labels are not implemented"
 }
 
 fn unsupported_nested_ternary_message() -> &'static str {
@@ -3143,6 +3261,10 @@ fn unsupported_nested_ternary_message() -> &'static str {
 
 fn unsupported_null_coalescing_message() -> &'static str {
     "unsupported null coalescing expression: null-aware expression-form branching is not implemented"
+}
+
+fn unsupported_exponentiation_message() -> &'static str {
+    "unsupported exponentiation operator: ** and **= are not implemented"
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
@@ -3205,6 +3327,14 @@ fn unsupported_array_reference_element_message() -> &'static str {
     "unsupported array reference element: references are not implemented"
 }
 
+fn unsupported_array_destructuring_assignment_message() -> &'static str {
+    "unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments"
+}
+
+fn unsupported_first_class_callable_message() -> &'static str {
+    "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+}
+
 fn unsupported_unset_message() -> &'static str {
     "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented"
 }
@@ -3239,10 +3369,6 @@ fn unsupported_for_header_list_message() -> &'static str {
 
 fn unsupported_switch_expression_message() -> &'static str {
     "unsupported switch: switch is only supported as a statement in the current subset"
-}
-
-fn unsupported_switch_alternate_message() -> &'static str {
-    "unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks"
 }
 
 fn unsupported_if_alternate_message() -> &'static str {
@@ -3311,6 +3437,10 @@ fn unsupported_class_name_constant_message() -> &'static str {
 
 fn unsupported_magic_static_receiver_message() -> &'static str {
     "unsupported magic static receiver: self, parent, and static resolution is not implemented"
+}
+
+fn unsupported_magic_class_name_message() -> &'static str {
+    "unsupported magic class name: self, parent, and static class name resolution is not implemented"
 }
 
 fn is_magic_static_receiver(name: &str) -> bool {

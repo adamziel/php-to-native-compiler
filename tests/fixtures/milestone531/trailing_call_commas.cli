@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+hello Ada!
+hello Lin.
+6
+hello Grace!
+8--- stdout end ---
+stderr:
+--- stderr end ---

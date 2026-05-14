@@ -17,6 +17,7 @@ fn array_filtering_builtin_cli_snapshots_match_committed_outputs() {
         workspace_root.join("tests/fixtures/milestone56"),
         workspace_root.join("tests/fixtures/milestone58"),
         workspace_root.join("tests/fixtures/milestone608"),
+        workspace_root.join("tests/fixtures/milestone613"),
     ];
     let mut fixtures = Vec::new();
     for fixture_dir in fixture_dirs {

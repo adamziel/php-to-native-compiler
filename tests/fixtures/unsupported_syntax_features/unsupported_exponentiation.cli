@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_exponentiation.php:2:8: unsupported exponentiation operator: ** and **= are not implemented
+--- stderr end ---

@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; broader PHP key coercions beyond int/string values are not implemented.
+Project-specific stable runtime diagnostic for unsupported array/object key values; broader PHP warning recovery is not implemented.

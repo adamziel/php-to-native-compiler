@@ -68,6 +68,26 @@ echo $counter(["a", "b"]), "\n";
 }
 
 #[test]
+fn dynamic_function_calls_accept_optional_trailing_commas() {
+    let execution = run_source(
+        r#"<?php
+function greet($name, $suffix = "!") {
+    return "hello " . $name . $suffix;
+}
+$call = "greet";
+echo $call("Ada",), "\n";
+echo $call("Lin", ".",), "\n";
+$length = "strlen";
+echo $length("native",), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello Ada!\nhello Lin.\n6\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unresolved_dynamic_function_name_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -113,6 +133,37 @@ $$name = "dynamic";
         error.message,
         "unsupported variable variable: variable variables are not implemented"
     );
+}
+
+#[test]
+fn php_attributes_are_rejected_with_stable_lex_error() {
+    let error = lex_error(
+        r#"<?php
+#[Example]
+function demo() {}
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported attribute syntax: PHP attributes are not implemented"
+    );
+}
+
+#[test]
+fn hash_comment_with_space_before_bracket_remains_a_comment() {
+    let execution = run_source(
+        r#"<?php
+# [not an attribute]
+echo "comment";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "comment");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -809,8 +860,8 @@ fn emit_ir_rejects_define_until_user_constant_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_defined_until_constant_introspection_lowering_exists() {
-    let error = emit_ir_source("<?php\necho defined(\"APP_NAME\");\n").unwrap_err();
+fn emit_ir_rejects_unsupported_defined_names_until_native_constant_tables_exist() {
+    let error = emit_ir_source("<?php\necho defined(\"123BAD\");\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(

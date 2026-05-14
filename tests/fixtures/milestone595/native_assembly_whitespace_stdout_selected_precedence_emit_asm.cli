@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone595/native_assembly_whitespace_stdout_selected_precedence.php:0:0: clang emitted whitespace-only assembly output
+--- stderr end ---

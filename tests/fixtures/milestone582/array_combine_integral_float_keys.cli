@@ -1,0 +1,15 @@
+exit: 0
+stdout:
+Array
+(
+    [1] => one
+    [2] => two
+    [-3] => minus
+    [04] => leading
+)
+4
+one|two|minus|leading
+zero|one again
+--- stdout end ---
+stderr:
+--- stderr end ---

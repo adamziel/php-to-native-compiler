@@ -1,2 +1,2 @@
-runtime error at 3:6: unsupported call array_unique(): sort flags are not supported in the current subset
+runtime error at 3:6: unsupported call array_unique(): sort flags other than SORT_REGULAR, SORT_NUMERIC, or SORT_STRING are not supported in the current subset
 

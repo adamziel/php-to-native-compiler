@@ -1,7 +1,8 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects binary arithmetic operators until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
+const MODULO_RUNTIME_CHECK_REJECTION: &str = "LLVM modulo lowering rejects dynamic, zero, or non-positive integer divisors until native modulo runtime checks, PHP modulo diagnostics, negative-divisor/min-int edge behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current modulo behavior";
 
 #[test]
 fn modulo_operator_handles_integer_coercions_and_php_precedence() {
@@ -64,19 +65,11 @@ fn modulo_non_numeric_string_has_stable_runtime_error() {
 }
 
 #[test]
-fn emit_ir_rejects_integer_modulo_until_native_numeric_lowering_exists() {
-    let error = emit_ir_source("<?php\n$value = 10 % 4;\necho $value % 2;\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
-}
-
-#[test]
 fn emit_ir_rejects_modulo_by_zero_until_native_runtime_checks_exist() {
     let error = emit_ir_source("<?php\necho 7 % 0;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert_eq!(error.message, MODULO_RUNTIME_CHECK_REJECTION);
 }
 
 #[test]
@@ -85,4 +78,12 @@ fn emit_ir_rejects_non_integer_modulo_until_native_coercions_exist() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, ARITHMETIC_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_modulo_without_static_positive_divisor() {
+    let error = emit_ir_source("<?php\n$divisor = 4 - 2;\necho 7 % $divisor;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, MODULO_RUNTIME_CHECK_REJECTION);
 }

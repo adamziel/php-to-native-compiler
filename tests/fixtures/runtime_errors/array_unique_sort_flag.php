@@ -1,3 +1,3 @@
 <?php
 $items = ["a"];
-echo array_unique($items, 0);
+echo array_unique($items, 3);

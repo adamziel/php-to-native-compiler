@@ -26,6 +26,74 @@ comparison while remaining covered by committed `phpc` expectations.
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.
 
+## Focused Lane Tests
+
+When a worker is handling one narrow lane milestone, run focused tests that
+prove that slice before spending time on the full suite. Record the exact
+commands in `docs/PROGRESS.md`.
+
+Start with the narrowest executable proof:
+
+- one affected Rust integration test file, or one named test inside it;
+- one exact fixture directory when fixtures changed;
+- PHP comparison only for fixture directories intended to match system PHP;
+- one CLI snapshot integration test when `.cli` files changed;
+- `cargo fmt --check` only when Rust files changed;
+- `git diff --check -- <changed-files>` for every lane.
+
+Do not run workspace `cargo test` as the first verification step for a narrow
+lane slice. Escalate from a single named test, to the whole affected test file,
+to the exact fixture directory, and then to `tools/run-tests.sh` when the change
+touches shared infrastructure or before checkpoint batches.
+
+Use this default shape:
+
+```sh
+export CARGO_TARGET_DIR=/dev/shm/phpc-target-<lane-or-milestone>
+export CARGO_BUILD_JOBS=1
+export CARGO_INCREMENTAL=0
+
+cargo test -p phpc --test <affected-test-file> <test-name> -- --test-threads=1
+cargo run -p phpc -- test tests/fixtures/<affected-fixture-dir>
+cargo run -p phpc -- test --compare-php tests/fixtures/<affected-fixture-dir>
+git diff --check -- <files-touched-by-this-lane>
+```
+
+For Rust edits, also run:
+
+```sh
+cargo fmt --check
+```
+
+The focused gate is a development-time filter, not a replacement for
+`tools/run-tests.sh`. Run the full gate before checkpoint batches or document a
+blocker in `docs/PROGRESS.md`.
+
+For unsupported syntax boundaries, use the closure checklist in
+`docs/LANE_WORKERS.md` before handoff. A complete boundary needs pinned
+diagnostics, CLI fixture snapshots, support docs, named unsupported edges, and
+focused commands recorded in `docs/PROGRESS.md`.
+
+## Parallel Lane Worktrees
+
+`GOAL.MD` work can be split across parser, IR/lowering, runtime,
+compiler-output, and tests/docs workers. Use one git worktree per lane and one
+active milestone per worker:
+
+```sh
+git worktree add ../phpc-parser-lane -b lane/parser HEAD
+git worktree add ../phpc-ir-lane -b lane/ir-lowering HEAD
+git worktree add ../phpc-runtime-lane -b lane/runtime HEAD
+git worktree add ../phpc-output-lane -b lane/compiler-output HEAD
+git worktree add ../phpc-tests-docs-lane -b lane/tests-docs HEAD
+```
+
+Each lane should use a unique `CARGO_TARGET_DIR`, inspect `git status --short`
+before handoff, and avoid shared files unless the milestone requires a scoped
+documentation or progress update. See `docs/LANE_WORKERS.md` for lane
+ownership, subagent prompt templates, focused-test expectations, and handoff
+notes.
+
 ## Checkpoints
 
 Create a tested checkpoint commit with:

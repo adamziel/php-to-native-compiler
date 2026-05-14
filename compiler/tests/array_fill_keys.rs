@@ -40,6 +40,29 @@ echo $again["name"], "|", $again[2], "|", $again["02"], "|", $again[-1];
 }
 
 #[test]
+fn array_fill_keys_accepts_null_bool_and_integral_float_key_values() {
+    let source = r#"<?php
+$keys = [null, false, true, 1.0, 2.0, "2", "02", -3.0];
+$filled = array_fill_keys($keys, "x");
+print_r($filled);
+echo count($filled), "\n";
+echo $filled[""], "|", $filled[1], "|", $filled[2], "|", $filled["02"], "|", $filled[-3], "\n";
+
+$call = "array_fill_keys";
+$again = $call([0.0, 1.0], "y");
+echo count($again), "\n";
+echo $again[0], "|", $again[1];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [] => x\n    [1] => x\n    [2] => x\n    [02] => x\n    [-3] => x\n)\n5\nx|x|x|x|x\n2\ny|y"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_fill_keys_requires_array_keys_argument() {
     let error = runtime_error("<?php\necho array_fill_keys(42, \"value\");\n");
 
@@ -54,13 +77,25 @@ fn array_fill_keys_requires_array_keys_argument() {
 #[test]
 fn array_fill_keys_rejects_unsupported_key_value_types() {
     let error =
-        runtime_error("<?php\n$keys = [\"ok\", true];\necho array_fill_keys($keys, \"value\");\n");
+        runtime_error("<?php\n$keys = [\"ok\", []];\necho array_fill_keys($keys, \"value\");\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call array_fill_keys(): key values must be int or string in the current subset, got bool"
+        "unsupported call array_fill_keys(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+    );
+}
+
+#[test]
+fn array_fill_keys_rejects_lossy_float_key_values() {
+    let error = runtime_error("<?php\n$keys = [1.5];\necho array_fill_keys($keys, \"value\");\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call array_fill_keys(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
     );
 }
 

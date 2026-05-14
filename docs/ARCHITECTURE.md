@@ -166,6 +166,10 @@ An `llc` whitespace-with-stderr precedence snapshot exposes invalid successful
 `llc` output while the `cc -S` fallback is also available and `clang` is
 unavailable. That pins the no-recovery boundary after invalid selected `llc`
 output.
+An `llc` empty-stdout precedence snapshot exposes invalid successful selected
+`llc` output with no assembly stdout while the `cc -S` fallback is also
+available. That pins the same no-recovery boundary for empty selected-`llc`
+artifacts.
 Whitespace-with-stderr fallback snapshots expose deterministic fake `llc` and
 `cc` tools with the same invalid successful-output behavior. That pins the same
 stdout-validation precedence after LLVM fallback selection and after the
@@ -744,8 +748,9 @@ false; user-defined function tables, namespace/autoload-aware lookup,
 extension-loaded functions outside the documented table, dynamic callees, and
 runtime callable dispatch remain outside native lowering.
 The table includes interpreter-only array builtins such as
-`array_change_key_case`, `array_column`, and `array_product`; direct calls to those builtins
-still reject under the array-lowering boundary.
+`array_change_key_case`, `array_column`, `array_product`, and
+`array_reduce`; direct calls to those builtins still reject under the
+array-lowering boundary.
 Direct `strlen($value)` calls fold only when `$value` is an already-lowerable
 known string operand, including tracked string expressions whose possible
 values have one uniform byte length. A selected-`clang` assembly snapshot

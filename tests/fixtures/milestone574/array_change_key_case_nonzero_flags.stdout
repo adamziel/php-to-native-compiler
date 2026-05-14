@@ -1,0 +1,14 @@
+Array
+(
+    [NAME] => lower
+    [3] => three
+    [MIXED] => mixed
+)
+Array
+(
+    [NAME] => lower
+    [3] => three
+    [MIXED] => mixed
+)
+lower|mixed|three
+lower|mixed

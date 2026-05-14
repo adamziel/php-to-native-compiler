@@ -1,4 +1,4 @@
 <?php
-$keys = ["ok", true];
+$keys = ["ok", []];
 $values = ["yes", "no"];
 echo array_combine($keys, $values);

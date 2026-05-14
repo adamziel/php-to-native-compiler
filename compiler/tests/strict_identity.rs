@@ -85,12 +85,41 @@ echo $left === $right;
 }
 
 #[test]
-fn emit_ir_rejects_strict_identity_until_native_comparison_lowering_exists() {
-    let error = emit_ir_source("<?php\necho 1 === 1;\n").unwrap_err();
+fn emit_ir_lowers_same_type_dynamic_int_strict_identity() {
+    let ir = emit_ir_source(
+        r#"<?php
+$sum = 1 + 2;
+echo $sum === 3;
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM comparison lowering rejects comparison operators until native PHP comparison coercions exist; phpc run handles current scalar comparison diagnostics"
+    assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
+    assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
+    assert!(ir.contains("select i1 %tmp1"), "{ir}");
+    assert!(
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str"),
+        "{ir}"
     );
+}
+
+#[test]
+fn emit_ir_lowers_same_type_dynamic_bool_strict_identity() {
+    let ir = emit_ir_source(
+        r#"<?php
+$sum = 1 + 2;
+$is_three = $sum === 3;
+$choice = $is_three ? 3 : 4;
+$maybe = $sum === $choice;
+echo $maybe === true;
+"#,
+    )
+    .unwrap();
+
+    assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
+    assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
+    assert!(ir.contains("%tmp2 = select i1 %tmp1, i64 3, i64 4"), "{ir}");
+    assert!(ir.contains("%tmp3 = icmp eq i64 %tmp0, %tmp2"), "{ir}");
+    assert!(!ir.contains("icmp eq i1 %tmp3, true"), "{ir}");
+    assert!(ir.contains("select i1 %tmp3"), "{ir}");
 }

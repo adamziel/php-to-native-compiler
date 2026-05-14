@@ -1,0 +1,8 @@
+Array
+(
+    [1] => float
+    [0] => false
+    [] => null
+    [2] => missing
+)
+4|float|false|null|missing

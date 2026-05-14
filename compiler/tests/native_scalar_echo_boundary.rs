@@ -54,15 +54,42 @@ fn emit_ir_keeps_false_and_null_echoes_silent() {
 }
 
 #[test]
+fn emit_ir_uses_final_static_scalar_assignment_after_reassignment() {
+    let ir = emit_ir_source(
+        "<?php\n$label = \"old:\";\n$count = 1;\n$label = \"unit:\";\n$count = 227;\necho $label, $count;\n",
+    )
+    .unwrap();
+
+    assert!(ir.contains("c\"unit:\\00\""), "{ir}");
+    assert!(
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 227)"),
+        "{ir}"
+    );
+    assert!(!ir.contains("old:"), "{ir}");
+    assert!(!ir.contains("@.fmt_int, i64 1)"), "{ir}");
+}
+
+#[test]
 fn emit_asm_lowers_scalar_echoes_through_available_backend() {
-    let has_backend = ["clang", "llc", "cc"]
-        .iter()
-        .any(|command| Command::new(command).arg("--version").output().is_ok());
-    if !has_backend {
+    if !has_assembly_backend() {
         return;
     }
 
     let asm = emit_asm_source(SOURCE).unwrap();
+
+    assert!(asm.contains("main"), "{asm}");
+}
+
+#[test]
+fn emit_asm_lowers_static_scalar_reassignment_when_backend_is_available() {
+    if !has_assembly_backend() {
+        return;
+    }
+
+    let asm = emit_asm_source(
+        "<?php\n$label = \"old:\";\n$count = 1;\n$label = \"asm:\";\n$count = 228;\necho $label, $count;\n",
+    )
+    .unwrap();
 
     assert!(asm.contains("main"), "{asm}");
 }
@@ -96,6 +123,42 @@ fn native_scalar_echo_emit_ir_cli_snapshot_matches_committed_output() {
     let actual = render_cli_snapshot(&output);
 
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn native_scalar_reassignment_emit_ir_cli_snapshot_matches_committed_output() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture =
+        workspace_root.join("tests/fixtures/milestone226/native_scalar_reassignment_emit_ir.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args(["compile", &relative_fixture, "--emit-ir"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root.join("tests/fixtures/milestone226/native_scalar_reassignment_emit_ir.cli"),
+    )
+    .expect("native scalar reassignment IR CLI snapshot is readable");
+    let actual = render_cli_snapshot(&output);
+
+    assert_eq!(actual, expected);
+}
+
+fn has_assembly_backend() -> bool {
+    ["clang", "llc", "cc"]
+        .iter()
+        .any(|command| Command::new(command).arg("--version").output().is_ok())
 }
 
 fn render_cli_snapshot(output: &Output) -> String {
