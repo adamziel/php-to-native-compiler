@@ -167,6 +167,13 @@
   callable while executing a method on the same declaring class or a child
   class. Current method calls reuse the existing user-function
   parameter/default/return subset.
+- explicit parent method calls by static method name:
+  `parent::method(...)` and `parent::__construct(...)` are supported in active
+  instance method/constructor context when the current class has a parent and
+  the resolved parent-chain method is public or protected under the current
+  visibility rules. The call reuses the current `$this` object, evaluates
+  positional arguments left-to-right, and executes the resolved parent method
+  body with the declaring parent class as the active method context.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
@@ -440,17 +447,19 @@
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
 - explicit parse diagnostics for unsupported object/class syntax: nested class
-  declarations, inheritance, interface declarations and implementation, trait
-  declarations, trait use inside classes, enum declarations,
+  declarations, broader inheritance forms beyond declared single-parent
+  `extends`, interface declarations and implementation, trait declarations,
+  trait use inside classes, enum declarations,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
   unsupported `clone` expressions, unsupported
   `instanceof` expressions, unsupported `ClassName::class` expressions,
-  unsupported magic static receivers such as `self::`, `parent::`, and
-  `static::`, anonymous class expressions, dynamic property
-  names, static property access, static method calls, and class constant access
+  unsupported magic static receivers such as `self::` and `static::`,
+  unsupported parent static property/constant access, anonymous class
+  expressions, dynamic property names, static property access, static method
+  calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 - explicit lex diagnostics for unsupported PHP attribute syntax beginning with
@@ -533,12 +542,14 @@
   instance properties to `null`, skips static properties, treats object values
   as truthy, and lets direct `isset($object_variable)` return true. Public
   or inherited public instance `__construct` methods execute after object
-  allocation with `$this` bound to the new object handle. Undefined classes,
-  constructor arguments for classes without constructors, non-public
-  constructors, explicit `parent::__construct` calls, and static constructors
-  fail with stable runtime diagnostics. Public instance property reads and
-  direct-variable writes work by static property name; property names are
-  case-sensitive, and
+  allocation with `$this` bound to the new object handle. Explicit
+  `parent::__construct(...)` and `parent::method(...)` calls execute in active
+  instance method/constructor context against the current single-parent chain.
+  Undefined classes, constructor arguments for classes without constructors,
+  non-public constructors, top-level parent calls, parent calls in classes
+  without parents, and static parent methods fail with stable runtime
+  diagnostics. Public instance property reads and direct-variable writes work
+  by static property name; property names are case-sensitive, and
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
   false for `null` slots, missing property names, undefined target variables,
@@ -647,16 +658,18 @@
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions fail with a stable parse diagnostic before
-  class-name constant resolution exists. Magic static receivers such as
-  `self::`, `parent::`, and `static::` fail with a stable parse diagnostic
-  before class-context, parent-class, or late-static-binding resolution exists.
+  class-name constant resolution exists. Magic static receivers `self::` and
+  `static::` fail with a stable parse diagnostic before class-context or
+  late-static-binding resolution exists. `parent::method(...)` calls are the
+  supported parent receiver slice; parent static property and constant access
+  remain unsupported.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context, static storage, class constants,
   shallow/deep clone property copying, `__clone`, non-public inherited
-  property slots, property override compatibility, `parent::`/`self::`/`static::`,
-  broader inheritance/interface relationship checks,
+  property slots, property override compatibility, broader
+  `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
   declared/built-in/internal interface entries for `get_declared_interfaces`,
@@ -2339,10 +2352,10 @@
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
 - Object/class gaps: nested and conditional class declarations, constructor
-  behavior beyond public/inherited public instance `__construct`,
+  behavior beyond public/inherited public instance `__construct` and explicit
+  parent calls,
   non-public inherited property slots, property override compatibility,
-  explicit `parent::__construct` calls,
-  `parent::`/`self::`/`static::`, broader inheritance rules,
+  broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
   interfaces, trait declarations, trait use inside classes,
@@ -2369,12 +2382,14 @@
   checks, object-to-string conversion, object callables, and native lowering
   are unsupported.
 - Constructor boundary: public instance `__construct` methods, including
-  inherited public constructors, execute in `phpc run` with scoped `$this`.
+  inherited public constructors and explicit public/protected
+  `parent::__construct(...)` calls from instance context, execute in
+  `phpc run` with scoped `$this`.
   Constructor arguments for classes without a constructor, non-public
   constructors, static constructors, constructor promotion, explicit
-  `parent::__construct` calls, named arguments, references/copy-on-write,
-  exact PHP `Error`/`TypeError` object behavior, and native lowering remain
-  unsupported.
+  parent calls outside active child instance context, named arguments,
+  references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
+  native lowering remain unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,

@@ -661,6 +661,9 @@ impl Interpreter {
                 args,
                 span,
             } => self.call_instance_method(target, method, args, *span, scope),
+            Expr::ParentMethodCall { method, args, span } => {
+                self.call_parent_method(method, args, *span, scope)
+            }
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
@@ -1660,6 +1663,95 @@ impl Interpreter {
         }
 
         self.call_user_function_with_this(function, object, values, Some(class_id))
+    }
+
+    fn call_parent_method(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("parent::{method_name}()"),
+                    "parent method calls require instance method context",
+                ),
+            ));
+        };
+
+        let current_class = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata");
+        let Some(parent_class_id) = current_class.parent_id() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("parent::{method_name}()"),
+                    "parent method calls require a parent class",
+                ),
+            ));
+        };
+
+        let this_object = match caller_scope.read_named("this") {
+            Some(Value::Object(object)) => object.clone(),
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("parent::{method_name}()"),
+                        "parent method calls require current $this object context",
+                    ),
+                ));
+            }
+        };
+
+        let parent_class = self
+            .classes
+            .get(parent_class_id)
+            .expect("parent class id should resolve to class metadata");
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(parent_class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    parent_class.name()
+                )),
+            ));
+        };
+
+        if is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static method dispatch through parent:: is not implemented",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        let function = self
+            .methods
+            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
+            .cloned()
+            .expect("declared parent method metadata should have a stored function body");
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+
+        self.call_user_function_with_this(function, this_object, values, Some(class_id))
     }
 
     fn resolve_instance_method(

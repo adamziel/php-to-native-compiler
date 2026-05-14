@@ -303,6 +303,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    ParentMethodCall {
+        method: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -383,6 +388,7 @@ impl Expr {
             | Expr::AppendIndex { span, .. }
             | Expr::Property { span, .. }
             | Expr::MethodCall { span, .. }
+            | Expr::ParentMethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::New { span, .. }

@@ -395,6 +395,9 @@ impl LlvmGenerator {
             Expr::MethodCall { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
+            Expr::ParentMethodCall { span, .. } => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
             Expr::Variable(name, span) => self
                 .variables
                 .get(name)
@@ -3065,6 +3068,9 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::MethodCall { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
+            Expr::ParentMethodCall { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Variable(name, span) => self

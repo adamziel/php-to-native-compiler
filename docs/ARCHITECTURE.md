@@ -58,7 +58,8 @@ Implemented now:
   public instance properties including inherited public slots, single-parent
   metadata, inherited method lookup, public/same-class private/protected
   same-class and child instance method dispatch, and public/inherited public
-  instance `__construct` dispatch with scoped `$this`
+  instance `__construct` plus explicit parent method dispatch with scoped
+  `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -73,8 +74,8 @@ Planned runtime values and semantics:
 - copy-on-write containers
 - dynamic method/property names, visibility enforcement for non-public
   properties/constructors, static members, magic methods, property override
-  compatibility, explicit `parent::` calls, broader inheritance and
-  constructor semantics, and exact PHP object lifecycle behavior
+  compatibility, broader `parent::`/`self::`/`static::`, broader inheritance
+  and constructor semantics, and exact PHP object lifecycle behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -1006,16 +1007,20 @@ Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Public, same-class private,
 and protected same-class/child instance methods can execute through `phpc run`
 with `$this` bound to the receiver object handle, and inherited public
-constructors execute during child instantiation. Objects do not enforce
+constructors execute during child instantiation. Explicit
+`parent::method(...)` and `parent::__construct(...)` calls execute from active
+instance method/constructor context against the current class's parent chain
+with the current `$this` object. Objects do not enforce
 non-public property/constructor visibility, expose reflection, implement
-dynamic method/property names, `parent::`/`self::`/`static::`, property override
-compatibility, broader inheritance/constructor semantics, or exact PHP
-lifecycle behavior.
+dynamic method/property names, broader `parent::`/`self::`/`static::`,
+property override compatibility, broader inheritance/constructor semantics, or
+exact PHP lifecycle behavior.
 Static member syntax
 through `::`, including
-`ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
-with explicit parse diagnostics until static storage, dispatch, and class
-constants exist. Native lowering rejects class declarations, inheritance metadata, object
+`ClassName::$prop`, `ClassName::method()`, `ClassName::CONST`, `self::`, and
+`static::`, is rejected with explicit parse diagnostics until static storage,
+dispatch, late static binding, and class constants exist. Native lowering
+rejects class declarations, inheritance metadata, parent method calls, object
 instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,
 except for the narrow direct

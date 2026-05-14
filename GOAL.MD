@@ -159,10 +159,10 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   with scoped `$this` now execute through `phpc run`, but interfaces, traits,
   enums,
   static members, class constants, cloning, magic methods, dynamic
-  method/property names, `parent::`/`self::`/`static::`, non-public
+  method/property names, broader `parent::`/`self::`/`static::`, non-public
   property/constructor visibility enforcement, property override
-  compatibility, explicit `parent::__construct` calls, broader
-  constructor/inheritance rules, and native object lowering are still missing.
+  compatibility, broader constructor/inheritance rules, and native object
+  lowering are still missing.
   The interpreter object-handle identity slice covers assignment,
   argument/return, array, foreach, strict identity, `spl_object_id`, and a
   current-subset `spl_object_hash`, but clone/destruction/reuse and full object
@@ -361,8 +361,8 @@ Scope:
 
 - broader method dispatch beyond public static-name instance calls;
 - broader constructor semantics beyond public/inherited public instance
-  `__construct`, including explicit `parent::__construct` calls and
-  non-public constructor visibility;
+  `__construct` and explicit parent calls, including non-public constructor
+  visibility;
 - visibility enforcement for public/protected/private access;
 - static properties, static methods, class constants, and `::class`;
 - full object identity behavior including clone/destruction/reuse boundaries,

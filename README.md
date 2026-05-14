@@ -98,19 +98,20 @@ incorrect native code.
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited public property slots, public and
   same-class private instance method calls, inherited public method calls,
-  protected same-class/child method calls, single-parent metadata, object
-  `isset` and `empty`, and selected metadata builtins
+  protected same-class/child method calls, explicit `parent::method()` and
+  `parent::__construct()` calls in instance context, single-parent metadata,
+  object `isset` and `empty`, and selected metadata builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
-constructor behavior beyond public/inherited public instance `__construct`,
-`parent::`/`self::`/`static::`, visibility enforcement beyond the current
-public property/private/protected-method/constructor slice, property override
-compatibility, dynamic method/property names, resources, and native extension
-integration.
+constructor behavior beyond public/inherited public instance `__construct`
+and explicit parent calls, `self::`/`static::`, visibility enforcement beyond
+the current public property/private/protected-method/constructor slice,
+property override compatibility, dynamic method/property names, resources, and
+native extension integration.
 
 ### Native Path
 

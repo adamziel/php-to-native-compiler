@@ -5789,14 +5789,27 @@ handled.
 
 ## Milestone 647: Static Parent Receiver Boundary
 
-- [ ] Runtime/object lane: add the next smallest parent-call slice by parsing
+- [x] Runtime/object lane: add the next smallest parent-call slice by parsing
   and diagnosing or executing `parent::__construct`/`parent::method()` with
-  correct class context. If broader static receiver modeling is required
-  first, pin the parser/runtime blocker with tests and docs. Keep non-public
-  constructor visibility, static properties/methods, late static binding,
-  property override compatibility, trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  explicit.
+  correct class context. Implemented explicit parent method calls in active
+  instance method/constructor context, reusing the current `$this` object,
+  resolving through the current class's parent chain, and preserving public
+  and protected visibility checks. Kept parent calls outside instance context,
+  parent calls without a parent class, private/static parent methods, parent
+  static property/constant access, `self::`/`static::`, broader static
+  properties/methods, late static binding, property override compatibility,
+  trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering explicit.
+
+## Milestone 648: Parent Static Receiver Refinement
+
+- [ ] Runtime/object lane: choose the next smallest parent/static receiver
+  refinement: static parent method diagnostics, parent static property/constant
+  parse diagnostics, `self::` class-context design, or a focused visibility
+  compatibility improvement for explicit parent calls. Keep static storage,
+  late static binding, property override compatibility, trait composition,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering explicit.
 
 ## Latest Checkpoint
 

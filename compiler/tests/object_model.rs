@@ -1889,6 +1889,18 @@ fn emit_ir_rejects_spl_object_hash_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn emit_ir_rejects_parent_method_calls_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nparent::make();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -1967,6 +1979,134 @@ echo $default->label();
 
     assert_eq!(execution.stdout, "base:11\n11|Ada\nbase:7");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn parent_method_calls_execute_with_current_this_binding() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $id;
+
+    public function __construct($id = 7) {
+        $this->id = $id;
+    }
+
+    public function label() {
+        return "base:" . $this->id;
+    }
+
+    protected function bumpBase($amount) {
+        $this->id = $this->id + $amount;
+    }
+}
+
+class Child extends Base {
+    public $name;
+
+    public function __construct($id, $name) {
+        parent::__construct($id);
+        $this->name = $name;
+    }
+
+    public function label() {
+        return parent::label() . ":" . $this->name;
+    }
+
+    public function bump($amount) {
+        parent::bumpBase($amount);
+    }
+}
+
+$child = new Child(4, "Ada");
+echo $child->label(), "\n";
+$child->bump(5);
+echo $child->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "base:4:Ada\nbase:9:Ada");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn parent_method_calls_report_current_unsupported_boundaries() {
+    let top_level = runtime_error(
+        r#"<?php
+parent::make();
+"#,
+    );
+
+    assert_eq!(top_level.line, 2);
+    assert_eq!(top_level.column, 7);
+    assert_eq!(
+        top_level.message,
+        "unsupported call parent::make(): parent method calls require instance method context"
+    );
+
+    let no_parent = runtime_error(
+        r#"<?php
+class Solo {
+    public function call() {
+        parent::make();
+    }
+}
+$solo = new Solo();
+$solo->call();
+"#,
+    );
+
+    assert_eq!(no_parent.line, 4);
+    assert_eq!(no_parent.column, 15);
+    assert_eq!(
+        no_parent.message,
+        "unsupported call parent::make(): parent method calls require a parent class"
+    );
+
+    let private_parent_method = runtime_error(
+        r#"<?php
+class Base {
+    private function hide() {}
+}
+class Child extends Base {
+    public function call() {
+        parent::hide();
+    }
+}
+$child = new Child();
+$child->call();
+"#,
+    );
+
+    assert_eq!(private_parent_method.line, 7);
+    assert_eq!(private_parent_method.column, 15);
+    assert_eq!(
+        private_parent_method.message,
+        "unsupported call Base::hide(): private method dispatch requires same-class method context"
+    );
+
+    let static_parent_method = runtime_error(
+        r#"<?php
+class Base {
+    public static function make() {}
+}
+class Child extends Base {
+    public function call() {
+        parent::make();
+    }
+}
+$child = new Child();
+$child->call();
+"#,
+    );
+
+    assert_eq!(static_parent_method.line, 7);
+    assert_eq!(static_parent_method.column, 15);
+    assert_eq!(
+        static_parent_method.message,
+        "unsupported call Base::make(): static method dispatch through parent:: is not implemented"
+    );
 }
 
 #[test]
@@ -2402,14 +2542,6 @@ self::$value;
 "#,
             2,
             5,
-            "unsupported magic static receiver: self, parent, and static resolution is not implemented",
-        ),
-        (
-            r#"<?php
-parent::make();
-"#,
-            2,
-            7,
             "unsupported magic static receiver: self, parent, and static resolution is not implemented",
         ),
         (

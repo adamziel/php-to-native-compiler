@@ -19,10 +19,14 @@ It can also dispatch public, same-class private, and protected same-class/child
 instance methods by static method name through `$object->method(...)`; method
 bodies run in a fresh local scope with `$this` bound to the current object
 handle. Inherited method lookup walks the current single-parent chain from the
-receiver class to ancestors. Dynamic method/property
+receiver class to ancestors. Explicit `parent::method(...)` and
+`parent::__construct(...)` calls are supported from active instance
+method/constructor context and dispatch against the current class's parent
+chain while reusing the current `$this` object. Dynamic method/property
 names still fail with explicit parse diagnostics. Static
-member access through `::` also fails with explicit parse diagnostics until
-static property storage, static method dispatch, and class constants exist.
+member access through `::` outside the current parent method-call slice also
+fails with explicit parse diagnostics until static property storage, static
+method dispatch, and class constants exist.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
@@ -90,6 +94,11 @@ The model follows the PHP lookup rules needed by the first object slice:
   reuse the current user-function parameter/default/return subset. Private
   methods require an active same-class method context. Protected methods
   require an active same-class or child method context;
+- explicit `parent::method(...)` and `parent::__construct(...)` calls require
+  active instance method context, a parent class, and a public or protected
+  resolved method in the parent chain. They evaluate arguments left to right,
+  reuse the current `$this` object, and execute the resolved method with the
+  declaring parent class as the active method context;
 - direct `unset($object->name)` is reserved with an explicit parse diagnostic
   until property uninitialization semantics are modeled;
 - `method_exists($object_or_class, $method)` checks declared and inherited
@@ -150,8 +159,8 @@ to `null`, and then executes a declared or inherited public instance
 `__construct` method with `$this` bound to the new object handle. Constructor
 arguments use the current positional argument and default-parameter subset.
 Undefined classes, constructor arguments for classes without constructors,
-non-public constructors, explicit `parent::__construct` calls, and static
-constructors produce stable runtime errors.
+non-public constructors, parent constructor calls outside active child instance
+context, and static constructors produce stable runtime errors.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
@@ -180,7 +189,7 @@ through an object receiver, and `$this` outside instance method execution
 report stable runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
-property reads/writes, and instance method calls until metadata, object
+property reads/writes, parent method calls, and instance method calls until metadata, object
 allocation, property slots, object handles, method dispatch, and diagnostics
 have explicit lowering support.
 Native lowering also rejects `method_exists` through the current function-call
@@ -221,9 +230,9 @@ default property values, multiple properties in one declaration, constants,
 static property storage, late static binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
-`self`/`parent`/`static`, constructor behavior beyond public/inherited public
-instance `__construct`, explicit `parent::__construct` calls, constructor
-arguments for classes without constructors,
+`self`/`parent`/`static` beyond the current explicit parent method-call slice,
+constructor behavior beyond public/inherited public instance `__construct` and
+explicit parent calls, constructor arguments for classes without constructors,
 non-public inherited property slots, property override compatibility,
 non-public property/constructor access, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,

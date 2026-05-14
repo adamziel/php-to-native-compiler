@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+base:4:Ada
+base:9:Ada--- stdout end ---
+stderr:
+--- stderr end ---

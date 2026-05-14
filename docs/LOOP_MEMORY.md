@@ -48,6 +48,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "objects: add inherited public constructor dispatch"`
   if the full gate passes.
 
+## Loop Event 2026-05-14T14:25:08Z
+
+- Checkpoint: `d77309e objects: add inherited public constructor dispatch`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 647, explicit parent method dispatch for the
+  current single-parent object model.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone647/*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone647`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone647`, and
+  `cargo fmt --check`, and `git diff --check` passed.
+- Remaining semantic gaps: parent calls outside instance context, parent calls
+  without a parent class, private/static parent methods, parent static
+  property/constant access, `self::`/`static::`, late static binding, broader
+  static member semantics, property override compatibility, traits, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  object lowering remain explicit.
+- Next concrete task: finish focused checks, update progress with exact
+  commands, then run checkpoint if the full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

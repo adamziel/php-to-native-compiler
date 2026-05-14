@@ -90,6 +90,23 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 647, explicit parent method dispatch. The parser now accepts
+  `parent::method(...)` and `parent::__construct(...)` calls, and the
+  interpreter executes them from active instance method/constructor context by
+  resolving through the current class's parent chain, reusing the current
+  `$this` object, and preserving the resolved parent class as the active method
+  context. Public and protected parent methods work under the current
+  visibility rules; top-level parent calls, parent calls without a parent
+  class, private parent methods, static parent methods, parent static
+  property/constant access, `self::`/`static::`, late static binding, broader
+  static member semantics, property override compatibility, traits, magic
+  methods, references/copy-on-write, exact native error objects, and native
+  object lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone647`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone647`, and
+  `git diff --check` passed.
 
 Next:
 
@@ -101,10 +118,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 647 should take the next object inheritance slice:
-  `parent::__construct`/`parent::method` parsing and dispatch if feasible, or
-  document the static-receiver/call-context blocker before broader parent
-  calls.
+- Milestone 648 should take the next parent/static receiver refinement:
+  static parent method diagnostics, parent static property/constant parse
+  diagnostics, `self::` class-context design, or a focused visibility
+  compatibility improvement for explicit parent calls.
 
 ## 2026-05-12
 
