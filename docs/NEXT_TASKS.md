@@ -5859,14 +5859,30 @@ handled.
 
 ## Milestone 652: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next smallest reachable visibility slice:
+- [x] Runtime/object lane: choose the next smallest reachable visibility slice:
   same-class private/protected property read/write from active instance method
   context, private constructor same-class construction only if a reachable
   execution surface exists, or a documented blocker for non-public inherited
-  property slots. Keep inherited non-public property storage, static
+  property slots. Implemented plain reads and direct writes for exact-class
+  private/protected property slots while executing a same-class instance
+  method, including same-class peer objects. Kept inherited non-public
+  property storage, child-context protected property access, non-public
+  property `isset`/`empty`/compound/increment/null-coalescing forms, static
   properties, class constants, property override compatibility, trait
   composition, magic methods, references/copy-on-write, exact native error
   objects, and native lowering explicit.
+
+## Milestone 653: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next smallest object visibility slice:
+  protected property access from child method context if inherited non-public
+  slots are modeled first, non-public property `isset`/`empty` context for the
+  exact-class subset, compound/increment read-modify-write for same-class
+  non-public properties, or a documented blocker for property declaration
+  ownership metadata. Keep static properties, class constants, property
+  override compatibility, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

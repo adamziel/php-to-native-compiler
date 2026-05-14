@@ -166,6 +166,22 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 652, same-class non-public plain property access. While
+  executing an instance method on a class, plain reads and direct writes can
+  now access that class's exact private/protected property slots on `$this` or
+  another object of the same class. External non-public property reads still
+  fail with a stable runtime diagnostic, and inherited non-public property
+  slots, child-context protected property access, `isset`/`empty`, compound
+  assignment, increment/decrement, null coalescing, property override
+  compatibility, exact native error objects, and native lowering remain
+  explicit. Focused verification: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model same_class_non_public_instance_properties_read_and_write_from_methods -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_errors non_public_property_access_has_stable_runtime_error -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone652`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone652`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
+  `git diff --check` passed.
 
 Next:
 

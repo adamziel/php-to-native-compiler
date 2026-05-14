@@ -92,6 +92,10 @@ The model follows the PHP lookup rules needed by the first object slice:
 - public instance property reads return the current slot value;
 - public instance property writes mutate the current object value stored in that
   variable;
+- exact-class private/protected property reads and direct writes work only
+  while executing a method on that same class. This applies to `$this` and
+  same-class peer objects. Inherited non-public slots and child-context
+  protected property access remain unsupported;
 - direct `isset($object->name)` checks return true for non-null public slots
   and false for null or missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
@@ -251,7 +255,9 @@ cloning, destructors, serialization hooks, visibility enforcement,
 slices, constructor behavior beyond public/inherited public instance
 `__construct` and explicit parent calls, constructor arguments for classes without constructors,
 non-public inherited property slots, property override compatibility,
-non-public property/constructor access, dynamic method/property names,
+non-public property access outside same-class method context, broader
+non-public property forms such as `isset`/`empty`/compound assignment,
+non-public constructor access beyond the current constructor slice, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`

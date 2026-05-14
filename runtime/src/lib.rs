@@ -2048,6 +2048,27 @@ impl PhpObject {
         Ok(property.value.clone())
     }
 
+    pub fn read_property_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<Value> {
+        let properties = self.properties.borrow();
+        let property = properties
+            .iter()
+            .find(|property| property.name == name)
+            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
+
+        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        Ok(property.value.clone())
+    }
+
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
         let Some(property) = properties.iter().find(|property| property.name == name) else {
@@ -2114,6 +2135,29 @@ impl PhpObject {
         if property.visibility != Visibility::Public {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires visibility enforcement, which is not implemented",
+                self.class_name, name
+            )));
+        }
+
+        property.value = value;
+        Ok(())
+    }
+
+    pub fn write_property_from_context(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let property = properties
+            .iter_mut()
+            .find(|property| property.name == name)
+            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
+
+        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
             )));
         }

@@ -189,7 +189,7 @@ echo $box->secret;
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
     );
 }
 

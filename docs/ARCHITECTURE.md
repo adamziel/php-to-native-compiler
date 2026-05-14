@@ -72,10 +72,11 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
-- dynamic method/property names, visibility enforcement for non-public
-  properties/constructors, static members, magic methods, property override
-  compatibility, broader `parent::`/`self::`/`static::`, broader inheritance
-  and constructor semantics, and exact PHP object lifecycle behavior
+- dynamic method/property names, broader visibility enforcement for
+  non-public properties/constructors, static members, magic methods, property
+  override compatibility, broader `parent::`/`self::`/`static::`, broader
+  inheritance and constructor semantics, and exact PHP object lifecycle
+  behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -1014,10 +1015,11 @@ instance method/constructor context against the current class's parent chain
 with the current `$this` object. `self::method(...)` calls execute from active
 instance method/constructor context against the current class and inherited
 method chain with the current `$this` object. Objects do not enforce
-non-public property visibility or full constructor visibility, expose reflection, implement
-dynamic method/property names, broader `parent::`/`self::`/`static::`,
-property override compatibility, broader inheritance/constructor semantics, or
-exact PHP lifecycle behavior.
+non-public property visibility beyond same-class plain read/write, or full
+constructor visibility, expose reflection, implement dynamic method/property
+names, broader `parent::`/`self::`/`static::`, property override
+compatibility, broader inheritance/constructor semantics, or exact PHP
+lifecycle behavior.
 Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected

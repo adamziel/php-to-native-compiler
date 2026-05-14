@@ -155,7 +155,10 @@
   subset.
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
-  `$object->name` and `$object->name = ...`
+  `$object->name` and `$object->name = ...`. Plain reads and direct writes for
+  exact-class private/protected property slots are also supported while
+  executing a method on the same class; same-class methods may read/write
+  those slots on `$this` or another object of that exact class.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -2321,9 +2324,10 @@
   undefined array targets, non-array array targets, missing object properties,
   undefined object targets, and non-object property targets are treated as
   empty, and existing values use the current PHP truthiness rules. Nested array
-  offsets, dynamic property names, non-public property visibility context,
-  append offset operands, complex lvalues, general expression operands, magic
-  methods, and unsupported array-key coercions remain unsupported.
+  offsets, dynamic property names, non-public property visibility context for
+  `empty`, append offset operands, complex lvalues, general expression
+  operands, magic methods, and unsupported array-key coercions remain
+  unsupported.
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
@@ -2387,8 +2391,11 @@
   property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected visibility outside
-  same-class/child method contexts, non-public property/constructor visibility
-  context, static member execution through `::`, `::class` class-name constant resolution, property assignment
+  same-class/child method contexts, non-public property access outside
+  same-class method context, inherited non-public property slots,
+  non-public-property `isset`/`empty`/compound/increment/null-coalescing
+  visibility context, broader constructor visibility context, static member
+  execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
   object handle identity/aliasing,

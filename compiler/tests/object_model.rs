@@ -153,6 +153,41 @@ print_r($profile);
 }
 
 #[test]
+fn same_class_non_public_instance_properties_read_and_write_from_methods() {
+    let source = r#"<?php
+class Box {
+    private $secret;
+    protected $label;
+
+    public function set($secret, $label) {
+        $this->secret = $secret;
+        $this->label = $label;
+    }
+
+    public function describe() {
+        return $this->secret . ":" . $this->label;
+    }
+
+    public function copyTo($other) {
+        $other->secret = $this->secret;
+        $other->label = "copy";
+    }
+}
+
+$first = new Box();
+$second = new Box();
+$first->set("one", "main");
+echo $first->describe(), "\n";
+$first->copyTo($second);
+echo $second->describe();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "one:main\none:copy");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn object_handles_preserve_identity_across_supported_value_copies() {
     let source = r#"<?php
 class Box {

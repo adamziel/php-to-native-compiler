@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+one:main
+one:copy--- stdout end ---
+stderr:
+--- stderr end ---

@@ -964,7 +964,11 @@ impl Interpreter {
 
                 match slot {
                     Value::Object(object) => object
-                        .write_public_property(property, value.clone())
+                        .write_property_from_context(
+                            property,
+                            value.clone(),
+                            self.class_context.last().copied(),
+                        )
                         .map(|()| value)
                         .map_err(|error| runtime_error(*span, error)),
                     other => Err(runtime_error(
@@ -1593,7 +1597,7 @@ impl Interpreter {
 
         match target_value {
             Value::Object(object) => object
-                .read_public_property(property)
+                .read_property_from_context(property, self.class_context.last().copied())
                 .map_err(|error| runtime_error(span, error)),
             other => Err(runtime_error(
                 span,
