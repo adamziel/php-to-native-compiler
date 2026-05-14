@@ -1,1 +1,1 @@
-
+phpc intentionally rejects function/const/grouped use declarations while simple class imports are the only supported import slice.

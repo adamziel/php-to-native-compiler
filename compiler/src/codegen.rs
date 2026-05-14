@@ -22,6 +22,8 @@ const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering reje
 const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
+const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -322,6 +324,9 @@ impl LlvmGenerator {
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         match stmt {
+            Stmt::Namespace { span, .. } | Stmt::Use { span, .. } => {
+                Err(self.unsupported(*span, LLVM_NAMESPACE_REJECTION))
+            }
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
                     let value = self.emit_expr(expr)?;
@@ -3073,6 +3078,9 @@ impl CGenerator {
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         match stmt {
+            Stmt::Namespace { span, .. } | Stmt::Use { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_NAMESPACE_REJECTION))
+            }
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
                     let value = self.emit_expr(expr)?;

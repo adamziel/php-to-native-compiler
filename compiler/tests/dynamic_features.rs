@@ -552,16 +552,8 @@ $result = eval('return 1;');
 }
 
 #[test]
-fn namespace_and_use_declarations_are_rejected_with_stable_parse_errors() {
+fn unsupported_namespace_and_use_forms_are_rejected_with_stable_parse_errors() {
     let cases = [
-        (
-            r#"<?php
-namespace App\Demo;
-"#,
-            2,
-            1,
-            "unsupported namespace declaration: namespace-aware name resolution is not implemented",
-        ),
         (
             r#"<?php
 namespace App\Demo {
@@ -570,15 +562,7 @@ namespace App\Demo {
 "#,
             2,
             1,
-            "unsupported namespace declaration: namespace-aware name resolution is not implemented",
-        ),
-        (
-            r#"<?php
-use App\Demo\Service;
-"#,
-            2,
-            1,
-            "unsupported use declaration: namespace imports are not implemented",
+            "unsupported namespace declaration: bracketed namespace blocks are not implemented",
         ),
         (
             r#"<?php
@@ -586,7 +570,7 @@ use function App\Demo\make_service;
 "#,
             2,
             1,
-            "unsupported use declaration: namespace imports are not implemented",
+            "unsupported use declaration: only simple class imports are implemented",
         ),
     ];
 
@@ -599,14 +583,14 @@ use function App\Demo\make_service;
 }
 
 #[test]
-fn namespace_qualified_function_and_class_names_are_rejected_with_stable_parse_errors() {
+fn namespace_qualified_function_names_are_rejected_with_stable_parse_errors() {
     let function_cases = [
         (
             r#"<?php
-App\fn();
+App\make();
 "#,
             2,
-            4,
+            1,
         ),
         (
             r#"<?php
@@ -631,40 +615,6 @@ $result = namespace\make();
         assert_eq!(
             error.message,
             "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
-        );
-    }
-
-    let class_cases = [
-        (
-            r#"<?php
-$box = new App\Box();
-"#,
-            2,
-            15,
-        ),
-        (
-            r#"<?php
-$box = new \App\Box();
-"#,
-            2,
-            12,
-        ),
-        (
-            r#"<?php
-$box = new namespace\Box();
-"#,
-            2,
-            12,
-        ),
-    ];
-
-    for (source, line, column) in class_cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
         );
     }
 }

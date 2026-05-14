@@ -111,6 +111,11 @@ incorrect native code.
   execution for local string paths, including constant/string-concatenated
   paths resolved relative to the current source file, included files executing
   in caller scope, and `_once` de-duplication by resolved local file
+- a bounded namespace/class-name slice: one unbracketed named `namespace`
+  declaration per file, simple top-level class `use` imports with optional
+  `as` aliases, namespace-qualified class declarations, class imports for
+  class-like references, `new`, `extends`, `instanceof`, static members, and
+  `ClassName::class`
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -143,9 +148,9 @@ incorrect native code.
   callability checks, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
-references, copy-on-write, namespaces/imports, include/require breadth beyond
-the current narrow local `require`/`require_once`/`include`/`include_once`
-statement slice, eval,
+references, copy-on-write, namespace forms beyond the current class-name/import
+slice, include/require breadth beyond the current narrow local
+`require`/`require_once`/`include`/`include_once` statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
 interfaces, traits, enums,

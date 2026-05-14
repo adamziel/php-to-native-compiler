@@ -1,2 +1,2 @@
 <?php
-App\fn();
+App\make();

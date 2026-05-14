@@ -945,18 +945,23 @@ code.
 
 ## Namespace/Import Boundary
 
-`namespace` declarations, top-level `use` declarations, and
-namespace-qualified function/class references are reserved by the lexer/parser
-today and rejected with stable parse diagnostics before execution.
-The first executable namespace/import slice should define how declared
-functions, classes, dynamic function lookup, object instantiation, and error
-messages store and resolve fully qualified names.
+The first executable namespace/import slice is class-name only. The parser
+accepts one unbracketed named `namespace` declaration per file and simple
+top-level class `use` imports with optional aliases. Class declarations and
+class-like references in `extends`, `new`, `instanceof`, static members, and
+`ClassName::class` are stored as canonical names without a leading slash and
+resolved through the lexical namespace/import table. Namespace and `use`
+statements are execution no-ops in `phpc run` because the parser has already
+resolved the class-like names in the AST.
 
-Initial unsupported namespace/import behavior remains: bracketed namespace
-blocks, global namespace blocks, multiple namespaces in one file, executable
-qualified and fully qualified function/class references, aliased imports,
-grouped imports, function imports, constant imports, trait `use` execution,
-autoload interaction, and namespace-aware native lowering.
+Unsupported namespace/import behavior remains: bracketed namespace blocks,
+global namespace blocks, multiple namespaces in one file, namespace-scoped
+functions/constants, namespace-qualified function calls, grouped imports,
+function imports, constant imports, string-name import expansion, trait `use`
+execution, `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
+partial-output behavior, and namespace-aware native lowering. The native path
+rejects namespace declarations/imports before scalar folding or backend
+execution until native symbol tables and namespace context exist.
 
 ## Object/Class Boundary
 

@@ -1,2 +1,2 @@
 <?php
-use App\Demo\Service;
+use function App\Demo\make_service;

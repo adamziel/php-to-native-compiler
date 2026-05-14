@@ -25,4 +25,4 @@ bootstrap_shim_probe:
   command: <phpc> run <bootstrap-shim>
   exit: 1
   stdout_bytes: 0
-  first_stderr_line: parse error at <bootstrap-shim>:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented
+  first_stderr_line: parse error at <bootstrap-shim>:4:1: unsupported interface declaration: interface parsing and implementation execution are not implemented

@@ -3,7 +3,7 @@ use crate::ast::{
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam,
     IncrementDecrementOp, IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    SwitchCase, TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -18,6 +18,9 @@ struct Parser {
     current: usize,
     nested_statement_depth: usize,
     function_body_depth: usize,
+    current_namespace: String,
+    class_imports: Vec<(String, String)>,
+    namespace_declared: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -33,6 +36,9 @@ impl Parser {
             current: 0,
             nested_statement_depth: 0,
             function_body_depth: 0,
+            current_namespace: String::new(),
+            class_imports: Vec::new(),
+            namespace_declared: false,
         }
     }
 
@@ -56,8 +62,8 @@ impl Parser {
             {
                 self.parse_unsupported_class_modifier_declaration()
             }
-            TokenKind::Namespace => self.parse_unsupported_namespace(),
-            TokenKind::Use => self.parse_unsupported_use(),
+            TokenKind::Namespace => self.parse_namespace(),
+            TokenKind::Use => self.parse_use_declaration(),
             TokenKind::Declare => self.parse_unsupported_declare(),
             TokenKind::Eval => self.parse_unsupported_eval(),
             TokenKind::Echo => self.parse_echo(),
@@ -136,10 +142,19 @@ impl Parser {
         let start = self
             .consume_keyword(TokenKind::Function, "expected 'function'")?
             .span;
-        Ok(Stmt::Function(self.parse_function_after_keyword(start)?))
+        if !self.current_namespace.is_empty() {
+            return Err(self.error_at(start, unsupported_namespace_function_declaration_message()));
+        }
+        Ok(Stmt::Function(
+            self.parse_function_after_keyword(start, true)?,
+        ))
     }
 
-    fn parse_function_after_keyword(&mut self, start: Span) -> CompileResult<FunctionDecl> {
+    fn parse_function_after_keyword(
+        &mut self,
+        start: Span,
+        resolve_namespace: bool,
+    ) -> CompileResult<FunctionDecl> {
         if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
             let span = self.advance().span;
             return Err(self.error_at(
@@ -148,6 +163,11 @@ impl Parser {
             ));
         }
         let name = self.consume_identifier("expected function name")?;
+        let name = if resolve_namespace {
+            self.resolve_function_declaration_name(&name)
+        } else {
+            name
+        };
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_function_params_after_open()?;
 
@@ -284,9 +304,10 @@ impl Parser {
             .span;
         let is_nested = self.nested_statement_depth > 0;
         let name = self.consume_identifier("expected class name")?;
+        let name = self.resolve_declared_class_name(&name);
 
         let parent = if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
-            Some(self.consume_identifier("expected parent class name after 'extends'")?)
+            Some(self.consume_class_like_name("expected parent class name after 'extends'")?)
         } else {
             None
         };
@@ -383,7 +404,7 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
-            let function = self.parse_function_after_keyword(span)?;
+            let function = self.parse_function_after_keyword(span, false)?;
             return Ok(ClassMember::Method(ClassMethodDecl {
                 function,
                 visibility,
@@ -490,16 +511,74 @@ impl Parser {
         ))
     }
 
-    fn parse_unsupported_namespace(&mut self) -> CompileResult<Stmt> {
+    fn parse_namespace(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Namespace, "expected 'namespace'")?
             .span;
-        Err(self.error_at(span, unsupported_namespace_message()))
+        if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
+            return Err(self.error_at(span, unsupported_nested_namespace_message()));
+        }
+        if self.namespace_declared {
+            return Err(self.error_at(span, unsupported_multiple_namespace_message()));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(span, unsupported_bracketed_namespace_message()));
+        }
+        let name = self.parse_qualified_name(false, "expected namespace name")?;
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(span, unsupported_bracketed_namespace_message()));
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after namespace declaration",
+        )?;
+        self.current_namespace = name.clone();
+        self.class_imports.clear();
+        self.namespace_declared = true;
+        Ok(Stmt::Namespace { name, span })
     }
 
-    fn parse_unsupported_use(&mut self) -> CompileResult<Stmt> {
+    fn parse_use_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self.consume_keyword(TokenKind::Use, "expected 'use'")?.span;
-        Err(self.error_at(span, unsupported_use_message()))
+        if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
+            return Err(self.error_at(span, unsupported_use_message()));
+        }
+        if self.check(|kind| matches!(kind, TokenKind::Function))
+            || self.check(|kind| {
+                matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
+            })
+        {
+            return Err(self.error_at(span, unsupported_use_message()));
+        }
+
+        let (name, import_span) =
+            self.parse_qualified_name_with_span(false, "expected import name")?;
+        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(self.peek().span, unsupported_use_message()));
+        }
+        let alias = if self.match_identifier("as") {
+            self.consume_identifier("expected import alias after 'as'")?
+        } else {
+            name.rsplit('\\')
+                .next()
+                .expect("qualified name has at least one segment")
+                .to_string()
+        };
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(self.previous().span, unsupported_use_message()));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after use declaration")?;
+
+        self.class_imports
+            .push((alias.to_ascii_lowercase(), name.clone()));
+        Ok(Stmt::Use {
+            imports: vec![UseImport {
+                name,
+                alias,
+                span: import_span,
+            }],
+            span,
+        })
     }
 
     fn parse_unsupported_eval(&mut self) -> CompileResult<Stmt> {
@@ -628,6 +707,9 @@ impl Parser {
 
     fn parse_const_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
+        if !self.current_namespace.is_empty() {
+            return Err(self.error_at(span, unsupported_namespace_const_declaration_message()));
+        }
         let mut declarations = Vec::new();
 
         loop {
@@ -1327,7 +1409,12 @@ impl Parser {
             TokenKind::Identifier(name)
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) =>
             {
-                return self.parse_static_property_unset_target(Some(name), token.span);
+                let receiver = if is_magic_static_receiver(&name) {
+                    name
+                } else {
+                    self.resolve_class_like_name(&name)
+                };
+                return self.parse_static_property_unset_target(Some(receiver), token.span);
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
                 return self
@@ -2927,13 +3014,23 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_unset_message()));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                    let qualified = self.parse_qualified_name_after_first(name.clone())?;
+                    if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                        let resolved = self.resolve_class_like_name(&qualified);
+                        return self.reject_unsupported_static_member_access(Some(&resolved));
+                    }
                     return Err(self.error_at(
-                        self.peek().span,
+                        token.span,
                         unsupported_namespace_qualified_function_name_message(),
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
-                    return self.reject_unsupported_static_member_access(Some(&name));
+                    let receiver = if is_magic_static_receiver(&name) {
+                        name
+                    } else {
+                        self.resolve_class_like_name(&name)
+                    };
+                    return self.reject_unsupported_static_member_access(Some(&receiver));
                 }
                 if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
                     return Ok(Expr::GlobalConstant {
@@ -2949,11 +3046,27 @@ impl Parser {
                     span: token.span,
                 })
             }
-            TokenKind::Backslash => Err(self.error_at(
-                token.span,
-                unsupported_namespace_qualified_function_name_message(),
-            )),
+            TokenKind::Backslash => {
+                let qualified = format!(
+                    "\\{}",
+                    self.parse_qualified_name(false, "expected qualified name after '\\'")?
+                );
+                if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                    let resolved = self.resolve_class_like_name(&qualified);
+                    return self.reject_unsupported_static_member_access(Some(&resolved));
+                }
+                Err(self.error_at(
+                    token.span,
+                    unsupported_namespace_qualified_function_name_message(),
+                ))
+            }
             TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
+                self.advance();
+                let suffix = self.parse_qualified_name(false, "expected qualified name")?;
+                let resolved = self.resolve_relative_namespace_class_name(&suffix);
+                if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                    return self.reject_unsupported_static_member_access(Some(&resolved));
+                }
                 Err(self.error_at(
                     token.span,
                     unsupported_namespace_qualified_function_name_message(),
@@ -3261,15 +3374,15 @@ impl Parser {
             ));
         }
 
-        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_namespace_qualified_class_name_message(),
-            ));
-        }
-
         let token = self.advance().clone();
         let class_name = match token.kind {
+            TokenKind::Backslash => {
+                let raw = format!(
+                    "\\{}",
+                    self.parse_qualified_name(false, "expected class name after 'new'")?
+                );
+                self.resolve_class_like_name(&raw)
+            }
             TokenKind::Static => {
                 return Err(self.error_at(token.span, unsupported_magic_class_name_message()));
             }
@@ -3278,18 +3391,16 @@ impl Parser {
                     return Err(self.error_at(token.span, unsupported_magic_class_name_message()));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_namespace_qualified_class_name_message(),
-                    ));
+                    let raw = self.parse_qualified_name_after_first(name)?;
+                    self.resolve_class_like_name(&raw)
+                } else {
+                    self.resolve_class_like_name(&name)
                 }
-                name
             }
             TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
-                return Err(self.error_at(
-                    token.span,
-                    unsupported_namespace_qualified_class_name_message(),
-                ));
+                self.advance();
+                let suffix = self.parse_qualified_name(false, "expected class name after 'new'")?;
+                self.resolve_relative_namespace_class_name(&suffix)
             }
             _ => return Err(self.error_at(token.span, "expected class name after 'new'")),
         };
@@ -3303,23 +3414,28 @@ impl Parser {
     }
 
     fn consume_instanceof_class_name(&mut self) -> CompileResult<String> {
-        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_namespace_qualified_class_name_message(),
-            ));
-        }
-
         let token = self.advance().clone();
         match token.kind {
+            TokenKind::Backslash => {
+                let raw = format!(
+                    "\\{}",
+                    self.parse_qualified_name(false, "expected class name after instanceof")?
+                );
+                Ok(self.resolve_class_like_name(&raw))
+            }
             TokenKind::Identifier(name) => {
                 if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_namespace_qualified_class_name_message(),
-                    ));
+                    let raw = self.parse_qualified_name_after_first(name)?;
+                    Ok(self.resolve_class_like_name(&raw))
+                } else {
+                    Ok(self.resolve_class_like_name(&name))
                 }
-                Ok(name)
+            }
+            TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
+                self.advance();
+                let suffix =
+                    self.parse_qualified_name(false, "expected class name after instanceof")?;
+                Ok(self.resolve_relative_namespace_class_name(&suffix))
             }
             TokenKind::Variable(_) => Err(self.error_at(
                 token.span,
@@ -3897,6 +4013,122 @@ impl Parser {
             .map(|(name, _span)| name)
     }
 
+    fn parse_qualified_name(
+        &mut self,
+        allow_leading_backslash: bool,
+        message: &str,
+    ) -> CompileResult<String> {
+        self.parse_qualified_name_with_span(allow_leading_backslash, message)
+            .map(|(name, _span)| name)
+    }
+
+    fn parse_qualified_name_with_span(
+        &mut self,
+        allow_leading_backslash: bool,
+        message: &str,
+    ) -> CompileResult<(String, Span)> {
+        let mut name = String::new();
+        let mut leading = false;
+        let span = if self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            if !allow_leading_backslash {
+                return Err(self.error_at(self.previous().span, message));
+            }
+            leading = true;
+            self.previous().span
+        } else {
+            self.peek().span
+        };
+
+        let first = self.consume_identifier(message)?;
+        if leading {
+            name.push('\\');
+        }
+        name.push_str(&first);
+
+        while self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            name.push('\\');
+            name.push_str(&self.consume_identifier(message)?);
+        }
+
+        Ok((name, span))
+    }
+
+    fn parse_qualified_name_after_first(&mut self, first: String) -> CompileResult<String> {
+        let mut name = first;
+        while self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+            name.push('\\');
+            name.push_str(&self.consume_identifier("expected name segment after '\\'")?);
+        }
+        Ok(name)
+    }
+
+    fn consume_class_like_name(&mut self, message: &str) -> CompileResult<String> {
+        if self.check(|kind| matches!(kind, TokenKind::Namespace)) {
+            let span = self.advance().span;
+            if !self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
+                return Err(self.error_at(span, message));
+            }
+            let suffix = self.parse_qualified_name(false, message)?;
+            return Ok(self.resolve_relative_namespace_class_name(&suffix));
+        }
+
+        if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+            let raw = self.parse_qualified_name(true, message)?;
+            return Ok(self.resolve_class_like_name(&raw));
+        }
+
+        let raw = self.parse_qualified_name(false, message)?;
+        Ok(self.resolve_class_like_name(&raw))
+    }
+
+    fn resolve_declared_class_name(&self, name: &str) -> String {
+        if self.current_namespace.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, name)
+        }
+    }
+
+    fn resolve_function_declaration_name(&self, name: &str) -> String {
+        if self.current_namespace.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, name)
+        }
+    }
+
+    fn resolve_relative_namespace_class_name(&self, suffix: &str) -> String {
+        if self.current_namespace.is_empty() {
+            suffix.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, suffix)
+        }
+    }
+
+    fn resolve_class_like_name(&self, raw: &str) -> String {
+        if let Some(stripped) = raw.strip_prefix('\\') {
+            return stripped.to_string();
+        }
+
+        let (first, rest) = raw.split_once('\\').unwrap_or((raw, ""));
+        if let Some((_, imported)) = self
+            .class_imports
+            .iter()
+            .find(|(alias, _)| alias.eq_ignore_ascii_case(first))
+        {
+            if rest.is_empty() {
+                return imported.clone();
+            }
+            return format!("{imported}\\{rest}");
+        }
+
+        if self.current_namespace.is_empty() {
+            raw.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, raw)
+        }
+    }
+
     fn consume_identifier_with_span(&mut self, message: &str) -> CompileResult<(String, Span)> {
         let token = self.advance().clone();
         match token.kind {
@@ -4419,12 +4651,24 @@ fn unsupported_increment_decrement_target_message() -> &'static str {
     "unsupported increment/decrement target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented for integer and float values; append offsets and nested targets are not implemented"
 }
 
-fn unsupported_namespace_message() -> &'static str {
-    "unsupported namespace declaration: namespace-aware name resolution is not implemented"
+fn unsupported_bracketed_namespace_message() -> &'static str {
+    "unsupported namespace declaration: bracketed namespace blocks are not implemented"
+}
+
+fn unsupported_multiple_namespace_message() -> &'static str {
+    "unsupported namespace declaration: multiple namespace declarations are not implemented"
+}
+
+fn unsupported_nested_namespace_message() -> &'static str {
+    "unsupported namespace declaration: namespace declarations are only implemented at file scope"
+}
+
+fn unsupported_namespace_function_declaration_message() -> &'static str {
+    "unsupported function declaration: namespace-scoped functions are not implemented"
 }
 
 fn unsupported_use_message() -> &'static str {
-    "unsupported use declaration: namespace imports are not implemented"
+    "unsupported use declaration: only simple class imports are implemented"
 }
 
 fn unsupported_nested_const_declaration_message() -> &'static str {
@@ -4437,10 +4681,6 @@ fn unsupported_namespace_const_declaration_message() -> &'static str {
 
 fn unsupported_namespace_qualified_function_name_message() -> &'static str {
     "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
-}
-
-fn unsupported_namespace_qualified_class_name_message() -> &'static str {
-    "unsupported namespace-qualified class name: namespace-aware class resolution is not implemented"
 }
 
 fn unsupported_array_spread_message() -> &'static str {

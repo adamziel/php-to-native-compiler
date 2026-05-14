@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 705, a bounded class-name namespace/import slice through
+  `phpc run`. The parser now accepts one unbracketed named `namespace`
+  declaration per file and simple top-level class `use` imports with optional
+  `as` aliases. Class declarations and class-like references in `extends`,
+  `new`, `instanceof`, static members, and `ClassName::class` resolve through
+  the current lexical namespace and import table, while namespace/use
+  statements execute as no-ops after parsing. Bracketed/global/multiple
+  namespaces, namespace-scoped function and constant declarations,
+  namespace-qualified function calls, grouped imports, function imports,
+  constant imports, string-name import expansion, `__NAMESPACE__`, autoload
+  interaction, exact PHP diagnostics, partial-output behavior, and native
+  lowering remain explicit. Native lowering rejects namespace declarations and
+  imports before scalar folding or backend execution. Focused verification so
+  far: `cargo check -p phpc`,
+  `cargo test -p phpc --test namespace_resolution -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features namespace -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone705`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone705`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed. The synthetic WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:4:1: unsupported interface declaration: interface parsing and implementation execution are not implemented`.
 - Added Milestone 704, a metadata-only built-in `Exception` class seed through
   `phpc run`. `PhpClassTable::with_core_classes()` now reserves canonical
   `Exception` metadata before user class registration, so `class_exists`,

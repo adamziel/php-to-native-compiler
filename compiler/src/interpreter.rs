@@ -468,6 +468,7 @@ impl Interpreter {
 
     fn execute_statement(&mut self, stmt: &Stmt, scope: &mut SymbolTable) -> CompileResult<Flow> {
         match stmt {
+            Stmt::Namespace { .. } | Stmt::Use { .. } => Ok(Flow::Normal),
             Stmt::Echo { exprs, .. } => {
                 for expr in exprs {
                     let value = self.evaluate(expr, scope)?;

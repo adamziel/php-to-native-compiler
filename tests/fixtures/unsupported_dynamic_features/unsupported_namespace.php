@@ -1,2 +1,4 @@
 <?php
-namespace App\Demo;
+namespace App\Demo {
+    echo "blocked";
+}

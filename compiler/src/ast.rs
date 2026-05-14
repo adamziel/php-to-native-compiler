@@ -17,6 +17,14 @@ pub struct Program {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
+    Namespace {
+        name: String,
+        span: Span,
+    },
+    Use {
+        imports: Vec<UseImport>,
+        span: Span,
+    },
     Echo {
         exprs: Vec<Expr>,
         span: Span,
@@ -167,6 +175,13 @@ pub enum Stmt {
         declarations: Vec<StaticLocalDeclarator>,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct UseImport {
+    pub name: String,
+    pub alias: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

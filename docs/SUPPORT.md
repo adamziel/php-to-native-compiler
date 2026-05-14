@@ -506,10 +506,15 @@
   expression-form `include`, expression-form `include_once`, expression-form
   `require`, and expression-form `require_once`
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
-- explicit parse diagnostics for unsupported namespace and top-level `use`
-  declaration syntax
-- explicit parse diagnostics for unsupported namespace-qualified function and
-  class names such as `App\fn()` and `new App\Box()`
+- one unbracketed named `namespace` declaration per file, plus simple
+  top-level class `use` imports with optional `as` aliases. Class declarations
+  and class-like references in `extends`, `new`, `instanceof`, static
+  members, and `ClassName::class` resolve through the current namespace and
+  class-import table.
+- explicit parse diagnostics for unsupported namespace forms and imports:
+  bracketed/global/multiple namespaces, namespace-scoped functions and
+  constants, grouped imports, function imports, constant imports, and
+  namespace-qualified function calls such as `App\make()`
 - explicit parse diagnostics for unsupported magic class names in `new`
   expressions such as `new self()`, `new parent()`, and `new static()`
 - explicit parse diagnostics for unsupported nested, namespace-aware, or
@@ -649,15 +654,17 @@
   references/copy-on-write interactions, `GLOBALS`/superglobal behavior,
   namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
   recovery behavior are not implemented.
-- Namespaces/imports: `namespace` declarations, top-level `use` declarations,
-  and namespace-qualified function/class names such as `App\fn()` and
-  `new App\Box()` are reserved by the lexer/parser and rejected with stable
-  parse diagnostics. Namespace-aware name resolution, bracketed namespace
-  blocks, global namespace blocks, multiple namespaces in one file, executable
-  qualified and fully qualified function/class references, aliased imports,
-  grouped imports, function imports, constant imports, trait `use` execution,
-  autoload interaction, and namespace-aware native lowering are not
-  implemented.
+- Namespaces/imports: `phpc run` supports a bounded class-name slice: one
+  unbracketed named namespace per file, simple top-level class imports with
+  optional aliases, namespace-qualified class declarations, and class-like
+  references for declarations, `extends`, `new`, `instanceof`, static
+  members, and `ClassName::class`. String class names remain literal and are
+  not import-expanded. Bracketed namespace blocks, global namespace blocks,
+  multiple namespaces in one file, namespace-scoped functions/constants,
+  namespace-qualified function calls, grouped imports, function imports,
+  constant imports, trait `use` execution, `__NAMESPACE__`, autoload
+  interaction, exact PHP diagnostics, partial-output behavior, and
+  namespace-aware native lowering are not implemented.
 - Object/class model: `php_runtime` has a small metadata and object-value model
   for the first object slice. It records an ordered class table with stable
   `ClassId` handles, declared class names with case-insensitive class lookup,
@@ -1683,6 +1690,11 @@
   with a specific codegen diagnostic until generated code has native object
   layout, handles, visibility, method dispatch, class metadata tables,
   inheritance, autoload interaction, and exact native error objects.
+  Native namespace declarations, namespace imports, namespace-qualified names,
+  and namespace-aware name resolution are rejected before scalar folding or
+  backend execution until generated code has native symbol tables, namespace
+  context, aliases/imports, fallback function/constant lookup,
+  class/autoload lookup, and exact native error behavior.
   Native arrays, array literals, array indexing, array assignment, list
   destructuring assignment, `foreach` array iteration, array offset unset, and
   array builtin function calls are
@@ -2783,10 +2795,11 @@
   behavior remain unsupported
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
-- namespace and top-level `use` declarations, plus namespace-qualified
-  function/class names such as `App\fn()` and `new App\Box()`; these currently
-  fail with stable parse diagnostics before namespace-aware name resolution or
-  imports exist
+- namespace forms outside the current one-unbracketed-namespace/simple-class-use
+  slice: bracketed/global/multiple namespaces, namespace-scoped functions and
+  constants, grouped imports, function imports, constant imports,
+  namespace-qualified function calls, `__NAMESPACE__`, string-name import
+  expansion, autoload-aware lookup, and namespace-aware native lowering
 - dynamic method names and dynamic property names; `$object->$name` and
   `$object->$method()` currently fail with stable parse diagnostics
 - private instance method dispatch outside same-class method context,
@@ -3507,8 +3520,10 @@
   `__FUNCTION__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported
-- namespace-aware name resolution, imports, aliases, grouped imports, and
-  executable qualified/fully qualified function or class references
+- namespace-aware behavior beyond the current class-name slice, including
+  function/constant namespace lookup, grouped/function/constant imports,
+  string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
+  native lowering
 - closure values/invocation, capture binding semantics, and arrow functions
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/try runtime

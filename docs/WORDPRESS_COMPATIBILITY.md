@@ -127,11 +127,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `self::CRYPTO_GENERICHASH_BYTES` in
   `wp-includes/sodium_compat/src/Compat.php:1714`, is covered by Milestone 702.
   The previous nested class declaration blocker at `<bootstrap-shim>:7:5` is
-  covered by Milestone 703. The shim probe now reaches
-  `parse error at <bootstrap-shim>:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented`.
+  covered by Milestone 703. The previous metadata-only `Exception` blocker at
+  `<bootstrap-shim>:7:5` is covered by Milestone 704. The previous namespace
+  declaration/import blocker at `<bootstrap-shim>:2:1` is covered for the
+  current class-name slice by Milestone 705. The shim probe now reaches
+  `parse error at <bootstrap-shim>:4:1: unsupported interface declaration: interface parsing and implementation execution are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
-- namespace and import resolution;
+- namespace behavior beyond the current class-name/import slice;
 - class inheritance, interfaces, traits, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;
 - filesystem, streams, HTTP, database, JSON, XML, mbstring/intl, password/hash,

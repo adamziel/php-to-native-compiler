@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T10:35:00Z
+
+- Checkpoint before this task: `4b3f4ed runtime: seed exception class
+  metadata`, pushed to `origin/master`.
+- Task attempted: Milestone 705, bounded class-name namespace/import
+  resolution.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/namespace_resolution.rs`,
+  `compiler/tests/dynamic_features.rs`, `tests/fixtures/milestone705/*`,
+  `tests/fixtures/unsupported_dynamic_features/*namespace*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_use_declaration.*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test namespace_resolution -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features namespace -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone705`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone705`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and `cargo fmt --check` passed. The external WordPress checkout was not
+  present at `/tmp/phpc-wordpress/wordpress`, so the real inventory command was
+  not run in this pass.
+- Remaining semantic gaps: bracketed/global/multiple namespaces,
+  namespace-scoped functions/constants, namespace-qualified function calls,
+  grouped/function/constant imports, string-name import expansion,
+  `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
+  partial-output behavior, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded namespace class resolution"` if
+  the full gate passes. The synthetic WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:4:1: unsupported interface declaration: interface parsing and implementation execution are not implemented`.
+
 ## Loop Event 2026-05-14T09:55:00Z
 
 - Checkpoint before this task: `46b32f2 runtime: add bounded nested class

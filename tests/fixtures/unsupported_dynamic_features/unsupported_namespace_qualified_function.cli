@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2:4: unsupported namespace-qualified function name: namespace-aware function resolution is not implemented
+parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2:1: unsupported namespace-qualified function name: namespace-aware function resolution is not implemented
 --- stderr end ---

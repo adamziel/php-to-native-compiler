@@ -243,16 +243,17 @@ The repository already has a working Rust workspace with:
   false-only `extension_loaded()` policy, bounded `PHP_VERSION_ID`, bounded
   `dirname()`, bounded no-op `spl_autoload_register()`, syntax-only PHP
   attributes, bounded throw-statement runtime boundaries, minimal objects,
-  bounded `instanceof`, and stable unsupported diagnostics;
+  bounded `instanceof`, a class-name-only namespace/import slice, and stable
+  unsupported diagnostics;
 - `phpc compile --emit-ir` and `--emit-asm`: intentionally narrower native
   lowering, mostly straight-line static scalar output and assignment behavior,
   plus explicit rejection coverage for unsupported constructs;
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through early compatibility includes and now stops
-  at the next named blocker, namespace declarations/import-aware name
-  resolution.
+  probe currently advances through early compatibility includes and the first
+  namespace/import slice, then stops at the next named blocker, interface
+  declarations.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

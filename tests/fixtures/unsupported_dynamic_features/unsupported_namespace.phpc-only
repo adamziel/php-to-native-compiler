@@ -1,1 +1,1 @@
-
+phpc intentionally rejects bracketed namespace declarations before namespace block execution exists.

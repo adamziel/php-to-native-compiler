@@ -6433,19 +6433,29 @@ handled.
 
 ## Milestone 705: WordPress Bridge Continuation
 
-- [ ] Parser/name-resolution lane: implement or explicitly bound the next
-  WordPress bootstrap namespace declaration blocker reported at
-  `<bootstrap-shim>:2:1`, with tests, CLI coverage, docs, and named unsupported
-  edges for namespace scopes, bracketed namespace blocks, `use` imports,
-  qualified class/function/constant names, aliases, autoload interaction,
-  source mapping, exact PHP diagnostics, partial-output behavior, and native
-  lowering.
+- [x] Parser/name-resolution lane: implement the bounded class-name namespace
+  slice for the WordPress bootstrap namespace declaration blocker reported at
+  `<bootstrap-shim>:2:1`. The parser now accepts one unbracketed named
+  namespace per file, simple top-level class imports with optional aliases,
+  and namespace/import resolution for class declarations plus class-like
+  references in `extends`, `new`, `instanceof`, static members, and
+  `ClassName::class`. Tests, fixtures, docs, and native rejection coverage
+  name the remaining unsupported edges: bracketed/global/multiple namespaces,
+  namespace-scoped functions/constants, grouped/function/constant imports,
+  namespace-qualified function calls, string-name import expansion,
+  `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
+  partial-output behavior, and native lowering. The synthetic WordPress shim
+  now reaches the interface declaration blocker at `<bootstrap-shim>:4:1`.
+- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+  bootstrap interface declaration blocker reported at `<bootstrap-shim>:4:1`,
+  with tests, CLI coverage, docs, and named unsupported edges for interface
+  method signatures, inheritance, implementation checks, autoload interaction,
+  exact PHP diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 704 work, the latest committed checkpoint is
-  `46b32f2 runtime: add bounded nested class declarations`, covering
-  Milestone 703.
+- Before the current Milestone 705 work, the latest committed checkpoint is
+  `4b3f4ed runtime: seed exception class metadata`, covering Milestone 704.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
