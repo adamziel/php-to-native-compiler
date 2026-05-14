@@ -386,6 +386,11 @@ impl LlvmGenerator {
             Expr::GlobalConstant { span, .. } => {
                 Err(self.unsupported(*span, LLVM_GLOBAL_CONSTANT_REJECTION))
             }
+            Expr::ClassNameConstant { span, .. }
+            | Expr::SelfClassNameConstant { span }
+            | Expr::ParentClassNameConstant { span } => {
+                Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
+            }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::Index { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Expr::AppendIndex { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
@@ -3061,6 +3066,11 @@ impl CGenerator {
             }
             Expr::GlobalConstant { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            }
+            Expr::ClassNameConstant { span, .. }
+            | Expr::SelfClassNameConstant { span }
+            | Expr::ParentClassNameConstant { span } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
             Expr::Index { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),

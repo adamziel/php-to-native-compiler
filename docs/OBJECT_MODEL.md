@@ -30,12 +30,15 @@ calls are supported from active instance method/constructor context and
 dispatch against the current class and inherited method chain while reusing
 the current `$this` object. Dynamic method/property
 names still fail with explicit parse diagnostics. Static
-member access through `::` outside the current parent method-call slice also
-fails with explicit parse diagnostics until static property storage, static
-method dispatch, and class constants exist. Parent static property access,
-parent class constants, and `parent::class` have distinct unsupported
-diagnostics, as do self static properties, self class constants, and
-`self::class`. Static receiver forms through `static::$prop`,
+member access through `::` outside the current parent/self method-call and
+class-name constant slices also fails with explicit parse diagnostics until
+static property storage, static method dispatch, and class constants exist.
+`ClassName::class` resolves to the
+source-spelled class string without requiring class metadata. `self::class`
+and `parent::class` resolve from active instance method/constructor context.
+Parent static property access and parent class constants have distinct
+unsupported diagnostics, as do self static properties and self class
+constants. Static receiver forms through `static::$prop`,
 `static::method(...)`, `static::CONST`, and `static::class` also have distinct
 unsupported diagnostics until late static binding is modeled.
 The current introspection slice can check declared methods with
@@ -217,6 +220,8 @@ Static properties are recorded as metadata but are
 not stored in object values. Static member expressions such as
 `ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST` are rejected
 by the parser instead of falling through to generic expression errors.
+`ClassName::class` returns the syntactic class string, and `self::class` /
+`parent::class` resolve only while executing with active class context.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
 static identifier naming a declared or inherited public instance method, a
@@ -286,7 +291,8 @@ visibility context for `empty` outside the current private/protected method cont
 object-property `empty` operands, magic `__isset`/`__get` behavior for
 `empty`, object-property `unset`, property uninitialization,
 typed/uninitialized property behavior, magic `__unset` behavior,
-static member execution through `::`, `::class`, interface traversal for
+static member execution through `::` beyond the current class-name constant
+slice, late-bound `static::class`, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
 `get_called_class` method/static class context, late static binding,
 `spl_object_id` handle reuse after destruction, clone semantics, destructors,

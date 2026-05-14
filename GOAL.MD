@@ -159,7 +159,9 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   property access, private-parent property redeclaration as a separate child
   slot, compatible public/protected inherited property redeclarations sharing
   one runtime slot, inherited property redeclaration diagnostics, and
-  public/inherited public instance `__construct` execution with scoped `$this` now execute
+  public/inherited public instance `__construct` execution with scoped
+  `$this`, plus narrow `ClassName::class`, `self::class`, and `parent::class`
+  resolution, now execute
   through `phpc run`, but interfaces, traits, enums, static members, class
   constants, cloning, magic methods, dynamic method/property names, broader
   `parent::`/`self::`/`static::`, typed/default property compatibility,
@@ -366,7 +368,8 @@ Scope:
   `__construct` and explicit parent calls, including non-public constructor
   visibility;
 - visibility enforcement for public/protected/private access;
-- static properties, static methods, class constants, and `::class`;
+- static properties, static methods, real class constants, late-bound
+  `static::class`, and broader class-name resolution;
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
 - inheritance after the single-class model is stable.

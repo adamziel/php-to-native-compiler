@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+Box
+Box
+Missing
+Child:Base
+Base:Root
+done--- stdout end ---
+stderr:
+--- stderr end ---

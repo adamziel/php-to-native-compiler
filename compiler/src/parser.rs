@@ -2341,11 +2341,12 @@ impl Parser {
                     operator_span,
                     "unsupported parent static property access: static property storage is not implemented",
                 )),
-                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Err(self
-                    .error_at(
-                        operator_span,
-                        "unsupported parent class name constant: parent::class resolution is not implemented",
-                    )),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
+                    self.advance();
+                    Ok(Expr::ParentClassNameConstant {
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
@@ -2360,10 +2361,12 @@ impl Parser {
                     operator_span,
                     "unsupported parent class constant access: class constants are not implemented",
                 )),
-                TokenKind::Class => Err(self.error_at(
-                    operator_span,
-                    "unsupported parent class name constant: parent::class resolution is not implemented",
-                )),
+                TokenKind::Class => {
+                    self.advance();
+                    Ok(Expr::ParentClassNameConstant {
+                        span: operator_span,
+                    })
+                }
                 _ => Err(self.error_at(
                     operator_span,
                     format!(
@@ -2380,11 +2383,12 @@ impl Parser {
                     operator_span,
                     "unsupported self static property access: static property storage is not implemented",
                 )),
-                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Err(self
-                    .error_at(
-                        operator_span,
-                        "unsupported self class name constant: self::class resolution is not implemented",
-                    )),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
+                    self.advance();
+                    Ok(Expr::SelfClassNameConstant {
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
@@ -2399,10 +2403,12 @@ impl Parser {
                     operator_span,
                     "unsupported self class constant access: class constants are not implemented",
                 )),
-                TokenKind::Class => Err(self.error_at(
-                    operator_span,
-                    "unsupported self class name constant: self::class resolution is not implemented",
-                )),
+                TokenKind::Class => {
+                    self.advance();
+                    Ok(Expr::SelfClassNameConstant {
+                        span: operator_span,
+                    })
+                }
                 _ => Err(self.error_at(
                     operator_span,
                     format!(
@@ -2454,7 +2460,13 @@ impl Parser {
                 "unsupported static property access: static property storage is not implemented",
             )),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
-                Err(self.error_at(operator_span, unsupported_class_name_constant_message()))
+                self.advance();
+                Ok(Expr::ClassNameConstant {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    span: operator_span,
+                })
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                 Err(self.error_at(
@@ -2467,7 +2479,13 @@ impl Parser {
                 "unsupported class constant access: class constants are not implemented",
             )),
             TokenKind::Class => {
-                Err(self.error_at(operator_span, unsupported_class_name_constant_message()))
+                self.advance();
+                Ok(Expr::ClassNameConstant {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    span: operator_span,
+                })
             }
             _ => Err(self.error_at(
                 operator_span,
@@ -2653,12 +2671,14 @@ impl Parser {
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
             )),
-            Expr::GlobalConstant { .. } => Ok(()),
+            Expr::GlobalConstant { .. } | Expr::ClassNameConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
             Expr::Variable(_, _)
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2708,12 +2728,14 @@ impl Parser {
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
             )),
-            Expr::GlobalConstant { .. } => Ok(()),
+            Expr::GlobalConstant { .. } | Expr::ClassNameConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
             Expr::Variable(_, _)
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2795,6 +2817,9 @@ impl Parser {
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
             | Expr::GlobalConstant { .. }
+            | Expr::ClassNameConstant { .. }
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -2879,6 +2904,9 @@ impl Parser {
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
             | Expr::GlobalConstant { .. }
+            | Expr::ClassNameConstant { .. }
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -2939,6 +2967,9 @@ impl Parser {
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
             | Expr::GlobalConstant { .. }
+            | Expr::ClassNameConstant { .. }
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
             | Expr::IncrementDecrement { .. } => None,
         }
     }
@@ -3564,10 +3595,6 @@ fn unsupported_clone_message() -> &'static str {
 
 fn unsupported_instanceof_message() -> &'static str {
     "unsupported instanceof expression: class/interface relationship checks are not implemented"
-}
-
-fn unsupported_class_name_constant_message() -> &'static str {
-    "unsupported class name constant: ::class resolution is not implemented"
 }
 
 fn unsupported_magic_class_name_message() -> &'static str {

@@ -104,8 +104,9 @@ incorrect native code.
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
-  `self::method()` calls in instance context, single-parent metadata, object
-  `isset` and `empty`, and selected metadata builtins
+  `self::method()` calls in instance context, narrow `ClassName::class`,
+  `self::class`, and `parent::class` resolution, single-parent metadata,
+  object `isset` and `empty`, and selected metadata builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 

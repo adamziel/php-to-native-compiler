@@ -477,8 +477,8 @@
   typed property declarations, property default values, multiple property
   declarations, class constant declarations,
   unsupported `clone` expressions, unsupported
-  `instanceof` expressions, unsupported `ClassName::class` expressions,
-  unsupported magic static receivers such as `self::` and `static::`,
+  `instanceof` expressions,
+  unsupported magic static receiver forms such as `static::`,
   unsupported parent static property/constant access, anonymous class
   expressions, dynamic property names, static property access, static method
   calls, and class constant access
@@ -690,15 +690,17 @@
   stable parse diagnostic before object handle copying or `__clone` dispatch is
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
-  `ClassName::class` expressions fail with a stable parse diagnostic before
-  class-name constant resolution exists. `static::$prop`,
+  `ClassName::class` expressions return the source-spelled class string without
+  requiring class metadata. `self::class` resolves to the active declaring
+  class name and `parent::class` resolves to that class's immediate parent
+  name while executing in instance method/constructor context; outside those
+  contexts they fail with stable runtime diagnostics. `static::$prop`,
   `static::method(...)`, `static::CONST`, and `static::class` fail with
   distinct stable parse diagnostics before late-static-binding resolution,
   static storage, static dispatch, or class constants exist.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices; self/parent static property access, self/parent class
-  constants, and `self::class`/`parent::class` fail with stable parse
-  diagnostics.
+  constants, and real class constants fail with stable parse diagnostics.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
@@ -2419,7 +2421,7 @@
   same-class/child method contexts, non-public property access outside the
   current private/protected method context, broader
   constructor visibility context, static member
-  execution through `::`, `::class` class-name constant resolution, property assignment
+  execution through `::` except the current class-name constant slice, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,
   object handle identity/aliasing,
@@ -2575,8 +2577,8 @@
   class constant declarations, constants, parent static properties/constants,
   and anonymous classes
 - static property access, static method calls, class constant access,
-  class-name constant access, unsupported self/parent static
-  property/constant/class-name forms, and `static::` through `::`
+  unsupported self/parent static property/constant forms, late-bound
+  `static::class`, and broader `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

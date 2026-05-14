@@ -2154,6 +2154,89 @@ fn emit_ir_rejects_self_method_calls_until_native_object_lowering_exists() {
 }
 
 #[test]
+fn class_name_constants_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Box {}
+class Root {}
+class Base extends Root {
+    public function baseNames() {
+        return self::class . ":" . parent::class;
+    }
+}
+class Child extends Base {
+    public function childNames() {
+        return self::class . ":" . parent::class;
+    }
+
+    public function inheritedNames() {
+        return $this->baseNames();
+    }
+}
+
+echo Box::class, "\n";
+echo Box::CLASS, "\n";
+echo Missing::class, "\n";
+$child = new Child();
+echo $child->childNames(), "\n";
+echo $child->inheritedNames();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Box\nBox\nMissing\nChild:Base\nBase:Root");
+
+    let self_error = runtime_error("<?php\nself::class;\n");
+    assert_eq!(self_error.line, 2);
+    assert_eq!(self_error.column, 5);
+    assert_eq!(
+        self_error.message,
+        "unsupported call self::class: self::class requires instance method context"
+    );
+
+    let parent_error = runtime_error("<?php\nparent::class;\n");
+    assert_eq!(parent_error.line, 2);
+    assert_eq!(parent_error.column, 7);
+    assert_eq!(
+        parent_error.message,
+        "unsupported call parent::class: parent::class requires instance method context"
+    );
+
+    let parent_error = runtime_error(
+        r#"<?php
+class Root {
+    public function name() {
+        return parent::class;
+    }
+}
+$root = new Root();
+echo $root->name();
+"#,
+    );
+    assert_eq!(
+        parent_error.message,
+        "unsupported call parent::class: parent::class requires a parent class"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_class_name_constants_until_native_object_lowering_exists() {
+    for source in [
+        "<?php\necho Box::class;\n",
+        "<?php\nself::class;\n",
+        "<?php\nparent::class;\n",
+    ] {
+        let error = php_compiler::emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("object/class lowering rejects"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+#[test]
 fn undefined_class_instantiation_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php
@@ -3028,22 +3111,6 @@ echo $box INSTANCEOF Box;
         ),
         (
             r#"<?php
-echo Box::class;
-"#,
-            2,
-            9,
-            "unsupported class name constant: ::class resolution is not implemented",
-        ),
-        (
-            r#"<?php
-echo Box::CLASS;
-"#,
-            2,
-            9,
-            "unsupported class name constant: ::class resolution is not implemented",
-        ),
-        (
-            r#"<?php
 self::$value;
 "#,
             2,
@@ -3060,14 +3127,6 @@ self::VERSION;
         ),
         (
             r#"<?php
-self::class;
-"#,
-            2,
-            5,
-            "unsupported self class name constant: self::class resolution is not implemented",
-        ),
-        (
-            r#"<?php
 parent::$value;
 "#,
             2,
@@ -3081,14 +3140,6 @@ parent::VERSION;
             2,
             7,
             "unsupported parent class constant access: class constants are not implemented",
-        ),
-        (
-            r#"<?php
-parent::class;
-"#,
-            2,
-            7,
-            "unsupported parent class name constant: parent::class resolution is not implemented",
         ),
         (
             r#"<?php

@@ -288,6 +288,24 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone658`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone658`,
   and `git diff --check` passed.
+- Added Milestone 660, narrow class-name constant resolution. `ClassName::class`
+  and `ClassName::CLASS` now evaluate through `phpc run` to the source-spelled
+  class string without requiring class metadata, `self::class` resolves to the
+  active declaring class in instance method/constructor context, and
+  `parent::class` resolves to that class's immediate parent. Top-level
+  `self::class`/`parent::class` and `parent::class` with no parent report
+  stable runtime diagnostics. `static::class`, late static binding, static
+  properties, static methods, real class constants, namespace/alias-aware class
+  names, traits, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model class_name_constants -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone660`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone660`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -299,9 +317,9 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 660 should take the next object storage slice: static property
-  storage diagnostics/execution, class constants, or a documented blocker if
-  typed/default property metadata must land first.
+- Milestone 661 should take the next object storage slice: static property
+  storage diagnostics/execution, real class constants, or a documented blocker
+  if typed/default property metadata must land first.
 
 ## 2026-05-12
 

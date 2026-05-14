@@ -1,2 +1,2 @@
 <?php
-echo Box::class;
+echo static::class;

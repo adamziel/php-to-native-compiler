@@ -640,6 +640,11 @@ impl Interpreter {
                 self.function_context.last().cloned().unwrap_or_default(),
             )),
             Expr::GlobalConstant { name, span } => self.evaluate_global_constant(name, *span),
+            Expr::ClassNameConstant { class_name, .. } => Ok(Value::String(class_name.clone())),
+            Expr::SelfClassNameConstant { span } => self.evaluate_self_class_name_constant(*span),
+            Expr::ParentClassNameConstant { span } => {
+                self.evaluate_parent_class_name_constant(*span)
+            }
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
                 target,
@@ -1814,6 +1819,56 @@ impl Interpreter {
         }
 
         self.call_user_function_with_this(function, this_object, values, Some(class_id))
+    }
+
+    fn evaluate_self_class_name_constant(&self, span: Span) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "self::class",
+                    "self::class requires instance method context",
+                ),
+            ));
+        };
+
+        let current_class = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata");
+        Ok(Value::String(current_class.name().to_string()))
+    }
+
+    fn evaluate_parent_class_name_constant(&self, span: Span) -> CompileResult<Value> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "parent::class",
+                    "parent::class requires instance method context",
+                ),
+            ));
+        };
+
+        let current_class = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata");
+        let Some(parent_class_id) = current_class.parent_id() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "parent::class",
+                    "parent::class requires a parent class",
+                ),
+            ));
+        };
+
+        let parent_class = self
+            .classes
+            .get(parent_class_id)
+            .expect("parent class id should resolve to class metadata");
+        Ok(Value::String(parent_class.name().to_string()))
     }
 
     fn call_self_method(

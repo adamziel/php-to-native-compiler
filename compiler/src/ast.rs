@@ -279,6 +279,16 @@ pub enum Expr {
         name: String,
         span: Span,
     },
+    ClassNameConstant {
+        class_name: String,
+        span: Span,
+    },
+    SelfClassNameConstant {
+        span: Span,
+    },
+    ParentClassNameConstant {
+        span: Span,
+    },
     Array {
         items: Vec<ArrayItem>,
         span: Span,
@@ -388,6 +398,9 @@ impl Expr {
             | Expr::MagicDir { span }
             | Expr::MagicFunction { span }
             | Expr::GlobalConstant { span, .. }
+            | Expr::ClassNameConstant { span, .. }
+            | Expr::SelfClassNameConstant { span }
+            | Expr::ParentClassNameConstant { span }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
             | Expr::AppendIndex { span, .. }

@@ -1,1 +1,1 @@
-phpc intentionally rejects ::class before class-name constant resolution exists.
+phpc intentionally rejects static::class until late static binding is implemented.

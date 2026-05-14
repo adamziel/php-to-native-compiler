@@ -5978,11 +5978,26 @@ handled.
 
 ## Milestone 660: Object Visibility Continuation
 
+- [x] Runtime/object lane: choose the next static/class-name slice:
+  `ClassName::class`, `self::class`, `parent::class`, static property storage
+  diagnostics/execution, real class constants, or a documented blocker if
+  typed/default property metadata must land first. Implemented narrow
+  class-name constant resolution: named receivers return the source-spelled
+  class string without requiring class metadata, `self::class` resolves to the
+  active declaring class, and `parent::class` resolves to that class's
+  immediate parent during instance method/constructor execution. Kept
+  `static::class`, static properties, static methods, real class constants,
+  trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering explicit.
+
+## Milestone 661: Object Visibility Continuation
+
 - [ ] Runtime/object lane: choose the next object storage slice: static
-  property storage diagnostics/execution, class constants, or a documented
-  blocker if typed/default property metadata must land first. Keep trait
-  composition, magic methods, references/copy-on-write, exact native error
-  objects, and native lowering explicit.
+  property storage diagnostics/execution, real class constants, or a
+  documented blocker if typed/default property metadata must land first. Keep
+  `static::class`, late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

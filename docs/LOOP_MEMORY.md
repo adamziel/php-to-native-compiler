@@ -133,6 +133,36 @@ injects this file into every prompt. Each Codex pass should update it with:
   then start Milestone 660 on static property storage diagnostics/execution or
   class constants.
 
+## Loop Event 2026-05-14T20:15:00Z
+
+- Checkpoint before this task: `a2367d6 objects: share compatible inherited
+  property slots`, pushed to `origin/master`.
+- Task attempted: Milestone 660, narrow class-name constants for
+  `ClassName::class`, `self::class`, and `parent::class`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone660/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_name_constant.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model class_name_constants -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone660`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone660`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: `static::class`, late static binding, static
+  properties, static methods, real class constants, namespace/alias-aware
+  class-name constants, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run the full object-model focused suite, then checkpoint
+  with `tools/checkpoint.sh "objects: add class name constants"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the
