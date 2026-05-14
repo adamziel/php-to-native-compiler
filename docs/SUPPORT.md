@@ -512,10 +512,12 @@
   top-level class `use` imports with optional `as` aliases. Class declarations
   and class-like references in `extends`, `new`, `instanceof`, static
   members, and `ClassName::class` resolve through the current namespace and
-  class-import table.
+  class-import table. Namespace-scoped function declarations register under
+  their resolved names, and unqualified direct calls inside a namespace resolve
+  to same-namespace functions with global builtin/user-function fallback.
 - explicit parse diagnostics for unsupported namespace forms and imports:
-  bracketed/global/multiple namespaces, namespace-scoped functions and
-  constants, grouped imports, function imports, constant imports, and
+  bracketed/global/multiple namespaces, namespace-scoped constants, grouped
+  imports, function imports, constant imports, qualified function calls, and
   namespace-qualified function calls such as `App\make()`
 - explicit parse diagnostics for unsupported magic class names in `new`
   expressions such as `new self()`, `new parent()`, and `new static()`
@@ -658,17 +660,21 @@
   references/copy-on-write interactions, `GLOBALS`/superglobal behavior,
   namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
   recovery behavior are not implemented.
-- Namespaces/imports: `phpc run` supports a bounded class-name slice: one
+- Namespaces/imports: `phpc run` supports a bounded class-name plus
+  same-namespace function slice: one
   unbracketed named namespace per file, simple top-level class imports with
   optional aliases, namespace-qualified class declarations, and class-like
   references for declarations, `extends`, `new`, `instanceof`, static
-  members, and `ClassName::class`. String class names remain literal and are
+  members, and `ClassName::class`. Namespace-scoped function declarations
+  register under resolved names, and unqualified direct calls inside a
+  namespace resolve to same-namespace functions with global builtin/user-function
+  fallback. String class names and dynamic string callable names remain literal and are
   not import-expanded. A namespaced `class Child extends Parent {}` resolves
   the parent name through the same lexical namespace/import table, but the
   parent must already be declared in the current program or an executed
   include/require path; autoload-triggered parent discovery is not implemented.
   Bracketed namespace blocks, global namespace blocks,
-  multiple namespaces in one file, namespace-scoped functions/constants,
+  multiple namespaces in one file, namespace-scoped constants,
   namespace-qualified function calls, grouped imports, function imports,
   constant imports, trait `use` execution, `__NAMESPACE__`, autoload
   interaction, exact PHP diagnostics, partial-output behavior, and
@@ -1901,9 +1907,13 @@
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
 - Function calls: user-defined positional calls are supported in `phpc run`,
-  including optional trailing commas in argument lists.
+  including optional trailing commas in argument lists. Top-level and
+  namespace-scoped function declarations register under their resolved names in
+  the current one-unbracketed namespace slice. Unqualified direct calls inside a
+  namespace first look for a same-namespace function and then fall back to the
+  global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
-  to a string that case-insensitively resolves to a user-defined function or to
+  to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -1923,6 +1933,7 @@
   `is_a`, `is_subclass_of`, `get_parent_class`, `get_declared_classes`,
   `get_declared_interfaces`, `get_declared_traits`, `get_called_class`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, or `print_r`.
+  Dynamic string names do not apply lexical namespace expansion or imports.
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
@@ -2817,10 +2828,10 @@
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
 - namespace forms outside the current one-unbracketed-namespace/simple-class-use
-  slice: bracketed/global/multiple namespaces, namespace-scoped functions and
-  constants, grouped imports, function imports, constant imports,
-  namespace-qualified function calls, `__NAMESPACE__`, string-name import
-  expansion, autoload-aware lookup, and namespace-aware native lowering
+  plus same-namespace function slice: bracketed/global/multiple namespaces,
+  namespace-scoped constants, grouped imports, function imports, constant
+  imports, namespace-qualified function calls, `__NAMESPACE__`, string-name
+  import expansion, autoload-aware lookup, and namespace-aware native lowering
 - dynamic method names and dynamic property names; `$object->$name` and
   `$object->$method()` currently fail with stable parse diagnostics
 - private instance method dispatch outside same-class method context,
@@ -3545,10 +3556,11 @@
   `__FUNCTION__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported
-- namespace-aware behavior beyond the current class-name slice, including
-  function/constant namespace lookup, grouped/function/constant imports,
-  string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
-  native lowering
+- namespace-aware behavior beyond the current class-name and same-namespace
+  function declaration/call slice, including namespace-scoped constants,
+  qualified or fully-qualified function calls, grouped/function/constant
+  imports, string-name import expansion, `__NAMESPACE__`, autoload-aware
+  lookup, and native lowering
 - closure invocation, explicit and implicit capture binding/execution, and
   callable integration
 - configurable recursion/call-stack limits matching PHP deployments

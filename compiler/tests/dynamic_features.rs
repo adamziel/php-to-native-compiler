@@ -70,6 +70,27 @@ echo $counter(["a", "b"]), "\n";
 }
 
 #[test]
+fn dynamic_function_calls_use_exact_namespaced_string_callees() {
+    let execution = run_source(
+        r#"<?php
+namespace App;
+function greet($name) {
+    return "hello " . $name;
+}
+$call = "App\\greet";
+echo $call("Ada"), "\n";
+
+$local = "greet";
+echo function_exists($local) ? "yes" : "no";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello Ada\nno");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn dynamic_function_calls_accept_optional_trailing_commas() {
     let execution = run_source(
         r#"<?php

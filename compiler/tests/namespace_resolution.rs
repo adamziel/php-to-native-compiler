@@ -109,6 +109,50 @@ echo get_class($box);
 }
 
 #[test]
+fn unbracketed_namespace_resolves_function_declarations_and_unqualified_calls() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Core;
+
+function label($name = "Ada") {
+    return __FUNCTION__ . ":" . $name;
+}
+
+echo label(), "\n";
+echo LABEL("Grace"), "\n";
+echo strlen("abc"), "\n";
+echo function_exists("App\\Core\\label") ? "yes" : "no", "\n";
+echo function_exists("APP\\CORE\\LABEL") ? "yes" : "no", "\n";
+echo function_exists("label") ? "yes" : "no";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "App\\Core\\label:Ada\nApp\\Core\\label:Grace\n3\nyes\nyes\nno"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn duplicate_namespaced_function_declarations_share_case_insensitive_key() {
+    let error = run_source(
+        r#"<?php
+namespace App;
+function label() {}
+function LABEL() {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 4);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "function App\\LABEL() is already defined");
+}
+
+#[test]
 fn unsupported_namespace_forms_keep_stable_parse_boundaries() {
     let cases = [
         (
@@ -139,15 +183,6 @@ if (true) {
             3,
             5,
             "unsupported namespace declaration: namespace declarations are only implemented at file scope",
-        ),
-        (
-            r#"<?php
-namespace App;
-function label() {}
-"#,
-            3,
-            1,
-            "unsupported function declaration: namespace-scoped functions are not implemented",
         ),
         (
             r#"<?php

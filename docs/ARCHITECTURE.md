@@ -892,8 +892,12 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   syntax is rejected with an explicit diagnostic before execution
 - dynamic includes will use runtime include resolution
 - `eval` will parse and execute in the caller scope
-- namespaces and imports will need namespace-aware name resolution before they
-  can affect function, class, or dynamic callable lookup
+- namespaces and imports use a bounded class-name plus same-namespace function
+  declaration/call slice. Namespace-scoped function declarations register under
+  their resolved names; unqualified direct calls inside a namespace first look
+  for a same-namespace function and then fall back to global builtins/user
+  functions. Function imports, qualified function calls, namespace-scoped
+  constants, and dynamic string-name namespace expansion remain boundaries.
 - global constants use a narrow interpreter constant table: exact uppercase
   `CASE_LOWER`, `CASE_UPPER`, `ARRAY_FILTER_USE_KEY`, and
   `ARRAY_FILTER_USE_BOTH` are available as bare built-in constants, while
@@ -911,8 +915,9 @@ String-valued dynamic function lookup and the narrow local `require path;` /
 are executable today.
 Variable-variable execution and `eval` remain design boundaries; direct
 `eval(...)` syntax is reserved and rejected with a stable parse diagnostic.
-Namespace declarations and top-level `use` import declarations are also
-reserved and rejected with stable parse diagnostics.
+Namespace declarations and top-level class `use` import declarations execute
+as metadata/no-op statements in `phpc run`, but the native path still rejects
+namespace declarations/imports before scalar folding or backend execution.
 First-class callable syntax such as `strlen(...)` and `$callback(...)` also
 stops at a stable parse diagnostic until Closure creation and callable object
 semantics exist.

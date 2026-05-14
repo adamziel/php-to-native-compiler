@@ -146,7 +146,11 @@ The first bootstrap probe is expected to fail. Known blockers include:
   covered for inert no-capture closure values by Milestone 712. The previous
   arrow closure value blocker at `<bootstrap-shim>:10:10` is covered for inert
   arrow closure values by Milestone 713. The synthetic bootstrap-shim probe now
-  exits 0 with no stderr.
+  exits 0 with no stderr. The real WordPress 6.9.4 bootstrap-shim inventory's
+  previous namespace-scoped function declaration blocker at
+  `<bootstrap-shim>:23:5` is covered by Milestone 714 for namespace-scoped
+  declarations and unqualified calls. The real inventory now reaches
+  `runtime error at <bootstrap-shim>:997:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got \Sodium\CRYPTO_AUTH_BYTES`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 714, a bounded namespace-scoped function declaration/call
+  slice through `phpc run`. Top-level functions declared under an active
+  unbracketed namespace now register under their resolved names, unqualified
+  direct calls inside that namespace resolve to same-namespace functions with
+  global builtin/user-function fallback, and exact fully qualified string
+  dynamic calls/function-existence checks can find the registered function.
+  Function imports, qualified/fully-qualified direct calls such as
+  `App\make()` and `\App\make()`, dynamic string-name namespace expansion,
+  namespace-scoped constants, exact PHP diagnostics, partial-output behavior,
+  and native lowering remain explicit. The real WordPress 6.9.4
+  bootstrap-shim inventory now advances to
+  `runtime error at <bootstrap-shim>:997:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got \Sodium\CRYPTO_AUTH_BYTES`.
+  Focused verification so far:
+  `cargo test -p phpc --test namespace_resolution -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features dynamic_function_calls_use_exact_namespaced_string_callees -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features namespace_qualified_function_names -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone714`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone714`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
 - Added Milestone 713, a bounded inert arrow-closure value slice through
   `phpc run`. Reached `fn (...) => expr` expressions now allocate runtime
   closure handles that can be assigned/read and truth-tested without executing

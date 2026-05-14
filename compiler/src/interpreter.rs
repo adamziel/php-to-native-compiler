@@ -3938,14 +3938,17 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let key = name.to_ascii_lowercase();
-        if key == "isset" {
+        let fallback_key = name
+            .rsplit_once('\\')
+            .map(|(_, suffix)| suffix.to_ascii_lowercase());
+        if key == "isset" || fallback_key.as_deref() == Some("isset") {
             return self.call_isset(args, span, caller_scope);
         }
-        if key == "empty" {
+        if key == "empty" || fallback_key.as_deref() == Some("empty") {
             return self.call_empty(args, span, caller_scope);
         }
 
-        self.call_named_function(name, args, span, caller_scope)
+        self.call_direct_named_function(name, args, span, caller_scope)
     }
 
     fn call_dynamic_function(
@@ -3991,7 +3994,31 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        match self.lookup_function(name).ok_or_else(|| {
+        match self.lookup_function_exact(name).ok_or_else(|| {
+            runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
+        })? {
+            Callable::Builtin(key) => {
+                if key == "spl_autoload_register" {
+                    return self.call_spl_autoload_register(args, span, caller_scope);
+                }
+                let mut values = Vec::with_capacity(args.len());
+                for arg in args {
+                    values.push(self.evaluate(arg, caller_scope)?);
+                }
+                self.call_builtin(&key, values, span)
+            }
+            Callable::User(function) => self.call_user_function(function, args, span, caller_scope),
+        }
+    }
+
+    fn call_direct_named_function(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match self.lookup_direct_function_call(name).ok_or_else(|| {
             runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
         })? {
             Callable::Builtin(key) => {
@@ -4079,12 +4106,25 @@ impl Interpreter {
     }
 
     fn lookup_function(&self, name: &str) -> Option<Callable> {
+        self.lookup_function_exact(name)
+    }
+
+    fn lookup_function_exact(&self, name: &str) -> Option<Callable> {
         let key = name.to_ascii_lowercase();
         if is_builtin(&key) {
             return Some(Callable::Builtin(key));
         }
 
         self.functions.get(&key).cloned().map(Callable::User)
+    }
+
+    fn lookup_direct_function_call(&self, name: &str) -> Option<Callable> {
+        if let Some(callable) = self.lookup_function_exact(name) {
+            return Some(callable);
+        }
+
+        let (_, suffix) = name.rsplit_once('\\')?;
+        self.lookup_function_exact(suffix)
     }
 
     fn call_user_function(

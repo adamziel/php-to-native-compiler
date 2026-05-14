@@ -6440,9 +6440,9 @@ handled.
   and namespace/import resolution for class declarations plus class-like
   references in `extends`, `new`, `instanceof`, static members, and
   `ClassName::class`. Tests, fixtures, docs, and native rejection coverage
-  name the remaining unsupported edges: bracketed/global/multiple namespaces,
-  namespace-scoped functions/constants, grouped/function/constant imports,
-  namespace-qualified function calls, string-name import expansion,
+  name the remaining unsupported edges at that point: bracketed/global/multiple
+  namespaces, namespace-scoped functions/constants, grouped/function/constant
+  imports, namespace-qualified function calls, string-name import expansion,
   `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
   partial-output behavior, and native lowering. The synthetic WordPress shim
   now reaches the interface declaration blocker at `<bootstrap-shim>:4:1`.
@@ -6528,16 +6528,26 @@ handled.
   closure values, keeps invocation/callback/capture execution unsupported, and
   advances the synthetic WordPress bootstrap-shim probe to exit 0 with no
   stderr.
-- [ ] Inventory/runtime lane: refresh the real WordPress bootstrap inventory,
-  or extend the synthetic shim from the next real blocker, then implement the
-  next small parser/runtime gap with tests, CLI coverage, docs, and named
-  unsupported edges.
+- [x] Parser/runtime lane: implement the real WordPress 6.9.4 bootstrap-shim
+  namespace-scoped function declaration blocker reported at
+  `<bootstrap-shim>:23:5`, with tests, CLI coverage, docs, and named
+  unsupported edges for function imports, qualified/fully-qualified function
+  calls, namespace-scoped constants, exact PHP diagnostics, partial-output
+  behavior, and native lowering. The Milestone 714 slice supports
+  namespace-scoped function declarations and unqualified same-namespace calls,
+  while the real inventory now reaches
+  `runtime error at <bootstrap-shim>:997:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got \Sodium\CRYPTO_AUTH_BYTES`.
+- [ ] Runtime/constants lane: implement or explicitly bound the real WordPress
+  6.9.4 bootstrap-shim qualified `defined()` constant-name blocker at
+  `<bootstrap-shim>:997:6`, with tests, CLI coverage, docs, and named
+  unsupported edges for namespace constants, class constants, extension
+  constant catalogs, exact PHP diagnostics, partial-output behavior, and native
+  lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 713 work, the latest committed checkpoint is
-  `feb7951 runtime: add inert anonymous closure values`, covering Milestone
-  712.
+- Before the current Milestone 714 work, the latest committed checkpoint is
+  `de92790 runtime: add inert arrow closure values`, covering Milestone 713.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -143,9 +143,6 @@ impl Parser {
         let start = self
             .consume_keyword(TokenKind::Function, "expected 'function'")?
             .span;
-        if !self.current_namespace.is_empty() {
-            return Err(self.error_at(start, unsupported_namespace_function_declaration_message()));
-        }
         Ok(Stmt::Function(
             self.parse_function_after_keyword(start, true)?,
         ))
@@ -3181,6 +3178,7 @@ impl Parser {
                 }
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let args = self.parse_call_arguments_after_open()?;
+                let name = self.resolve_function_call_name(&name);
                 Ok(Expr::Call {
                     name,
                     args,
@@ -4277,6 +4275,14 @@ impl Parser {
         }
     }
 
+    fn resolve_function_call_name(&self, name: &str) -> String {
+        if self.current_namespace.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, name)
+        }
+    }
+
     fn resolve_relative_namespace_class_name(&self, suffix: &str) -> String {
         if self.current_namespace.is_empty() {
             suffix.to_string()
@@ -4841,10 +4847,6 @@ fn unsupported_multiple_namespace_message() -> &'static str {
 
 fn unsupported_nested_namespace_message() -> &'static str {
     "unsupported namespace declaration: namespace declarations are only implemented at file scope"
-}
-
-fn unsupported_namespace_function_declaration_message() -> &'static str {
-    "unsupported function declaration: namespace-scoped functions are not implemented"
 }
 
 fn unsupported_use_message() -> &'static str {

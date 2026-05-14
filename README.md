@@ -90,6 +90,8 @@ incorrect native code.
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls,
+  bounded namespace-scoped function declarations and unqualified same-namespace
+  calls with global fallback lookup,
   inert no-capture anonymous and arrow closure values,
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
@@ -113,11 +115,12 @@ incorrect native code.
   execution for local string paths, including constant/string-concatenated
   paths resolved relative to the current source file, included files executing
   in caller scope, and `_once` de-duplication by resolved local file
-- a bounded namespace/class-name slice: one unbracketed named `namespace`
+- a bounded namespace/class-name/function slice: one unbracketed named `namespace`
   declaration per file, simple top-level class `use` imports with optional
   `as` aliases, namespace-qualified class declarations, class imports for
   class-like references, `new`, `extends`, `instanceof`, static members, and
-  `ClassName::class`
+  `ClassName::class`, plus namespace-scoped function declarations and
+  unqualified same-namespace calls
 - declared interface metadata: top-level `interface Name {}` declarations and
   public method signatures parse, register class-like interface names, power
   `interface_exists()` and `get_declared_interfaces()`, and otherwise execute
@@ -157,7 +160,7 @@ incorrect native code.
 
 The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespace forms beyond the current class-name/import
-slice, include/require breadth beyond the current narrow local
+and same-namespace function slice, include/require breadth beyond the current narrow local
 `require`/`require_once`/`include`/`include_once` statement slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
 callback integration, type declaration enforcement, cast

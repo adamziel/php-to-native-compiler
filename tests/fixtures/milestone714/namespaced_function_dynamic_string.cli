@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+hi Ada
+no--- stdout end ---
+stderr:
+--- stderr end ---

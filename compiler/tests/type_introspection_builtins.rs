@@ -242,6 +242,26 @@ echo $call("local_name") ? "1" : "0";
 }
 
 #[test]
+fn function_exists_checks_namespaced_runtime_function_table_entries() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Demo;
+function namespaced_name() {
+    return "ok";
+}
+
+echo function_exists("App\\Demo\\namespaced_name") ? "1" : "0";
+echo function_exists("APP\\DEMO\\NAMESPACED_NAME") ? "1" : "0";
+echo function_exists("namespaced_name") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "110");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn extension_loaded_uses_current_empty_extension_registry() {
     let execution = run_source(
         r#"<?php

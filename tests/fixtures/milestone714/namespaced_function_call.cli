@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+App\Core\label:Ada
+App\Core\label:Grace
+3--- stdout end ---
+stderr:
+--- stderr end ---
