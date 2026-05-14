@@ -9,14 +9,27 @@ die() {
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "wordpress-inventory: not inside a git repository"
 cd "$repo_root"
 
+normalize=0
+if [ "${1:-}" = "--normalize" ]; then
+  normalize=1
+  shift
+fi
+
 wp_root=${1:-${WORDPRESS_ROOT:-}}
-[ -n "$wp_root" ] || die "usage: tools/wordpress-inventory.sh /path/to/wordpress"
+[ -n "$wp_root" ] || die "usage: tools/wordpress-inventory.sh [--normalize] /path/to/wordpress"
 [ -d "$wp_root" ] || die "wordpress-inventory: missing directory: $wp_root"
 [ -f "$wp_root/wp-settings.php" ] || die "wordpress-inventory: missing wp-settings.php in $wp_root"
 
 phpc_bin=${PHPC_BIN:-$repo_root/target/debug/phpc}
 if [ ! -x "$phpc_bin" ]; then
   phpc_bin="cargo run -q -p phpc --"
+fi
+
+display_root=$wp_root
+display_phpc_bin=$phpc_bin
+if [ "$normalize" -eq 1 ]; then
+  display_root="<wordpress-root>"
+  display_phpc_bin="<phpc>"
 fi
 
 count_php_files() {
@@ -40,7 +53,7 @@ if [ -f "$version_file" ]; then
 fi
 
 printf 'WordPress inventory\n'
-printf 'root: %s\n' "$wp_root"
+printf 'root: %s\n' "$display_root"
 printf 'version: %s\n' "$wp_version"
 printf 'php_files: %s\n' "$(count_php_files)"
 printf '\n'
@@ -53,7 +66,7 @@ printf '  traits: %s\n' "$(count_matching_files '(^|[^[:alnum:]_])trait[[:space:
 printf '  enums: %s\n' "$(count_matching_files '(^|[^[:alnum:]_])enum[[:space:]]+[A-Za-z_]')"
 printf '  class_extends: %s\n' "$(count_matching_files '(^|[^[:alnum:]_])class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+extends[[:space:]]')"
 printf '  exceptions: %s\n' "$(count_matching_files '(^|[^[:alnum:]_])(try|catch|finally|throw)[[:space:]({]')"
-printf '  closures: %s\n' "$(count_matching_files '(^|[^[:alnum:]_])function[[:space:]]*\\(')"
+printf '  closures: %s\n' "$(count_matching_files '(^|[^[:alnum:]_])function[[:space:]]*[(]')"
 printf '  arrow_functions: %s\n' "$(count_matching_files '=>')"
 printf '\n'
 
@@ -68,12 +81,16 @@ status=$?
 set -e
 
 printf 'bootstrap_probe:\n'
-printf '  command: %s run %s/wp-settings.php\n' "$phpc_bin" "$wp_root"
+printf '  command: %s run %s/wp-settings.php\n' "$display_phpc_bin" "$display_root"
 printf '  exit: %s\n' "$status"
 printf '  stdout_bytes: %s\n' "$(wc -c <"$tmp_stdout" | tr -d ' ')"
 printf '  first_stderr_line: '
 if [ -s "$tmp_stderr" ]; then
-  sed -n '1p' "$tmp_stderr"
+  first_stderr_line=$(sed -n '1p' "$tmp_stderr")
+  if [ "$normalize" -eq 1 ]; then
+    first_stderr_line=$(printf '%s\n' "$first_stderr_line" | sed "s#$wp_root#<wordpress-root>#g")
+  fi
+  printf '%s\n' "$first_stderr_line"
 else
   printf '<none>\n'
 fi

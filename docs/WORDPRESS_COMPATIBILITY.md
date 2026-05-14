@@ -43,6 +43,18 @@ Then run the inventory from this repository:
 tools/wordpress-inventory.sh /tmp/phpc-wordpress/wordpress
 ```
 
+For committed snapshots and tests, use normalized output:
+
+```sh
+tools/wordpress-inventory.sh --normalize "$WORDPRESS_ROOT"
+```
+
+Normalized output replaces the local WordPress checkout path with
+`<wordpress-root>` and the compiler executable path with `<phpc>`. The committed
+policy lives in `tests/fixtures/compat/wordpress/source-pin.md`. The repository
+also keeps a synthetic WordPress-shaped inventory fixture so the output format
+and current first bootstrap blocker are tested without vendoring WordPress core.
+
 ## Inventory Script
 
 `tools/wordpress-inventory.sh` is the first repeatable WordPress measurement
@@ -58,6 +70,12 @@ tool. It reports:
 
 The syntax counts are intentionally coarse inventory data, not parser support
 claims.
+
+The committed synthetic harness is exercised by:
+
+```sh
+cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
+```
 
 ## Expected Initial Blockers
 
@@ -83,4 +101,6 @@ record the first `phpc run wp-settings.php` blocker.
 ```
 
 That target becomes a real compatibility fixture only after the source pin and
-expected output policy are committed.
+expected output policy are committed. The normalized output policy now exists;
+the next step is an operator-supplied run against the pinned external WordPress
+6.9.4 source tree, with any resulting snapshot reviewed before committing.

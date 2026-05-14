@@ -5699,6 +5699,21 @@ handled.
   executable mode clearly, or a documented blocker if the current LLVM text
   backend cannot model C ABI helper calls safely.
 
+## Milestone 638: WordPress Inventory Snapshot Harness
+
+- [x] Tests/docs/compatibility lane: add a committed WordPress inventory output
+  policy and deterministic synthetic harness without vendoring WordPress core.
+  Added normalized `tools/wordpress-inventory.sh --normalize` output, a
+  synthetic WordPress-shaped CLI test, and fixture policy for the pinned
+  WordPress 6.9.4 external-source target.
+
+## Milestone 639: WordPress External Inventory Snapshot
+
+- [ ] Tests/docs/compatibility lane: run the normalized inventory against an
+  operator-supplied WordPress 6.9.4 checkout, review the counts and first
+  bootstrap blocker, and commit a real external-source snapshot only if the
+  output is stable and the repository still does not need to vendor core.
+
 ## Latest Checkpoint
 
 - The current checkpoint records the completed split-lane work through

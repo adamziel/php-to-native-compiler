@@ -13,6 +13,10 @@ Implemented:
   lowering: normal `phpc compile --emit-ir` still does not emit linked runtime
   helper calls, and target-data-layout-aware ABI handling remains required
   before generated code can truthfully call these helpers across targets.
+- Added Milestone 638, a committed WordPress inventory snapshot harness. The
+  inventory tool now supports normalized output for stable snapshots, and a
+  synthetic WordPress-shaped CLI test pins the inventory format and current
+  unsupported `require` bootstrap blocker without vendoring WordPress core.
 
 Next:
 
@@ -21,6 +25,9 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
+- Milestone 639 should run normalized inventory against an operator-supplied
+  WordPress 6.9.4 checkout and review whether a real external-source snapshot is
+  stable enough to commit.
 
 ## 2026-05-12
 

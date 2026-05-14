@@ -1,0 +1,22 @@
+WordPress inventory
+root: <wordpress-root>
+version: 6.9.4
+php_files: 3
+
+syntax_surface_files:
+  include_require: 1
+  namespaces: 1
+  imports: 1
+  interfaces: 1
+  traits: 1
+  enums: 1
+  class_extends: 1
+  exceptions: 1
+  closures: 1
+  arrow_functions: 1
+
+bootstrap_probe:
+  command: <phpc> run <wordpress-root>/wp-settings.php
+  exit: 1
+  stdout_bytes: 0
+  first_stderr_line: parse error at <wordpress-root>/wp-settings.php:2:1: unsupported require: include/require resolution and execution are not implemented
