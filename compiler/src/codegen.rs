@@ -6206,6 +6206,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "assert"
             | "get_class"
             | "is_object"
             | "get_debug_type"

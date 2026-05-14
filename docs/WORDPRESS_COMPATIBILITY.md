@@ -158,8 +158,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   lowering. The real inventory now reports direct `wp-settings.php` still
   stops at
   `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
-  while the bootstrap-shim probe reaches
-  `runtime error at <bootstrap-shim>:68:9: undefined function assert()`.
+  while the previous bootstrap-shim `assert()` blocker at
+  `<bootstrap-shim>:68:9` is covered by Milestone 716 for truthy assertion
+  guards used by the sodium compatibility bootstrap. This is not full PHP
+  assertion policy, callback, `AssertionError`, warning/fatal, or native
+  support. The bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:106:10: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got SODIUM_$constant`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

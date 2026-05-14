@@ -1,0 +1,1 @@
+phpc intentionally keeps failing assert() as a runtime boundary until PHP assertion policy and diagnostics are implemented.

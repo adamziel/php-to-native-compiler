@@ -26,6 +26,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T23:55:03Z
+
+- Checkpoint before this task: `03d502c runtime: add qualified namespace
+  constants`, pushed to `origin/master`.
+- Task attempted: Milestone 716, bounded truthy `assert()` runtime builtin
+  handling for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:68:9`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/assert_builtins.rs`,
+  `compiler/tests/native_function_call_boundary.rs`,
+  `compiler/tests/type_introspection_builtins.rs`,
+  `tests/fixtures/milestone547/*`, `tests/fixtures/milestone548/*`,
+  `tests/fixtures/milestone716/*`, `tests/fixtures/runtime_errors/assert_*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test assert_builtins -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins is_callable -- --test-threads=1`,
+  `cargo test -p phpc --test native_type_introspection_boundary function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_type_introspection_boundary is_callable -- --test-threads=1`,
+  `cargo test -p phpc --test native_assembly_cli function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_assembly_cli is_callable -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone716`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone716`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+- Remaining semantic gaps: assertion INI policy, callbacks,
+  `AssertionError`, `Throwable` descriptions, exact warning/fatal behavior,
+  PHP 8.3 deprecations, partial-output behavior, and native lowering remain
+  unsupported. The real inventory now reports direct `wp-settings.php` still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:106:10: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got SODIUM_$constant`.
+- Next concrete task: implement or explicitly bound the dynamic
+  `defined("SODIUM_$constant")` constant-name probe reached by the real
+  WordPress bootstrap shim.
+
 ## Loop Event 2026-05-14T23:46:38Z
 
 - Checkpoint before this task: `fdc82fd runtime: add namespace-scoped function

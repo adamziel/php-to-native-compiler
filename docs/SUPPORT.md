@@ -331,7 +331,7 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `get_class`, `is_object`,
+  `function_exists`, `extension_loaded`, `assert`, `get_class`, `is_object`,
   `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -369,6 +369,13 @@
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
+  `assert($assertion, $description = null)` evaluates one or two arguments
+  normally and returns `true` for truthy assertions. The optional description
+  is inert metadata in this slice and may be `null`, bool, int, float, or
+  string. Failing assertions remain a stable runtime boundary; assertion INI
+  policy, callbacks, `AssertionError`, `Throwable` descriptions, exact
+  warning/fatal behavior, PHP 8.3 deprecations, partial-output behavior, and
+  native lowering are not implemented.
   `dirname($path, $levels = 1)` accepts string paths and an optional positive
   integer level count. It performs lexical Unix-style slash parent-directory
   extraction for local paths used by the current WordPress bootstrap probes;
@@ -1690,7 +1697,7 @@
   user-defined functions in native output, namespace/import/autoload-aware
   lookup, extension-loaded functions outside the documented builtin table,
   general callable builtin dispatch, runtime call lookup, stack-frame layout,
-  arity/type diagnostics, unsupported `defined(...)` names, dynamic
+  arity/type diagnostics, direct `assert(...)`, unsupported `defined(...)` names, dynamic
   string-call dispatch, and exact native error objects remain unsupported.
   Native user-function declarations
   and return statements are rejected before function-body lowering with a
@@ -2054,7 +2061,7 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `spl_autoload_register`, `get_class`,
+  `dirname`, `extension_loaded`, `assert`, `spl_autoload_register`, `get_class`,
   `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
@@ -2105,7 +2112,12 @@
   builtin table; native user-defined function tables, dynamic calls,
   namespace/autoload-aware lookup, extension-loaded functions beyond documented
   builtins, non-string name coercion, and exact native
-  `TypeError`/deprecation behavior are not implemented. `extension_loaded`
+  `TypeError`/deprecation behavior are not implemented. `assert(...)` is a
+  runtime-only builtin in this slice: truthy assertions return `true`, while
+  failing assertions, assertion INI policy, callbacks, `AssertionError`,
+  `Throwable` descriptions, exact warning/fatal behavior, PHP 8.3
+  deprecations, partial-output behavior, and native lowering are not
+  implemented. `extension_loaded`
   accepts string extension names, returns `false` from the current deterministic
   empty extension registry, and rejects non-string names. Its native folding is
   limited to direct false folding for already-lowerable string names.

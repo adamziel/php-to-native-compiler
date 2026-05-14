@@ -33,6 +33,7 @@ fn emit_ir_rejects_direct_builtin_user_and_dynamic_calls_with_specific_boundary(
     for source in [
         "<?php\necho label(\"user\");\nfunction label($value) { return $value; }\n",
         "<?php\necho dirname(\"/a/b.php\");\n",
+        "<?php\nassert(true);\n",
         "<?php\n$call = \"strlen\";\necho $call(\"abc\");\n",
         "<?php\n$call = \"strlen\";\necho $call(\"abc\",);\n",
     ] {
@@ -76,20 +77,28 @@ fn emit_ir_rejects_direct_strlen_unsupported_operands() {
 
 #[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
-    let error =
-        emit_ir_source("<?php\necho label([]);\nfunction label($value) { return $value; }\n")
-            .unwrap_err();
+    for source in [
+        "<?php\necho label([]);\nfunction label($value) { return $value; }\n",
+        "<?php\nassert([]);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
 }
 
 #[test]
 fn emit_ir_rejects_dynamic_calls_before_lowering_callee_or_arguments() {
-    let error = emit_ir_source("<?php\n$call = \"strlen\";\necho $call([]);\n").unwrap_err();
+    for source in [
+        "<?php\n$call = \"strlen\";\necho $call([]);\n",
+        "<?php\n$call = \"assert\";\necho $call([]);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
 }
 
 #[test]
@@ -97,6 +106,7 @@ fn emit_asm_rejects_function_calls_before_backend_execution() {
     for source in [
         "<?php\necho label(\"abc\");\nfunction label($value) { return $value; }\n",
         "<?php\necho dirname(\"/a/b.php\");\n",
+        "<?php\nassert(true);\n",
     ] {
         let error = emit_asm_source(source).unwrap_err();
 

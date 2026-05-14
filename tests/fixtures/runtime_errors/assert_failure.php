@@ -1,0 +1,2 @@
+<?php
+assert(false, "boom");

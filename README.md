@@ -158,7 +158,8 @@ incorrect native code.
   including declared interface metadata, declared empty-trait metadata, and
   declared unit-enum metadata
 - a documented builtin subset for strings, arrays, constants, type checks,
-  callability checks, object/class metadata, and debug-style output
+  callability checks, bounded truthy assertions, object/class metadata, and
+  debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespace forms beyond the current class-name/import,
@@ -209,7 +210,8 @@ The current native path is focused on straight-line scalar lowering:
 Native lowering rejects arrays, array destructuring, objects, user functions,
 closure values,
 include/require, broad control flow, exception boundaries, scalar casts,
-mutation forms that require symbol-table effects, dynamic calls, runtime constant tables, PHP-wide coercions,
+mutation forms that require symbol-table effects, dynamic calls, `assert()`,
+runtime constant tables, PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code.
 

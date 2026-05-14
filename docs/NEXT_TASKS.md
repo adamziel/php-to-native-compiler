@@ -6551,17 +6551,31 @@ handled.
   `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
   while the bootstrap-shim probe reaches
   `runtime error at <bootstrap-shim>:68:9: undefined function assert()`.
-- [ ] Runtime/builtins lane: implement or explicitly bound the real WordPress
-  6.9.4 bootstrap-shim `assert()` blocker at `<bootstrap-shim>:68:9`, with
-  tests, CLI coverage, docs, and named unsupported edges for assertion INI
-  policy, assertion callbacks/exceptions, exact warning/fatal behavior,
-  partial-output behavior, and native lowering.
+- [x] Runtime/builtins lane: implemented the real WordPress 6.9.4
+  bootstrap-shim `assert()` blocker at `<bootstrap-shim>:68:9`. The
+  Milestone 716 slice accepts truthy runtime assertions with scalar/null
+  descriptions as inert metadata, exposes `assert` through
+  `function_exists()`/`is_callable()` and dynamic string calls, keeps failing
+  assertions as a runtime boundary, and keeps native direct/dynamic
+  `assert(...)` rejected. Assertion INI policy, callbacks, `AssertionError`,
+  `Throwable` descriptions, exact warning/fatal behavior, PHP 8.3
+  deprecations, partial-output behavior, and native lowering remain
+  unsupported. The real inventory now reports direct `wp-settings.php` still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:106:10: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got SODIUM_$constant`.
+- [ ] Runtime/constants lane: implement or explicitly bound the real WordPress
+  6.9.4 bootstrap-shim dynamic constant-name probe
+  `defined("SODIUM_$constant")` at `<bootstrap-shim>:106:10`, with tests, CLI
+  coverage, docs, and named unsupported edges for variable interpolation,
+  dynamic extension constant aliases, full extension constant catalogs, exact
+  PHP diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 715 work, the latest committed checkpoint is
-  `fdc82fd runtime: add namespace-scoped function declarations`, covering
-  Milestone 714.
+- Before the current Milestone 716 work, the latest committed checkpoint is
+  `03d502c runtime: add qualified namespace constants`, covering Milestone 715.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -5548,6 +5548,55 @@ impl Interpreter {
                     )),
                 }
             }
+            "assert" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "assert()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+
+                if let Some(other) = args
+                    .get(1)
+                    .filter(|value| {
+                        !matches!(
+                            value,
+                            Value::Null
+                                | Value::Bool(_)
+                                | Value::Int(_)
+                                | Value::Float(_)
+                                | Value::String(_)
+                        )
+                    })
+                {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "assert()",
+                            format!(
+                                "description argument must be null, bool, int, float, or string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+
+                if args[0].is_truthy() {
+                    Ok(Value::Bool(true))
+                } else {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "assert()",
+                            "assertion failures are not implemented in the current subset",
+                        ),
+                    ))
+                }
+            }
             "get_class" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -7519,6 +7568,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "assert"
             | "get_class"
             | "is_object"
             | "get_debug_type"

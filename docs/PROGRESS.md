@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Milestone 716, a bounded `assert()` runtime builtin slice through
+  `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:68:9`. `assert($assertion, $description = null)` now
+  evaluates one or two arguments normally, accepts scalar/null descriptions as
+  inert metadata, returns `true` for truthy assertions, and is visible through
+  `function_exists()`/`is_callable()` and dynamic string calls. Failing
+  assertions remain an explicit runtime boundary. Native function-table
+  introspection recognizes `assert`, but direct native `assert(...)` and
+  dynamic calls remain behind the function-call lowering boundary. Assertion
+  INI policy, callbacks, `AssertionError`, `Throwable` descriptions, exact
+  warning/fatal behavior, PHP 8.3 deprecations, partial-output behavior, and
+  native lowering remain explicit. The real WordPress 6.9.4 inventory now
+  reports direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe advances to
+  `runtime error at <bootstrap-shim>:106:10: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got SODIUM_$constant`.
+  Focused verification so far:
+  `cargo test -p phpc --test assert_builtins -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins is_callable -- --test-threads=1`,
+  `cargo test -p phpc --test native_type_introspection_boundary function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_type_introspection_boundary is_callable -- --test-threads=1`,
+  `cargo test -p phpc --test native_assembly_cli function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_assembly_cli is_callable -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone716`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone716`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
 - Added Milestone 715, a bounded qualified runtime-constant name slice through
   `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker
   `\Sodium\CRYPTO_AUTH_BYTES`. Runtime `define()`, `defined()`, and

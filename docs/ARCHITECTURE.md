@@ -788,6 +788,13 @@ boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.
 Native function-table introspection recognizes the name, while direct native
 calls reject under the function-call boundary.
+`assert()` is currently an interpreter-only assertion builtin for truthy
+bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
+null descriptions as inert metadata, returns true for truthy assertions, and
+keeps failing assertions behind a stable runtime boundary. Native
+function-table introspection recognizes the name, while direct native calls
+reject under the function-call boundary until generated code has assertion
+policy, callbacks/exceptions, exact diagnostics, and unwinding behavior.
 Runtime-backed constant behavior currently lives in the interpreter's
 `ConstantTable`. Unbracketed namespace-scoped top-level `const NAME = value;`
 declarations store canonical qualified names such as
@@ -837,7 +844,7 @@ Array/object operands remain rejected until native array/object lowering
 exists. This is static folding, not runtime call dispatch. Dynamic calls,
 wrong arity, non-string `function_exists` names, non-bool `is_callable`
 syntax-only flags, callable-name output parameters, array/object/method
-callables, callable builtin dispatch, runtime call lookup, stack-frame layout,
+callables, direct `assert(...)`, callable builtin dispatch, runtime call lookup, stack-frame layout,
 arity/type diagnostics, dynamic string-call dispatch, and exact native error
 behavior remain unsupported. The
 `define()`/`constant()` constant-table builtins and unsupported
