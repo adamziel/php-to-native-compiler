@@ -2,5 +2,4 @@
 $fn = function () {
     return 1;
 };
-echo $fn();
-echo $fn("Ada");
+echo "after";

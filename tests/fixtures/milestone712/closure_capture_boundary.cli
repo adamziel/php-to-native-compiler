@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone712/closure_capture_boundary.php:3:7: unsupported call closure: closure capture binding is not implemented
+--- stderr end ---

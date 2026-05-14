@@ -1976,13 +1976,14 @@
   reference binding exists. Anonymous closure syntax with parameter lists,
   optional return-type metadata, block bodies, and `use (...)` capture lists is
   parsed so containing functions can be registered, including by-reference
-  capture syntax such as `use (&$name)`. Evaluating a closure expression still
-  fails with a stable runtime diagnostic; closure values, invocation, capture
-  binding, `$this` binding, static closures, callback integration, exact PHP
-  diagnostics, and native lowering are unsupported. Arrow function syntax
-  `fn (...) => expr` is parsed as a closure-shaped expression with a synthetic
-  return body, but evaluating it fails with the same closure-value boundary
-  before automatic capture binding or invocation exists. Variadic parameters
+  capture syntax such as `use (&$name)`. Evaluating a no-capture anonymous
+  closure expression creates an inert runtime closure value that can be stored,
+  read, and tested for truthiness. Explicit `use (...)` capture binding,
+  closure invocation, `$this` binding, static closures, callback integration,
+  exact PHP `Closure` object behavior, and native lowering are unsupported.
+  Arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
+  expression with a synthetic return body, but evaluating it still fails before
+  automatic capture binding or invocation exists. Variadic parameters
   and argument unpacking, reference returns, reference expressions, named
   arguments, first-class callable syntax such as `strlen(...)` and
   `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
@@ -2019,10 +2020,11 @@
   recursion/reentrancy edge behavior, canonical absolute
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,
   method/class magic constant context, namespace and trait magic constants,
-  closure values and invocation, closure function-name context, magic constant native lowering, array callables, object/method
-  callables, first-class callable
-  syntax, `call_user_func`, namespace-qualified callable resolution, autoload
-  interaction, and native lowering for type declarations are unsupported.
+  closure invocation and capture binding, closure function-name context, magic
+  constant native lowering, array callables, object/method callables,
+  first-class callable syntax, `call_user_func`, namespace-qualified callable
+  resolution, autoload interaction, and native lowering for type declarations
+  are unsupported.
 - Builtins: `strlen`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -3546,8 +3548,8 @@
   function/constant namespace lookup, grouped/function/constant imports,
   string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
   native lowering
-- closure values/invocation, capture binding semantics, arrow function
-  execution, and callable integration
+- closure invocation, capture binding semantics, arrow function execution, and
+  callable integration
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/normal-try
   runtime boundaries

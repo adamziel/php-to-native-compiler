@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T00:15:00Z
+
+- Checkpoint before this task: `8f89960 runtime: execute normal try paths`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 712, bounded inert no-capture anonymous closure
+  values for the synthetic WordPress anonymous-closure blocker at
+  `<bootstrap-shim>:9:19`.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone712/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_closure.*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test functions_and_scopes closure -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes arrow -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone712`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test native_function_declaration_boundary closure -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: closure invocation, explicit and by-reference
+  captures, arrow implicit captures, `$this` binding, static closures, callback
+  integration, exact PHP `Closure` object behavior/reflection, partial-output
+  behavior, and native lowering remain explicit. The synthetic WordPress shim
+  now reaches the arrow closure value blocker at `<bootstrap-shim>:10:10`.
+- Next concrete task: run `cargo fmt --check`, `cargo check -p phpc`,
+  `git diff --check`, compare milestone712 if appropriate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add inert anonymous closure values"` if the
+  full gate passes. Milestone 713 should bound the arrow closure value blocker.
+
 ## Loop Event 2026-05-14T23:45:00Z
 
 - Checkpoint before this task: `58fa831 tests: bound namespaced parent metadata`,

@@ -700,20 +700,56 @@ echo "ok";
 }
 
 #[test]
-fn closure_values_have_stable_runtime_unsupported_error() {
-    let error = runtime_error(
+fn anonymous_closure_values_can_be_assigned_without_invocation() {
+    let execution = run_source(
         r#"<?php
 $fn = function ($value) {
+    return $value;
+};
+echo "after";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "after");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn anonymous_closure_capture_binding_has_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$value = 1;
+$fn = function () use ($value) {
     return $value;
 };
 "#,
     );
 
-    assert_eq!(error.line, 2);
+    assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "unsupported call closure: anonymous function values and invocation are not implemented"
+        "unsupported call closure: closure capture binding is not implemented"
+    );
+}
+
+#[test]
+fn anonymous_closure_invocation_has_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$fn = function () {
+    return 1;
+};
+echo $fn();
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call closure: closure invocation is not implemented"
     );
 }
 

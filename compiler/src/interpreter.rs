@@ -5,16 +5,16 @@ use std::rc::Rc;
 
 use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
-    PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpMethodMetadata, PhpObject,
+    PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpMethodMetadata, PhpObject,
     PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError, RuntimeResult, Value,
     Visibility,
 };
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
-    ClassPropertyDecl, ClassVisibility, CompoundAssignOp, EnumDecl, Expr, ForAction, FunctionDecl,
-    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, Program, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
+    ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
+    ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
+    Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -64,6 +64,7 @@ struct Interpreter {
     source_file: Option<String>,
     call_depth: usize,
     next_object_id: i64,
+    next_closure_id: i64,
     function_context: Vec<String>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
@@ -339,6 +340,7 @@ impl Interpreter {
             source_file,
             call_depth: 0,
             next_object_id: 1,
+            next_closure_id: 1,
             function_context: Vec::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
@@ -1361,17 +1363,12 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 Ok(Value::Bool(self.value_instanceof(&value, class_name)))
             }
-            Expr::Closure { span, is_arrow, .. } => {
-                let detail = if *is_arrow {
-                    "arrow function values and invocation are not implemented"
-                } else {
-                    "anonymous function values and invocation are not implemented"
-                };
-                Err(runtime_error(
-                    *span,
-                    RuntimeError::unsupported_call("closure", detail),
-                ))
-            }
+            Expr::Closure {
+                captures,
+                span,
+                is_arrow,
+                ..
+            } => self.evaluate_closure_expression(captures, *is_arrow, *span),
             Expr::New {
                 class_name,
                 args,
@@ -3912,6 +3909,36 @@ impl Interpreter {
         ArrayKey::from_value(&key).map_err(|error| runtime_error(expr.span(), error))
     }
 
+    fn evaluate_closure_expression(
+        &mut self,
+        captures: &[ClosureCapture],
+        is_arrow: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if is_arrow {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "closure",
+                    "arrow function values and invocation are not implemented",
+                ),
+            ));
+        }
+        if !captures.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "closure",
+                    "closure capture binding is not implemented",
+                ),
+            ));
+        }
+
+        let id = self.next_closure_id;
+        self.next_closure_id += 1;
+        Ok(Value::Closure(PhpClosure::new(id, false)))
+    }
+
     fn call_function(
         &mut self,
         name: &str,
@@ -3940,6 +3967,15 @@ impl Interpreter {
         let callee_value = self.evaluate(callee, caller_scope)?;
         let name = match callee_value {
             Value::String(name) => name,
+            Value::Closure(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "closure",
+                        "closure invocation is not implemented",
+                    ),
+                ));
+            }
             other => {
                 return Err(runtime_error(
                     span,
@@ -6930,6 +6966,13 @@ impl Interpreter {
                         "object __toString() and cast error behavior are not implemented",
                     ),
                 )),
+                Value::Closure(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(string)",
+                        "Closure __toString() and cast error behavior are not implemented",
+                    ),
+                )),
             },
             CastKind::Int => match value {
                 Value::Null => Ok(Value::Int(0)),
@@ -6949,6 +6992,13 @@ impl Interpreter {
                     RuntimeError::unsupported_call(
                         "(int)",
                         "object-to-int cast behavior is not implemented",
+                    ),
+                )),
+                Value::Closure(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(int)",
+                        "Closure object-to-int cast behavior is not implemented",
                     ),
                 )),
             },
@@ -7527,6 +7577,7 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
             .iter()
             .find_map(|entry| unsupported_runtime_constant_value_type(&entry.value)),
         Value::Object(_) => Some("object"),
+        Value::Closure(_) => Some("closure"),
     }
 }
 
@@ -7674,6 +7725,12 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
             }
             output.push_str(&format!("{padding}}}\n"));
             output
+        }
+        Value::Closure(value) => {
+            format!(
+                "{padding}object(Closure)#{} (0) {{\n{padding}}}\n",
+                value.id()
+            )
         }
     }
 }

@@ -1285,13 +1285,15 @@ fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> Runtim
 
 fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<()> {
     match value {
-        Value::Array(_) | Value::Object(_) => Err(RuntimeError::unsupported_call(
-            callable,
-            format!(
-                "values must be scalar in the current subset, got {}",
-                value.type_name()
-            ),
-        )),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) => {
+            Err(RuntimeError::unsupported_call(
+                callable,
+                format!(
+                    "values must be scalar in the current subset, got {}",
+                    value.type_name()
+                ),
+            ))
+        }
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => Ok(()),
     }
 }
@@ -2538,6 +2540,27 @@ pub enum Value {
     String(String),
     Array(PhpArray),
     Object(PhpObject),
+    Closure(PhpClosure),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpClosure {
+    id: i64,
+    is_arrow: bool,
+}
+
+impl PhpClosure {
+    pub fn new(id: i64, is_arrow: bool) -> Self {
+        Self { id, is_arrow }
+    }
+
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+
+    pub fn is_arrow(&self) -> bool {
+        self.is_arrow
+    }
 }
 
 impl Value {
@@ -2550,6 +2573,7 @@ impl Value {
             Value::String(_) => "string",
             Value::Array(_) => "array",
             Value::Object(_) => "object",
+            Value::Closure(_) => "closure",
         }
     }
 
@@ -2562,6 +2586,7 @@ impl Value {
             Value::String(_) => "string",
             Value::Array(_) => "array",
             Value::Object(_) => "object",
+            Value::Closure(_) => "object",
         }
     }
 
@@ -2576,7 +2601,11 @@ impl Value {
         match self {
             Value::Int(_) | Value::Float(_) => true,
             Value::String(value) => parse_numeric_string(value).is_some(),
-            Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => false,
+            Value::Null
+            | Value::Bool(_)
+            | Value::Array(_)
+            | Value::Object(_)
+            | Value::Closure(_) => false,
         }
     }
 
@@ -2598,6 +2627,7 @@ impl Value {
             Value::String(value) => value.clone(),
             Value::Array(_) => "Array".to_string(),
             Value::Object(_) => "Object".to_string(),
+            Value::Closure(_) => "Object".to_string(),
         }
     }
 
@@ -2607,6 +2637,9 @@ impl Value {
                 "object of class {} cannot be converted to string",
                 object.class_name()
             ))),
+            Value::Closure(_) => Err(RuntimeError::invalid_string_conversion(
+                "object of class Closure cannot be converted to string",
+            )),
             _ => Ok(self.echo_string()),
         }
     }
@@ -2620,6 +2653,7 @@ impl Value {
             Value::String(value) => !value.is_empty() && value != "0",
             Value::Array(value) => !value.is_empty(),
             Value::Object(_) => true,
+            Value::Closure(_) => true,
         }
     }
 
@@ -2752,6 +2786,10 @@ impl Value {
                 ArithmeticOp::BitwiseNot,
                 "objects cannot be used with unary bitwise not",
             )),
+            Value::Closure(_) => Err(RuntimeError::invalid_arithmetic(
+                ArithmeticOp::BitwiseNot,
+                "closures cannot be used with unary bitwise not",
+            )),
         }
     }
 
@@ -2873,6 +2911,7 @@ impl Value {
             Value::String(value) => parse_numeric_string(value),
             Value::Array(_) => None,
             Value::Object(_) => None,
+            Value::Closure(_) => None,
         }
     }
 
@@ -2893,6 +2932,10 @@ impl Value {
             Value::Object(_) => Err(RuntimeError::invalid_arithmetic(
                 operation,
                 "objects are not numeric",
+            )),
+            Value::Closure(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "closures are not numeric",
             )),
         }
     }
@@ -2942,6 +2985,10 @@ impl Value {
             Value::Object(_) => Err(RuntimeError::invalid_arithmetic(
                 operation,
                 "objects cannot be used with bitwise operators",
+            )),
+            Value::Closure(_) => Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "closures cannot be used with bitwise operators",
             )),
         }
     }

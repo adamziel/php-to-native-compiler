@@ -6509,17 +6509,27 @@ handled.
   runs finally after normal try completion, keeps reached `throw` as the
   current runtime boundary, and advances the synthetic WordPress shim to the
   anonymous-closure value boundary at `<bootstrap-shim>:9:19`.
-- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+- [x] Parser/runtime lane: implement or explicitly bound the next WordPress
   bootstrap anonymous-closure value blocker reported at `<bootstrap-shim>:9:19`,
   with tests, CLI coverage, docs, and named unsupported edges for closure
   allocation, explicit captures, invocation, callable integration, `$this`
   binding, references/copy-on-write, exact PHP diagnostics, partial-output
+  behavior, and native lowering. The Milestone 712 slice allocates inert
+  no-capture anonymous closure values, keeps explicit captures and invocation
+  as stable runtime boundaries, keeps arrow closure evaluation unsupported, and
+  advances the synthetic WordPress shim to the arrow closure value boundary at
+  `<bootstrap-shim>:10:10`.
+- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+  bootstrap arrow-closure value blocker reported at `<bootstrap-shim>:10:10`,
+  with tests, CLI coverage, docs, and named unsupported edges for implicit
+  capture binding, invocation, callable integration, `$this` binding, static
+  closures, references/copy-on-write, exact PHP diagnostics, partial-output
   behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 711 work, the latest committed checkpoint is
-  `58fa831 tests: bound namespaced parent metadata`, covering Milestone 710.
+- Before the current Milestone 712 work, the latest committed checkpoint is
+  `8f89960 runtime: execute normal try paths`, covering Milestone 711.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

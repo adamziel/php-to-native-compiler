@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 712, a bounded inert anonymous-closure value slice through
+  `phpc run`. No-capture anonymous closure expressions now allocate runtime
+  closure handles that can be assigned/read and truth-tested without executing
+  their bodies. Explicit `use (...)` capture binding remains a stable runtime
+  boundary, direct closure invocation reports
+  `unsupported call closure: closure invocation is not implemented`, arrow
+  closure evaluation still fails before implicit capture binding exists, and
+  native lowering still rejects all closure expressions before backend
+  execution. The synthetic WordPress inventory now advances to
+  `runtime error at <bootstrap-shim>:10:10: unsupported call closure: arrow function values and invocation are not implemented`.
+  Closure invocation, explicit and by-reference captures, arrow implicit
+  captures, `$this` binding, static closures, callback integration, exact PHP
+  `Closure` object behavior/reflection, partial-output behavior, and native
+  lowering remain explicit. Focused verification so far:
+  `cargo test -p phpc --test functions_and_scopes closure -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes arrow -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone712`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test native_function_declaration_boundary closure -- --test-threads=1`
+  passed.
 - Added Milestone 711, a bounded normal-path `try` execution slice through
   `phpc run`. Reached `try` blocks now execute their body when no throw is
   reached, skip catch bodies when no exception is thrown, and execute finally
