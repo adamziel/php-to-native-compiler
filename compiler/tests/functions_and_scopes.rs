@@ -754,18 +754,36 @@ echo $fn();
 }
 
 #[test]
-fn arrow_function_values_have_stable_runtime_unsupported_error() {
+fn arrow_function_values_can_be_assigned_without_invocation() {
+    let execution = run_source(
+        r#"<?php
+$fn = fn($value) => $value;
+if ($fn) {
+    echo "truthy\n";
+}
+echo "after";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "truthy\nafter");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn arrow_function_invocation_has_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php
 $fn = fn($value) => $value;
+echo $fn("Ada");
 "#,
     );
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 7);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call closure: arrow function values and invocation are not implemented"
+        "unsupported call closure: closure invocation is not implemented"
     );
 }
 

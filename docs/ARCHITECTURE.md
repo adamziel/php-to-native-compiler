@@ -916,11 +916,11 @@ reserved and rejected with stable parse diagnostics.
 First-class callable syntax such as `strlen(...)` and `$callback(...)` also
 stops at a stable parse diagnostic until Closure creation and callable object
 semantics exist.
-No-capture anonymous closure expressions allocate inert runtime closure values
-in `phpc run`, which can be assigned/read/truth-tested but not invoked. Arrow
-function syntax parses into the same closure-shaped expression boundary as
-anonymous closures, but evaluating it still fails before implicit captures,
-invocation, and callable integration exist.
+No-capture anonymous closure expressions and arrow function expressions
+allocate inert runtime closure values in `phpc run`, which can be assigned,
+read, and truth-tested but not invoked. Arrow values do not bind implicit
+captures or execute their synthetic return bodies; invocation and callable
+integration remain explicit runtime boundaries.
 Magic class names in `new` expressions, including `new self()`,
 `new parent()`, and `new static()`, stop at a stable parse diagnostic until
 class context tracking, parent resolution, and late static binding exist.

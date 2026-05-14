@@ -83,6 +83,16 @@ fn array_reduce_callback_requires_string_callable() {
         error.message,
         "unsupported call array_reduce(): callback must evaluate to string, got int"
     );
+
+    let closure_error = runtime_error(
+        "<?php\n$items = [\"Ada\"];\n$callback = fn($carry, $value) => $value;\necho array_reduce($items, $callback);\n",
+    );
+    assert_eq!(closure_error.line, 4);
+    assert_eq!(closure_error.column, 6);
+    assert_eq!(
+        closure_error.message,
+        "unsupported call array_reduce(): callback must evaluate to string, got closure"
+    );
 }
 
 #[test]

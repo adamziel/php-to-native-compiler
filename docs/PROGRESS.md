@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Milestone 713, a bounded inert arrow-closure value slice through
+  `phpc run`. Reached `fn (...) => expr` expressions now allocate runtime
+  closure handles that can be assigned/read and truth-tested without executing
+  their synthetic return bodies. Direct arrow closure invocation still reports
+  `unsupported call closure: closure invocation is not implemented`;
+  `is_callable($arrow)` remains false; array callback builtins still reject
+  arrow closure values as non-string callbacks; `spl_autoload_register()` still
+  accepts arrow closure syntax without invoking or storing executable callback
+  behavior; and native lowering still rejects all closure expressions before
+  backend execution. The synthetic WordPress bootstrap-shim probe now exits 0
+  with no stderr. Closure invocation, explicit and by-reference captures, arrow
+  implicit capture binding/execution, `$this` binding, static closures,
+  callback integration, exact PHP `Closure` object behavior/reflection,
+  partial-output behavior, and native lowering remain explicit. Focused
+  verification so far:
+  `cargo test -p phpc --test functions_and_scopes arrow -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes closure -- --test-threads=1`,
+  `cargo test -p phpc --test type_introspection_builtins is_callable -- --test-threads=1`,
+  `cargo test -p phpc --test array_filter callback_requires -- --test-threads=1`,
+  `cargo test -p phpc --test array_map callback_requires -- --test-threads=1`,
+  `cargo test -p phpc --test array_reduce callback_requires -- --test-threads=1`,
+  `cargo test -p phpc --test autoload_builtins -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone709`,
+  `cargo run -p phpc -- test tests/fixtures/milestone713`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone713`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed.
 - Added Milestone 712, a bounded inert anonymous-closure value slice through
   `phpc run`. No-capture anonymous closure expressions now allocate runtime
   closure handles that can be assigned/read and truth-tested without executing

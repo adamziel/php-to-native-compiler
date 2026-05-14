@@ -1,6 +1,7 @@
-exit: 1
+exit: 0
 stdout:
+unreached
+
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone709/arrow_value_boundary.php:2:7: unsupported call closure: arrow function values and invocation are not implemented
 --- stderr end ---

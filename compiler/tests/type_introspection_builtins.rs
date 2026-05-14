@@ -69,6 +69,8 @@ echo is_callable("dirname") ? "1" : "0";
 echo is_callable("spl_autoload_register") ? "1" : "0";
 echo is_callable("missing") ? "1" : "0";
 echo is_callable(42) ? "1" : "0";
+$arrow = fn($value) => $value;
+echo is_callable($arrow) ? "1" : "0";
 echo "\n";
 $call = "is_callable";
 echo $call("local_name") ? "1" : "0";
@@ -76,7 +78,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "11111100\n1");
+    assert_eq!(execution.stdout, "111111000\n1");
     assert_eq!(execution.exit_code, 0);
 }
 

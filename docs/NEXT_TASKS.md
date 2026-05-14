@@ -6514,22 +6514,30 @@ handled.
   with tests, CLI coverage, docs, and named unsupported edges for closure
   allocation, explicit captures, invocation, callable integration, `$this`
   binding, references/copy-on-write, exact PHP diagnostics, partial-output
-  behavior, and native lowering. The Milestone 712 slice allocates inert
-  no-capture anonymous closure values, keeps explicit captures and invocation
-  as stable runtime boundaries, keeps arrow closure evaluation unsupported, and
-  advances the synthetic WordPress shim to the arrow closure value boundary at
-  `<bootstrap-shim>:10:10`.
-- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+  behavior, and native lowering. The Milestone 712 slice allocated inert
+  no-capture anonymous closure values, kept explicit captures and invocation
+  as stable runtime boundaries, kept arrow closure evaluation unsupported, and
+  advanced the synthetic WordPress shim to the arrow closure value boundary at
+  `<bootstrap-shim>:10:10` before Milestone 713.
+- [x] Parser/runtime lane: implement or explicitly bound the next WordPress
   bootstrap arrow-closure value blocker reported at `<bootstrap-shim>:10:10`,
   with tests, CLI coverage, docs, and named unsupported edges for implicit
   capture binding, invocation, callable integration, `$this` binding, static
   closures, references/copy-on-write, exact PHP diagnostics, partial-output
-  behavior, and native lowering.
+  behavior, and native lowering. The Milestone 713 slice allocates inert arrow
+  closure values, keeps invocation/callback/capture execution unsupported, and
+  advances the synthetic WordPress bootstrap-shim probe to exit 0 with no
+  stderr.
+- [ ] Inventory/runtime lane: refresh the real WordPress bootstrap inventory,
+  or extend the synthetic shim from the next real blocker, then implement the
+  next small parser/runtime gap with tests, CLI coverage, docs, and named
+  unsupported edges.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 712 work, the latest committed checkpoint is
-  `8f89960 runtime: execute normal try paths`, covering Milestone 711.
+- Before the current Milestone 713 work, the latest committed checkpoint is
+  `feb7951 runtime: add inert anonymous closure values`, covering Milestone
+  712.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

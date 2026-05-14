@@ -1977,13 +1977,14 @@
   optional return-type metadata, block bodies, and `use (...)` capture lists is
   parsed so containing functions can be registered, including by-reference
   capture syntax such as `use (&$name)`. Evaluating a no-capture anonymous
-  closure expression creates an inert runtime closure value that can be stored,
-  read, and tested for truthiness. Explicit `use (...)` capture binding,
-  closure invocation, `$this` binding, static closures, callback integration,
-  exact PHP `Closure` object behavior, and native lowering are unsupported.
-  Arrow function syntax `fn (...) => expr` is parsed as a closure-shaped
-  expression with a synthetic return body, but evaluating it still fails before
-  automatic capture binding or invocation exists. Variadic parameters
+  closure expression or an arrow function expression creates an inert runtime
+  closure value that can be stored, read, and tested for truthiness. Closure
+  bodies are not executed. Explicit `use (...)` capture binding, arrow
+  implicit capture binding and execution, closure invocation, `$this` binding,
+  static closures, callback integration, exact PHP `Closure` object behavior,
+  and native lowering are unsupported. Arrow function syntax `fn (...) => expr`
+  is parsed as a closure-shaped expression with a synthetic return body.
+  Variadic parameters
   and argument unpacking, reference returns, reference expressions, named
   arguments, first-class callable syntax such as `strlen(...)` and
   `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
@@ -3548,7 +3549,7 @@
   function/constant namespace lookup, grouped/function/constant imports,
   string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
   native lowering
-- closure invocation, capture binding semantics, arrow function execution, and
+- closure invocation, explicit and implicit capture binding/execution, and
   callable integration
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/normal-try

@@ -14,6 +14,10 @@ echo spl_autoload_register(function ($class) use ($called) {
 }) ? "1" : "0";
 echo "|", $called, "\n";
 
+$arrow_called = "no";
+echo spl_autoload_register(fn ($class) => false) ? "1" : "0";
+echo "|", $arrow_called, "\n";
+
 $call = "spl_autoload_register";
 function MissingAutoloader($class) {
     return false;
@@ -23,7 +27,7 @@ echo $call("MissingAutoloader", true, false) ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|no\n1");
+    assert_eq!(execution.stdout, "1|no\n1|no\n1");
     assert_eq!(execution.exit_code, 0);
 }
 

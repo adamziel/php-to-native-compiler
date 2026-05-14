@@ -3915,15 +3915,6 @@ impl Interpreter {
         is_arrow: bool,
         span: Span,
     ) -> CompileResult<Value> {
-        if is_arrow {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "closure",
-                    "arrow function values and invocation are not implemented",
-                ),
-            ));
-        }
         if !captures.is_empty() {
             return Err(runtime_error(
                 span,
@@ -3936,7 +3927,7 @@ impl Interpreter {
 
         let id = self.next_closure_id;
         self.next_closure_id += 1;
-        Ok(Value::Closure(PhpClosure::new(id, false)))
+        Ok(Value::Closure(PhpClosure::new(id, is_arrow)))
     }
 
     fn call_function(

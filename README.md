@@ -90,8 +90,7 @@ incorrect native code.
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls,
-  inert no-capture anonymous closure values, arrow-function syntax that still
-  fails when evaluated as a closure value,
+  inert no-capture anonymous and arrow closure values,
   and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
   type enforcement
@@ -160,7 +159,8 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespace forms beyond the current class-name/import
 slice, include/require breadth beyond the current narrow local
 `require`/`require_once`/`include`/`include_once` statement slice, eval,
-generators, closure invocation/capture binding/callback integration, type declaration enforcement, cast
+generators, closure invocation, explicit and implicit capture binding,
+callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
 interface inheritance/implementation enforcement, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
