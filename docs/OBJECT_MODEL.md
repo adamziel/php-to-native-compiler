@@ -45,9 +45,11 @@ public/protected/private visibility checks. Untyped static properties are
 initialized from supported defaults or `null` in class-level storage and resolve
 case-sensitively through `ClassName::$prop`, `self::$prop`, and
 `parent::$prop`. `static::class` resolves from the current called-class context
-inside instance and static methods. Static receiver forms through
-`static::$prop`, `static::method(...)`, and `static::CONST` still have distinct
-unsupported diagnostics until those late-bound member forms are modeled.
+inside instance and static methods. `static::method(...)` resolves visible
+static methods through the current called class and forwards that context into
+nested calls. Static receiver forms through `static::$prop` and `static::CONST`
+still have distinct unsupported diagnostics until those late-bound member forms
+are modeled.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,

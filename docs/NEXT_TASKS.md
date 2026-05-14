@@ -6114,11 +6114,23 @@ handled.
 
 ## Milestone 671: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next late-static-binding slice:
-  `static::method(...)` diagnostics/execution prerequisites, typed static
-  property metadata, broader class constant semantics, or a documented blocker.
-  Keep trait composition, magic methods, references/copy-on-write, exact native
-  error objects, and native lowering explicit.
+- [x] Runtime/object lane: implement the narrow `static::method(...)` dispatch
+  slice. Late static method calls now resolve visible static methods through
+  the active called class, preserve called-class context through nested
+  `static::`, `self::`, and `parent::` calls, and keep top-level
+  `static::method(...)` plus non-static method targets as stable runtime
+  diagnostics. Kept object-receiver static method dispatch, late-bound
+  `static::$prop`, `static::CONST`, typed static property metadata, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
+
+## Milestone 672: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next late-static-binding/static-member
+  slice: `static::$prop`, `static::CONST`, typed static property metadata,
+  broader class constant semantics, or a documented blocker. Keep trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

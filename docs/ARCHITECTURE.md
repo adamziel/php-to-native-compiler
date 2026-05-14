@@ -1038,9 +1038,10 @@ dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
 Named static method syntax through `ClassName::method(...)`,
-`self::method(...)`, and `parent::method(...)` executes declared or inherited
-visible static methods in the interpreter without binding `$this`;
-late-bound `static::method(...)` remains unsupported.
+`self::method(...)`, `parent::method(...)`, and `static::method(...)` executes
+declared or inherited visible static methods in the interpreter without binding
+`$this`; `static::method(...)` resolves through the active called class and
+forwards that called-class context into nested calls.
 `ClassName::class` returns the source-spelled class string, `self::class` and
 `parent::class` resolve from the active declaring class context, and
 `static::class` resolves from the active called-class context in current
@@ -1056,8 +1057,8 @@ pre/post increment/decrement, `isset`, `empty`, `??`, `??=`, and stable runtime
 diagnostics for PHP-forbidden static-property `unset(...)`; typed static
 properties, dynamic names, storage-removing static-property unset, and
 `static::$prop` remain unsupported.
-`static::method(...)` and `static::CONST` stop at distinct parse diagnostics
-until those late-bound member forms are modeled. Native lowering
+`static::CONST` stops at a distinct parse diagnostic until that late-bound
+member form is modeled. Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, parent/self method calls, object instantiation,
 object property reads/writes, instance method calls, and

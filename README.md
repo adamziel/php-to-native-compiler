@@ -125,8 +125,8 @@ static binding, visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 instance property defaults,
-typed or multi-declarator class constants, late-bound static method dispatch
-through `static::`, `static::`
+typed or multi-declarator class constants, late-bound static property and
+constant access through `static::`, `static::`
 late-bound property access, dynamic method/property names, resources, and
 native extension integration.
 

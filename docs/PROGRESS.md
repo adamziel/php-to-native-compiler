@@ -499,6 +499,26 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 671, narrow late static method dispatch. The parser now
+  accepts `static::method(...)`, and the interpreter resolves visible static
+  methods through the active called class, executes without `$this`, and
+  preserves called-class context through nested `static::`, `self::`, and
+  `parent::` static calls. Top-level `static::method(...)` and non-static
+  method targets keep stable runtime diagnostics. Object-receiver static method
+  dispatch, `static::$prop`, `static::CONST`, typed static property metadata,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model late_static_method_calls_execute_visible_static_methods -- --test-threads=1`,
+  `cargo test -p phpc --test object_model late_static_method_calls_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_late_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone671`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone671`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 

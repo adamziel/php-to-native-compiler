@@ -1632,6 +1632,74 @@ echo Child::forwardParent();
 }
 
 #[test]
+fn late_static_method_calls_execute_visible_static_methods() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected static function hidden() {
+        return "hidden:" . static::class;
+    }
+
+    public static function name() {
+        return "base:" . static::class;
+    }
+
+    public static function label() {
+        return static::name() . ":" . static::hidden();
+    }
+}
+
+class Child extends Base {
+    public static function name() {
+        return "child:" . static::class;
+    }
+
+    public static function parentLabel() {
+        return parent::label();
+    }
+}
+
+echo Base::label(), "\n";
+echo Child::label(), "\n";
+echo Child::parentLabel();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:Base:hidden:Base\nchild:Child:hidden:Child\nchild:Child:hidden:Child"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn late_static_method_calls_report_current_boundaries() {
+    let top_level = runtime_error("<?php\nstatic::make();\n");
+    assert_eq!(
+        top_level.message,
+        "unsupported call static::make(): static method calls require method or static class context"
+    );
+
+    let non_static_method = runtime_error(
+        r#"<?php
+class Box {
+    public function make() {}
+
+    public static function call() {
+        static::make();
+    }
+}
+Box::call();
+"#,
+    );
+    assert_eq!(
+        non_static_method.message,
+        "unsupported call Box::make(): non-static method dispatch through static:: is not implemented"
+    );
+}
+
+#[test]
 fn get_called_class_requires_no_arguments() {
     let error = runtime_error("<?php\nvar_dump(get_called_class(42));\n");
 
@@ -2203,6 +2271,18 @@ fn emit_ir_rejects_self_method_calls_until_native_object_lowering_exists() {
 #[test]
 fn emit_ir_rejects_named_static_method_calls_until_native_object_lowering_exists() {
     let error = php_compiler::emit_ir_source("<?php\nBox::make();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering rejects"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_late_static_method_calls_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nstatic::make();\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
@@ -3800,14 +3880,6 @@ static::$value;
             2,
             7,
             "unsupported static:: property access: late static binding and static property storage are not implemented",
-        ),
-        (
-            r#"<?php
-static::make();
-"#,
-            2,
-            7,
-            "unsupported static:: method call: late static binding and static method dispatch are not implemented",
         ),
         (
             r#"<?php

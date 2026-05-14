@@ -504,6 +504,40 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "objects: add called class context"` if the full gate
   passes.
 
+## Loop Event 2026-05-15T00:35:00Z
+
+- Checkpoint before this task: `0fcaba4 objects: add called class context`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 671, narrow `static::method(...)` dispatch through
+  active called-class context.
+- Files changed so far: `GOAL.MD`, `README.md`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone671/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_receiver_member.*`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/ARCHITECTURE.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model late_static_method_calls_execute_visible_static_methods -- --test-threads=1`,
+  `cargo test -p phpc --test object_model late_static_method_calls_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_late_static_method_calls_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone671`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone671`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: `static::$prop`, `static::CONST`, static method
+  dispatch through object receivers, typed static property metadata/enforcement,
+  broader class constant semantics, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run full object-model focused tests and `git diff
+  --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: add late static method dispatch"` if the full
+  gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

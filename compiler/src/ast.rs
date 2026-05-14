@@ -410,6 +410,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    LateStaticMethodCall {
+        method: String,
+        args: Vec<Expr>,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -503,6 +508,7 @@ impl Expr {
             | Expr::ParentMethodCall { span, .. }
             | Expr::StaticMethodCall { span, .. }
             | Expr::SelfMethodCall { span, .. }
+            | Expr::LateStaticMethodCall { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::New { span, .. }

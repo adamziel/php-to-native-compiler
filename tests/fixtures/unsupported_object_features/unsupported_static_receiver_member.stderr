@@ -1,2 +1,2 @@
-parse error at 2:7: unsupported static:: method call: late static binding and static method dispatch are not implemented
+runtime error at 2:7: unsupported call static::make(): static method calls require method or static class context
 

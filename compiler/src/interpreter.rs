@@ -853,6 +853,9 @@ impl Interpreter {
             Expr::SelfMethodCall { method, args, span } => {
                 self.call_self_method(method, args, *span, scope)
             }
+            Expr::LateStaticMethodCall { method, args, span } => {
+                self.call_late_static_method(method, args, *span, scope)
+            }
             Expr::Call { name, args, span } => self.call_function(name, args, *span, scope),
             Expr::DynamicCall { callee, args, span } => {
                 self.call_dynamic_function(callee, args, *span, scope)
@@ -2911,6 +2914,74 @@ impl Interpreter {
                 Some(called_class_id),
             )
         }
+    }
+
+    fn call_late_static_method(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Some(called_class_id) = self.called_class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("static::{method_name}()"),
+                    "static method calls require method or static class context",
+                ),
+            ));
+        };
+
+        let called_class = self
+            .classes
+            .get(called_class_id)
+            .expect("called class context should resolve to class metadata");
+        let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+            self.resolve_instance_method(called_class_id, method_name)
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    called_class.name()
+                )),
+            ));
+        };
+
+        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+
+        if !is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "non-static method dispatch through static:: is not implemented",
+                ),
+            ));
+        }
+
+        let function = self
+            .methods
+            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
+            .cloned()
+            .expect("declared late static method metadata should have a stored function body");
+        let function = function.as_ref();
+        ensure_user_function_arity(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            Some(class_id),
+            Some(called_class_id),
+        )
     }
 
     fn resolve_instance_method(

@@ -725,10 +725,11 @@
   available through string-valued dynamic calls.
   Named static method expressions such as `ClassName::method(...)` execute for
   declared or inherited visible static methods under the current positional
-  argument/default-parameter subset, and `self::method(...)` /
-  `parent::method(...)` execute resolved visible static methods while an active
-  class context exists. `clone $object` expressions fail with a stable parse
-  diagnostic before object handle copying or `__clone` dispatch is implemented.
+  argument/default-parameter subset, and `self::method(...)`,
+  `parent::method(...)`, and `static::method(...)` execute resolved visible
+  static methods while an active class/called-class context exists. `clone
+  $object` expressions fail with a stable parse diagnostic before object
+  handle copying or `__clone` dispatch is implemented.
   `$object instanceof ClassName` expressions fail with a stable parse
   diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions return the source-spelled class string without
@@ -736,10 +737,10 @@
   class name and `parent::class` resolves to that class's immediate parent
   name while executing in class context. `static::class` resolves to the active
   called class for current instance and static method calls; outside method or
-  static class context it fails with a stable runtime diagnostic. `static::$prop`,
-  `static::method(...)`, and `static::CONST` fail with distinct stable parse
-  diagnostics before late-bound static property storage, static dispatch, or
-  late-bound class constants exist.
+  static class context it fails with a stable runtime diagnostic.
+  `static::$prop` and `static::CONST` fail with distinct stable parse
+  diagnostics before late-bound static property storage or late-bound class
+  constants exist.
   Class constant declarations accept the current constant-expression value
   subset, and `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve
   declared or inherited class constants case-sensitively through `phpc run`
@@ -2645,9 +2646,8 @@
   late-bound static properties, storage-removing
   static-property unset,
   and anonymous classes
-- static method dispatch through object receivers and late-bound
-  `static::method(...)`, late-bound `static::$prop`, `static::CONST`, and
-  broader `static::` through `::`
+- static method dispatch through object receivers, late-bound `static::$prop`,
+  `static::CONST`, and broader `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
