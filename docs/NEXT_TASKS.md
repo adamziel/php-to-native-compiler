@@ -6415,17 +6415,27 @@ handled.
 
 ## Milestone 703: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+- [x] Parser/runtime lane: implement or explicitly bound the next WordPress
   bootstrap nested class declaration blocker reported at
   `<bootstrap-shim>:7:5`, with tests, CLI coverage, docs, and named unsupported
   edges for conditional/nested declaration timing, redeclaration behavior,
   class table ordering, source mapping, exact PHP diagnostics, partial-output
   behavior, and native lowering.
 
+## Milestone 704: WordPress Bridge Continuation
+
+- [ ] Runtime/object lane: implement or explicitly bound the next WordPress
+  bootstrap class-metadata blocker, `undefined class Exception` at
+  `<bootstrap-shim>:7:5`, with tests, CLI coverage, docs, and named unsupported
+  edges for built-in exception class metadata, throwable inheritance,
+  constructor behavior, stack traces, try/catch execution, fatal diagnostics,
+  partial-output behavior, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 702 work, the latest committed checkpoint is
-  `a77f31a docs: record bool cast checkpoint`, covering Milestone 701.
+- Before the current Milestone 703 work, the latest committed checkpoint is
+  `2b59863 functions: allow self constants in method defaults`, covering
+  Milestone 702.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

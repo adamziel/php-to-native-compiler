@@ -282,6 +282,7 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Class, "expected 'class'")?
             .span;
+        let is_nested = self.nested_statement_depth > 0;
         let name = self.consume_identifier("expected class name")?;
 
         let parent = if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
@@ -307,6 +308,7 @@ impl Parser {
             name,
             parent,
             members,
+            is_nested,
             span,
         }))
     }
@@ -808,12 +810,6 @@ impl Parser {
             while !self.check_alternate_if_boundary()
                 && !self.check(|kind| matches!(kind, TokenKind::Eof))
             {
-                if self.check(|kind| matches!(kind, TokenKind::Class)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        "unsupported nested class declaration: only top-level class declarations are implemented",
-                    ));
-                }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -1125,12 +1121,6 @@ impl Parser {
                 && !self.check(|kind| matches!(kind, TokenKind::Eof))
                 && !self.check_switch_label()
             {
-                if self.check(|kind| matches!(kind, TokenKind::Class)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        "unsupported nested class declaration: only top-level class declarations are implemented",
-                    ));
-                }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -1986,12 +1976,6 @@ impl Parser {
         let result = (|| {
             let mut statements = Vec::new();
             while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
-                if self.check(|kind| matches!(kind, TokenKind::Class)) {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        "unsupported nested class declaration: only top-level class declarations are implemented",
-                    ));
-                }
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -2025,6 +2009,14 @@ impl Parser {
 
     fn parse_nested_statement(&mut self) -> CompileResult<Stmt> {
         self.nested_statement_depth += 1;
+        if self.check(|kind| matches!(kind, TokenKind::Class)) {
+            let error = self.error_at(
+                self.peek().span,
+                "unsupported unbraced nested class declaration: nested class declarations require a braced statement body in the current subset",
+            );
+            self.nested_statement_depth -= 1;
+            return Err(error);
+        }
         let result = self.parse_statement();
         self.nested_statement_depth -= 1;
         result

@@ -61,10 +61,10 @@ Implemented now:
   `new ClassName(...)` over declared classes, process-local object handles,
   public instance properties including inherited public slots, inherited
   non-public instance slots with declaring-class ownership, single-parent
-  metadata, inherited method lookup, public/same-class private/protected
-  same-class and child instance method dispatch, and public/inherited public
-  instance `__construct` plus explicit parent/self method dispatch with
-  scoped `$this`
+  metadata, execution-time registration for reached nested class declarations,
+  inherited method lookup, public/same-class private/protected same-class and
+  child instance method dispatch, and public/inherited public instance
+  `__construct` plus explicit parent/self method dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -81,8 +81,8 @@ Planned runtime values and semantics:
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods, typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader
-  inheritance and constructor semantics, and exact PHP object lifecycle
-  behavior
+  inheritance and constructor semantics, exact nested declaration timing, and
+  exact PHP object lifecycle behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for

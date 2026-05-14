@@ -3951,16 +3951,6 @@ $box = new class {};
         ),
         (
             r#"<?php
-if (true) {
-    class Nested {}
-}
-"#,
-            3,
-            5,
-            "unsupported nested class declaration: only top-level class declarations are implemented",
-        ),
-        (
-            r#"<?php
 trait Logs {
     public function write($message) {}
 }

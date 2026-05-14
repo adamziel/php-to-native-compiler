@@ -245,7 +245,7 @@ impl Interpreter {
                     }
                     functions.insert(key, Rc::new(function.clone()));
                 }
-                Stmt::Class(class) => {
+                Stmt::Class(class) if !class.is_nested => {
                     register_class_name(&mut classes, class)?;
                 }
                 _ => {}
@@ -254,26 +254,17 @@ impl Interpreter {
 
         for stmt in &program.statements {
             if let Stmt::Class(class) = stmt {
-                let class_id = register_class_members(&mut classes, class)?;
-                for member in &class.members {
-                    match member {
-                        ClassMember::Constant(constant) => {
-                            class_constants
-                                .insert((class_id, constant.name.clone()), constant.clone());
-                        }
-                        ClassMember::Property(property) if property.is_static => {
-                            static_properties
-                                .insert((class_id, property.name.clone()), Value::Null);
-                        }
-                        ClassMember::Method(method) => {
-                            methods.insert(
-                                (class_id, method.function.name.to_ascii_lowercase()),
-                                Rc::new(method.function.clone()),
-                            );
-                        }
-                        ClassMember::Property(_) => {}
-                    }
+                if class.is_nested {
+                    continue;
                 }
+                let class_id = register_class_members(&mut classes, class)?;
+                register_class_member_runtime_tables(
+                    &mut class_constants,
+                    &mut static_properties,
+                    &mut methods,
+                    class_id,
+                    class,
+                );
             }
         }
 
@@ -304,6 +295,9 @@ impl Interpreter {
             let Stmt::Class(class) = stmt else {
                 continue;
             };
+            if class.is_nested {
+                continue;
+            }
             let class_id = self
                 .classes
                 .lookup_class_id(&class.name)
@@ -343,7 +337,7 @@ impl Interpreter {
                     }
                     self.functions.insert(key, Rc::new(function.clone()));
                 }
-                Stmt::Class(class) => {
+                Stmt::Class(class) if !class.is_nested => {
                     register_class_name(&mut self.classes, class)?;
                 }
                 _ => {}
@@ -354,29 +348,72 @@ impl Interpreter {
             let Stmt::Class(class) = stmt else {
                 continue;
             };
-            let class_id = register_class_members(&mut self.classes, class)?;
-            for member in &class.members {
-                match member {
-                    ClassMember::Constant(constant) => {
-                        self.class_constants
-                            .insert((class_id, constant.name.clone()), constant.clone());
-                    }
-                    ClassMember::Property(property) if property.is_static => {
-                        self.static_properties
-                            .insert((class_id, property.name.clone()), Value::Null);
-                    }
-                    ClassMember::Method(method) => {
-                        self.methods.insert(
-                            (class_id, method.function.name.to_ascii_lowercase()),
-                            Rc::new(method.function.clone()),
-                        );
-                    }
-                    ClassMember::Property(_) => {}
-                }
+            if class.is_nested {
+                continue;
             }
+            let class_id = register_class_members(&mut self.classes, class)?;
+            register_class_member_runtime_tables(
+                &mut self.class_constants,
+                &mut self.static_properties,
+                &mut self.methods,
+                class_id,
+                class,
+            );
         }
 
         self.initialize_static_property_defaults(program)
+    }
+
+    fn register_nested_class_declaration(&mut self, class: &ClassDecl) -> CompileResult<()> {
+        let class_id = register_class_name(&mut self.classes, class)?;
+        if let Err(error) = register_class_members(&mut self.classes, class) {
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
+        }
+        register_class_member_runtime_tables(
+            &mut self.class_constants,
+            &mut self.static_properties,
+            &mut self.methods,
+            class_id,
+            class,
+        );
+        if let Err(error) = self.initialize_static_property_defaults_for_class(class_id, class) {
+            remove_class_member_runtime_tables(
+                &mut self.class_constants,
+                &mut self.static_properties,
+                &mut self.methods,
+                class_id,
+            );
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
+        }
+
+        Ok(())
+    }
+
+    fn initialize_static_property_defaults_for_class(
+        &mut self,
+        class_id: ClassId,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        for member in &class.members {
+            let ClassMember::Property(property) = member else {
+                continue;
+            };
+            if !property.is_static {
+                continue;
+            }
+            let Some(default) = &property.default else {
+                continue;
+            };
+
+            let mut default_scope = SymbolTable::new();
+            let value = self.evaluate(default, &mut default_scope)?;
+            self.static_properties
+                .insert((class_id, property.name.clone()), value);
+        }
+
+        Ok(())
     }
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
@@ -638,7 +675,12 @@ impl Interpreter {
                 self.execute_file_include(path, *once, false, *span, scope)
             }
             Stmt::Function(_) => Ok(Flow::Normal),
-            Stmt::Class(_) => Ok(Flow::Normal),
+            Stmt::Class(class) => {
+                if class.is_nested {
+                    self.register_nested_class_declaration(class)?;
+                }
+                Ok(Flow::Normal)
+            }
             Stmt::Return { value, .. } => {
                 let value = match value {
                     Some(expr) => self.evaluate(expr, scope)?,
@@ -6795,6 +6837,43 @@ fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> Compil
     classes
         .declare_class(&class.name)
         .map_err(|error| runtime_error(class.span, error))
+}
+
+fn register_class_member_runtime_tables(
+    class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
+    static_properties: &mut HashMap<(ClassId, String), Value>,
+    methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) {
+    for member in &class.members {
+        match member {
+            ClassMember::Constant(constant) => {
+                class_constants.insert((class_id, constant.name.clone()), constant.clone());
+            }
+            ClassMember::Property(property) if property.is_static => {
+                static_properties.insert((class_id, property.name.clone()), Value::Null);
+            }
+            ClassMember::Method(method) => {
+                methods.insert(
+                    (class_id, method.function.name.to_ascii_lowercase()),
+                    Rc::new(method.function.clone()),
+                );
+            }
+            ClassMember::Property(_) => {}
+        }
+    }
+}
+
+fn remove_class_member_runtime_tables(
+    class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
+    static_properties: &mut HashMap<(ClassId, String), Value>,
+    methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    class_id: ClassId,
+) {
+    class_constants.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+    static_properties.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+    methods.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
 }
 
 fn register_class_members(

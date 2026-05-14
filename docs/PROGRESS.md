@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 703, bounded nested class declaration execution through
+  `phpc run`. The parser now accepts braced nested `class` declarations in
+  statement bodies while preserving an explicit unbraced nested-class parse
+  boundary. Top-level classes remain pre-registered, but nested classes are
+  registered only when execution reaches the `class` statement, so skipped
+  branches do not populate the class table and repeated reached declarations
+  report the existing duplicate-class runtime diagnostic. Nested registration
+  also rolls back the just-declared class name and member runtime tables if
+  member registration or static-property default evaluation fails. Exact PHP
+  declaration timing, fatal wording, class-table ordering across all
+  interleavings, included-file source mapping, partial-output behavior,
+  anonymous classes, interfaces/traits/enums, abstract/final/readonly
+  modifiers, and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p php_runtime class_table_can_remove_last_declared_class_for_registration_rollback`,
+  `cargo test -p phpc --test nested_class_declarations -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone703`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone703`,
+  `cargo build -p phpc`, and
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed. The WordPress bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:7:5: undefined class Exception`.
 - Added Milestone 702, bounded `self::CONST` default parameter values for class
   methods through `phpc run`. The default-expression whitelist now accepts
   `Expr::SelfClassConstant`; omitted method arguments are already evaluated

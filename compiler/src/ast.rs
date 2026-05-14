@@ -315,6 +315,7 @@ pub struct ClassDecl {
     pub name: String,
     pub parent: Option<String>,
     pub members: Vec<ClassMember>,
+    pub is_nested: bool,
     pub span: Span,
 }
 

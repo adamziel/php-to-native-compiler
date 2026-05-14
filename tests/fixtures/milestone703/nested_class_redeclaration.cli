@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone703/nested_class_redeclaration.php:3:5: class FunctionRepeated is already defined
+--- stderr end ---

@@ -1715,6 +1715,17 @@ impl PhpClassTable {
         &self.classes
     }
 
+    pub fn remove_last_declared_class(&mut self, id: ClassId) {
+        if id.index() + 1 != self.classes.len() {
+            return;
+        }
+
+        if let Some(class) = self.classes.pop() {
+            self.lookup
+                .remove(&normalize_class_lookup_name(class.name()));
+        }
+    }
+
     pub fn set_parent(&mut self, child_id: ClassId, parent_id: ClassId) -> RuntimeResult<()> {
         if child_id == parent_id || self.is_subclass_of(parent_id, child_id) {
             let child_name = self
@@ -6623,6 +6634,21 @@ mod tests {
             }
         );
         assert_eq!(error.message(), "class widget is already defined");
+    }
+
+    #[test]
+    fn class_table_can_remove_last_declared_class_for_registration_rollback() {
+        let mut classes = PhpClassTable::new();
+
+        let first = classes.declare_class("First").unwrap();
+        let second = classes.declare_class("Second").unwrap();
+
+        classes.remove_last_declared_class(second);
+        assert!(classes.lookup_class("Second").is_none());
+        assert_eq!(classes.lookup_class("First").unwrap().id(), first);
+
+        let second = classes.declare_class("Second").unwrap();
+        assert_eq!(second.index(), 1);
     }
 
     #[test]

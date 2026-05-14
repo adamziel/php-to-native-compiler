@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T09:20:00Z
+
+- Checkpoint before this task: `2b59863 functions: allow self constants in
+  method defaults`, pushed to `origin/master`.
+- Task attempted: Milestone 703, bounded nested class declarations.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/nested_class_declarations.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone703/*`, `README.md`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p php_runtime class_table_can_remove_last_declared_class_for_registration_rollback`,
+  `cargo test -p phpc --test nested_class_declarations -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone703`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone703`,
+  `cargo build -p phpc`, and
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: exact PHP nested declaration timing, fatal wording,
+  class-table ordering across all interleavings, included-file source mapping,
+  partial-output behavior, anonymous classes, interfaces, traits, enums,
+  abstract/final/readonly modifiers, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded nested class declarations"` if the
+  full gate passes. The next WordPress bootstrap blocker is
+  `runtime error at <bootstrap-shim>:7:5: undefined class Exception`.
+
 ## Loop Event 2026-05-14T18:35:00Z
 
 - Checkpoint before this task: `379cfc6 objects: support same-class non-public

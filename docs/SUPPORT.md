@@ -169,13 +169,18 @@
   assignments can shadow global names without mutating them
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements; function-scope `global` imports remain unsupported
-- top-level class declarations registered into the runtime metadata table:
+- class declarations registered into the runtime metadata table:
   `class Name { ... }` and `class Child extends Parent { ... }` with
   single-parent metadata, property names, class constant names, method names,
   visibility, and static flags for the documented subset, including compatible
   public/protected inherited property redeclarations sharing one runtime slot
   and untyped static properties initialized from the current
-  constant-expression default subset or `null`
+  constant-expression default subset or `null`. Top-level classes are
+  pre-registered before execution. Braced nested declarations in control-flow
+  bodies, function/method bodies, switch cases, and included files register
+  only when execution reaches the `class` statement; skipped branches do not
+  define the class, and repeated reached declarations report a stable duplicate
+  class runtime diagnostic.
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
   Declared or inherited public instance `__construct` methods execute with
@@ -555,9 +560,9 @@
   increment/decrement expressions
 - explicit parse diagnostics for unsupported chained coalescing and
   non-variable null coalescing assignment forms
-- explicit parse diagnostics for unsupported object/class syntax: nested class
-  declarations, broader inheritance forms beyond declared single-parent
-  `extends`, interface declarations and implementation, trait declarations,
+- explicit parse diagnostics for unsupported object/class syntax: unbraced
+  nested class declarations, broader inheritance forms beyond declared
+  single-parent `extends`, interface declarations and implementation, trait declarations,
   trait use inside classes, enum declarations,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
@@ -661,7 +666,11 @@
   case-insensitive method lookup, visibility flags,
   static/instance flags, object-shape derivation for instance properties,
   initialized object values, and structured duplicate class/member diagnostics.
-  `phpc run` registers top-level class declarations into this metadata table.
+  `phpc run` pre-registers top-level class declarations into this metadata
+  table. Nested class declarations are marked in the AST and register only when
+  execution reaches the statement, so false branches do not populate the class
+  table and guarded declarations such as `if (!class_exists("Name")) { class
+  Name {} }` can safely avoid repeated redeclaration in the current subset.
   The accepted member subset records properties without defaults and methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
@@ -2604,9 +2613,12 @@
   Because `isset` and `empty` are modeled as special static forms, they are not
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
-- Object/class gaps: nested and conditional class declarations, constructor
-  behavior beyond public/inherited public instance `__construct` and explicit
-  parent calls,
+- Object/class gaps: exact PHP nested and conditional declaration timing,
+  redeclaration fatal text, class table ordering across all interleavings,
+  source mapping for nested declarations loaded from included files,
+  partial-output behavior on fatal declaration errors, unbraced nested class
+  declarations, and constructor behavior beyond public/inherited public
+  instance `__construct` and explicit parent calls,
   typed/default property compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,

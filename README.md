@@ -118,6 +118,8 @@ incorrect native code.
   same-class/child property reads/writes, `isset`/`empty`, read-modify-write,
   and null-coalescing forms, compatible public/protected inherited property
   redeclarations sharing one runtime slot,
+  braced nested class declarations that register only when execution reaches
+  the `class` statement,
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
@@ -151,6 +153,7 @@ constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
 static-property slices,
+exact PHP nested class declaration timing and fatal behavior,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and

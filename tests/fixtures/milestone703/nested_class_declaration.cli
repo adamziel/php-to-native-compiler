@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+
+1
+nested:42
+
+1
+function
+--- stdout end ---
+stderr:
+--- stderr end ---
