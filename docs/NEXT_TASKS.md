@@ -5682,10 +5682,22 @@ handled.
 
 ## Milestone 636: Native Runtime Helper Lowering
 
-- [ ] IR/lowering/compiler-output lane: add the first generated LLVM declaration
+- [x] IR/lowering/compiler-output lane: add the first generated LLVM declaration
   or deterministic IR snapshot that references an exported native runtime helper
   without linking/executing yet, or document the exact blocker if current crate
-  artifact layout prevents a truthful helper-call snapshot.
+  artifact layout prevents a truthful helper-call snapshot. Added a deterministic
+  scalar echo helper IR probe snapshot and compiler test that names
+  `phpc_native_scalar_echo_len` and `phpc_native_scalar_echo_write`, while
+  documenting that normal `--emit-ir` still does not emit linked runtime helper
+  calls.
+
+## Milestone 637: Native Runtime Helper Lowering Follow-up
+
+- [ ] IR/lowering/compiler-output lane: choose the next honest native runtime
+  integration slice: target-data-layout-aware helper signatures, boxed scalar
+  construction in generated LLVM, a linker command prototype that still rejects
+  executable mode clearly, or a documented blocker if the current LLVM text
+  backend cannot model C ABI helper calls safely.
 
 ## Latest Checkpoint
 

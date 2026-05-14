@@ -60,6 +60,20 @@ introducing heap-owned strings, arrays, objects, error handles, symbol tables,
 or linked executable commands. The scalar echo helper is the first runtime
 conversion helper; generated LLVM does not call it yet.
 
+## LLVM Helper Probe
+
+Milestone 636 adds a deterministic IR snapshot at
+`tests/fixtures/milestone636/native_runtime_scalar_echo_probe.ir`. The snapshot
+declares the exported scalar echo helper symbols and includes one probe call to
+`phpc_native_scalar_echo_len` so the compiler crate has a stable native-runtime
+dependency artifact.
+
+This is not production lowering. Normal `phpc compile --emit-ir` output remains
+unchanged and still does not link or execute runtime helper calls. The snapshot
+uses the current 64-bit test target's `usize`/pointer-width shape; a real linked
+native backend still needs explicit target data layout handling before helper
+calls can be emitted truthfully for all supported targets.
+
 ## Verification
 
 The ABI slice is covered by runtime unit tests:
@@ -67,6 +81,7 @@ The ABI slice is covered by runtime unit tests:
 ```sh
 cargo test -p php_runtime native_scalar_abi -- --test-threads=1
 cargo test -p php_runtime native_scalar_echo_helper -- --test-threads=1
+cargo test -p phpc --test native_runtime_abi -- --test-threads=1
 ```
 
 The tests pin:
@@ -75,6 +90,8 @@ The tests pin:
 - conversion from exported constructor return values into runtime `Value`;
 - bool payload normalization for nonzero C-side payloads.
 - scalar echo byte sizing, partial buffer writes, and null-buffer sizing.
+- the deterministic compiler-side IR probe that names the exported scalar echo
+  helper declarations without claiming linked native execution.
 
 ## Explicit Non-Support
 
@@ -82,7 +99,7 @@ This ABI does not yet provide:
 
 - string ownership or string interning;
 - arrays, objects, resources, references, or copy-on-write containers;
-- runtime helper calls from generated LLVM IR;
+- runtime helper calls from normal generated LLVM IR;
 - symbol tables, stack frames, call lookup, or diagnostics;
 - a link command or native executable `phpc` mode;
 - PHP request state, WordPress host state, or extension integration.

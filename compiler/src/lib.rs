@@ -11,6 +11,8 @@ use error::CompileResult;
 use interpreter::Execution;
 use php_runtime::PhpClassTable;
 
+pub use codegen::native_runtime_scalar_echo_probe_ir;
+
 pub fn parse(source: &str) -> CompileResult<Program> {
     parser::parse_source(source)
 }

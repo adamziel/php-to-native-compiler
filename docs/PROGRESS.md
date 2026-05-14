@@ -1,5 +1,27 @@
 # Progress Log
 
+## 2026-05-14
+
+Implemented:
+
+- Added Milestone 636, a deterministic compiler-side LLVM IR probe for the
+  native scalar echo runtime helpers. The probe snapshot declares
+  `phpc_native_scalar_echo_len` and `phpc_native_scalar_echo_write`, includes one
+  non-production call to the scalar echo length helper, and is tested against a
+  committed fixture.
+- Documented that this is a runtime-helper dependency artifact, not production
+  lowering: normal `phpc compile --emit-ir` still does not emit linked runtime
+  helper calls, and target-data-layout-aware ABI handling remains required
+  before generated code can truthfully call these helpers across targets.
+
+Next:
+
+- Milestone 637 should pick the next native runtime integration slice:
+  target-data-layout-aware helper signatures, boxed scalar construction in
+  generated LLVM, a linker command prototype that rejects executable mode
+  clearly, or a documented blocker if the current LLVM text backend cannot model
+  C ABI helper calls safely.
+
 ## 2026-05-12
 
 Implemented:
