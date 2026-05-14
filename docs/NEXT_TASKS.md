@@ -6103,11 +6103,22 @@ handled.
 
 ## Milestone 670: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next object storage/static slice:
-  late-bound `static::method(...)` diagnostics/execution prerequisites, typed
-  static property metadata, broader class constant semantics, or a documented
-  blocker. Keep trait composition, magic methods, references/copy-on-write,
+- [x] Runtime/object lane: add called-class context prerequisites for late
+  static binding. `get_called_class()` and `static::class` now read a tracked
+  called-class context in current instance and static method calls, including
+  forwarding through `self::` and `parent::`; outside method/static class
+  context they keep stable runtime diagnostics. Kept late-bound
+  `static::method(...)`, `static::$prop`, `static::CONST`, typed static
+  property metadata, trait composition, magic methods, references/copy-on-write,
   exact native error objects, and native lowering explicit.
+
+## Milestone 671: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next late-static-binding slice:
+  `static::method(...)` diagnostics/execution prerequisites, typed static
+  property metadata, broader class constant semantics, or a documented blocker.
+  Keep trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

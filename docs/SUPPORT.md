@@ -430,8 +430,8 @@
   non-object `get_object_vars` operands, non-object
   `get_mangled_object_vars` operands,
   unsupported `get_parent_class` object/class arguments,
-  unsupported `get_called_class()` calls before method/static class context
-  exists,
+  unsupported `get_called_class()` calls outside method or static class
+  context,
   object-to-string conversion,
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
@@ -734,12 +734,12 @@
   `ClassName::class` expressions return the source-spelled class string without
   requiring class metadata. `self::class` resolves to the active declaring
   class name and `parent::class` resolves to that class's immediate parent
-  name while executing in instance method/constructor context; outside those
-  contexts they fail with stable runtime diagnostics. `static::$prop`,
-  `static::method(...)`, `static::CONST`, and `static::class` fail with
-  distinct stable parse diagnostics before late-static-binding resolution,
-  late-bound static property storage, static dispatch, or late-bound class
-  constants exist.
+  name while executing in class context. `static::class` resolves to the active
+  called class for current instance and static method calls; outside method or
+  static class context it fails with a stable runtime diagnostic. `static::$prop`,
+  `static::method(...)`, and `static::CONST` fail with distinct stable parse
+  diagnostics before late-bound static property storage, static dispatch, or
+  late-bound class constants exist.
   Class constant declarations accept the current constant-expression value
   subset, and `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve
   declared or inherited class constants case-sensitively through `phpc run`
@@ -1120,8 +1120,8 @@
   `get_class_vars` string classes, non-object `get_object_vars` arguments,
   non-object `get_mangled_object_vars` arguments,
   extra `get_declared_interfaces` or `get_declared_traits` arguments,
-  unsupported `get_called_class()` calls before method/static class context
-  exists, non-object `spl_object_id` operands, non-object `spl_object_hash`
+  unsupported `get_called_class()` calls outside method or static class
+  context, non-object `spl_object_id` operands, non-object `spl_object_hash`
   operands,
   object-to-string conversion, invalid `break`/`continue` outside a loop,
   unsupported `continue;` inside `switch`, and runaway user-function recursion.
@@ -1971,9 +1971,10 @@
   interface declarations and internal interface metadata are not represented.
   `get_declared_traits()` returns an empty zero-indexed array because trait
   declarations and internal trait metadata are not represented.
-  `get_called_class()` is recognized as a zero-argument callable boundary, but
-  direct and string-valued dynamic calls fail with a stable unsupported-call
-  diagnostic until method/static class context exists.
+  `get_called_class()` is recognized as a zero-argument callable and returns
+  the current called class while executing in current instance and static
+  method contexts, including string-valued dynamic calls. Outside method or
+  static class context it fails with a stable unsupported-call diagnostic.
   `spl_object_id($object)` accepts current object values and returns the
   process-local object handle id; non-object arguments fail with a stable
   type-boundary diagnostic.
@@ -2644,9 +2645,9 @@
   late-bound static properties, storage-removing
   static-property unset,
   and anonymous classes
-- static method dispatch through `self::`, `parent::`, object receivers, and
-  late-bound `static::method(...)`, late-bound `static::class`,
-  `static::$prop`, `static::CONST`, and broader `static::` through `::`
+- static method dispatch through object receivers and late-bound
+  `static::method(...)`, late-bound `static::$prop`, `static::CONST`, and
+  broader `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope
@@ -3280,9 +3281,9 @@
 - `get_parent_class` inheritance lookup beyond immediate declared parents,
   interfaces, aliases/imports, namespace-aware names, autoloading, default `$this` behavior, exact native
   `TypeError` behavior, and native lowering
-- `get_called_class` method/static class context, late static binding,
-  inheritance, aliases/imports, namespace-aware names, exact native `Error`
-  behavior, and native lowering
+- `get_called_class` native lowering for called-class context,
+  aliases/imports, namespace-aware names, exact native `Error` behavior, and
+  broader late static binding
 - `spl_object_id` handle reuse after destruction, clone semantics, destructors,
   references/copy-on-write behavior, exact native `TypeError` behavior, and
   native lowering

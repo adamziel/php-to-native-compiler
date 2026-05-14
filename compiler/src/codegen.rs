@@ -394,6 +394,7 @@ impl LlvmGenerator {
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
+            | Expr::StaticClassNameConstant { span }
             | Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
             | Expr::ParentClassConstant { span, .. }
@@ -3094,6 +3095,7 @@ impl CGenerator {
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
+            | Expr::StaticClassNameConstant { span }
             | Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
             | Expr::ParentClassConstant { span, .. }

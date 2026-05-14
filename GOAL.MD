@@ -414,7 +414,7 @@ Scope:
   visibility;
 - visibility enforcement for public/protected/private access;
 - static methods, broader static member semantics, broader class constant
-  semantics, late-bound `static::class`, and broader class-name resolution;
+  semantics, broader late static binding, and broader class-name resolution;
 - full object identity behavior including clone/destruction/reuse boundaries,
   exact `spl_object_hash` formatting, and native object handles;
 - inheritance after the single-class model is stable.

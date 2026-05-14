@@ -469,6 +469,41 @@ injects this file into every prompt. Each Codex pass should update it with:
   checkpoint with `tools/checkpoint.sh "objects: add static property defaults"`
   if the full gate passes.
 
+## Loop Event 2026-05-15T00:05:00Z
+
+- Checkpoint before this task: `31ac826 objects: add static property
+  defaults`, pushed to `origin/master`.
+- Task attempted: Milestone 670, called-class context groundwork for late
+  static binding through `get_called_class()` and `static::class`.
+- Files changed so far: `GOAL.MD`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone115/get_called_class_boundary.*`,
+  `tests/fixtures/milestone670/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_name_constant.*`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/ARCHITECTURE.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model called_class_context_supports_get_called_class_and_static_class -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_called_class_requires_method_or_static_class_context -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_class_name_constants_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone670`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone670`,
+  `cargo run -p phpc -- test tests/fixtures/milestone115`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone115`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  and `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: late-bound `static::method(...)`, `static::$prop`,
+  and `static::CONST`, object-receiver static method dispatch, typed static
+  property metadata/enforcement, broader class constant semantics, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit.
+- Next concrete task: run full object-model focused tests and `git diff
+  --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: add called class context"` if the full gate
+  passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

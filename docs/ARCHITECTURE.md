@@ -1005,9 +1005,10 @@ recorded, otherwise false.
 `get_declared_interfaces()` returns an empty list because interface metadata is
 not represented yet; `get_declared_traits()` returns an empty list because
 trait metadata is not represented yet.
-`get_called_class()` is reserved as a zero-argument runtime boundary and fails
-with a stable unsupported-call diagnostic until method/static class context and
-late static binding exist.
+`get_called_class()` is a zero-argument runtime builtin that reads the
+interpreter's called-class context in current instance and static method calls;
+outside method or static class context it fails with a stable unsupported-call
+diagnostic.
 `spl_object_id($object)` accepts current object values and returns a
 process-local handle id; non-object inputs fail with the current stable
 type-boundary diagnostic.
@@ -1040,9 +1041,10 @@ Named static method syntax through `ClassName::method(...)`,
 `self::method(...)`, and `parent::method(...)` executes declared or inherited
 visible static methods in the interpreter without binding `$this`;
 late-bound `static::method(...)` remains unsupported.
-`ClassName::class` returns the source-spelled class string,
-while `self::class` and `parent::class` resolve from the active class context
-in current instance method execution. Direct `ClassName::CONST`, `self::CONST`,
+`ClassName::class` returns the source-spelled class string, `self::class` and
+`parent::class` resolve from the active declaring class context, and
+`static::class` resolves from the active called-class context in current
+instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
 and `parent::CONST` resolve declared or inherited class constants through
 runtime class metadata in the interpreter; typed constants, multiple constants
 in one declaration, `static::CONST`, and dynamic class-constant string lookup
@@ -1054,9 +1056,8 @@ pre/post increment/decrement, `isset`, `empty`, `??`, `??=`, and stable runtime
 diagnostics for PHP-forbidden static-property `unset(...)`; typed static
 properties, dynamic names, storage-removing static-property unset, and
 `static::$prop` remain unsupported.
-`static::method(...)`,
-`static::CONST`, and `static::class` stop at distinct parse diagnostics until
-late static binding is modeled. Native lowering
+`static::method(...)` and `static::CONST` stop at distinct parse diagnostics
+until those late-bound member forms are modeled. Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, parent/self method calls, object instantiation,
 object property reads/writes, instance method calls, and

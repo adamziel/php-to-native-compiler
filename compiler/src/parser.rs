@@ -2616,11 +2616,12 @@ impl Parser {
                     operator_span,
                     "unsupported static:: property access: late static binding and static property storage are not implemented",
                 )),
-                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Err(self
-                    .error_at(
-                        operator_span,
-                        "unsupported static class name constant: static::class resolution is not implemented",
-                    )),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
+                    self.advance();
+                    Ok(Expr::StaticClassNameConstant {
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                     Err(self.error_at(
                         operator_span,
@@ -2631,10 +2632,12 @@ impl Parser {
                     operator_span,
                     "unsupported static:: class constant access: late static binding and class constants are not implemented",
                 )),
-                TokenKind::Class => Err(self.error_at(
-                    operator_span,
-                    "unsupported static class name constant: static::class resolution is not implemented",
-                )),
+                TokenKind::Class => {
+                    self.advance();
+                    Ok(Expr::StaticClassNameConstant {
+                        span: operator_span,
+                    })
+                }
                 _ => Err(self.error_at(
                     operator_span,
                     format!(
@@ -2889,6 +2892,7 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. }
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
@@ -2953,6 +2957,7 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. }
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
@@ -3055,6 +3060,7 @@ impl Parser {
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. }
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
@@ -3151,6 +3157,7 @@ impl Parser {
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. }
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
@@ -3223,6 +3230,7 @@ impl Parser {
             | Expr::ClassNameConstant { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. }
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }

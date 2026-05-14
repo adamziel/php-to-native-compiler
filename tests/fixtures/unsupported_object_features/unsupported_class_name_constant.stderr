@@ -1,2 +1,2 @@
-parse error at 2:12: unsupported static class name constant: static::class resolution is not implemented
+runtime error at 2:12: unsupported call static::class: static::class requires method or static class context
 

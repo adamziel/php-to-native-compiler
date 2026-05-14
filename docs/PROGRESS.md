@@ -478,6 +478,27 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 670, called-class context groundwork for late static
+  binding. The interpreter now tracks called-class context separately from the
+  declaring class context, sets it for object method calls, constructor calls,
+  named static calls, and forwarding `self::`/`parent::` calls, and exposes it
+  through `get_called_class()` and `static::class` in current instance/static
+  method contexts. Top-level `get_called_class()` and `static::class` keep
+  stable runtime diagnostics, while `static::method(...)`, `static::$prop`,
+  `static::CONST`, typed static property metadata, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit. Focused verification: `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model called_class_context_supports_get_called_class_and_static_class -- --test-threads=1`,
+  `cargo test -p phpc --test object_model get_called_class_requires_method_or_static_class_context -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_class_name_constants_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone670`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone670`,
+  `cargo run -p phpc -- test tests/fixtures/milestone115`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone115`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 

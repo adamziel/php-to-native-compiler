@@ -1564,14 +1564,14 @@ fn get_declared_traits_requires_no_arguments() {
 }
 
 #[test]
-fn get_called_class_has_stable_boundary_until_class_context_exists() {
+fn get_called_class_requires_method_or_static_class_context() {
     let error = runtime_error("<?php\nvar_dump(get_called_class());\n");
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 10);
     assert_eq!(
         error.message,
-        "unsupported call get_called_class(): method and static class context are not implemented in the current subset"
+        "unsupported call get_called_class(): method or static class context is required"
     );
 
     let dynamic_error = runtime_error("<?php\n$call = \"get_called_class\";\nvar_dump($call());\n");
@@ -1580,7 +1580,54 @@ fn get_called_class_has_stable_boundary_until_class_context_exists() {
     assert_eq!(dynamic_error.column, 10);
     assert_eq!(
         dynamic_error.message,
-        "unsupported call get_called_class(): method and static class context are not implemented in the current subset"
+        "unsupported call get_called_class(): method or static class context is required"
+    );
+}
+
+#[test]
+fn called_class_context_supports_get_called_class_and_static_class() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public function instanceName() {
+        return get_called_class() . ":" . static::class;
+    }
+
+    public static function named() {
+        return get_called_class() . ":" . static::class;
+    }
+
+    public static function forwardSelf() {
+        return self::named();
+    }
+}
+
+class Child extends Base {
+    public static function forwardParent() {
+        return parent::named();
+    }
+}
+
+$child = new Child();
+echo $child->instanceName(), "\n";
+echo Base::named(), "\n";
+echo Child::named(), "\n";
+echo Child::forwardSelf(), "\n";
+echo Child::forwardParent();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Child:Child\nBase:Base\nChild:Child\nChild:Child\nChild:Child"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let static_class_error = runtime_error("<?php\nstatic::class;\n");
+    assert_eq!(
+        static_class_error.message,
+        "unsupported call static::class: static::class requires method or static class context"
     );
 }
 
@@ -2237,6 +2284,7 @@ fn emit_ir_rejects_class_name_constants_until_native_object_lowering_exists() {
         "<?php\necho Box::class;\n",
         "<?php\nself::class;\n",
         "<?php\nparent::class;\n",
+        "<?php\nstatic::class;\n",
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
@@ -3744,14 +3792,6 @@ echo $box INSTANCEOF Box;
             4,
             11,
             "unsupported instanceof expression: class/interface relationship checks are not implemented",
-        ),
-        (
-            r#"<?php
-static::class;
-"#,
-            2,
-            7,
-            "unsupported static class name constant: static::class resolution is not implemented",
         ),
         (
             r#"<?php

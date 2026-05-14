@@ -55,6 +55,7 @@ struct Interpreter {
     next_object_id: i64,
     function_context: Vec<String>,
     class_context: Vec<ClassId>,
+    called_class_context: Vec<ClassId>,
     stdout: String,
 }
 
@@ -265,6 +266,7 @@ impl Interpreter {
             next_object_id: 1,
             function_context: Vec::new(),
             class_context: Vec::new(),
+            called_class_context: Vec::new(),
             stdout: String::new(),
         };
         interpreter.initialize_static_property_defaults(program)?;
@@ -793,6 +795,9 @@ impl Interpreter {
             Expr::ParentClassNameConstant { span } => {
                 self.evaluate_parent_class_name_constant(*span)
             }
+            Expr::StaticClassNameConstant { span } => {
+                self.evaluate_static_class_name_constant(*span)
+            }
             Expr::ClassConstant {
                 class_name,
                 constant,
@@ -1037,6 +1042,7 @@ impl Interpreter {
             object.clone(),
             values,
             Some(constructor_class_id),
+            Some(object.class_id()),
         )?;
         Ok(Value::Object(object))
     }
@@ -2033,7 +2039,14 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_this(function, object, values, Some(class_id))
+        let called_class_id = object.class_id();
+        self.call_user_function_with_this(
+            function,
+            object,
+            values,
+            Some(class_id),
+            Some(called_class_id),
+        )
     }
 
     fn call_parent_method(
@@ -2099,8 +2112,20 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
+        let called_class_id = self
+            .called_class_context
+            .last()
+            .copied()
+            .unwrap_or(current_class_id);
+
         if is_static {
-            self.call_user_function_with_checked_values(function, values, None, Some(class_id))
+            self.call_user_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(class_id),
+                Some(called_class_id),
+            )
         } else {
             let this_object = match caller_scope.read_named("this") {
                 Some(Value::Object(object)) => object.clone(),
@@ -2114,7 +2139,13 @@ impl Interpreter {
                     ));
                 }
             };
-            self.call_user_function_with_this(function, this_object, values, Some(class_id))
+            self.call_user_function_with_this(
+                function,
+                this_object,
+                values,
+                Some(class_id),
+                Some(called_class_id),
+            )
         }
     }
 
@@ -2182,6 +2213,7 @@ impl Interpreter {
                 values,
                 None,
                 Some(declaring_class_id),
+                Some(class_id),
             );
         }
 
@@ -2250,6 +2282,24 @@ impl Interpreter {
             .get(parent_class_id)
             .expect("parent class id should resolve to class metadata");
         Ok(Value::String(parent_class.name().to_string()))
+    }
+
+    fn evaluate_static_class_name_constant(&self, span: Span) -> CompileResult<Value> {
+        let Some(called_class_id) = self.called_class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "static::class",
+                    "static::class requires method or static class context",
+                ),
+            ));
+        };
+
+        let called_class = self
+            .classes
+            .get(called_class_id)
+            .expect("called class context should resolve to class metadata");
+        Ok(Value::String(called_class.name().to_string()))
     }
 
     fn evaluate_named_static_property(
@@ -2826,8 +2876,20 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
+        let called_class_id = self
+            .called_class_context
+            .last()
+            .copied()
+            .unwrap_or(current_class_id);
+
         if is_static {
-            self.call_user_function_with_checked_values(function, values, None, Some(class_id))
+            self.call_user_function_with_checked_values(
+                function,
+                values,
+                None,
+                Some(class_id),
+                Some(called_class_id),
+            )
         } else {
             let this_object = match caller_scope.read_named("this") {
                 Some(Value::Object(object)) => object.clone(),
@@ -2841,7 +2903,13 @@ impl Interpreter {
                     ));
                 }
             };
-            self.call_user_function_with_this(function, this_object, values, Some(class_id))
+            self.call_user_function_with_this(
+                function,
+                this_object,
+                values,
+                Some(class_id),
+                Some(called_class_id),
+            )
         }
     }
 
@@ -3093,7 +3161,7 @@ impl Interpreter {
             values.push(self.evaluate(arg, caller_scope)?);
         }
 
-        self.call_user_function_with_checked_values(function, values, None, None)
+        self.call_user_function_with_checked_values(function, values, None, None, None)
     }
 
     fn call_user_function_with_values(
@@ -3105,7 +3173,7 @@ impl Interpreter {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
-        self.call_user_function_with_checked_values(function, args, None, None)
+        self.call_user_function_with_checked_values(function, args, None, None, None)
     }
 
     fn call_user_function_with_checked_values(
@@ -3114,10 +3182,14 @@ impl Interpreter {
         args: Vec<Value>,
         this_object: Option<PhpObject>,
         class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
+        }
+        if let Some(called_class_context) = called_class_context {
+            self.called_class_context.push(called_class_context);
         }
         let mut local_scope = SymbolTable::new();
         if let Some(this_object) = this_object {
@@ -3139,6 +3211,9 @@ impl Interpreter {
                         if class_context.is_some() {
                             self.class_context.pop();
                         }
+                        if called_class_context.is_some() {
+                            self.called_class_context.pop();
+                        }
                         return Err(error);
                     }
                 }
@@ -3152,6 +3227,9 @@ impl Interpreter {
         self.function_context.pop();
         if class_context.is_some() {
             self.class_context.pop();
+        }
+        if called_class_context.is_some() {
+            self.called_class_context.pop();
         }
 
         match flow? {
@@ -3174,12 +3252,14 @@ impl Interpreter {
         this_object: PhpObject,
         args: Vec<Value>,
         class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
         self.call_user_function_with_checked_values(
             function,
             args,
             Some(this_object),
             class_context,
+            called_class_context,
         )
     }
 
@@ -4559,13 +4639,20 @@ impl Interpreter {
             }
             "get_called_class" => {
                 expect_arity(name, &args, 0, span)?;
-                Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "get_called_class()",
-                        "method and static class context are not implemented in the current subset",
-                    ),
-                ))
+                let Some(called_class_id) = self.called_class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "get_called_class()",
+                            "method or static class context is required",
+                        ),
+                    ));
+                };
+                let called_class = self
+                    .classes
+                    .get(called_class_id)
+                    .expect("called class context should resolve to class metadata");
+                Ok(Value::String(called_class.name().to_string()))
             }
             "spl_object_id" => {
                 expect_arity(name, &args, 1, span)?;

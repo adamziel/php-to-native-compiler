@@ -41,12 +41,13 @@ and `parent::class` resolve from active instance method/constructor context.
 Class constants declared with the current constant-expression value subset are
 stored in class metadata and resolve case-sensitively through
 `ClassName::CONST`, `self::CONST`, and `parent::CONST` with current
-public/protected/private visibility checks. Untyped/no-default static
-properties are initialized to `null` in class-level storage and resolve
+public/protected/private visibility checks. Untyped static properties are
+initialized from supported defaults or `null` in class-level storage and resolve
 case-sensitively through `ClassName::$prop`, `self::$prop`, and
-`parent::$prop`. Static receiver forms through `static::$prop`,
-`static::method(...)`, `static::CONST`, and `static::class` also have distinct
-unsupported diagnostics until late static binding is modeled.
+`parent::$prop`. `static::class` resolves from the current called-class context
+inside instance and static methods. Static receiver forms through
+`static::$prop`, `static::method(...)`, and `static::CONST` still have distinct
+unsupported diagnostics until those late-bound member forms are modeled.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
@@ -66,9 +67,10 @@ inherited and exact-class public/protected/private instance slots with
 PHP-style mangled keys. Private keys use the declaring class name.
 Visibility-context behavior beyond same-declaring-class private access and
 class/ancestor protected access is not represented yet.
-`get_called_class()` is recognized as a zero-argument callable boundary, but it
-currently fails with a stable unsupported-call diagnostic until method/static
-class context and late static binding exist.
+`get_called_class()` is recognized as a zero-argument callable and returns the
+current called class while executing in current instance and static method
+contexts. Outside method or static class context it fails with a stable
+unsupported-call diagnostic.
 `spl_object_id($object)` accepts current object values and returns a stable
 process-local handle id. `spl_object_hash($object)` accepts current object
 values and returns a stable 32-character current-subset hash derived from that
@@ -184,9 +186,8 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_parent_class($object_or_class)` accepts current object values or
   declared string class names and returns the immediate parent class name when
   one is recorded, otherwise false;
-- `get_called_class()` validates its zero-argument call shape and then fails
-  with a stable unsupported-call diagnostic because no method/static class
-  context is tracked yet;
+- `get_called_class()` validates its zero-argument call shape and returns the
+  active called class in current instance and static method contexts;
 - `spl_object_id($object)` validates its one-argument call shape and returns the
   current object's process-local handle id for object inputs;
 - `spl_object_hash($object)` validates its one-argument call shape and returns a
@@ -301,8 +302,8 @@ metadata lookup has native support.
 interface metadata lookup has native support.
 `get_declared_traits` is rejected through that function-call boundary until
 trait metadata lookup has native support.
-`get_called_class` is rejected through that function-call boundary until
-method/static class context lookup and late static binding have native support.
+`get_called_class` is rejected through that function-call boundary until called
+class context lookup has native support.
 `spl_object_id` is rejected through that function-call boundary until PHP object
 handle identity has native support.
 `spl_object_hash` is rejected through that function-call boundary until PHP
@@ -333,10 +334,11 @@ visibility context for `empty` outside the current private/protected method cont
 object-property `empty` operands, magic `__isset`/`__get` behavior for
 `empty`, object-property `unset`, property uninitialization,
 typed/uninitialized property behavior, magic `__unset` behavior,
-static member execution through `::` beyond the current class-name constant
-slice, late-bound `static::class`, interface traversal for
+static member execution through `::` beyond the current class-name constant and
+called-class slices, interface traversal for
 `is_a`/`is_subclass_of`, default `$this` behavior for `get_parent_class()`,
-`get_called_class` method/static class context, late static binding,
+native lowering for `get_called_class` called-class context, broader late
+static binding,
 `spl_object_id` handle reuse after destruction, clone semantics, destructors,
 `spl_object_hash` exact system PHP hash formatting, handle reuse after
 destruction, clone semantics, destructors,
