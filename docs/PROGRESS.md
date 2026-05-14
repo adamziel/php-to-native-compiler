@@ -155,6 +155,17 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 651, distinct `static::` receiver parse diagnostics.
+  `static::$prop`, `static::method(...)`, `static::CONST`, and
+  `static::class` now report stable form-specific diagnostics instead of the
+  older generic magic-static-receiver message. This adds no late static
+  binding, called-class context, static method dispatch, static property
+  storage, class constants, runtime execution surface, or native lowering.
+  Focused verification: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 

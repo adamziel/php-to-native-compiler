@@ -148,6 +148,30 @@ injects this file into every prompt. Each Codex pass should update it with:
   error objects, and native object lowering remain explicit.
 - Next concrete task: checkpoint if the full gate passes.
 
+## Loop Event 2026-05-14T15:10:00Z
+
+- Checkpoint: `8a84bdb objects: allow protected constructor child context`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 651, distinct `static::` receiver parse
+  diagnostics.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_receiver_member.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed after docs updates.
+- Remaining semantic gaps: late static binding, called-class context, static
+  method dispatch, static property storage, class constants, private
+  constructor same-class construction surface, non-public property visibility,
+  exact native error objects, and native lowering remain explicit.
+- Next concrete task: rerun focused checks after docs, then checkpoint if the
+  full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

@@ -1020,11 +1020,12 @@ property override compatibility, broader inheritance/constructor semantics, or
 exact PHP lifecycle behavior.
 Static member syntax
 through `::`, including
-`ClassName::$prop`, `ClassName::method()`, `ClassName::CONST`, and `static::`,
-is rejected with explicit parse diagnostics until static storage, dispatch,
-late static binding, and class constants exist. Unsupported parent/self static
-property, class constant, and class-name constant forms also stop at distinct
-parse diagnostics. Native lowering
+`ClassName::$prop`, `ClassName::method()`, and `ClassName::CONST`, is rejected
+with explicit parse diagnostics until static storage, dispatch, and class
+constants exist. Unsupported parent/self static property, class constant, and
+class-name constant forms stop at distinct parse diagnostics. `static::$prop`,
+`static::method(...)`, `static::CONST`, and `static::class` also stop at
+distinct parse diagnostics until late static binding is modeled. Native lowering
 rejects class declarations, inheritance metadata, parent/self method calls, object
 instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,

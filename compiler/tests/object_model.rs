@@ -2767,7 +2767,31 @@ static::class;
 "#,
             2,
             7,
-            "unsupported magic static receiver: self and static resolution is not implemented",
+            "unsupported static class name constant: static::class resolution is not implemented",
+        ),
+        (
+            r#"<?php
+static::$value;
+"#,
+            2,
+            7,
+            "unsupported static:: property access: late static binding and static property storage are not implemented",
+        ),
+        (
+            r#"<?php
+static::make();
+"#,
+            2,
+            7,
+            "unsupported static:: method call: late static binding and static method dispatch are not implemented",
+        ),
+        (
+            r#"<?php
+static::VERSION;
+"#,
+            2,
+            7,
+            "unsupported static:: class constant access: late static binding and class constants are not implemented",
         ),
         (
             r#"<?php

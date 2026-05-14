@@ -5846,13 +5846,27 @@ handled.
 
 ## Milestone 651: Static Receiver Continuation
 
-- [ ] Runtime/object lane: choose the next smallest static receiver or object
+- [x] Parser/static-receiver lane: choose the next smallest static receiver or object
   visibility slice: static method diagnostics through `self::`/`parent::`, a
   `static::` parse refinement, private constructor same-class construction
   surface, or a documented blocker for static storage and late static binding.
-  Keep static properties, class constants, property override compatibility,
-  trait composition, magic methods, references/copy-on-write, exact native
-  error objects, and native lowering explicit.
+  Implemented the `static::` parse refinement: `static::$prop`,
+  `static::method(...)`, `static::CONST`, and `static::class` now produce
+  distinct stable diagnostics without adding late static binding, static
+  method dispatch, static property storage, class constants, property override
+  compatibility, trait composition, magic methods, references/copy-on-write,
+  exact native error objects, or native lowering.
+
+## Milestone 652: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next smallest reachable visibility slice:
+  same-class private/protected property read/write from active instance method
+  context, private constructor same-class construction only if a reachable
+  execution surface exists, or a documented blocker for non-public inherited
+  property slots. Keep inherited non-public property storage, static
+  properties, class constants, property override compatibility, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

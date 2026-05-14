@@ -670,11 +670,14 @@
   implemented. `$object instanceof ClassName` expressions fail with a stable
   parse diagnostic before class/interface relationship checks exist.
   `ClassName::class` expressions fail with a stable parse diagnostic before
-  class-name constant resolution exists. `static::` fails with a stable parse
-  diagnostic before late-static-binding resolution exists. `parent::method(...)`
-  and `self::method(...)` calls are the supported magic receiver slices;
-  self/parent static property access, self/parent class constants, and
-  `self::class`/`parent::class` fail with stable parse diagnostics.
+  class-name constant resolution exists. `static::$prop`,
+  `static::method(...)`, `static::CONST`, and `static::class` fail with
+  distinct stable parse diagnostics before late-static-binding resolution,
+  static storage, static dispatch, or class constants exist.
+  `parent::method(...)` and `self::method(...)` calls are the supported magic
+  receiver slices; self/parent static property access, self/parent class
+  constants, and `self::class`/`parent::class` fail with stable parse
+  diagnostics.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public

@@ -32,7 +32,9 @@ fails with explicit parse diagnostics until static property storage, static
 method dispatch, and class constants exist. Parent static property access,
 parent class constants, and `parent::class` have distinct unsupported
 diagnostics, as do self static properties, self class constants, and
-`self::class`.
+`self::class`. Static receiver forms through `static::$prop`,
+`static::method(...)`, `static::CONST`, and `static::class` also have distinct
+unsupported diagnostics until late static binding is modeled.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,

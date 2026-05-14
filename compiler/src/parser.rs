@@ -2412,8 +2412,40 @@ impl Parser {
                 )),
             };
         }
-        if receiver.is_some_and(is_magic_static_receiver) {
-            return Err(self.error_at(operator_span, unsupported_magic_static_receiver_message()));
+        if receiver.is_some_and(|receiver| receiver.eq_ignore_ascii_case("static")) {
+            let member = self.peek().clone();
+            return match member.kind {
+                TokenKind::Variable(_) => Err(self.error_at(
+                    operator_span,
+                    "unsupported static:: property access: late static binding and static property storage are not implemented",
+                )),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Err(self
+                    .error_at(
+                        operator_span,
+                        "unsupported static class name constant: static::class resolution is not implemented",
+                    )),
+                TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                    Err(self.error_at(
+                        operator_span,
+                        "unsupported static:: method call: late static binding and static method dispatch are not implemented",
+                    ))
+                }
+                TokenKind::Identifier(_) => Err(self.error_at(
+                    operator_span,
+                    "unsupported static:: class constant access: late static binding and class constants are not implemented",
+                )),
+                TokenKind::Class => Err(self.error_at(
+                    operator_span,
+                    "unsupported static class name constant: static::class resolution is not implemented",
+                )),
+                _ => Err(self.error_at(
+                    operator_span,
+                    format!(
+                        "expected static member name after '::', found {}",
+                        token_name(&member.kind)
+                    ),
+                )),
+            };
         }
         let member = self.peek();
         match &member.kind {
@@ -3536,10 +3568,6 @@ fn unsupported_instanceof_message() -> &'static str {
 
 fn unsupported_class_name_constant_message() -> &'static str {
     "unsupported class name constant: ::class resolution is not implemented"
-}
-
-fn unsupported_magic_static_receiver_message() -> &'static str {
-    "unsupported magic static receiver: self and static resolution is not implemented"
 }
 
 fn unsupported_magic_class_name_message() -> &'static str {

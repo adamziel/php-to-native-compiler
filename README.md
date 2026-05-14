@@ -109,10 +109,11 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
-and explicit parent calls, broader `self::`/`static::`, visibility enforcement
-beyond the current public property/private/protected-method/constructor slice,
-property override compatibility, dynamic method/property names, resources, and
-native extension integration.
+and explicit parent calls, broader `self::`, all `static::` execution and late
+static binding, visibility enforcement beyond the current public
+property/private/protected-method/constructor slice, property override
+compatibility, dynamic method/property names, resources, and native extension
+integration.
 
 ### Native Path
 
