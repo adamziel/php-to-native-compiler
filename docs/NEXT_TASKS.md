@@ -5627,10 +5627,13 @@ handled.
 
 ## Milestone 631: PHP Compatibility Smoke Targets
 
-- [ ] Runtime/parser lane: add the first tiny PHP-compatibility smoke fixture
+- [x] Runtime/parser lane: add the first tiny PHP-compatibility smoke fixture
   group that is intentionally broader than a unit feature slice, compare it
   against system PHP where feasible, and record every skipped or failing case
-  with a named unsupported reason.
+  with a named unsupported reason. Selected candidate: added
+  `tests/fixtures/compat/php/cross_feature_smoke.php`, spanning constants,
+  functions, arrays, callback builtin use, class metadata, public properties,
+  conditionals, `foreach`, and system PHP comparison with no skips.
 
 ## Milestone 632: WordPress Bootstrap Inventory
 

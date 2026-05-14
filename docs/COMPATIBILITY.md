@@ -42,6 +42,8 @@ These commands measure the current project subset, not full PHP compatibility:
 ```sh
 cargo run -p phpc -- test
 cargo run -p phpc -- test --compare-php
+cargo run -p phpc -- test tests/fixtures/compat/php
+cargo run -p phpc -- test --compare-php tests/fixtures/compat/php
 cargo run -p phpc -- compile examples/hello.php --emit-ir
 cargo run -p phpc -- compile examples/hello.php --emit-asm
 ```
@@ -58,6 +60,7 @@ tools/run-tests.sh
 | --- | --- | --- | --- |
 | Current fixture suite through `phpc run` | `cargo run -p phpc -- test` | `pass` | Measures the documented subset only. |
 | Optional system PHP comparison | `cargo run -p phpc -- test --compare-php` | `pass`/`skipped-unsupported` | Compares supported fixtures when system PHP is available; `.phpc-only` fixtures are skipped intentionally. |
+| Cross-feature PHP smoke fixture | `cargo run -p phpc -- test --compare-php tests/fixtures/compat/php` | `pass` | One committed smoke fixture spans constants, functions, arrays, callback builtin use, class metadata, public properties, conditionals, foreach, and system PHP comparison. |
 | Current supported PHP branches 8.2-8.5 | Branch-specific comparison matrix | `not-covered` | The suite does not yet run against a matrix of PHP binaries or branch-specific expected behavior. |
 | php-src-style language compatibility | Imported or mirrored behavioral tests | `not-covered` | No committed php-src compatibility subset exists yet. |
 | Native executable compatibility | Linked native run command | `not-covered` | `phpc compile` emits IR/assembly only; no linked executable path exists yet. |

@@ -12964,6 +12964,22 @@ Next:
 
 Next:
 
+- Added Milestone 631, the first cross-feature PHP compatibility smoke fixture
+  under `tests/fixtures/compat/php`. The fixture spans constants, functions,
+  arrays, a string-valued callback builtin call, class metadata, public
+  property writes, conditionals, `foreach`, and `constant()`/`defined()`
+  behavior in one small program.
+- Focused checks passed:
+  `cargo run -p phpc -- test tests/fixtures/compat/php` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/compat/php`, with
+  one fixture passing and one system PHP comparison passing with no skips.
+- Updated `docs/COMPATIBILITY.md` and `docs/NEXT_TASKS.md` to record the new
+  smoke target as passing while keeping PHP branch matrices, php-src-style
+  tests, native executable compatibility, and WordPress bootstrap/request/plugin
+  targets marked as not covered.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`
