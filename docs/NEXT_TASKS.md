@@ -6232,17 +6232,28 @@ handled.
 
 ## Milestone 682: WordPress Bridge Continuation
 
-- [ ] Runtime/WordPress bridge lane: implement or explicitly bound top-level
-  `global ...;` declarations so WordPress bootstrap can pass the early
-  version-variable import statement in `wp-settings.php`. Keep function-scope
-  `global`, reference binding to `$GLOBALS`, superglobal semantics, exact
-  warning behavior, and native lowering explicit unless this slice proves them
-  with code and tests.
+- [x] Runtime/WordPress bridge lane: implement top-level `global ...;`
+  declarations as no-op/import-compatible statements so WordPress bootstrap can
+  pass the early version-variable import statement in `wp-settings.php`. Keep
+  function-scope `global`, reference binding to `$GLOBALS`, superglobal
+  semantics, exact warning behavior, and native lowering explicit. The
+  follow-up external WordPress inventory now reaches `wp-settings.php:34:9`,
+  undefined constant `ABSPATH`, because the probe runs `wp-settings.php`
+  directly.
+
+## Milestone 683: WordPress Bootstrap Probe Continuation
+
+- [ ] Tests/docs/compatibility lane: make the WordPress inventory probe honest
+  about entrypoint assumptions by adding a normalized bootstrap-shim probe or
+  otherwise recording that direct `wp-settings.php` execution requires
+  pre-defined `ABSPATH`. Keep WordPress core unvendored, preserve normalized
+  output, and use the shim result to choose the next real compiler/runtime
+  blocker.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 681 work, the latest committed checkpoint is
-  `bb6fd71 dynamic: add narrow include`, covering Milestone 680.
+- Before the current Milestone 682 work, the latest committed checkpoint is
+  `64830b9 dynamic: add narrow include_once`, covering Milestone 681.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

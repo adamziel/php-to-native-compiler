@@ -90,6 +90,8 @@ incorrect native code.
 - `if`, loops, `switch`, `break`, `continue`, `foreach`, and user functions with
   local scopes, defaults, returns, dynamic string-valued calls, and recursion
   guarded by a fixed depth limit
+- top-level `global $name, ...;` declarations as no-op/import-compatible
+  statements; function-scope `global` imports remain unsupported
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
   append writes, offset removal, and array iteration
 - top-level constants, selected built-in constants, runtime-defined constants,

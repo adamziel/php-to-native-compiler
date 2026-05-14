@@ -17479,3 +17479,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run full focused checks and `git diff --check`, then
   checkpoint with `tools/checkpoint.sh "dynamic: add narrow include_once"` if
   the full gate passes.
+
+## Loop Event 2026-05-15T00:45:00Z
+
+- Checkpoint before this task: `64830b9 dynamic: add narrow include_once`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 682, top-level `global $name, ...;` execution as a
+  no-op/import-compatible statement for the WordPress `wp-settings.php`
+  version-variable declaration.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/dynamic_features.rs`, `tests/fixtures/milestone682/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features global -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone682`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone682`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
+  `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: function-scope `global`, reference binding to
+  `$GLOBALS`, superglobal semantics, expression-form include/require, include
+  paths/streams/URLs, missing-file include warning/recovery, exact include
+  return values, WordPress bootstrap entrypoint constants such as `ABSPATH`,
+  namespace/import resolution, interfaces/traits, exceptions,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "dynamic: allow top-level global"` if the full gate
+  passes.

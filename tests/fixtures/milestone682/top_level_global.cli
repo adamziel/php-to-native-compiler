@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+wp=6.9.4
+php=8.3--- stdout end ---
+stderr:
+--- stderr end ---

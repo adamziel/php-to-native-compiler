@@ -358,6 +358,28 @@ echo $count;
 }
 
 #[test]
+fn top_level_global_declarations_are_currently_noops() {
+    let execution = run_source(
+        r#"<?php
+$wp_version = "6.9.4";
+global $wp_version, $required_php_version;
+$required_php_version = "8.3";
+echo $wp_version, "\n";
+echo $required_php_version, "\n";
+if (isset($missing)) {
+    echo "missing-set";
+} else {
+    echo "missing-unset";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "6.9.4\n8.3\nmissing-unset");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn require_executes_relative_to_current_source_file_and_restores_source_mapping() {
     let root = std::env::temp_dir().join(format!(
         "phpc-require-{}-{}",

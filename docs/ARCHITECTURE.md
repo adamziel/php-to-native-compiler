@@ -20,9 +20,10 @@ Milestone 1 implements the lexer, parser, AST, a direct interpreter/runtime
 execution path, and a narrow LLVM IR text emitter for simple straight-line code.
 The interpreter runs top-level statements in a global symbol table and creates a
 fresh local symbol table for each user-function call. Static reads, writes,
-`isset($name)`, `empty($name)`, and direct `unset($name)` operate on the active
-symbol table; importing globals into function scope through `global`
-declarations is not implemented.
+`isset($name)`, `empty($name)`, direct `unset($name)`, and top-level
+`global $name, ...;` declarations operate on the active symbol table.
+Importing globals into function scope through `global` declarations is not
+implemented.
 
 ## Compiler Crate
 

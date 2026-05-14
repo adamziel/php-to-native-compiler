@@ -147,6 +147,8 @@
 - `return`
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
+- top-level `global $name, ...;` declarations as no-op/import-compatible
+  statements; function-scope `global` imports remain unsupported
 - top-level class declarations registered into the runtime metadata table:
   `class Name { ... }` and `class Child extends Parent { ... }` with
   single-parent metadata, property names, class constant names, method names,
@@ -427,7 +429,7 @@
   non-UTF-8 string results, unsupported unary bitwise-not operands, negative
   shift counts, bitwise array/object operands, duplicate constants, undefined
   constants, unsupported
-  `global` declarations, duplicate class/member metadata, undefined classes,
+  function-scope `global` declarations, duplicate class/member metadata, undefined classes,
   unsupported object instantiation, undefined object properties, invalid
   property targets, unsupported non-public property access, non-object
   `get_class` operands, unsupported `property_exists` object/class or
@@ -1834,9 +1836,11 @@
   fail with a stable arity diagnostic. Each user-function call gets a fresh
   local scope. Parameters and local assignments shadow global variables without
   mutating them, and functions do not import top-level variables implicitly.
-  `global` declarations parse but fail with a stable runtime error because
-  global scope imports are not implemented. Recursive user-function calls are
-  supported until the fixed 128-frame user-function call-depth guard is reached.
+  Top-level `global $name, ...;` declarations execute as no-op/import-compatible
+  statements. Function-scope `global` declarations still fail with a stable
+  runtime error because reference-backed global imports are not implemented.
+  Recursive user-function calls are supported until the fixed 128-frame
+  user-function call-depth guard is reached.
   That guard is a project-specific runtime diagnostic, not PHP's native stack or
   memory exhaustion behavior; it is not configurable and does not produce stack
   traces. Forward constant references at omitted-argument binding time,
@@ -2684,7 +2688,8 @@
   member forms through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
-- `global` declarations / importing top-level variables into function scope
+- function-scope `global` declarations / importing top-level variables into
+  function scope
 - default parameter values outside the documented constant-expression and
   unqualified constant-reference subset
 - required parameters after default parameters

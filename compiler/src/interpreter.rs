@@ -621,12 +621,18 @@ impl Interpreter {
             }
             Stmt::Break { span } => Ok(Flow::Break(*span)),
             Stmt::Continue { span } => Ok(Flow::Continue(*span)),
-            Stmt::Global { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_global(
-                    "importing globals into function scope is not implemented",
-                ),
-            )),
+            Stmt::Global { span, .. } => {
+                if self.function_context.is_empty() {
+                    Ok(Flow::Normal)
+                } else {
+                    Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_global(
+                            "importing globals into function scope is not implemented",
+                        ),
+                    ))
+                }
+            }
         }
     }
 

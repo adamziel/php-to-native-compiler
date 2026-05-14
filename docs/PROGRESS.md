@@ -697,6 +697,22 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
   and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 682, top-level `global $name, ...;` execution as a
+  no-op/import-compatible statement. This is enough for the early WordPress
+  `wp-settings.php` version-variable declaration while keeping function-scope
+  `global` imports, reference binding to `$GLOBALS`, superglobal semantics,
+  exact warning behavior, and native lowering explicit. The real WordPress
+  6.9.4 inventory now reaches `wp-settings.php:34:9`, undefined constant
+  `ABSPATH`, because the current probe runs `wp-settings.php` directly instead
+  of through a bootstrap shim. Focused verification so far:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features global -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone682`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone682`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
+  `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -705,11 +721,11 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 682 should implement or explicitly bound top-level `global ...;`
-  declarations so WordPress bootstrap can pass the early version-variable import
-  statement in `wp-settings.php`, while keeping function-scope `global`,
-  `$GLOBALS` reference binding, superglobal semantics, exact warning behavior,
-  and native lowering explicit.
+- Milestone 683 should make the WordPress inventory probe honest about
+  entrypoint assumptions by adding a normalized bootstrap-shim probe or
+  otherwise recording that direct `wp-settings.php` execution requires
+  pre-defined `ABSPATH`, then use the shim result to choose the next real
+  compiler/runtime blocker.
 
 ## 2026-05-12
 

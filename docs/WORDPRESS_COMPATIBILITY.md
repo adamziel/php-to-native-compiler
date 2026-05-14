@@ -87,11 +87,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   WordPress-shaped `require ABSPATH . WPINC . '/load.php';`, `require_once
   ABSPATH . WPINC . '/plugin.php';`, conditional `include WP_CONTENT_DIR .
   '/advanced-cache.php';`, and must-use plugin loop `include_once $mu_plugin;`
-  forms are now executable or skippable in focused fixtures. The current real
-  WordPress 6.9.4 inventory reaches top-level `global ...;` in
-  `wp-settings.php:33:1`, so real bootstrap still needs a bounded top-level
-  `global` behavior, include-path/autoload behavior, source mapping, and PHP's
-  warning/fatal details;
+  forms are now executable or skippable in focused fixtures. Top-level
+  `global ...;` declarations are accepted as no-ops. The current real
+  WordPress 6.9.4 inventory reaches `wp-settings.php:34:9` with undefined
+  `ABSPATH`, because the current probe runs `wp-settings.php` directly instead
+  of through a bootstrap shim. Real bootstrap still needs a faithful entrypoint,
+  include-path/autoload behavior, source mapping, and PHP's warning/fatal
+  details;
 - namespace and import resolution;
 - class inheritance, interfaces, traits, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;
