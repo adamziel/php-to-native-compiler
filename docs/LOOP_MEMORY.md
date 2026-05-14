@@ -17932,3 +17932,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `cargo check -p phpc`, the updated focused gates,
   then checkpoint with `tools/checkpoint.sh "syntax: skip PHP attributes"` if
   the full gate passes.
+
+## Loop Event 2026-05-14T05:30:00Z
+
+- Checkpoint before this task: `00903a1 syntax: skip PHP attributes`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 697, bounded `throw` statement handling for
+  WordPress's sodium compat class.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/exception_boundaries.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `tests/fixtures/milestone697/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_throw.*`,
+  `README.md`, `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test exception_boundaries`,
+  `cargo test -p phpc --test syntax_boundaries exception`,
+  `cargo run -p phpc -- test tests/fixtures/milestone697`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone697`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
+  `PHPC_BIN=/tmp/phpc-target-697/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: throw operand evaluation, `Throwable`/`Exception`
+  objects, custom exception classes, stack unwinding, catch matching, catch
+  variable binding, `finally` execution, stack traces, exact PHP diagnostics,
+  partial-output behavior, WordPress bootstrap environment, exact native
+  errors, and native exception lowering remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`,
+  `cargo check -p phpc`, the focused gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded throw statements"` if the full
+  gate passes. Milestone 698 should bound `try`/`catch`/`finally`.

@@ -1,2 +1,2 @@
-parse error at 2:1: unsupported throw: exception objects and stack unwinding are not implemented
+runtime error at 2:1: unsupported call throw: exception objects and stack unwinding are not implemented
 

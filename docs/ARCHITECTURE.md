@@ -1166,13 +1166,18 @@ exists yet.
 
 ## Exception Boundary
 
-Exception syntax is reserved by the lexer/parser today and rejected with stable
-parse diagnostics before execution. `throw` statements/expressions and
-`try`/`catch`/`finally` blocks do not build AST nodes yet because the runtime
-does not model `Throwable`/`Exception` objects, stack unwinding, `finally`
-execution, stack traces, or exact native error objects. Native lowering must
-continue rejecting these constructs until exception control flow has explicit
-runtime and IR semantics.
+Exception syntax is reserved by the lexer/parser today, but the boundary is no
+longer a single parse-only category. Statement-form `throw expr;` builds an AST
+node so guarded WordPress compatibility code can parse and be skipped by normal
+control flow. If execution reaches a throw statement, the interpreter reports a
+stable unsupported runtime boundary without evaluating the throw operand,
+because it cannot construct PHP exception objects or unwind the stack.
+
+Throw expressions and `try`/`catch`/`finally` blocks still fail at parse time.
+Native lowering rejects throw statements before emitting LLVM IR or assembly
+until `Throwable`/`Exception` objects, stack unwinding, catch matching,
+`finally` execution, stack traces, and exact native error behavior have
+explicit runtime and IR semantics.
 
 ## Match Expression Boundary
 

@@ -143,6 +143,10 @@ pub enum Stmt {
         value: Option<Expr>,
         span: Span,
     },
+    Throw {
+        expr: Expr,
+        span: Span,
+    },
     Break {
         span: Span,
     },

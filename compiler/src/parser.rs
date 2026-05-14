@@ -71,7 +71,7 @@ impl Parser {
             TokenKind::Match => self.parse_unsupported_match_expression(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
-            TokenKind::Throw => self.parse_unsupported_throw(),
+            TokenKind::Throw => self.parse_throw(),
             TokenKind::Try | TokenKind::Catch | TokenKind::Finally => {
                 self.parse_unsupported_try_catch_finally()
             }
@@ -98,9 +98,7 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("continue") => {
                 self.parse_continue()
             }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("throw") => {
-                self.parse_unsupported_throw()
-            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("throw") => self.parse_throw(),
             TokenKind::Identifier(name)
                 if matches!(
                     name.to_ascii_lowercase().as_str(),
@@ -508,9 +506,11 @@ impl Parser {
         Err(self.error_at(span, unsupported_eval_message()))
     }
 
-    fn parse_unsupported_throw(&mut self) -> CompileResult<Stmt> {
+    fn parse_throw(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
-        Err(self.error_at(span, unsupported_throw_message()))
+        let expr = self.parse_expression()?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after throw")?;
+        Ok(Stmt::Throw { expr, span })
     }
 
     fn parse_unsupported_try_catch_finally(&mut self) -> CompileResult<Stmt> {

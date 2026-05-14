@@ -225,12 +225,6 @@ fn emit_ir_rejects_object_property_unset_at_parse_boundary() {
 fn unsupported_exception_syntax_has_stable_parse_errors() {
     let cases = [
         (
-            "<?php\nthrow new Exception('boom');\n",
-            2,
-            1,
-            "unsupported throw: exception objects and stack unwinding are not implemented",
-        ),
-        (
             "<?php\n$value = throw new Exception('boom');\n",
             2,
             10,
@@ -265,13 +259,13 @@ fn unsupported_exception_syntax_has_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_exception_syntax_at_parse_boundary() {
+fn emit_ir_rejects_throw_statement_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\nthrow new Exception('boom');\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "unsupported throw: exception objects and stack unwinding are not implemented"
+        "LLVM exception lowering rejects throw statements until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current throw statement boundary"
     );
 }
 

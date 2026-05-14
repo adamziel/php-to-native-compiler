@@ -646,6 +646,13 @@ impl Interpreter {
                 };
                 Ok(Flow::Return(value))
             }
+            Stmt::Throw { expr: _, span } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "throw",
+                    "exception objects and stack unwinding are not implemented",
+                ),
+            )),
             Stmt::Break { span } => Ok(Flow::Break(*span)),
             Stmt::Continue { span } => Ok(Flow::Continue(*span)),
             Stmt::Global { span, .. } => {

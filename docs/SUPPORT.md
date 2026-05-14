@@ -147,6 +147,12 @@
 - recursive user-function calls up to a fixed 128-frame user-function call-depth
   guard
 - `return`
+- `throw expr;` statements parse and participate in normal statement
+  reachability. Guarded/unreached throw statements can be skipped by existing
+  control flow. If execution reaches a throw statement, `phpc run` reports the
+  stable runtime boundary `unsupported call throw: exception objects and stack
+  unwinding are not implemented` without evaluating the throw operand, because
+  PHP exception objects and unwinding do not exist yet.
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
 - top-level `global $name, ...;` declarations as no-op/import-compatible
@@ -511,8 +517,8 @@
   malformed alternate colon/`endswitch` switch bodies
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
-- explicit parse diagnostics for unsupported exception syntax: `throw`,
-  `try`, `catch`, and `finally`
+- explicit parse diagnostics for unsupported exception-control syntax:
+  throw expressions plus `try`, `catch`, and `finally`
 - explicit parse diagnostics for unsupported generator `yield` and
   `yield from` expressions
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
@@ -2819,11 +2825,13 @@
 - native lowering for cast expressions; generated code currently rejects casts
   before implying PHP scalar conversion, diagnostics, allocation behavior,
   references/copy-on-write, or exact native error behavior
-- exception execution; `throw`, throw expressions, `try` blocks, `catch`
-  clauses, and `finally` blocks currently fail with stable parse diagnostics
-  before `Throwable`, `Exception`, custom exception classes, stack unwinding,
-  `finally` execution, stack traces, exact native error objects, or native
-  lowering exist
+- exception execution beyond the current throw-statement boundary: reached
+  `throw expr;` statements fail with a stable runtime diagnostic before
+  evaluating the operand, while throw expressions, `try` blocks, `catch`
+  clauses, and `finally` blocks still fail with stable parse diagnostics.
+  `Throwable`, `Exception`, custom exception classes, stack unwinding, catch
+  matching, `finally` execution, stack traces, exact native error objects, and
+  native lowering do not exist yet.
 - PHP 8 `match` expressions currently fail with a stable parse diagnostic
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation

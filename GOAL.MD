@@ -242,8 +242,8 @@ The repository already has a working Rust workspace with:
   declarations, constants, selected builtins including a deterministic
   false-only `extension_loaded()` policy, bounded `PHP_VERSION_ID`, bounded
   `dirname()`, bounded no-op `spl_autoload_register()`, syntax-only PHP
-  attributes, minimal objects, bounded `instanceof`, and stable unsupported
-  diagnostics;
+  attributes, bounded throw-statement runtime boundaries, minimal objects,
+  bounded `instanceof`, and stable unsupported diagnostics;
 - `phpc compile --emit-ir` and `--emit-asm`: intentionally narrower native
   lowering, mostly straight-line static scalar output and assignment behavior,
   plus explicit rejection coverage for unsupported constructs;
@@ -251,7 +251,7 @@ The repository already has a working Rust workspace with:
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
   probe currently advances through early compatibility includes and now stops
-  at the next named blocker, unsupported `throw` syntax.
+  at the next named blocker, unsupported `try/catch/finally` syntax.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

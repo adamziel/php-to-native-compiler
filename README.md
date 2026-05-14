@@ -99,6 +99,9 @@ incorrect native code.
   append writes, offset removal, and array iteration
 - top-level constants, selected built-in constants, runtime-defined constants,
   and executable magic constants documented in the support matrix
+- statement-form `throw expr;` as a bounded exception boundary: guarded throws
+  can parse and be skipped, while reached throws report a stable runtime
+  diagnostic without constructing exception objects or unwinding the stack
 - narrow `require`, `require_once`, `include`, and `include_once` statement
   execution for local string paths, including constant/string-concatenated
   paths resolved relative to the current source file, included files executing
@@ -135,6 +138,7 @@ the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
 behavior outside the current `(string)` scalar/null slice, interfaces, traits, enums,
+try/catch/finally exception control flow, exception objects and stack unwinding,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
@@ -164,7 +168,7 @@ The current native path is focused on straight-line scalar lowering:
   selected constant-existence checks
 
 Native lowering rejects arrays, objects, user functions, include/require,
-broad control flow, scalar casts, mutation forms that require symbol-table
+broad control flow, exception boundaries, scalar casts, mutation forms that require symbol-table
 effects, dynamic calls, runtime constant tables, PHP-wide coercions,
 references, copy-on-write, linking, and execution until those semantics exist
 in generated code.

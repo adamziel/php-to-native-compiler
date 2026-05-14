@@ -1,0 +1,1 @@
+Project-specific exception boundary: phpc parses throw statements but reports a stable runtime boundary instead of constructing and throwing PHP Exception objects.

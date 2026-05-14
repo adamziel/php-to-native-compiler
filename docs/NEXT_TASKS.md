@@ -6363,16 +6363,25 @@ handled.
 
 ## Milestone 697: WordPress Bridge Continuation
 
-- [ ] Runtime/exception lane: implement or explicitly bound `throw` statements
+- [x] Runtime/exception lane: implement or explicitly bound `throw` statements
   for WordPress's sodium compat class, with tests, CLI coverage, docs, and
   named unsupported edges for exception object modeling, stack unwinding,
   catch/finally behavior, stack traces, exact PHP diagnostics, and native
   lowering.
 
+## Milestone 698: WordPress Bridge Continuation
+
+- [ ] Runtime/exception lane: implement or explicitly bound
+  `try`/`catch`/`finally` syntax for WordPress's sodium compat class, with
+  tests, CLI coverage, docs, and named unsupported edges for exception object
+  matching, stack unwinding, catch variable binding, finally execution,
+  stack traces, partial-output behavior, exact PHP diagnostics, and native
+  lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 696 work, the latest committed checkpoint is
-  `58beac8 runtime: add bounded spl_autoload_register`, covering Milestone 695.
+- Before the current Milestone 697 work, the latest committed checkpoint is
+  `00903a1 syntax: skip PHP attributes`, covering Milestone 696.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

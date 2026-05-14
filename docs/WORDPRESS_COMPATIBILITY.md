@@ -111,8 +111,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   shim-probe `spl_autoload_register()` blocker is covered by the bounded
   Milestone 695 no-op autoload registration policy. The previous PHP attribute
   syntax blocker is covered by the bounded Milestone 696 syntax-only attribute
-  skip. The shim probe now reaches unsupported `throw` syntax at
-  `<bootstrap-shim>:178:13`.
+  skip. The previous unsupported `throw` syntax blocker is covered only by the
+  bounded Milestone 697 throw-statement runtime boundary, not by real PHP
+  exception support. The shim probe now reaches unsupported
+  `try/catch/finally` syntax at `<bootstrap-shim>:216:9`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

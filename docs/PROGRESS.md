@@ -955,13 +955,32 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`, and
   `PHPC_BIN=/tmp/phpc-target-696/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 697, bounded `throw` statement handling for the current
+  exception boundary. Statement-form `throw expr;` now parses into the AST so
+  guarded throws in WordPress sodium compat methods can be skipped by normal
+  control flow. If execution reaches a throw statement, `phpc run` reports the
+  stable runtime boundary `unsupported call throw: exception objects and stack
+  unwinding are not implemented` without evaluating the throw operand. Throw
+  expressions and `try`/`catch`/`finally` still reject at the parse boundary,
+  and native LLVM/assembly lowering rejects throw statements before implying
+  native exception objects or unwinding. The real WordPress 6.9.4
+  bootstrap-shim inventory now reaches `<bootstrap-shim>:216:9`, unsupported
+  `try/catch/finally`. Focused verification so far:
+  `cargo test -p phpc --test exception_boundaries`,
+  `cargo test -p phpc --test syntax_boundaries exception`,
+  `cargo run -p phpc -- test tests/fixtures/milestone697`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone697`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`, and
+  `PHPC_BIN=/tmp/phpc-target-697/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 697 should implement or explicitly bound `throw` statements for
-  WordPress's sodium compat class, while keeping exception object modeling,
-  stack unwinding, catch/finally behavior, stack traces, exact PHP diagnostics,
-  and native lowering explicit unless proven.
+- Milestone 698 should implement or explicitly bound `try`/`catch`/`finally`
+  syntax for WordPress's sodium compat class, while keeping exception object
+  modeling, stack unwinding, catch matching, finally execution, stack traces,
+  exact PHP diagnostics, partial-output behavior, and native lowering explicit
+  unless proven.
 
 ## 2026-05-12
 

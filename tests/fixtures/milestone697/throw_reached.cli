@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone697/throw_reached.php:3:1: unsupported call throw: exception objects and stack unwinding are not implemented
+--- stderr end ---
