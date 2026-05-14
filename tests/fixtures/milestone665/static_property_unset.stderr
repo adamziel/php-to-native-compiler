@@ -1,0 +1,2 @@
+runtime error at 6:1: unsupported call Root::$name: static property unset is not supported; assign null to the static property in the current subset
+

@@ -109,7 +109,8 @@ incorrect native code.
   through `ClassName::CONST`, `self::CONST`, and `parent::CONST`,
   narrow static properties through `ClassName::$prop`, `self::$prop`, and
   `parent::$prop` with direct reads/writes, compound assignment,
-  pre/post increment/decrement, `isset`/`empty`, `??`, and `??=`,
+  pre/post increment/decrement, `isset`/`empty`, `??`, `??=`, and stable
+  `unset(...)` diagnostics for PHP-forbidden static-property unset,
   single-parent metadata, object `isset` and `empty`, and selected metadata
   builtins
 - a documented builtin subset for strings, arrays, constants, type checks,

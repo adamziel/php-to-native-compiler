@@ -2605,6 +2605,73 @@ isset(Root::$name);
 }
 
 #[test]
+fn static_property_unset_reports_current_php_forbidden_boundary() {
+    let public_error = runtime_error(
+        r#"<?php
+class Root {
+    public static $name;
+}
+unset(Root::$name);
+"#,
+    );
+    assert_eq!(
+        public_error.message,
+        "unsupported call Root::$name: static property unset is not supported; assign null to the static property in the current subset"
+    );
+
+    let missing_property_error = runtime_error(
+        r#"<?php
+class Root {}
+unset(Root::$missing);
+"#,
+    );
+    assert_eq!(
+        missing_property_error.message,
+        "unsupported call Root::$missing: static property unset is not supported; assign null to the static property in the current subset"
+    );
+
+    let self_error = runtime_error(
+        r#"<?php
+class Root {
+    public static $name;
+
+    public function clear() {
+        unset(self::$name);
+    }
+}
+$root = new Root();
+$root->clear();
+"#,
+    );
+    assert_eq!(
+        self_error.message,
+        "unsupported call Root::$name: static property unset is not supported; assign null to the static property in the current subset"
+    );
+
+    let parent_error = runtime_error(
+        r#"<?php
+class Base {
+    protected static $secret;
+}
+class Child extends Base {
+    public function clear() {
+        unset(parent::$secret);
+    }
+}
+$child = new Child();
+$child->clear();
+"#,
+    );
+    assert_eq!(
+        parent_error.message,
+        "unsupported call Base::$secret: static property unset is not supported; assign null to the static property in the current subset"
+    );
+
+    let undefined_class = runtime_error("<?php\nunset(Missing::$value);\n");
+    assert_eq!(undefined_class.message, "undefined class Missing");
+}
+
+#[test]
 fn emit_ir_rejects_static_properties_until_native_object_lowering_exists() {
     for source in [
         "<?php\necho Box::$cache;\n",

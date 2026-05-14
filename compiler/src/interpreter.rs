@@ -462,6 +462,22 @@ impl Interpreter {
                 self.execute_unset_array_index(name, index, *span, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::UnsetStaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                self.execute_unset_named_static_property(class_name, property, *span)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::UnsetSelfStaticProperty { property, span } => {
+                self.execute_unset_self_static_property(property, *span)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::UnsetParentStaticProperty { property, span } => {
+                self.execute_unset_parent_static_property(property, *span)?;
+                Ok(Flow::Normal)
+            }
             Stmt::UnsetMany { targets, span } => {
                 for target in targets {
                     self.execute_unset_target(target, *span, scope)?;
@@ -588,6 +604,17 @@ impl Interpreter {
             UnsetTarget::ArrayIndex { name, index, .. } => {
                 self.execute_unset_array_index(name, index, span, scope)
             }
+            UnsetTarget::StaticProperty {
+                class_name,
+                property,
+                ..
+            } => self.execute_unset_named_static_property(class_name, property, span),
+            UnsetTarget::SelfStaticProperty { property, .. } => {
+                self.execute_unset_self_static_property(property, span)
+            }
+            UnsetTarget::ParentStaticProperty { property, .. } => {
+                self.execute_unset_parent_static_property(property, span)
+            }
         }
     }
 
@@ -615,6 +642,65 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn execute_unset_named_static_property(
+        &self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        self.reject_static_property_unset(class_name, property, span)
+    }
+
+    fn execute_unset_self_static_property(&self, property: &str, span: Span) -> CompileResult<()> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("self::${property}"),
+                    "self static property access requires instance method context",
+                ),
+            ));
+        };
+
+        let class_name = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata")
+            .name();
+        self.reject_static_property_unset(class_name, property, span)
+    }
+
+    fn execute_unset_parent_static_property(
+        &self,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let (parent_class_id, parent_class_name) =
+            self.resolve_parent_static_property_context(property, span)?;
+        self.classes
+            .get(parent_class_id)
+            .expect("parent class id should resolve to class metadata");
+        self.reject_static_property_unset(&parent_class_name, property, span)
+    }
+
+    fn reject_static_property_unset(
+        &self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{class_name}::${property}"),
+                "static property unset is not supported; assign null to the static property in the current subset",
+            ),
+        ))
     }
 
     fn execute_const_declaration(

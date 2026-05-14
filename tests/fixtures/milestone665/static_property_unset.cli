@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone665/static_property_unset.php:6:1: unsupported call Root::$name: static property unset is not supported; assign null to the static property in the current subset
+--- stderr end ---

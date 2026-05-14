@@ -387,6 +387,23 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone664`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone664`
   passed.
+- Added Milestone 665, a narrow static-property `unset(...)` boundary. The
+  parser now accepts `unset(ClassName::$prop)`, `unset(self::$prop)`, and
+  `unset(parent::$prop)` operands and `phpc run` reports stable runtime
+  diagnostics because PHP forbids unsetting static properties. The boundary
+  resolves named classes before reporting the static-property unset error,
+  preserves the current self/parent context diagnostics, and does not remove
+  interpreter static storage. Storage-removing static-property unset,
+  `static::$prop`, static methods, typed/default static properties, dynamic
+  static property names, late static binding, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit. Focused verification:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_property_unset_reports_current_php_forbidden_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test native_mutation_boundary emit_ir_rejects_mutation_forms_with_specific_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone665`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone665`
+  passed.
 
 Next:
 
@@ -398,10 +415,9 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 665 should take the next object storage/static slice: static
-  method boundaries, static-property `unset`, broader class constant
-  semantics, or a documented blocker if typed/default property metadata must
-  land first.
+- Milestone 666 should take the next object storage/static slice: static
+  method boundaries, broader class constant semantics, typed/default static
+  property metadata, or a documented blocker.
 
 ## 2026-05-12
 

@@ -94,6 +94,19 @@ pub enum Stmt {
         index: Expr,
         span: Span,
     },
+    UnsetStaticProperty {
+        class_name: String,
+        property: String,
+        span: Span,
+    },
+    UnsetSelfStaticProperty {
+        property: String,
+        span: Span,
+    },
+    UnsetParentStaticProperty {
+        property: String,
+        span: Span,
+    },
     UnsetMany {
         targets: Vec<UnsetTarget>,
         span: Span,
@@ -167,6 +180,19 @@ pub enum UnsetTarget {
     ArrayIndex {
         name: String,
         index: Expr,
+        span: Span,
+    },
+    StaticProperty {
+        class_name: String,
+        property: String,
+        span: Span,
+    },
+    SelfStaticProperty {
+        property: String,
+        span: Span,
+    },
+    ParentStaticProperty {
+        property: String,
         span: Span,
     },
 }

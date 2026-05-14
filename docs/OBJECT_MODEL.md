@@ -237,7 +237,10 @@ Static properties are recorded as metadata and stored per declaring class, but
 are not stored in object values. `ClassName::$prop`, `self::$prop`, and
 `parent::$prop` support direct reads and writes, compound assignment, pre/post
 increment/decrement, `isset`, `empty`, `??`, and `??=` for the current
-untyped/no-default static property slice. Static method expressions such as
+untyped/no-default static property slice. `unset(ClassName::$prop)`,
+`unset(self::$prop)`, and `unset(parent::$prop)` are parsed and report a
+stable runtime diagnostic because PHP forbids unsetting static properties; they
+do not remove static storage. Static method expressions such as
 `ClassName::method()` are rejected by the parser instead of falling through to
 generic expression errors.
 `ClassName::class` returns the syntactic class string, and `self::class` /
@@ -249,8 +252,8 @@ multiple constants in one declaration, `static::CONST`, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
 outside the current slice.
 Static property defaults, typed static properties, dynamic property names,
-`unset` on static properties, and `static::$prop` are outside the current
-slice.
+storage-removing static-property unset, and `static::$prop` are outside the
+current slice.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
 static identifier naming a declared or inherited public instance method, a

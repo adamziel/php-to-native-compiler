@@ -198,11 +198,11 @@
 - static property reads and direct writes for untyped/no-default declared
   static properties through `ClassName::$name`, `self::$name`, and
   `parent::$name`, plus compound assignment, pre/post increment/decrement,
-  `isset`, `empty`, `??`, and `??=` for those same static property forms.
-  Storage is class-level, initialized to `null`, inherited static properties
-  share the declaring class slot unless redeclared, names are case-sensitive,
-  and current public/protected/private visibility checks apply in active class
-  context.
+  `isset`, `empty`, `??`, `??=`, and stable diagnostics for PHP-forbidden
+  `unset(...)` on those same static property forms. Storage is class-level,
+  initialized to `null`, inherited static properties share the declaring class
+  slot unless redeclared, names are case-sensitive, and current
+  public/protected/private visibility checks apply in active class context.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class, protected property operands owned by the active class or an
@@ -736,11 +736,13 @@
   `static::CONST`, dynamic `constant("Class::CONST")`/`defined("Class::CONST")`
   lookup, and native lowering remain unsupported.
   Static property reads, direct writes, compound assignment, pre/post
-  increment/decrement, `isset`, `empty`, `??`, and `??=` through
+  increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
+  for PHP-forbidden `unset(...)` through
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` use class-level
   storage initialized to `null`, resolve inherited properties
   case-sensitively, and enforce current visibility checks; defaults, typed
-  properties, dynamic names, `unset`, and `static::$prop` remain unsupported.
+  properties, dynamic names, storage-removing static-property unset, and
+  `static::$prop` remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices.
   Public, same-class private, and protected same-class/child instance method
@@ -1567,11 +1569,11 @@
   fallthrough, references/copy-on-write side-effect behavior, and exact native
   error objects.
   Native compound assignment, null coalescing assignment,
-  increment/decrement, assignment expressions, direct variable unset, and
-  multiple-operand unset are rejected before operand or mutation-target
-  lowering with a specific codegen diagnostic until generated code has
-  read-modify-write ordering, null-aware mutation, unset symbol-table effects,
-  references/copy-on-write, and exact native error objects.
+  increment/decrement, assignment expressions, direct variable unset, static
+  property unset, and multiple-operand unset are rejected before operand or
+  mutation-target lowering with a specific codegen diagnostic until generated
+  code has read-modify-write ordering, null-aware mutation, unset symbol-table
+  effects, references/copy-on-write, and exact native error objects.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset. CLI coverage for
   `phpc compile --emit-asm` records a normalized success summary for the current
@@ -2461,7 +2463,7 @@
   multiple properties in one declaration, per-property defaults in
   multi-property declarations, typed/multiple/final/interface/trait/enum class
   constants, static property defaults, typed static properties, static property
-  compound/null-coalescing mutation, late static binding, magic methods, namespaces,
+  storage removal, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
   dynamic property names, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
@@ -2544,8 +2546,9 @@
   precision edge-case coverage.
 - Array gaps: array spread elements, array reference elements, and
   `list(...)`/`[...]` destructuring assignment targets are rejected with
-  stable parse diagnostics. `unset(...)` forms outside direct variables and
-  direct array-offset operands, comma-separated `for` header expression lists,
+  stable parse diagnostics. `unset(...)` forms outside direct variables,
+  direct array-offset operands, and static-property diagnostic operands,
+  comma-separated `for` header expression lists,
   expression-form `do ... while`, expression-form `switch`, malformed
   alternate switch bodies, and exponentiation syntax `**`/`**=` are rejected
   with stable parse diagnostics; object property removal, append-offset unset,
@@ -2622,7 +2625,8 @@
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, static property defaults,
-  typed static properties, late-bound static properties,
+  typed static properties, late-bound static properties, storage-removing
+  static-property unset,
   and anonymous classes
 - static method calls, late-bound `static::class`, `static::$prop`,
   `static::CONST`, and broader `static::` through `::`
@@ -2659,9 +2663,10 @@
   specific codegen diagnostic until source mapping, path canonicalization, and
   function-context lowering exist.
 - array literal spread elements and array literal reference elements
-- `unset(...)` forms outside direct variables and direct array offsets,
-  including object property removal, append-offset unset, and nested/complex
-  operands; these fail with stable parse diagnostics
+- `unset(...)` forms outside direct variables, direct array offsets, and
+  static-property diagnostic operands, including object property removal,
+  append-offset unset, and nested/complex operands; these fail with stable
+  parse diagnostics
 - by-reference `foreach`, object iteration, destructuring loop targets, and
   expression-form `foreach`
 - comma-separated `for` initializer, condition, or increment expression lists;

@@ -283,13 +283,54 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone664`
   passed.
 - Remaining semantic gaps: `static::$prop`, static methods, typed/default
-  static properties, dynamic static property names, static-property `unset`,
-  late static binding, trait composition, magic methods,
+  static properties, dynamic static property names, storage-removing
+  static-property unset, late static binding, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   remain explicit.
 - Next concrete task: run formatting/diff checks, then checkpoint with
   `tools/checkpoint.sh "objects: add static property isset empty"` if the full
   gate passes.
+
+## Loop Event 2026-05-14T23:45:00Z
+
+- Checkpoint before this task: `930737f objects: add static property isset
+  empty`, pushed to `origin/master`.
+- Task attempted: Milestone 665, static-property `unset(...)` diagnostics for
+  the existing untyped/no-default static-property slice.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/native_mutation_boundary.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `tests/fixtures/milestone665/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_unset.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_property_unset_reports_current_php_forbidden_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test assignment_expression -- --test-threads=1`,
+  `cargo test -p phpc --test compound_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test increment_decrement -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing -- --test-threads=1`,
+  `cargo test -p phpc --test native_mutation_boundary emit_ir_rejects_mutation_forms_with_specific_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test native_mutation_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone665`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone665`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/milestone176`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone176`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- Remaining semantic gaps: storage-removing static-property unset,
+  `static::$prop`, static methods, typed/default static properties, dynamic
+  static property names, late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run formatting, focused static-property/object tests,
+  syntax/native boundary tests, and `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: add static property unset boundary"` if the
+  full gate passes.
 
 ## Loop Event 2026-05-14T14:15:14Z
 

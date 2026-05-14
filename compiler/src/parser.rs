@@ -999,6 +999,21 @@ impl Parser {
                 UnsetTarget::ArrayIndex { name, index, .. } => {
                     Ok(Stmt::UnsetArrayIndex { name, index, span })
                 }
+                UnsetTarget::StaticProperty {
+                    class_name,
+                    property,
+                    ..
+                } => Ok(Stmt::UnsetStaticProperty {
+                    class_name,
+                    property,
+                    span,
+                }),
+                UnsetTarget::SelfStaticProperty { property, .. } => {
+                    Ok(Stmt::UnsetSelfStaticProperty { property, span })
+                }
+                UnsetTarget::ParentStaticProperty { property, .. } => {
+                    Ok(Stmt::UnsetParentStaticProperty { property, span })
+                }
             };
         }
 
@@ -1009,6 +1024,22 @@ impl Parser {
         let token = self.advance().clone();
         let (name, target_span) = match token.kind {
             TokenKind::Variable(name) => (name, token.span),
+            TokenKind::Identifier(name)
+                if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) =>
+            {
+                return self.parse_static_property_unset_target(Some(name), token.span);
+            }
+            TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
+                self.consume_keyword(TokenKind::DoubleColon, "expected '::'")?;
+                let member = self.peek().clone();
+                return match member.kind {
+                    TokenKind::Variable(_) => Err(self.error_at(
+                        self.previous().span,
+                        "unsupported static:: property access: late static binding and static property storage are not implemented",
+                    )),
+                    _ => Err(self.error_at(token.span, unsupported_unset_message())),
+                };
+            }
             _ => return Err(self.error_at(token.span, unsupported_unset_message())),
         };
 
@@ -1047,6 +1078,45 @@ impl Parser {
             index,
             span: target_span,
         })
+    }
+
+    fn parse_static_property_unset_target(
+        &mut self,
+        receiver: Option<String>,
+        target_span: Span,
+    ) -> CompileResult<UnsetTarget> {
+        self.consume_keyword(TokenKind::DoubleColon, "expected '::' after class name")?;
+        let operator_span = self.previous().span;
+        let member = self.advance().clone();
+        let property = match member.kind {
+            TokenKind::Variable(property) => property,
+            _ => return Err(self.error_at(member.span, unsupported_unset_message())),
+        };
+
+        if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+            return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+        }
+
+        match receiver.as_deref() {
+            Some(receiver) if receiver.eq_ignore_ascii_case("self") => {
+                Ok(UnsetTarget::SelfStaticProperty {
+                    property,
+                    span: operator_span,
+                })
+            }
+            Some(receiver) if receiver.eq_ignore_ascii_case("parent") => {
+                Ok(UnsetTarget::ParentStaticProperty {
+                    property,
+                    span: operator_span,
+                })
+            }
+            Some(class_name) => Ok(UnsetTarget::StaticProperty {
+                class_name: class_name.to_string(),
+                property,
+                span: target_span,
+            }),
+            None => Err(self.error_at(target_span, unsupported_unset_message())),
+        }
     }
 
     fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {
@@ -3665,7 +3735,7 @@ fn unsupported_first_class_callable_message() -> &'static str {
 }
 
 fn unsupported_unset_message() -> &'static str {
-    "unsupported unset: only direct variables like unset($name) and direct array offset removal like unset($array[$key]) are implemented; property, append, and nested unset forms are not implemented"
+    "unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented"
 }
 
 fn unsupported_object_property_unset_message() -> &'static str {

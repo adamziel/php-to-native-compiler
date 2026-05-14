@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 
 #[test]
 fn phpc_run_still_handles_current_mutation_subset() {
@@ -54,6 +54,7 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
         "<?php\n$value = null;\necho ($value ??= 2);\n",
         "<?php\n$value = 1;\necho ++$value;\n",
         "<?php\n$value = 1;\nunset($value);\n",
+        "<?php\nunset(Box::$cache);\n",
         "<?php\n$left = 1;\n$right = 2;\nunset($left, $right);\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();

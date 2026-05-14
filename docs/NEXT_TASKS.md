@@ -6046,12 +6046,23 @@ handled.
 
 ## Milestone 665: Object Static Continuation
 
+- [x] Runtime/object lane: add the static-property `unset(...)` boundary.
+  Parsed `unset(ClassName::$prop)`, `unset(self::$prop)`, and
+  `unset(parent::$prop)` now report stable runtime diagnostics matching the
+  PHP-forbidden operation instead of removing static storage, with CLI fixture
+  coverage and native mutation rejection coverage. Kept storage-removing
+  static-property unset, `static::$prop`, static methods, typed/default static
+  properties, dynamic static property names, late static binding, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
+
+## Milestone 666: Object Static Continuation
+
 - [ ] Runtime/object lane: choose the next object storage/static slice: static
-  method boundaries, static-property `unset`, broader class constant
-  semantics, or a documented blocker if typed/default property metadata must
-  land first. Keep late static binding, trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  explicit.
+  method boundaries, broader class constant semantics, typed/default static
+  property metadata, or a documented blocker. Keep late static binding, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
 
 ## Latest Checkpoint
 
