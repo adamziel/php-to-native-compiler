@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_object_features/unsupported_class_constant.php:2:7: unsupported static:: class constant access: late static binding and class constants are not implemented
+runtime error at tests/fixtures/unsupported_object_features/unsupported_class_constant.php:2:7: unsupported call static::VERSION: static class constant access requires method or static class context
 --- stderr end ---

@@ -538,6 +538,24 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone672`,
   and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone672`
   passed.
+- Added Milestone 673, narrow late static class constant access. The parser
+  now accepts `static::CONST`, and the interpreter resolves class constants
+  through the active called class while reusing current inherited constant
+  lookup and public/protected/private visibility checks. Top-level
+  `static::CONST` keeps a stable runtime diagnostic. Typed/static/multiple
+  class-constant declarations, dynamic `constant("Class::CONST")` and
+  `defined("Class::CONST")`, traits, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering remain explicit. Focused
+  verification so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model late_static_class_constants_execute_current_subset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model late_static_class_constants_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_class_constants_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone673`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone673`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  and `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
+  passed.
 
 Next:
 

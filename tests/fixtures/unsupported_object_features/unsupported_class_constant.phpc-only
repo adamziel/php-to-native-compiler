@@ -1,1 +1,1 @@
-phpc intentionally rejects late-bound static:: class constant syntax before late static binding exists.
+phpc intentionally reports a stable runtime boundary for static:: class constant access outside method or static class context.

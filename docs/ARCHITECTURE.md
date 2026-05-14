@@ -1046,10 +1046,10 @@ forwards that called-class context into nested calls.
 `parent::class` resolve from the active declaring class context, and
 `static::class` resolves from the active called-class context in current
 instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
-and `parent::CONST` resolve declared or inherited class constants through
-runtime class metadata in the interpreter; typed constants, multiple constants
-in one declaration, `static::CONST`, and dynamic class-constant string lookup
-remain unsupported. Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
+`parent::CONST`, and late-bound `static::CONST` resolve declared or inherited
+class constants through runtime class metadata in the interpreter; typed
+constants, multiple constants in one declaration, and dynamic class-constant
+string lookup remain unsupported. Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
 and late-bound `static::$prop` resolve untyped static properties through
 interpreter-owned class-level storage, initialize from the current
 constant-expression default subset or `null`, and support direct reads/writes,
@@ -1058,8 +1058,7 @@ compound assignment, pre/post increment/decrement, `isset`, `empty`, `??`,
 `unset(...)`; typed static properties, dynamic names, storage-removing
 static-property unset, and top-level `static::$prop` execution remain
 unsupported.
-`static::CONST` stops at a distinct parse diagnostic until that late-bound
-member form is modeled. Native lowering
+Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, parent/self method calls, object instantiation,
 object property reads/writes, instance method calls, and

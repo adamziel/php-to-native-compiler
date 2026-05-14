@@ -6138,11 +6138,22 @@ handled.
 
 ## Milestone 673: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next static/member slice:
-  `static::CONST`, typed static property metadata, broader class constant
-  semantics, object-receiver static method dispatch, or a documented blocker.
-  Keep trait composition, magic methods, references/copy-on-write, exact native
-  error objects, and native lowering explicit.
+- [x] Runtime/object lane: implement the narrow `static::CONST` late-bound
+  class constant slice. Late static class constant reads now resolve through
+  the active called class, reuse current inherited constant lookup and
+  visibility rules, and keep top-level `static::CONST` as a stable runtime
+  diagnostic. Kept typed/static/multi-declarator class constants, dynamic
+  `constant("Class::CONST")`/`defined("Class::CONST")`, trait composition,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering explicit.
+
+## Milestone 674: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next static/member slice: typed static
+  property metadata boundary, broader class constant semantics, object-receiver
+  static method dispatch, or a documented blocker. Keep trait composition,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering explicit.
 
 ## Latest Checkpoint
 

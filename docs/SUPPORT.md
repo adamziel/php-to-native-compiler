@@ -511,7 +511,7 @@
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
   anonymous class expressions, dynamic property names,
-  and `static::CONST` late-bound class constant access
+  and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 - explicit lex diagnostics for unsupported PHP attribute syntax beginning with
@@ -738,15 +738,14 @@
   name while executing in class context. `static::class` resolves to the active
   called class for current instance and static method calls; outside method or
   static class context it fails with a stable runtime diagnostic.
-  `static::CONST` fails with a distinct stable parse diagnostic before
-  late-bound class constants exist.
   Class constant declarations accept the current constant-expression value
-  subset, and `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve
-  declared or inherited class constants case-sensitively through `phpc run`
-  with public/protected/private visibility checks in the current active class
+  subset, and `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
+  late-bound `static::CONST` in active called-class context resolve declared
+  or inherited class constants case-sensitively through `phpc run` with
+  public/protected/private visibility checks in the current active class
   context. Typed constants, multiple constants in one class declaration,
-  `static::CONST`, dynamic `constant("Class::CONST")`/`defined("Class::CONST")`
-  lookup, and native lowering remain unsupported.
+  dynamic `constant("Class::CONST")`/`defined("Class::CONST")` lookup, and
+  native lowering remain unsupported.
   Static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
   for PHP-forbidden `unset(...)` through
@@ -2646,8 +2645,8 @@
   typed/static/multi-declarator class constants, typed static properties,
   storage-removing static-property unset,
   and anonymous classes
-- static method dispatch through object receivers, late-bound `static::CONST`,
-  and broader `static::` through `::`
+- static method dispatch through object receivers and broader `static::`
+  member forms through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

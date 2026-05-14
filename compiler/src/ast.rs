@@ -370,6 +370,10 @@ pub enum Expr {
         constant: String,
         span: Span,
     },
+    LateStaticClassConstant {
+        constant: String,
+        span: Span,
+    },
     Array {
         items: Vec<ArrayItem>,
         span: Span,
@@ -514,6 +518,7 @@ impl Expr {
             | Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
             | Expr::ParentClassConstant { span, .. }
+            | Expr::LateStaticClassConstant { span, .. }
             | Expr::Array { span, .. }
             | Expr::Index { span, .. }
             | Expr::AppendIndex { span, .. }

@@ -1779,6 +1779,88 @@ Box::clear();
 }
 
 #[test]
+fn late_static_class_constants_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public const NAME = "base";
+    protected const SECRET = "secret";
+
+    public static function describe() {
+        return static::NAME . ":" . static::class . ":" . static::SECRET;
+    }
+
+    public function instanceDescribe() {
+        return static::NAME . ":" . static::class;
+    }
+}
+
+class Child extends Base {
+    public const NAME = "child";
+
+    public static function parentDescribe() {
+        return parent::describe();
+    }
+}
+
+echo Base::describe(), "\n";
+echo Child::describe(), "\n";
+echo Child::parentDescribe(), "\n";
+$child = new Child();
+echo $child->instanceDescribe();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:Base:secret\nchild:Child:secret\nchild:Child:secret\nchild:Child"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn late_static_class_constants_report_current_boundaries() {
+    let top_level = runtime_error("<?php\nstatic::VERSION;\n");
+    assert_eq!(
+        top_level.message,
+        "unsupported call static::VERSION: static class constant access requires method or static class context"
+    );
+
+    let missing = runtime_error(
+        r#"<?php
+class Base {
+    public static function missing() {
+        return static::MISSING;
+    }
+}
+class Child extends Base {}
+Child::missing();
+"#,
+    );
+    assert_eq!(missing.message, "undefined constant Child::MISSING");
+
+    let private_visibility = runtime_error(
+        r#"<?php
+class Base {
+    private const SECRET = "base";
+    public static function reveal() {
+        return static::SECRET;
+    }
+}
+class Child extends Base {
+    private const SECRET = "child";
+}
+Child::reveal();
+"#,
+    );
+    assert_eq!(
+        private_visibility.message,
+        "unsupported call Child::SECRET: private class constant is not visible from the current class context"
+    );
+}
+
+#[test]
 fn get_called_class_requires_no_arguments() {
     let error = runtime_error("<?php\nvar_dump(get_called_class(42));\n");
 
@@ -2575,6 +2657,7 @@ fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
         "<?php\necho Box::VERSION;\n",
         "<?php\nself::VERSION;\n",
         "<?php\nparent::VERSION;\n",
+        "<?php\nstatic::VERSION;\n",
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
@@ -3952,14 +4035,6 @@ echo $box INSTANCEOF Box;
             4,
             11,
             "unsupported instanceof expression: class/interface relationship checks are not implemented",
-        ),
-        (
-            r#"<?php
-static::VERSION;
-"#,
-            2,
-            7,
-            "unsupported static:: class constant access: late static binding and class constants are not implemented",
         ),
     ];
 

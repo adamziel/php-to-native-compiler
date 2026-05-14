@@ -825,6 +825,9 @@ impl Interpreter {
             Expr::ParentClassConstant { constant, span } => {
                 self.evaluate_parent_class_constant(constant, *span)
             }
+            Expr::LateStaticClassConstant { constant, span } => {
+                self.evaluate_late_static_class_constant(constant, *span)
+            }
             Expr::Array { items, span } => self.evaluate_array(items, *span, scope),
             Expr::Index {
                 target,
@@ -2809,6 +2812,30 @@ impl Interpreter {
             .name()
             .to_string();
         self.evaluate_resolved_class_constant(parent_class_id, &parent_class_name, constant, span)
+    }
+
+    fn evaluate_late_static_class_constant(
+        &mut self,
+        constant: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(called_class_id) = self.called_class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("static::{constant}"),
+                    "static class constant access requires method or static class context",
+                ),
+            ));
+        };
+
+        let called_class_name = self
+            .classes
+            .get(called_class_id)
+            .expect("called class context should resolve to class metadata")
+            .name()
+            .to_string();
+        self.evaluate_resolved_class_constant(called_class_id, &called_class_name, constant, span)
     }
 
     fn evaluate_resolved_class_constant(

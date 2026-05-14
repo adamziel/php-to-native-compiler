@@ -47,9 +47,8 @@ case-sensitively through `ClassName::$prop`, `self::$prop`, `parent::$prop`,
 and late-bound `static::$prop` in active called-class context. `static::class`
 resolves from the current called-class context inside instance and static
 methods. `static::method(...)` resolves visible static methods through the
-current called class and forwards that context into nested calls. `static::CONST`
-still has a distinct unsupported diagnostic until that late-bound member form
-is modeled.
+current called class and forwards that context into nested calls.
+`static::CONST` resolves class constants through the current called class.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
@@ -256,8 +255,8 @@ running inside active class context.
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
 `public|protected|private const NAME = value;` and resolve through
-`ClassName::CONST`, `self::CONST`, and `parent::CONST`. Typed constants,
-multiple constants in one declaration, `static::CONST`, namespace/alias-aware
+`ClassName::CONST`, `self::CONST`, `parent::CONST`, and `static::CONST`.
+Typed constants, multiple constants in one declaration, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
 outside the current slice.
 Typed static properties, dynamic property names, storage-removing

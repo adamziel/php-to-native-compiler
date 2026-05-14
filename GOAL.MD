@@ -199,7 +199,7 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   public/inherited public instance `__construct` execution with scoped
   `$this`, plus narrow `ClassName::class`, `self::class`, and `parent::class`
   resolution and narrow class constants through `ClassName::CONST`,
-  `self::CONST`, and `parent::CONST`, plus narrow static properties through
+  `self::CONST`, `parent::CONST`, and late-bound `static::CONST`, plus narrow static properties through
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` with direct
   reads/writes, read-modify-write, `isset`/`empty`, `??`, `??=` forms, and
   stable diagnostics for PHP-forbidden static-property `unset(...)`, plus
@@ -207,7 +207,7 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   `self::method(...)`, and `parent::method(...)`, plus late-bound
   `static::$prop` reads/writes and read-modify-write forms in active
   called-class context, now execute through `phpc run`, but interfaces,
-  traits, enums, late-bound class-constant access through `static::`, broader static member semantics,
+  traits, enums, broader static member semantics,
   broader class constant semantics, cloning, magic methods, dynamic
   method/property names, broader `parent::`/`self::`/`static::`,
   typed property compatibility and instance property defaults,

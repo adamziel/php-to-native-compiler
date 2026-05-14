@@ -17223,3 +17223,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run the checkpoint full gate with
   `tools/checkpoint.sh "objects: add late static property access"` if the full
   gate passes.
+
+## Loop Event 2026-05-15T01:45:00Z
+
+- Checkpoint before this task: `470d417 objects: add late static property
+  access`, pushed to `origin/master`.
+- Task attempted: Milestone 673, narrow late-bound class constant access
+  through `static::CONST`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone673/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_class_constant.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model late_static_class_constants_execute_current_subset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model late_static_class_constants_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_class_constants_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone673`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone673`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: typed/static/multi-declarator class constants,
+  dynamic `constant("Class::CONST")`/`defined("Class::CONST")`, object-receiver
+  static method dispatch, typed static property metadata/enforcement, broader
+  class constant semantics, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run full object-model focused suite, formatting/diff
+  checks, then checkpoint with
+  `tools/checkpoint.sh "objects: add late static class constants"` if the full
+  gate passes.

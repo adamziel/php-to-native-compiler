@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+base:Base:secret
+child:Child:secret
+child:Child:secret
+child:Child
+--- stdout end ---
+stderr:
+--- stderr end ---

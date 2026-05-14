@@ -2643,7 +2643,9 @@ impl Parser {
                         span: operator_span,
                     })
                 }
-                TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
+                TokenKind::Identifier(method)
+                    if matches!(self.peek_next().kind, TokenKind::LParen) =>
+                {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
                     let args = self.parse_call_arguments_after_open()?;
@@ -2653,10 +2655,13 @@ impl Parser {
                         span: operator_span,
                     })
                 }
-                TokenKind::Identifier(_) => Err(self.error_at(
-                    operator_span,
-                    "unsupported static:: class constant access: late static binding and class constants are not implemented",
-                )),
+                TokenKind::Identifier(constant) => {
+                    self.advance();
+                    Ok(Expr::LateStaticClassConstant {
+                        constant,
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Class => {
                     self.advance();
                     Ok(Expr::StaticClassNameConstant {
@@ -2921,6 +2926,7 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
@@ -2988,6 +2994,7 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
@@ -3096,6 +3103,7 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
@@ -3197,6 +3205,7 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
@@ -3274,6 +3283,7 @@ impl Parser {
             | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }

@@ -106,7 +106,8 @@ incorrect native code.
   and `parent::__construct()` calls in instance context, narrow
   `self::method()` calls in instance context, narrow `ClassName::class`,
   `self::class`, and `parent::class` resolution, narrow class constants
-  through `ClassName::CONST`, `self::CONST`, and `parent::CONST`,
+  through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
+  `static::CONST` in active called-class context,
   narrow static properties through `ClassName::$prop`, `self::$prop`,
   `parent::$prop`, and late-bound `static::$prop` in active called-class
   context with direct reads/writes, compound assignment, pre/post
@@ -122,12 +123,12 @@ references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
-current method, class-name, and static-property slices, visibility enforcement beyond the current public and
+current method, class-name, class-constant, and static-property slices,
+visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 instance property defaults,
-typed or multi-declarator class constants, late-bound class constant access
-through `static::`, dynamic method/property names, resources, and
+typed or multi-declarator class constants, dynamic method/property names, resources, and
 native extension integration.
 
 ### Native Path
