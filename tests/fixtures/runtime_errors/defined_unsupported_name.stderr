@@ -1,2 +1,2 @@
-runtime error at 2:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD
+runtime error at 2:6: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got 123BAD
 

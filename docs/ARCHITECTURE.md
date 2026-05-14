@@ -788,6 +788,15 @@ boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.
 Native function-table introspection recognizes the name, while direct native
 calls reject under the function-call boundary.
+Runtime-backed constant behavior currently lives in the interpreter's
+`ConstantTable`. Unbracketed namespace-scoped top-level `const NAME = value;`
+declarations store canonical qualified names such as
+`Sodium\CRYPTO_AUTH_BYTES`. String-name `defined(...)` and `constant(...)`
+lookups accept qualified names with an optional leading global namespace
+separator and answer only from that deterministic table. This does not model
+bare namespace constant fallback reads, class constants through
+`defined(...)`/`constant(...)`, host extension loading, full extension constant
+inventories, or native lowering.
 Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`
 PHP 8.3 compatibility-target constant in the built-in answer table. Bare global
 constant reads and `constant($name)` still stay behind the native
@@ -815,8 +824,9 @@ Exact `CASE_LOWER`, `CASE_UPPER`, `ARRAY_FILTER_USE_BOTH`,
 `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`, `SORT_NUMERIC`, and `SORT_STRING`
 names fold true, while other supported unqualified names fold false.
 Runtime-defined constants, source-order constant declarations, `define(...)`,
-`constant(...)`, unsupported names, namespace-aware lookup, and exact native
-errors remain outside this slice.
+`constant(...)`, qualified names such as `\Sodium\CRYPTO_AUTH_BYTES`,
+unsupported names, namespace-aware lookup, and exact native errors remain
+outside this slice.
 Direct `empty($name)` calls fold from the same straight-line static-variable
 map used by direct `isset($name)`: missing variables and statically falsey
 scalar/null values fold to true, while statically truthy scalar values fold to

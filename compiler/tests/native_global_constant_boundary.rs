@@ -55,6 +55,8 @@ fn emit_ir_rejects_constant_table_builtins_before_lowering_arguments() {
     for source in [
         "<?php\ndefine(\"APP_NAME\", []);\n",
         "<?php\necho constant([]);\n",
+        "<?php\necho constant(\"\\\\PHP_VERSION_ID\");\n",
+        "<?php\necho constant(\"\\\\Sodium\\\\CRYPTO_AUTH_BYTES\");\n",
         "<?php\necho defined(42);\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
@@ -126,12 +128,29 @@ fn emit_ir_rejects_unsupported_defined_forms() {
         "<?php\necho defined(\"123BAD\");\n",
         "<?php\necho defined(\"\");\n",
         "<?php\necho defined(\"App\\\\Name\");\n",
+        "<?php\necho defined(\"\\\\PHP_VERSION_ID\");\n",
+        "<?php\necho defined(\"\\\\Sodium\\\\CRYPTO_AUTH_BYTES\");\n",
+        "<?php\necho defined(\"Sodium\\\\CRYPTO_AUTH_BYTES\");\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_rejects_tracked_qualified_defined_names() {
+    let error = emit_ir_source(
+        r#"<?php
+$name = "\\Sodium\\CRYPTO_AUTH_BYTES";
+echo defined($name);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
 }
 
 #[test]

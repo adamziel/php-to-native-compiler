@@ -4,6 +4,37 @@
 
 Implemented:
 
+- Added Milestone 715, a bounded qualified runtime-constant name slice through
+  `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker
+  `\Sodium\CRYPTO_AUTH_BYTES`. Runtime `define()`, `defined()`, and
+  `constant()` now share the current supported qualified constant-name model:
+  `define()` accepts unqualified and qualified names without a leading global
+  separator, while `defined()` and `constant()` accept lookup strings with an
+  optional leading global separator. Top-level `const NAME = value;`
+  declarations under the active unbracketed namespace now store canonical
+  qualified names, and const declaration values may reference named class
+  constants such as `ParagonIE_Sodium_Compat::CRYPTO_AUTH_BYTES`. Bare
+  namespace constant fallback reads, class constants through
+  `defined()`/`constant()`, full extension constant catalogs, host extension
+  discovery/loading, exact PHP diagnostics, partial-output behavior, and
+  native lowering remain explicit. The real WordPress 6.9.4 inventory now
+  reports direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe advances to
+  `runtime error at <bootstrap-shim>:68:9: undefined function assert()`.
+  Focused verification so far:
+  `cargo test -p phpc --test dynamic_features constant -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features defined -- --test-threads=1`,
+  `cargo test -p phpc --test namespace_resolution const -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary defined -- --test-threads=1`,
+  `cargo test -p phpc --test namespace_resolution native -- --test-threads=1`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone715`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone715`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
 - Added Milestone 714, a bounded namespace-scoped function declaration/call
   slice through `phpc run`. Top-level functions declared under an active
   unbracketed namespace now register under their resolved names, unqualified

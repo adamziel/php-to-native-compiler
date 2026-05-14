@@ -205,23 +205,30 @@ impl ConstantTable {
     }
 
     fn define(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
-        if builtin_global_constant_value(name).is_some() || self.values.contains_key(name) {
-            return Err(RuntimeError::duplicate_constant(name));
+        let canonical_name = normalize_runtime_constant_lookup_name(name).unwrap_or(name);
+        if builtin_global_constant_value(canonical_name).is_some()
+            || self.values.contains_key(canonical_name)
+        {
+            return Err(RuntimeError::duplicate_constant(canonical_name));
         }
 
-        self.values.insert(name.to_string(), value);
+        self.values.insert(canonical_name.to_string(), value);
         Ok(())
     }
 
     fn get(&self, name: &str) -> Option<Value> {
+        let canonical_name = normalize_runtime_constant_lookup_name(name)?;
         self.values
-            .get(name)
+            .get(canonical_name)
             .cloned()
-            .or_else(|| builtin_global_constant_value(name).map(Value::Int))
+            .or_else(|| builtin_global_constant_value(canonical_name).map(Value::Int))
     }
 
     fn contains(&self, name: &str) -> bool {
-        self.values.contains_key(name) || builtin_global_constant_value(name).is_some()
+        normalize_runtime_constant_lookup_name(name).is_some_and(|canonical_name| {
+            self.values.contains_key(canonical_name)
+                || builtin_global_constant_value(canonical_name).is_some()
+        })
     }
 }
 
@@ -4356,14 +4363,16 @@ impl Interpreter {
                 }
 
                 let name = match &args[0] {
-                    Value::String(name) if is_supported_runtime_constant_name(name) => name.clone(),
+                    Value::String(name) if is_supported_qualified_runtime_constant_name(name) => {
+                        name.clone()
+                    }
                     Value::String(name) => {
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
                                 "define()",
                                 format!(
-                                    "constant name must be a non-empty unqualified identifier in the current subset, got {name}"
+                                    "constant name must be a non-empty supported identifier or qualified name in the current subset, got {name}"
                                 ),
                             ),
                         ));
@@ -4481,29 +4490,31 @@ impl Interpreter {
             "constant" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::String(name) if is_supported_runtime_constant_name(name) => self
-                        .constants
-                        .get(name)
-                        .ok_or_else(|| {
+                    Value::String(name) => {
+                        let Some(normalized) = normalize_runtime_constant_lookup_name(name) else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "constant()",
+                                    format!(
+                                        "constant name must be a non-empty supported identifier or qualified name in the current subset, got {name}"
+                                    ),
+                                ),
+                            ));
+                        };
+
+                        self.constants.get(normalized).ok_or_else(|| {
                             runtime_error(
                                 span,
                                 RuntimeError::unsupported_call(
                                     "constant()",
                                     format!(
-                                        "constant {name} is not defined in the current runtime-defined or built-in constant subset"
+                                        "constant {normalized} is not defined in the current runtime-defined or built-in constant subset"
                                     ),
                                 ),
                             )
-                        }),
-                    Value::String(name) => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "constant()",
-                            format!(
-                                "constant name must be a non-empty unqualified identifier in the current subset, got {name}"
-                            ),
-                        ),
-                    )),
+                        })
+                    }
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -4519,18 +4530,20 @@ impl Interpreter {
             "defined" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::String(name) if is_supported_runtime_constant_name(name) => {
-                        Ok(Value::Bool(self.constants.contains(name)))
+                    Value::String(name) => {
+                        let Some(normalized) = normalize_runtime_constant_lookup_name(name) else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "defined()",
+                                    format!(
+                                        "constant name must be a non-empty supported identifier or qualified name in the current subset, got {name}"
+                                    ),
+                                ),
+                            ));
+                        };
+                        Ok(Value::Bool(self.constants.contains(normalized)))
                     }
-                    Value::String(name) => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "defined()",
-                            format!(
-                                "constant name must be a non-empty unqualified identifier in the current subset, got {name}"
-                            ),
-                        ),
-                    )),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -7598,6 +7611,23 @@ fn is_supported_runtime_constant_name(name: &str) -> bool {
 
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|char| char == '_' || char.is_ascii_alphanumeric())
+}
+
+fn is_supported_qualified_runtime_constant_name(name: &str) -> bool {
+    if name.is_empty() || name.starts_with('\\') {
+        return false;
+    }
+
+    name.split('\\').all(is_supported_runtime_constant_name)
+}
+
+fn normalize_runtime_constant_lookup_name(name: &str) -> Option<&str> {
+    let normalized = name.strip_prefix('\\').unwrap_or(name);
+    if is_supported_qualified_runtime_constant_name(normalized) {
+        Some(normalized)
+    } else {
+        None
+    }
 }
 
 fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str> {

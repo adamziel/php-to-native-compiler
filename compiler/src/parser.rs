@@ -842,9 +842,6 @@ impl Parser {
 
     fn parse_const_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
-        if !self.current_namespace.is_empty() {
-            return Err(self.error_at(span, unsupported_namespace_const_declaration_message()));
-        }
         let mut declarations = Vec::new();
 
         loop {
@@ -859,6 +856,7 @@ impl Parser {
             self.consume_keyword(TokenKind::Equal, "expected '=' after constant name")?;
             let value = self.parse_expression()?;
             self.ensure_supported_const_declaration_expr(&value)?;
+            let name = self.resolve_constant_declaration_name(&name);
             declarations.push(ConstDeclarator {
                 name,
                 value,
@@ -3824,12 +3822,12 @@ impl Parser {
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
+            Expr::ClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Cast { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
-            | Expr::ClassConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
@@ -4268,6 +4266,14 @@ impl Parser {
     }
 
     fn resolve_function_declaration_name(&self, name: &str) -> String {
+        if self.current_namespace.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, name)
+        }
+    }
+
+    fn resolve_constant_declaration_name(&self, name: &str) -> String {
         if self.current_namespace.is_empty() {
             name.to_string()
         } else {

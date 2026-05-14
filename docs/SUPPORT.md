@@ -257,17 +257,20 @@
   `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID`, which evaluate to
   integers `0`, `1`, `2`, `1`, `0`, `1`, `2`, and the current deterministic
   PHP 8.3 compatibility target `80300`
-- runtime-defined constants through `define($name, $value)` and
-  `constant($name)` over the current unqualified string-name and scalar/array
-  value subset; `defined($name)` reports whether a supported unqualified name
-  exists in the current built-in/runtime-defined constant table; string-valued
-  dynamic calls to `define`, `constant`, and `defined` use the same path
+- runtime-defined constants through `define($name, $value)` over the current
+  unqualified or qualified string-name and scalar/array value subset;
+  `constant($name)` accepts unqualified names and qualified lookup names with
+  an optional leading global namespace separator; `defined($name)` reports
+  whether a supported unqualified or qualified name exists in the current
+  built-in/runtime-defined constant table; string-valued dynamic calls to
+  `define`, `constant`, and `defined` use the same path
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
 - top-level single and grouped `const NAME = value;` declarations for
-  unqualified constant names whose values use the current constant-expression
-  subset: `null`, booleans, integers, floats, strings, short and long arrays
-  with supported keys, unary expressions, binary expressions over those values,
+  unqualified names at global scope and names resolved under the active
+  unbracketed namespace. Values use the current constant-expression subset:
+  `null`, booleans, integers, floats, strings, short and long arrays with
+  supported keys, unary expressions, binary expressions over those values,
   and bare references to previously defined unqualified constants or the
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` constants
@@ -1182,7 +1185,8 @@
   variables, user-function arity mismatches, unsupported scalar `count()` calls,
   duplicate `define()` constant definitions, unsupported `define()` names,
   unsupported `define()` values, unsupported `define()` legacy flags,
-  unsupported `defined()` names and non-string name arguments,
+  unsupported constant introspection names outside the current unqualified and
+  qualified string-name slices and non-string name arguments,
   unsupported array keys,
   undefined array keys, invalid `array_key_exists` keys, non-array
   `array_key_exists` operands, non-array `array_key_first` or
@@ -1650,7 +1654,9 @@
   Direct `defined($name)` calls fold in native output when `$name` is an
   already-lowerable known string operand whose possible values are supported
   unqualified constant names with a uniform answer against the current exact
-  built-in constant table. Exact `CASE_LOWER`, `CASE_UPPER`,
+  built-in constant table. Qualified names such as
+  `\Sodium\CRYPTO_AUTH_BYTES` and `Sodium\CRYPTO_AUTH_BYTES` remain rejected
+  in native lowering. Exact `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` names fold to true;
   other supported unqualified names fold to false. The Milestone 569 and 573
@@ -2514,34 +2520,38 @@
   `constant("ARRAY_FILTER_USE_KEY")` and
   `constant("ARRAY_FILTER_USE_BOTH")` resolve to the same integer values and
   may also be used as mode expressions. `define($name, $value)` accepts
-  unqualified string names matching the current identifier subset and stores
+  unqualified and qualified string names matching the current identifier
+  segment subset, without a leading global namespace separator, and stores
   `null`, booleans, integers, floats, strings, and arrays containing only
-  supported constant values. `constant($name)` and bare reads of
-  runtime-defined unqualified constants return a cloned value from the
-  runtime-defined table or from the exact built-in `ARRAY_FILTER_*` and
-  `SORT_*` slice.
-  `defined($name)` returns true for supported unqualified names present in that
-  current table and false for supported unqualified names that are missing.
+  supported constant values. `constant($name)` accepts unqualified names and
+  qualified lookup names with an optional leading global namespace separator,
+  returning a cloned value from the runtime-defined table or from the exact
+  built-in `ARRAY_FILTER_*` and `SORT_*` slice. Bare reads still only use the
+  current unqualified runtime-defined and built-in constant table.
+  `defined($name)` returns true for supported unqualified or qualified names
+  present in that current table and false for supported names that are
+  missing, including absent extension-style names such as
+  `\Sodium\CRYPTO_AUTH_BYTES`.
   Top-level single and grouped `const NAME = value;` declarations accept
-  unqualified names and the current constant-expression subset (`null`,
-  booleans, integers, floats, strings, arrays, unary expressions, and binary
-  expressions over those values, plus bare references to previously defined
+  unqualified names at global scope and resolve those names under the active
+  unbracketed namespace. Their current constant-expression subset is `null`,
+  booleans, integers, floats, strings, arrays, unary expressions, binary
+  expressions over those values, bare references to previously defined
   unqualified constants and the current exact built-in `ARRAY_FILTER_*` and
-  `SORT_*` constants). Grouped declarations execute left to right, so
-  references to
-  earlier declarators in the same group work and duplicate diagnostics point to
-  the later duplicate declarator in the current group. Duplicate definitions,
-  redefinition of the built-in constants, forward or otherwise undefined const
-  declaration references, non-string or unsupported names, unsupported
-  object-containing values, unknown `constant(...)` names, non-string or
-  unsupported `defined(...)` names, unknown bare constants, and the legacy
-  third `define(...)` flag fail with stable diagnostics. Magic constants are
-  rejected by the parser before runtime constant lookup. Constant names that
-  are lexed as language keywords or literals cannot be read bare, and
-  case-insensitive legacy constants, namespace-qualified constants, extension
-  constants, nested declarations, dynamic declaration values, class constants
-  through
-  `constant(...)`/unsupported `defined(...)` forms,
+  `SORT_*` constants, and named class constants such as `Box::VALUE`. Grouped
+  declarations execute left to right, so references to earlier declarators in
+  the same group work and duplicate diagnostics point to the later duplicate
+  declarator in the current group. Duplicate definitions, redefinition of the
+  built-in constants, forward or otherwise undefined const declaration
+  references, non-string or unsupported names, unsupported object-containing
+  values, unknown `constant(...)` names, non-string or unsupported
+  `defined(...)` names, unknown bare constants, and the legacy third
+  `define(...)` flag fail with stable diagnostics. Magic constants are rejected
+  by the parser before runtime constant lookup. Constant names that are lexed
+  as language keywords or literals cannot be read bare, and bare namespace
+  constant fallback reads, full extension constant catalogs, host
+  extension/module discovery, class constants through `constant(...)` or
+  `defined(...)`, nested declarations, dynamic declaration values,
   references/copy-on-write behavior, and broader native lowering are not
   implemented.
   Array/object callables, closures, first-class callables, method calls,
@@ -3547,13 +3557,12 @@
   unqualified constants in the current name/value subset; PHP version-string
   constants such as `PHP_VERSION`, component constants such as
   `PHP_MAJOR_VERSION`, patch-level host version coupling, SAPIs/build
-  metadata, extension constants, unsupported `define(...)` names or values,
-  case-insensitive legacy constants, namespace-qualified constants, nested
-  `const` declarations,
-  dynamic declaration values, `constant()`/`defined()` lookup
-  for class constants, names lexed as language keywords or literals for bare
-  reads, magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
-  `__FUNCTION__`,
+  metadata, full extension constant catalogs, unsupported `define(...)` names
+  or values, case-insensitive legacy constants, bare namespace constant
+  fallback reads, nested `const` declarations, dynamic declaration values,
+  `constant()`/`defined()` lookup for class constants, names lexed as language
+  keywords or literals for bare reads, magic constants other than `__LINE__`,
+  `__FILE__`, `__DIR__`, and `__FUNCTION__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported
 - namespace-aware behavior beyond the current class-name and same-namespace

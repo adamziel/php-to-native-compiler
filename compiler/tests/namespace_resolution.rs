@@ -136,6 +136,31 @@ echo function_exists("label") ? "yes" : "no";
 }
 
 #[test]
+fn unbracketed_namespace_resolves_const_declarations_to_qualified_names() {
+    let execution = run_source(
+        r#"<?php
+namespace Sodium;
+
+class ParagonIE_Sodium_Compat {
+    public const CRYPTO_AUTH_BYTES = 32;
+}
+
+const CRYPTO_AUTH_BYTES = ParagonIE_Sodium_Compat::CRYPTO_AUTH_BYTES;
+const CRYPTO_SECRETBOX_KEYBYTES = 32;
+
+echo defined("\\Sodium\\CRYPTO_AUTH_BYTES") ? "yes" : "no", "\n";
+echo constant("\\Sodium\\CRYPTO_AUTH_BYTES"), "\n";
+echo defined("Sodium\\CRYPTO_SECRETBOX_KEYBYTES") ? "yes" : "no", "\n";
+echo defined("CRYPTO_AUTH_BYTES") ? "yes" : "no";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes\n32\nyes\nno");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn duplicate_namespaced_function_declarations_share_case_insensitive_key() {
     let error = run_source(
         r#"<?php
@@ -186,15 +211,6 @@ if (true) {
         ),
         (
             r#"<?php
-namespace App;
-const NAME = "app";
-"#,
-            3,
-            1,
-            "unsupported const declaration: namespace-qualified constant declarations are not implemented",
-        ),
-        (
-            r#"<?php
 use function App\Demo\make_service;
 "#,
             2,
@@ -216,6 +232,7 @@ fn native_lowering_rejects_namespace_context_before_scalar_folds() {
     for source in [
         "<?php\nnamespace App;\necho \"ok\";\n",
         "<?php\nnamespace App;\necho strlen(\"abc\");\n",
+        "<?php\nnamespace App;\necho defined(\"\\\\PHP_VERSION_ID\");\n",
         "<?php\nnamespace App;\nuse Vendor\\Lib\\Tool;\necho Tool::class;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();

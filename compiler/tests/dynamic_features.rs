@@ -711,6 +711,8 @@ fn constant_builtin_resolves_the_current_builtin_constant_slice() {
         r#"<?php
 echo constant("ARRAY_FILTER_USE_KEY"), "|", constant("ARRAY_FILTER_USE_BOTH"), "\n";
 echo constant("PHP_VERSION_ID"), "|", constant("PHP_VERSION_ID") >= 80000, "\n";
+define("Sodium\\CRYPTO_AUTH_BYTES", 32);
+echo constant("\\Sodium\\CRYPTO_AUTH_BYTES"), "\n";
 $name = "ARRAY_FILTER_USE_KEY";
 echo constant($name), "\n";
 $call = "constant";
@@ -730,7 +732,7 @@ echo count($filtered), "|", $filtered["name"], "\n";
 
     assert_eq!(
         execution.stdout,
-        "2|1\n80300|1\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
+        "2|1\n80300|1\n32\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -775,9 +777,14 @@ echo defined("ARRAY_FILTER_USE_KEY"), "|", defined("ARRAY_FILTER_USE_BOTH"), "\n
 echo defined("PHP_VERSION_ID"), "|", defined("PHP_VERSION"), "\n";
 echo defined("APP_NAME"), "|", defined("MISSING_CONST"), "\n";
 define("APP_NAME", "compiler");
+define("Sodium\\RUNTIME_CONST", 99);
 echo defined("APP_NAME"), "|", defined("MISSING_CONST"), "\n";
 $call = "defined";
 echo $call("APP_NAME"), "|", $call("MISSING_CONST"), "\n";
+echo defined("\\PHP_VERSION_ID"), "|", defined("\\Sodium\\CRYPTO_AUTH_BYTES"), "|", defined("Sodium\\CRYPTO_AUTH_BYTES"), "\n";
+echo defined("\\Sodium\\RUNTIME_CONST"), "|", constant("\\Sodium\\RUNTIME_CONST"), "\n";
+$qualified = "\\Sodium\\CRYPTO_AUTH_BYTES";
+echo $call($qualified), "\n";
 
 function check_defined_inside_function() {
     define("INSIDE_DEFINED", 1);
@@ -789,7 +796,7 @@ echo check_defined_inside_function(), "\n";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|1\n1|\n|\n1|\n1|\n1:1\n");
+    assert_eq!(execution.stdout, "1|1\n1|\n|\n1|\n1|\n1||\n1|99\n\n1:1\n");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -816,8 +823,37 @@ echo defined("123BAD");
     assert_eq!(bad_name.column, 6);
     assert_eq!(
         bad_name.message,
-        "unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD"
+        "unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got 123BAD"
     );
+
+    for source in [
+        r#"<?php
+echo defined("");
+"#,
+        r#"<?php
+echo defined("\\");
+"#,
+        r#"<?php
+echo defined("Sodium\\");
+"#,
+        r#"<?php
+echo defined("Sodium\\\\CRYPTO_AUTH_BYTES");
+"#,
+        r#"<?php
+echo defined("\\123BAD");
+"#,
+    ] {
+        let malformed = runtime_error(source);
+        assert_eq!(malformed.line, 2);
+        assert_eq!(malformed.column, 6);
+        assert!(
+            malformed.message.contains(
+                "constant name must be a non-empty supported identifier or qualified name"
+            ),
+            "{}",
+            malformed.message
+        );
+    }
 }
 
 #[test]
@@ -1083,7 +1119,7 @@ define("123BAD", "bad");
     assert_eq!(bad_name.column, 1);
     assert_eq!(
         bad_name.message,
-        "unsupported call define(): constant name must be a non-empty unqualified identifier in the current subset, got 123BAD"
+        "unsupported call define(): constant name must be a non-empty supported identifier or qualified name in the current subset, got 123BAD"
     );
 
     let unsupported_value = runtime_error(

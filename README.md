@@ -101,8 +101,10 @@ incorrect native code.
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
   append writes, offset removal, array iteration, and simple positional
   statement-form `list($a, $b) = expr;` assignment over numeric keys
-- top-level constants, selected built-in constants, runtime-defined constants,
-  and executable magic constants documented in the support matrix
+- top-level constants, namespace-scoped top-level `const` declarations in the
+  current unbracketed namespace slice, selected built-in constants,
+  runtime-defined constants with bounded qualified string names, and executable
+  magic constants documented in the support matrix
 - statement-form `throw expr;` as a bounded exception boundary: guarded throws
   can parse and be skipped, while reached throws report a stable runtime
   diagnostic without constructing exception objects or unwinding the stack
@@ -159,8 +161,9 @@ incorrect native code.
   callability checks, object/class metadata, and debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
-references, copy-on-write, namespace forms beyond the current class-name/import
-and same-namespace function slice, include/require breadth beyond the current narrow local
+references, copy-on-write, namespace forms beyond the current class-name/import,
+same-namespace function, and namespace-scoped top-level constant slices,
+include/require breadth beyond the current narrow local
 `require`/`require_once`/`include`/`include_once` statement slice, eval,
 generators, closure invocation, explicit and implicit capture binding,
 callback integration, type declaration enforcement, cast
@@ -177,6 +180,8 @@ static-property slices,
 exact PHP nested class declaration timing and fatal behavior, real
 `Exception` constructor state/methods, `Throwable`, stack traces, exception
 throw/catch execution,
+bare namespace constant fallback reads, class-constant lookup through
+`defined()`/`constant()`, full extension constant catalogs,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and

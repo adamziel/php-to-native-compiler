@@ -26,6 +26,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T23:46:38Z
+
+- Checkpoint before this task: `fdc82fd runtime: add namespace-scoped function
+  declarations`, pushed to `origin/master`.
+- Task attempted: Milestone 715, bounded qualified runtime constant-name
+  handling for `\Sodium\CRYPTO_AUTH_BYTES` plus namespace-scoped top-level
+  `const` declarations reached by the real WordPress 6.9.4 sodium compatibility
+  bootstrap.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/parser.rs`, `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/namespace_resolution.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `compiler/tests/user_constants_cli.rs`, `tests/fixtures/milestone715/*`,
+  `tests/fixtures/runtime_errors/defined_unsupported_name.*`, `README.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test dynamic_features constant -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features defined -- --test-threads=1`,
+  `cargo test -p phpc --test namespace_resolution const -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary defined -- --test-threads=1`,
+  `cargo test -p phpc --test namespace_resolution native -- --test-threads=1`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone715`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone715`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+- Remaining semantic gaps: bare namespace constant fallback reads, class
+  constants through `defined()`/`constant()`, full extension constant catalogs,
+  host extension discovery/loading, exact PHP diagnostics, partial-output
+  behavior, and native lowering remain unsupported. The real inventory now
+  reports direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:68:9: undefined function assert()`.
+- Next concrete task: implement or explicitly bound the `assert()` builtin path
+  needed by the real WordPress bootstrap shim, while keeping assertion INI
+  policy, callbacks/exceptions, exact warning/fatal behavior, partial-output
+  behavior, and native lowering named.
+
 ## Loop Event 2026-05-15T01:15:00Z
 
 - Checkpoint before this task: `de92790 runtime: add inert arrow closure

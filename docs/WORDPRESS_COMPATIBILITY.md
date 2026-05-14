@@ -149,8 +149,17 @@ The first bootstrap probe is expected to fail. Known blockers include:
   exits 0 with no stderr. The real WordPress 6.9.4 bootstrap-shim inventory's
   previous namespace-scoped function declaration blocker at
   `<bootstrap-shim>:23:5` is covered by Milestone 714 for namespace-scoped
-  declarations and unqualified calls. The real inventory now reaches
-  `runtime error at <bootstrap-shim>:997:6: unsupported call defined(): constant name must be a non-empty unqualified identifier in the current subset, got \Sodium\CRYPTO_AUTH_BYTES`.
+  declarations and unqualified calls. The previous real WordPress
+  bootstrap-shim `defined()` blocker at `<bootstrap-shim>:997:6` for
+  `\Sodium\CRYPTO_AUTH_BYTES` is covered by Milestone 715's bounded qualified
+  runtime-constant name slice, along with the adjacent namespace-scoped
+  `const` declarations reached by the sodium compatibility bootstrap. This is
+  not full sodium support, full extension constant catalog support, or native
+  lowering. The real inventory now reports direct `wp-settings.php` still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:68:9: undefined function assert()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
