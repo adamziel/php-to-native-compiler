@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/unsupported_object_features/unsupported_constructor_execution.php:6:8: unsupported object instantiation for Box: non-public constructor Box::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented
+runtime error at tests/fixtures/unsupported_object_features/unsupported_constructor_execution.php:6:8: unsupported object instantiation for Box: private constructor Box::__construct() requires same-class construction context
 --- stderr end ---

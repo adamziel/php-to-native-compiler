@@ -2276,7 +2276,7 @@ $box = new Box();
     assert_eq!(private_constructor.column, 8);
     assert_eq!(
         private_constructor.message,
-        "unsupported object instantiation for Box: non-public constructor Box::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented"
+        "unsupported object instantiation for Box: private constructor Box::__construct() requires same-class construction context"
     );
 
     let protected_inherited_constructor = runtime_error(
@@ -2294,7 +2294,7 @@ $child = new Child();
     assert_eq!(protected_inherited_constructor.column, 10);
     assert_eq!(
         protected_inherited_constructor.message,
-        "unsupported object instantiation for Child: non-public constructor Base::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented"
+        "unsupported object instantiation for Child: protected constructor Base::__construct() requires same-class or child-class construction context"
     );
 
     let static_constructor = runtime_error(
@@ -2368,6 +2368,47 @@ class Packet {
         method_error.message,
         "class Packet already defines method send"
     );
+}
+
+#[test]
+fn protected_constructors_execute_from_child_method_context() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $id;
+
+    protected function __construct($id = 5) {
+        $this->id = $id;
+    }
+
+    public function label() {
+        return "base:" . $this->id;
+    }
+}
+
+class Child extends Base {
+    public function __construct() {}
+
+    public function makeBase($id) {
+        return new Base($id);
+    }
+
+    public function makeDefaultBase() {
+        return new Base();
+    }
+}
+
+$child = new Child();
+$base = $child->makeBase(12);
+echo $base->label(), "\n";
+$default = $child->makeDefaultBase();
+echo $default->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "base:12\nbase:5");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -139,6 +139,22 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 650, protected constructor visibility from child method
+  context. `new Base(...)` can now execute a protected `Base::__construct`
+  while running inside `Base` or a child class method context, using the
+  current positional/default-parameter constructor subset and preserving the
+  constructed object's scoped `$this`. Private constructors still require
+  same-class construction context, protected constructors still reject outside
+  same-class/child-class context, and static constructors, constructor
+  promotion, named arguments, broader constructor compatibility, exact native
+  error objects, and native object lowering remain explicit. Focused
+  verification: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone650`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone650`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -150,10 +166,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 650 should take the next static receiver slice: static method
-  diagnostics through `self::`/`parent::`, a `static::` parse refinement,
-  same-class protected/private constructor visibility, or a documented blocker
-  for static storage and late static binding.
+- Milestone 651 should take the next static receiver or object visibility
+  slice: static method diagnostics through `self::`/`parent::`, a `static::`
+  parse refinement, private constructor same-class construction surface, or a
+  documented blocker for static storage and late static binding.
 
 ## 2026-05-12
 

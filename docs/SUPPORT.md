@@ -554,11 +554,14 @@
   instance method/constructor context against the current single-parent chain.
   `self::method(...)` calls execute in active instance method/constructor
   context against the current class and inherited method chain.
+  Protected constructors are callable from same-class or child-class method
+  context through ordinary `new ClassName(...)` expressions.
   Undefined classes, constructor arguments for classes without constructors,
-  non-public constructors, top-level parent calls, parent calls in classes
-  without parents, and static parent methods fail with stable runtime
-  diagnostics. Public instance property reads and direct-variable writes work
-  by static property name; property names are case-sensitive, and
+  private constructors without same-class construction context, protected
+  constructors outside same-class/child-class construction context, top-level
+  parent calls, parent calls in classes without parents, and static parent
+  methods fail with stable runtime diagnostics. Public instance property reads
+  and direct-variable writes work by static property name; property names are case-sensitive, and
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
   false for `null` slots, missing property names, undefined target variables,
@@ -2393,12 +2396,14 @@
 - Constructor boundary: public instance `__construct` methods, including
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in
-  `phpc run` with scoped `$this`.
-  Constructor arguments for classes without a constructor, non-public
-  constructors, static constructors, constructor promotion, explicit
-  parent calls outside active child instance context, named arguments,
-  references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
-  native lowering remain unsupported.
+  `phpc run` with scoped `$this`. Protected constructors are callable from
+  same-class or child-class method context through `new ClassName(...)`.
+  Constructor arguments for classes without a constructor, private
+  constructors without same-class construction context, protected constructors
+  outside same-class/child-class construction context, static constructors,
+  constructor promotion, explicit parent calls outside active child instance
+  context, named arguments, references/copy-on-write, exact PHP
+  `Error`/`TypeError` object behavior, and native lowering remain unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,

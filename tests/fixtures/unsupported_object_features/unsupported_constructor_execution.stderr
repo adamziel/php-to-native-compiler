@@ -1,2 +1,2 @@
-runtime error at 6:8: unsupported object instantiation for Box: non-public constructor Box::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented
+runtime error at 6:8: unsupported object instantiation for Box: private constructor Box::__construct() requires same-class construction context
 

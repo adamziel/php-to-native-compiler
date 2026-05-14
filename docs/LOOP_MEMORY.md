@@ -122,6 +122,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: rerun focused checks after docs, then checkpoint if the
   full gate passes.
 
+## Loop Event 2026-05-14T14:48:20Z
+
+- Checkpoint: `529a477 objects: add self receiver method dispatch`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 650, protected constructor visibility from
+  child-class method context.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/milestone650/protected_constructor_child_context.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_constructor_execution.*`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/ARCHITECTURE.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone650`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone650`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: private constructors still lack a same-class
+  construction surface, protected constructors still reject outside
+  same-class/child-class context, and static constructors, constructor
+  promotion, named arguments, broader constructor compatibility, exact native
+  error objects, and native object lowering remain explicit.
+- Next concrete task: checkpoint if the full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

@@ -5831,13 +5831,28 @@ handled.
 
 ## Milestone 650: Static Receiver Continuation
 
-- [ ] Runtime/object lane: choose the next smallest static receiver slice:
+- [x] Runtime/object lane: choose the next smallest static receiver slice:
   static method diagnostics through `self::`/`parent::`, a `static::` parse
   refinement, same-class protected/private constructor visibility, or a
-  documented blocker for static storage and late static binding. Keep static
-  properties, class constants, property override compatibility, trait
+  documented blocker for static storage and late static binding. Implemented
+  protected constructor calls from same-class or child-class method context
+  through ordinary `new ClassName(...)` expressions and split private vs
+  protected constructor diagnostics. Kept private constructors outside
+  same-class construction context, protected constructors outside
+  same-class/child-class construction context, static properties, static
+  methods, class constants, property override compatibility, trait
   composition, magic methods, references/copy-on-write, exact native error
   objects, and native lowering explicit.
+
+## Milestone 651: Static Receiver Continuation
+
+- [ ] Runtime/object lane: choose the next smallest static receiver or object
+  visibility slice: static method diagnostics through `self::`/`parent::`, a
+  `static::` parse refinement, private constructor same-class construction
+  surface, or a documented blocker for static storage and late static binding.
+  Keep static properties, class constants, property override compatibility,
+  trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

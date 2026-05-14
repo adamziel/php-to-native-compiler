@@ -1,1 +1,1 @@
-phpc intentionally rejects non-public constructor execution before visibility context exists.
+phpc intentionally rejects private constructor execution without same-class construction context.

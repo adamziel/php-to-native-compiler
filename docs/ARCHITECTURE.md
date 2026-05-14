@@ -1007,13 +1007,14 @@ Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Public, same-class private,
 and protected same-class/child instance methods can execute through `phpc run`
 with `$this` bound to the receiver object handle, and inherited public
-constructors execute during child instantiation. Explicit
+constructors execute during child instantiation. Protected constructors can
+execute from same-class or child-class method context. Explicit
 `parent::method(...)` and `parent::__construct(...)` calls execute from active
 instance method/constructor context against the current class's parent chain
 with the current `$this` object. `self::method(...)` calls execute from active
 instance method/constructor context against the current class and inherited
 method chain with the current `$this` object. Objects do not enforce
-non-public property/constructor visibility, expose reflection, implement
+non-public property visibility or full constructor visibility, expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
 property override compatibility, broader inheritance/constructor semantics, or
 exact PHP lifecycle behavior.

@@ -169,9 +169,13 @@ object value using the declared class spelling, initializes instance properties
 to `null`, and then executes a declared or inherited public instance
 `__construct` method with `$this` bound to the new object handle. Constructor
 arguments use the current positional argument and default-parameter subset.
+Protected constructors can execute through `new ClassName(...)` from
+same-class or child-class method context.
 Undefined classes, constructor arguments for classes without constructors,
-non-public constructors, parent constructor calls outside active child instance
-context, and static constructors produce stable runtime errors.
+private constructors without same-class construction context, protected
+constructors outside same-class/child-class construction context, parent
+constructor calls outside active child instance context, and static
+constructors produce stable runtime errors.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance

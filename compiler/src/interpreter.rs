@@ -820,15 +820,20 @@ impl Interpreter {
         }
 
         if !self.can_call_constructor(constructor_class_id, constructor_visibility) {
+            let reason = match constructor_visibility {
+                Visibility::Private => format!(
+                    "private constructor {}::__construct() requires same-class construction context",
+                    constructor_class_name
+                ),
+                Visibility::Protected => format!(
+                    "protected constructor {}::__construct() requires same-class or child-class construction context",
+                    constructor_class_name
+                ),
+                Visibility::Public => unreachable!("public constructors are always callable"),
+            };
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_object_instantiation(
-                    declared_class_name,
-                    format!(
-                        "non-public constructor {}::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented",
-                        constructor_class_name
-                    ),
-                ),
+                RuntimeError::unsupported_object_instantiation(declared_class_name, reason),
             ));
         }
 
@@ -1893,7 +1898,15 @@ impl Interpreter {
         match visibility {
             Visibility::Public => true,
             Visibility::Private => self.class_context.last().copied() == Some(class_id),
-            Visibility::Protected => false,
+            Visibility::Protected => {
+                self.class_context
+                    .last()
+                    .copied()
+                    .is_some_and(|current_class_id| {
+                        current_class_id == class_id
+                            || self.classes.is_subclass_of(current_class_id, class_id)
+                    })
+            }
         }
     }
 
