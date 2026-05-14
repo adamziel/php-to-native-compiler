@@ -121,6 +121,7 @@ pub enum Stmt {
     },
     Require {
         path: Expr,
+        once: bool,
         span: Span,
     },
     Function(FunctionDecl),

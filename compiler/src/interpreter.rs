@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -52,6 +52,7 @@ struct Interpreter {
     static_properties: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
     constants: ConstantTable,
+    required_once: HashSet<PathBuf>,
     source_file: Option<String>,
     call_depth: usize,
     next_object_id: i64,
@@ -280,6 +281,7 @@ impl Interpreter {
             static_properties,
             classes,
             constants: ConstantTable::new(),
+            required_once: HashSet::new(),
             source_file,
             call_depth: 0,
             next_object_id: 1,
@@ -602,7 +604,7 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            Stmt::Require { path, span } => self.execute_require(path, *span, scope),
+            Stmt::Require { path, once, span } => self.execute_require(path, *once, *span, scope),
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
             Stmt::Return { value, .. } => {
@@ -649,21 +651,35 @@ impl Interpreter {
     fn execute_require(
         &mut self,
         path: &Expr,
+        once: bool,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
+        let construct = if once { "require_once" } else { "require" };
         let path_value = self.evaluate(path, scope)?;
         let Value::String(path_value) = path_value else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "require",
-                    "require path must evaluate to a string in the current subset",
+                    construct,
+                    "path must evaluate to a string in the current subset",
                 ),
             ));
         };
 
-        let path = self.resolve_required_path(&path_value, span)?;
+        let path = self.resolve_required_path(&path_value, construct, span)?;
+        let once_key = if once {
+            Some(fs::canonicalize(&path.read_path).unwrap_or_else(|_| path.read_path.clone()))
+        } else {
+            None
+        };
+        if once_key
+            .as_ref()
+            .is_some_and(|key| self.required_once.contains(key))
+        {
+            return Ok(Flow::Normal);
+        }
+
         let source = fs::read_to_string(&path.read_path).map_err(|error| {
             Diagnostic::new(
                 Phase::Io,
@@ -676,6 +692,9 @@ impl Interpreter {
             )
         })?;
         let program = parse_source(&source).map_err(|error| error.with_file(&path.source_file))?;
+        if let Some(key) = once_key {
+            self.required_once.insert(key);
+        }
 
         let previous_source_file = self.source_file.clone();
         self.source_file = Some(path.source_file.display().to_string());
@@ -692,12 +711,17 @@ impl Interpreter {
         }
     }
 
-    fn resolve_required_path(&self, path: &str, span: Span) -> CompileResult<ResolvedRequirePath> {
+    fn resolve_required_path(
+        &self,
+        path: &str,
+        construct: &'static str,
+        span: Span,
+    ) -> CompileResult<ResolvedRequirePath> {
         if path.contains("://") {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "require",
+                    construct,
                     "stream and URL require paths are not implemented",
                 ),
             ));

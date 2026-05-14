@@ -6188,26 +6188,39 @@ handled.
   `ABSPATH . WPINC . '/load.php'`, resolve local paths relative to the current
   source file, register top-level functions/classes from required files, and
   execute included statements in caller scope. Kept `include`, `include_once`,
-  expression-form `require`, `require_once`, include-path lookup, stream/URL
-  paths, `_once` de-duplication, exact include return values, autoload/opcache
+  expression-form `require`, expression-form `require_once`, include-path
+  lookup, stream/URL paths, exact include return values, autoload/opcache
   behavior, exact PHP warning/fatal recovery, and native lowering explicit.
 
 ## Milestone 678: WordPress Bridge Continuation
 
-- [ ] Runtime/WordPress bridge lane: run the normalized WordPress inventory
-  against an operator-supplied WordPress 6.9.4 checkout after the narrow
-  `require` slice, record the new first bootstrap blocker, and choose the next
-  compatibility slice: `_once`, include-path/autoload behavior,
-  namespace/import resolution, interfaces/traits, exceptions, or a documented
-  blocker. Keep references/copy-on-write, exact native error objects, and
-  native lowering explicit.
+- [x] Runtime/WordPress bridge lane: run the normalized WordPress inventory
+  against a WordPress 6.9.4 checkout after the narrow `require` slice. The
+  external run reported 1288 PHP files and moved the first bootstrap blocker to
+  `wp-settings.php:53:1`, statement-form `require_once`.
+
+## Milestone 679: WordPress Bridge Continuation
+
+- [x] Runtime/WordPress bridge lane: implement narrow statement-form
+  `require_once path;` for local string paths with resolved-file
+  de-duplication. Keep expression-form `require_once`, `include`,
+  `include_once`, include-path lookup, streams/URLs, exact include return
+  values, declaration-order dependencies, exact warning/fatal recovery, and
+  native lowering explicit. The follow-up external WordPress inventory now
+  reaches `wp-settings.php:100:2`, statement-form `include`.
+
+## Milestone 680: WordPress Bridge Continuation
+
+- [ ] Runtime/WordPress bridge lane: implement or explicitly bound
+  statement-form `include` for the optional `advanced-cache.php` drop-in path,
+  including the missing-file warning/recovery behavior needed before real
+  WordPress bootstrap can progress past `wp-settings.php:100`.
 
 ## Latest Checkpoint
 
-- The latest committed checkpoint before the current Milestone 677 batch is
-  `3ddea44 objects: add dynamic static method receivers`, covering Milestone
-  676. Milestone 677 is staged for checkpoint after the full gate passes.
-  comparisons.
+- The latest committed checkpoint is `39b2e15 dynamic: execute narrow local
+  require`, covering Milestone 677. Milestones 678-679 are in progress in the
+  working tree.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

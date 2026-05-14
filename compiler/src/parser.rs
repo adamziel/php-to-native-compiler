@@ -125,7 +125,7 @@ impl Parser {
                 }
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset") => self.parse_unset(),
-            TokenKind::Require => self.parse_require(),
+            TokenKind::Require | TokenKind::RequireOnce => self.parse_require(),
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
             }
@@ -522,12 +522,19 @@ impl Parser {
     }
 
     fn parse_require(&mut self) -> CompileResult<Stmt> {
-        let span = self
-            .consume_keyword(TokenKind::Require, "expected 'require'")?
-            .span;
+        let token = self.advance().clone();
+        let once = match token.kind {
+            TokenKind::Require => false,
+            TokenKind::RequireOnce => true,
+            _ => unreachable!("caller checks require keyword"),
+        };
         let path = self.parse_expression()?;
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after require")?;
-        Ok(Stmt::Require { path, span })
+        Ok(Stmt::Require {
+            path,
+            once,
+            span: token.span,
+        })
     }
 
     fn parse_echo(&mut self) -> CompileResult<Stmt> {
@@ -2445,10 +2452,9 @@ impl Parser {
             TokenKind::Require => {
                 Err(self.error_at(token.span, unsupported_require_expression_message()))
             }
-            TokenKind::RequireOnce => Err(self.error_at(
-                token.span,
-                unsupported_include_require_message("require_once"),
-            )),
+            TokenKind::RequireOnce => {
+                Err(self.error_at(token.span, unsupported_require_once_expression_message()))
+            }
             TokenKind::Ampersand => Err(self.error_at(
                 token.span,
                 "unsupported reference expression: references are not implemented",
@@ -3740,6 +3746,10 @@ fn unsupported_include_require_message(construct: &str) -> String {
 
 fn unsupported_require_expression_message() -> &'static str {
     "unsupported require expression: expression-form require is not implemented; use statement-form require path; for local files"
+}
+
+fn unsupported_require_once_expression_message() -> &'static str {
+    "unsupported require_once expression: expression-form require_once is not implemented; use statement-form require_once path; for local files"
 }
 
 fn is_parameter_type_start(kind: &TokenKind) -> bool {

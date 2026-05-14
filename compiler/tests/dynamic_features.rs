@@ -201,7 +201,7 @@ $ok = require_once 'bootstrap.php';
 "#,
             2,
             7,
-            "unsupported require_once: include/require resolution and execution are not implemented",
+            "unsupported require_once expression: expression-form require_once is not implemented; use statement-form require_once path; for local files",
         ),
     ];
 
@@ -296,11 +296,72 @@ echo $value;
 }
 
 #[test]
+fn require_once_executes_local_files_only_once() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-require-once-{}-{}",
+        std::process::id(),
+        "dedupe"
+    ));
+    fs::create_dir_all(&root).expect("create require_once fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("lib.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+$count = ($count ?? 0) + 1;
+"#,
+    )
+    .expect("write required file");
+
+    let source = r#"<?php
+$count = 0;
+require_once 'lib.php';
+require_once './lib.php';
+echo $count;
+"#;
+    fs::write(&main, source).expect("write main file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn require_executes_local_files_each_time() {
+    let root =
+        std::env::temp_dir().join(format!("phpc-require-{}-{}", std::process::id(), "repeat"));
+    fs::create_dir_all(&root).expect("create repeated require fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("lib.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+$count = ($count ?? 0) + 1;
+"#,
+    )
+    .expect("write required file");
+
+    let source = r#"<?php
+$count = 0;
+require 'lib.php';
+require 'lib.php';
+echo $count;
+"#;
+    fs::write(&main, source).expect("write main file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn require_reports_current_boundaries() {
     let non_string = runtime_error("<?php\nrequire 123;\n");
     assert_eq!(
         non_string.message,
-        "unsupported call require: require path must evaluate to a string in the current subset"
+        "unsupported call require: path must evaluate to a string in the current subset"
     );
 
     let stream = runtime_error("<?php\nrequire 'https://example.com/file.php';\n");
@@ -312,16 +373,21 @@ fn require_reports_current_boundaries() {
 
 #[test]
 fn emit_ir_rejects_require_until_native_multifile_lowering_exists() {
-    let error = emit_ir_source("<?php\nrequire 'bootstrap.php';\n").unwrap_err();
+    for source in [
+        "<?php\nrequire 'bootstrap.php';\n",
+        "<?php\nrequire_once 'bootstrap.php';\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error
-            .message
-            .contains("include/require lowering rejects multi-file execution"),
-        "{}",
-        error.message
-    );
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error
+                .message
+                .contains("include/require lowering rejects multi-file execution"),
+            "{}",
+            error.message
+        );
+    }
 }
 
 #[test]

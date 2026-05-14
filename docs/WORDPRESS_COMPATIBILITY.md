@@ -82,11 +82,14 @@ cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
 
 The first bootstrap probe is expected to fail. Known blockers include:
 
-- include/require breadth beyond the first local `require` slice. The
-  WordPress-shaped `require ABSPATH . WPINC . '/load.php';` path form is now
-  executable in focused fixtures, but real bootstrap still needs broader file
-  loading, `_once`, include-path/autoload behavior, source mapping, and PHP's
-  warning/fatal details;
+- include/require breadth beyond the first local `require`/`require_once`
+  slice. The WordPress-shaped `require ABSPATH . WPINC . '/load.php';` and
+  `require_once ABSPATH . WPINC . '/plugin.php';` path forms are now executable
+  in focused fixtures. The current real WordPress 6.9.4 inventory reaches the
+  conditional `include WP_CONTENT_DIR . '/advanced-cache.php';` blocker in
+  `wp-settings.php`, so real bootstrap still needs optional include behavior,
+  include-path/autoload behavior, source mapping, and PHP's warning/fatal
+  details;
 - namespace and import resolution;
 - class inheritance, interfaces, traits, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;
@@ -104,7 +107,7 @@ Run `tools/wordpress-inventory.sh` against a local WordPress 6.9.4 tree and
 record the first `phpc run wp-settings.php` blocker.
 ```
 
-That target becomes a real compatibility fixture only after the source pin and
-expected output policy are committed. The normalized output policy now exists;
-the next step is an operator-supplied run against the pinned external WordPress
-6.9.4 source tree, with any resulting snapshot reviewed before committing.
+That target becomes a real compatibility fixture only after any external-source
+snapshot is reviewed for stability and size. The normalized output policy now
+exists, and the latest throwaway external-source run is recorded in
+`docs/PROGRESS.md` rather than vendoring WordPress core.

@@ -17374,13 +17374,43 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
   `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Remaining semantic gaps after Milestone 677: `include`, `include_once`,
+  expression-form `require`, `require_once`, include-path lookup, stream/URL
+  paths, exact include return values, autoload/opcache behavior, exact PHP
+  warning/fatal recovery, declaration-order dependencies across required files,
+  namespace/import resolution, interfaces/traits, exceptions,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Checkpoint: `39b2e15 dynamic: execute narrow local require`, pushed to
+  `origin/master`.
+
+## Loop Event 2026-05-14T23:20:00Z
+
+- Checkpoint before this task: `39b2e15 dynamic: execute narrow local require`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 678 real WordPress inventory plus Milestone 679
+  narrow statement-form `require_once path;` execution.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/milestone679/*`, `README.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone679`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone679`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`, and
+  `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed, and `git diff --check` passed.
 - Remaining semantic gaps: `include`, `include_once`, expression-form
-  `require`, `require_once`, include-path lookup, stream/URL paths, `_once`
-  de-duplication, exact include return values, autoload/opcache behavior,
-  exact PHP warning/fatal recovery, declaration-order dependencies across
-  required files, namespace/import resolution, interfaces/traits, exceptions,
+  `require`, expression-form `require_once`, include-path lookup,
+  streams/URLs, exact include return values, autoload/opcache behavior, exact
+  PHP warning/fatal recovery, declaration-order dependencies across required
+  files, namespace/import resolution, interfaces/traits, exceptions,
   references/copy-on-write, exact native error objects, and native lowering
   remain explicit.
 - Next concrete task: checkpoint with
-  `tools/checkpoint.sh "dynamic: execute narrow local require"` if the full
-  gate passes.
+  `tools/checkpoint.sh "dynamic: add narrow require_once"` if the full gate
+  passes.

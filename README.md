@@ -94,9 +94,10 @@ incorrect native code.
   append writes, offset removal, and array iteration
 - top-level constants, selected built-in constants, runtime-defined constants,
   and executable magic constants documented in the support matrix
-- narrow `require` statement execution for local string paths, including
-  constant/string-concatenated paths resolved relative to the current source
-  file and included files executing in caller scope
+- narrow `require` and `require_once` statement execution for local string
+  paths, including constant/string-concatenated paths resolved relative to the
+  current source file, included files executing in caller scope, and
+  `require_once` de-duplication by resolved local file
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -125,7 +126,7 @@ incorrect native code.
 
 The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, include/require breadth beyond
-the current narrow local `require` statement slice, eval,
+the current narrow local `require`/`require_once` statement slice, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the

@@ -636,6 +636,31 @@ Implemented:
   `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
   `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
   and `git diff --check` passed.
+- Added Milestone 678, a normalized inventory run against a throwaway external
+  WordPress 6.9.4 checkout under `/tmp/phpc-wordpress/wordpress`. The run
+  reported 1288 PHP files, 400 include/require files, 146 namespace files, 117
+  import files, 39 interface files, 0 trait files, 2 enum files, 354
+  class-extends files, 225 exception-syntax files, 133 closure files, and 667
+  arrow-function files. After Milestone 677, the first real bootstrap blocker
+  moved to `wp-settings.php:53:1`, statement-form `require_once`.
+- Added Milestone 679, narrow statement-form `require_once path;` execution for
+  local files. It shares the current `require` parser/runtime path, evaluates
+  string-valued local paths, resolves them relative to the current source file,
+  and de-duplicates by resolved local file while keeping expression-form
+  `require_once`, `include`, `include_once`, include-path lookup, streams/URLs,
+  include return values, declaration-order dependencies, exact warning/fatal
+  recovery, and native lowering explicit. A follow-up WordPress inventory run
+  now reaches `wp-settings.php:100:2`, the conditional `include WP_CONTENT_DIR
+  . '/advanced-cache.php';` blocker. Focused verification so far:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone679`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone679`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed, and `git diff --check` passed.
 
 Next:
 
@@ -647,11 +672,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 678 should run normalized WordPress inventory against an
-  operator-supplied WordPress 6.9.4 checkout after the narrow `require` slice,
-  record the new first bootstrap blocker, and choose `_once`,
-  include-path/autoload behavior, namespace/import resolution,
-  interfaces/traits, exceptions, or a documented blocker.
+- Milestone 680 should implement or explicitly bound the next WordPress
+  bootstrap blocker: statement-form `include` for the conditional
+  `advanced-cache.php` drop-in path, including PHP warning/recovery behavior
+  decisions for missing optional files.
 
 ## 2026-05-12
 
