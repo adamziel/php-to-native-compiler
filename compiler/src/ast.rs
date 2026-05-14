@@ -126,6 +126,7 @@ pub enum Stmt {
     },
     Include {
         path: Expr,
+        once: bool,
         span: Span,
     },
     Function(FunctionDecl),

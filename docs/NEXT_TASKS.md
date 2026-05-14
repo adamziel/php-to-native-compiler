@@ -6222,18 +6222,27 @@ handled.
 
 ## Milestone 681: WordPress Bridge Continuation
 
-- [ ] Runtime/WordPress bridge lane: implement or explicitly bound
-  statement-form `include_once`, first for the must-use plugin loop shape.
-  Reuse the resolved-file de-duplication table where appropriate, and keep
-  expression-form `include_once`, include-path lookup, streams/URLs, missing
-  optional include warning/recovery, exact include return values, and native
-  lowering explicit.
+- [x] Runtime/WordPress bridge lane: implement statement-form
+  `include_once path;`, first for the must-use plugin loop shape. It reuses the
+  resolved-file de-duplication table, covers variable path values in loops, and
+  keeps expression-form `include_once`, include-path lookup, streams/URLs,
+  missing optional include warning/recovery, exact include return values, and
+  native lowering explicit. The follow-up external WordPress inventory now
+  reaches `wp-settings.php:33:1`, top-level `global ...;`.
+
+## Milestone 682: WordPress Bridge Continuation
+
+- [ ] Runtime/WordPress bridge lane: implement or explicitly bound top-level
+  `global ...;` declarations so WordPress bootstrap can pass the early
+  version-variable import statement in `wp-settings.php`. Keep function-scope
+  `global`, reference binding to `$GLOBALS`, superglobal semantics, exact
+  warning behavior, and native lowering explicit unless this slice proves them
+  with code and tests.
 
 ## Latest Checkpoint
 
-- The latest committed checkpoint is `6c4e43d dynamic: add narrow
-  require_once`, covering Milestones 678-679. Milestone 680 is in progress in
-  the working tree.
+- Before the current Milestone 681 work, the latest committed checkpoint is
+  `bb6fd71 dynamic: add narrow include`, covering Milestone 680.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

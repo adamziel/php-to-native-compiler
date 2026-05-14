@@ -125,7 +125,7 @@ impl Parser {
                 }
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset") => self.parse_unset(),
-            TokenKind::Include => self.parse_include(),
+            TokenKind::Include | TokenKind::IncludeOnce => self.parse_include(),
             TokenKind::Require | TokenKind::RequireOnce => self.parse_require(),
             kind if include_require_name(kind).is_some() => {
                 self.parse_unsupported_include_or_require()
@@ -539,12 +539,19 @@ impl Parser {
     }
 
     fn parse_include(&mut self) -> CompileResult<Stmt> {
-        let span = self
-            .consume_keyword(TokenKind::Include, "expected 'include'")?
-            .span;
+        let token = self.advance().clone();
+        let once = match token.kind {
+            TokenKind::Include => false,
+            TokenKind::IncludeOnce => true,
+            _ => unreachable!("caller checks include keyword"),
+        };
         let path = self.parse_expression()?;
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after include")?;
-        Ok(Stmt::Include { path, span })
+        Ok(Stmt::Include {
+            path,
+            once,
+            span: token.span,
+        })
     }
 
     fn parse_echo(&mut self) -> CompileResult<Stmt> {
@@ -2455,10 +2462,9 @@ impl Parser {
             TokenKind::Include => {
                 Err(self.error_at(token.span, unsupported_include_expression_message()))
             }
-            TokenKind::IncludeOnce => Err(self.error_at(
-                token.span,
-                unsupported_include_require_message("include_once"),
-            )),
+            TokenKind::IncludeOnce => {
+                Err(self.error_at(token.span, unsupported_include_once_expression_message()))
+            }
             TokenKind::Require => {
                 Err(self.error_at(token.span, unsupported_require_expression_message()))
             }
@@ -3764,6 +3770,10 @@ fn unsupported_require_once_expression_message() -> &'static str {
 
 fn unsupported_include_expression_message() -> &'static str {
     "unsupported include expression: expression-form include and include return values are not implemented; use statement-form include path; for existing local files"
+}
+
+fn unsupported_include_once_expression_message() -> &'static str {
+    "unsupported include_once expression: expression-form include_once and include_once return values are not implemented; use statement-form include_once path; for existing local files"
 }
 
 fn is_parameter_type_start(kind: &TokenKind) -> bool {

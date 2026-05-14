@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+count=1--- stdout end ---
+stderr:
+--- stderr end ---

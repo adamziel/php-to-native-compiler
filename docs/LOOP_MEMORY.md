@@ -17445,3 +17445,37 @@ injects this file into every prompt. Each Codex pass should update it with:
   native error objects, and native lowering remain explicit.
 - Next concrete task: run `git diff --check`, then checkpoint with
   `tools/checkpoint.sh "dynamic: add narrow include"` if the full gate passes.
+
+## Loop Event 2026-05-15T00:20:00Z
+
+- Checkpoint before this task: `bb6fd71 dynamic: add narrow include`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 681, narrow statement-form `include_once path;`
+  execution for existing local files and the WordPress must-use plugin loop
+  shape.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/milestone681/*`, unsupported dynamic include-once fixtures,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features include -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features include_once -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone681`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone681`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: expression-form `include`, expression-form
+  `include_once`, expression-form `require`, expression-form `require_once`,
+  include-path lookup, streams/URLs, missing-file include warning/recovery,
+  exact include return values, autoload/opcache behavior, exact PHP
+  warning/fatal recovery, declaration-order dependencies across included files,
+  top-level/function-scope `global` behavior, namespace/import resolution,
+  interfaces/traits, exceptions, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit.
+- Next concrete task: run full focused checks and `git diff --check`, then
+  checkpoint with `tools/checkpoint.sh "dynamic: add narrow include_once"` if
+  the full gate passes.

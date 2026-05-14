@@ -83,14 +83,15 @@ cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
 The first bootstrap probe is expected to fail. Known blockers include:
 
 - include/require breadth beyond the first local
-  `require`/`require_once`/`include` slice. The WordPress-shaped `require
-  ABSPATH . WPINC . '/load.php';`, `require_once ABSPATH . WPINC .
-  '/plugin.php';`, and conditional `include WP_CONTENT_DIR .
-  '/advanced-cache.php';` forms are now executable or skippable in focused
-  fixtures. The current real WordPress 6.9.4 inventory reaches
-  `include_once $mu_plugin;` in `wp-settings.php`, so real bootstrap still
-  needs `include_once`, include-path/autoload behavior, source mapping, and
-  PHP's warning/fatal details;
+  `require`/`require_once`/`include`/`include_once` slice. The
+  WordPress-shaped `require ABSPATH . WPINC . '/load.php';`, `require_once
+  ABSPATH . WPINC . '/plugin.php';`, conditional `include WP_CONTENT_DIR .
+  '/advanced-cache.php';`, and must-use plugin loop `include_once $mu_plugin;`
+  forms are now executable or skippable in focused fixtures. The current real
+  WordPress 6.9.4 inventory reaches top-level `global ...;` in
+  `wp-settings.php:33:1`, so real bootstrap still needs a bounded top-level
+  `global` behavior, include-path/autoload behavior, source mapping, and PHP's
+  warning/fatal details;
 - namespace and import resolution;
 - class inheritance, interfaces, traits, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;

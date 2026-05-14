@@ -678,6 +678,25 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
   and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 681, narrow statement-form `include_once path;` execution for
+  existing local files. It reuses the current include/require path evaluation,
+  source-file-relative resolution, declaration registration, caller-scope
+  execution, and resolved-file de-duplication path, including variable path
+  values in loops for the WordPress must-use plugin shape. Expression-form
+  `include_once`, include-path lookup, streams/URLs, missing-file include
+  warning/recovery, exact include return values, declaration-order dependencies,
+  exact warning/fatal recovery, and native lowering remain explicit. The real
+  WordPress 6.9.4 inventory now reaches `wp-settings.php:33:1`, the top-level
+  `global $wp_version, ...;` statement. Focused verification so far:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features include -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features include_once -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone681`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone681`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`,
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -686,13 +705,11 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 639 should run normalized inventory against an operator-supplied
-  WordPress 6.9.4 checkout and review whether a real external-source snapshot is
-  stable enough to commit.
-- Milestone 681 should implement or explicitly bound statement-form
-  `include_once`, first for the must-use plugin loop shape, while keeping
-  include-path lookup, streams/URLs, and exact warning/recovery behavior
-  explicit.
+- Milestone 682 should implement or explicitly bound top-level `global ...;`
+  declarations so WordPress bootstrap can pass the early version-variable import
+  statement in `wp-settings.php`, while keeping function-scope `global`,
+  `$GLOBALS` reference binding, superglobal semantics, exact warning behavior,
+  and native lowering explicit.
 
 ## 2026-05-12
 

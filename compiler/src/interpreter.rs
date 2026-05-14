@@ -607,8 +607,8 @@ impl Interpreter {
             Stmt::Require { path, once, span } => {
                 self.execute_file_include(path, *once, true, *span, scope)
             }
-            Stmt::Include { path, span } => {
-                self.execute_file_include(path, false, false, *span, scope)
+            Stmt::Include { path, once, span } => {
+                self.execute_file_include(path, *once, false, *span, scope)
             }
             Stmt::Function(_) => Ok(Flow::Normal),
             Stmt::Class(_) => Ok(Flow::Normal),
@@ -667,6 +667,8 @@ impl Interpreter {
             } else {
                 "require"
             }
+        } else if once {
+            "include_once"
         } else {
             "include"
         };

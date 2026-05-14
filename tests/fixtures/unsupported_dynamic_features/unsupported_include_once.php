@@ -1,2 +1,2 @@
 <?php
-include_once 'config.php';
+$ok = include_once 'config.php';

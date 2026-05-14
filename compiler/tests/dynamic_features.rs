@@ -181,11 +181,11 @@ $ok = include 'config.php';
         ),
         (
             r#"<?php
-include_once 'config.php';
+$ok = include_once 'config.php';
 "#,
             2,
-            1,
-            "unsupported include_once: include/require resolution and execution are not implemented",
+            7,
+            "unsupported include_once expression: expression-form include_once and include_once return values are not implemented; use statement-form include_once path; for existing local files",
         ),
         (
             r#"<?php
@@ -288,6 +288,72 @@ echo $value;
     let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
 
     assert_eq!(execution.stdout, "from-include");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn include_once_executes_local_files_only_once() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-include-once-{}-{}",
+        std::process::id(),
+        "dedupe"
+    ));
+    fs::create_dir_all(&root).expect("create include_once fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("lib.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+$count = ($count ?? 0) + 1;
+"#,
+    )
+    .expect("write included file");
+
+    let source = r#"<?php
+$count = 0;
+include_once 'lib.php';
+include_once './lib.php';
+echo $count;
+"#;
+    fs::write(&main, source).expect("write main file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn include_once_deduplicates_variable_paths_in_loops() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-include-once-{}-{}",
+        std::process::id(),
+        "loop"
+    ));
+    fs::create_dir_all(&root).expect("create include_once loop fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("mu-plugin.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+$count = ($count ?? 0) + 1;
+"#,
+    )
+    .expect("write included file");
+
+    let source = r#"<?php
+$count = 0;
+$plugins = ['mu-plugin.php', './mu-plugin.php'];
+foreach ($plugins as $mu_plugin) {
+    include_once $mu_plugin;
+}
+echo $count;
+"#;
+    fs::write(&main, source).expect("write main file");
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(execution.stdout, "1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -407,6 +473,7 @@ fn emit_ir_rejects_require_until_native_multifile_lowering_exists() {
         "<?php\nrequire 'bootstrap.php';\n",
         "<?php\nrequire_once 'bootstrap.php';\n",
         "<?php\ninclude 'bootstrap.php';\n",
+        "<?php\ninclude_once 'bootstrap.php';\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

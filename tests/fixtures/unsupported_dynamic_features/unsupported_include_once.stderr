@@ -1,2 +1,2 @@
-parse error at 2:1: unsupported include_once: include/require resolution and execution are not implemented
+parse error at 2:7: unsupported include_once expression: expression-form include_once and include_once return values are not implemented; use statement-form include_once path; for existing local files
 
