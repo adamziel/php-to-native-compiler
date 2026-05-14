@@ -787,6 +787,23 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone687`, and
   `PHPC_BIN=/tmp/phpc-target-687/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 688, bounded function-local `static` declaration execution
+  for the current interpreter runtime. `phpc run` now supports `static $name;`
+  and `static $name = value;` inside user functions for the current
+  constant-expression initializer subset, initializes each function-local static
+  slot once, materializes it into the active function scope on each call, and
+  preserves later direct-variable writes across calls. Dynamic initializers,
+  references, variable variables, recursion/reentrancy edge behavior,
+  included-file edge cases, exact PHP diagnostics, reflection behavior, and
+  native lowering remain explicit. The real WordPress 6.9.4 bootstrap-shim
+  inventory now reaches `wp-includes/compat.php:54`, anonymous closure syntax
+  with a `use (&$utf8_pcre)` capture. Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes static_local`,
+  `cargo run -p phpc -- test tests/fixtures/milestone688`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone688`, and
+  `PHPC_BIN=/tmp/phpc-target-688/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -795,11 +812,10 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 688 should implement or explicitly bound function-local `static`
-  variable declarations enough for WordPress's `_wp_can_use_pcre_u()` path,
-  while keeping persistent function-local storage, initialization ordering,
-  references, included-file behavior, exact PHP diagnostics, and native lowering
-  explicit unless proven.
+- Milestone 689 should implement or explicitly bound anonymous closures and
+  `use` captures enough for WordPress's `_wp_can_use_pcre_u()` error-handler
+  path, while keeping by-reference capture semantics, callback invocation,
+  exact PHP diagnostics, and native lowering explicit unless proven.
 
 ## 2026-05-12
 

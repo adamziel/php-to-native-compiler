@@ -13,8 +13,8 @@ use php_runtime::{
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl,
-    IncrementDecrementOp, IncrementDecrementPosition, Program, Span, Stmt, SwitchCase, UnaryOp,
-    UnsetTarget,
+    IncrementDecrementOp, IncrementDecrementPosition, Program, Span, StaticLocalDeclarator, Stmt,
+    SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -53,6 +53,8 @@ struct Interpreter {
     classes: PhpClassTable,
     constants: ConstantTable,
     required_once: HashSet<PathBuf>,
+    static_locals: HashMap<(String, String), Value>,
+    active_static_locals: Vec<Vec<String>>,
     source_file: Option<String>,
     call_depth: usize,
     next_object_id: i64,
@@ -283,6 +285,8 @@ impl Interpreter {
             classes,
             constants: ConstantTable::new(),
             required_once: HashSet::new(),
+            static_locals: HashMap::new(),
+            active_static_locals: Vec::new(),
             source_file,
             call_depth: 0,
             next_object_id: 1,
@@ -656,7 +660,52 @@ impl Interpreter {
                     ))
                 }
             }
+            Stmt::StaticLocal { declarations, span } => {
+                self.execute_static_local_declaration(declarations, *span, scope)?;
+                Ok(Flow::Normal)
+            }
         }
+    }
+
+    fn execute_static_local_declaration(
+        &mut self,
+        declarations: &[StaticLocalDeclarator],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(function_name) = self.function_context.last().cloned() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "static",
+                    "top-level static local declarations are not implemented",
+                ),
+            ));
+        };
+        let function_key = function_name.to_ascii_lowercase();
+
+        for declaration in declarations {
+            if let Some(active) = self.active_static_locals.last_mut() {
+                if !active.contains(&declaration.name) {
+                    active.push(declaration.name.clone());
+                }
+            }
+
+            let key = (function_key.clone(), declaration.name.clone());
+            let value = if let Some(value) = self.static_locals.get(&key) {
+                value.clone()
+            } else {
+                let value = match &declaration.default {
+                    Some(default) => self.evaluate(default, scope)?,
+                    None => Value::Null,
+                };
+                self.static_locals.insert(key, value.clone());
+                value
+            };
+            scope.write_static(&declaration.name, value);
+        }
+
+        Ok(())
     }
 
     fn execute_for_action(
@@ -3769,7 +3818,16 @@ impl Interpreter {
         }
 
         self.call_depth += 1;
+        self.active_static_locals.push(Vec::new());
         let flow = self.execute_statements(&function.body, &mut local_scope);
+        let static_names = self.active_static_locals.pop().unwrap_or_default();
+        let function_key = function.name.to_ascii_lowercase();
+        for name in static_names {
+            if let Some(value) = local_scope.read_named(&name) {
+                self.static_locals
+                    .insert((function_key.clone(), name), value.clone());
+            }
+        }
         self.call_depth -= 1;
         self.function_context.pop();
         if class_context.is_some() {

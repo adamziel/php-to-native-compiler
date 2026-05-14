@@ -448,7 +448,7 @@
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference expressions,
   function-scope reference parameter invocation, reference returns, type
-  declaration enforcement, static local variable declarations inside functions, anonymous functions,
+  declaration enforcement, anonymous functions,
   arrow functions, named arguments, first-class callable syntax such as
   `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
@@ -1874,9 +1874,15 @@
   reference returns, reference expressions, anonymous functions, arrow
   functions, named arguments, first-class callable syntax such as `strlen(...)`
   and `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
-  rejected with stable parse diagnostics. Static local variable declarations
-  inside functions also fail with a stable parse diagnostic before
-  function-local static storage exists. The `__LINE__` magic constant evaluates
+  rejected with stable parse diagnostics. Function-local `static` declarations
+  are supported for the current bounded direct-variable storage slice:
+  `static $name;` and `static $name = value;` initialize per-function storage
+  once, materialize the value into the active function scope on each call, and
+  preserve later direct-variable writes across calls. Initializers use the
+  documented constant-expression/default-value subset. Dynamic initializers,
+  references, variable variables, recursion/reentrancy edge behavior,
+  included-file edge cases, exact PHP diagnostics, reflection behavior, and
+  native lowering remain unsupported. The `__LINE__` magic constant evaluates
   to the source line of the
   expression token in ordinary expressions, default parameter values, and
   top-level `const` declarations. The `__FILE__` magic constant evaluates to
@@ -1896,8 +1902,9 @@
   `__NAMESPACE__` fails with a stable parse diagnostic tied to the current
   missing namespace-aware name-resolution boundary. Nullable, union, and intersection
   types, `mixed`, `void`/`never`, class/interface type names, coercive versus
-  strict typing, variance, static local initialization expressions,
-  per-function persistence, recursion/reentrancy behavior, canonical absolute
+  strict typing, variance, static local behavior outside the bounded
+  declaration/default subset, reference-backed static locals,
+  recursion/reentrancy edge behavior, canonical absolute
   `__FILE__`/`__DIR__` paths matching PHP exactly, eval/include source mapping,
   method/class magic constant context, namespace and trait magic constants,
   closure function-name context, magic constant native lowering, array callables, object/method
@@ -2714,9 +2721,10 @@
 - parameter/return type enforcement, coercion, exact `TypeError` behavior,
   `strict_types`, variance, reflection metadata, and native lowering for type
   declarations
-- static local variable declarations inside functions, including
-  initialization expressions, per-function persistence, references,
-  recursion/reentrancy behavior, and native lowering
+- function-local static behavior outside the bounded runtime slice, including
+  dynamic initialization expressions, references, variable variables,
+  recursion/reentrancy edge behavior, included-file edge cases, exact PHP
+  diagnostics, reflection behavior, and native lowering
 - magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and
   `__FUNCTION__`, such as `__CLASS__`, `__TRAIT__`, `__METHOD__`, and
   `__NAMESPACE__`; `__METHOD__` specifically fails with a stable parse

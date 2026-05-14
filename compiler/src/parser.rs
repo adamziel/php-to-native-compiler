@@ -2,7 +2,7 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassMethodDecl, ClassPropertyDecl, ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr,
     ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
-    Program, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -80,7 +80,7 @@ impl Parser {
                 if self.function_body_depth > 0
                     && matches!(self.peek_next().kind, TokenKind::Variable(_)) =>
             {
-                self.parse_unsupported_static_local_declaration()
+                self.parse_static_local_declaration()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("do") => self.parse_do_while(),
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("foreach") => {
@@ -1073,11 +1073,38 @@ impl Parser {
         Ok(Stmt::Global { names, span })
     }
 
-    fn parse_unsupported_static_local_declaration(&mut self) -> CompileResult<Stmt> {
+    fn parse_static_local_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Static, "expected 'static'")?
             .span;
-        Err(self.error_at(span, unsupported_static_local_message()))
+        let mut declarations = Vec::new();
+
+        loop {
+            let (name, name_span) =
+                self.consume_variable_with_span("expected variable after static")?;
+            let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                let expr = self.parse_expression()?;
+                self.ensure_supported_default_expr(&expr)?;
+                Some(expr)
+            } else {
+                None
+            };
+            declarations.push(StaticLocalDeclarator {
+                name,
+                default,
+                span: name_span,
+            });
+
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+        }
+
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after static local declaration",
+        )?;
+        Ok(Stmt::StaticLocal { declarations, span })
     }
 
     fn parse_unset(&mut self) -> CompileResult<Stmt> {
@@ -3908,10 +3935,6 @@ fn unsupported_static_property_type_message() -> &'static str {
 
 fn unsupported_multiple_properties_message() -> &'static str {
     "unsupported property declaration: multiple properties in one declaration are not implemented"
-}
-
-fn unsupported_static_local_message() -> &'static str {
-    "unsupported static local variable declaration: function-local static storage is not implemented"
 }
 
 fn magic_constant_name(name: &str) -> Option<&'static str> {

@@ -380,6 +380,9 @@ impl LlvmGenerator {
                 *span,
                 "global declarations are not supported by LLVM IR emission yet",
             )),
+            Stmt::StaticLocal { span, .. } => {
+                Err(self.unsupported(*span, LLVM_FUNCTION_DECLARATION_REJECTION))
+            }
         }
     }
 
@@ -3097,6 +3100,9 @@ impl CGenerator {
                 *span,
                 "global declarations are not supported by assembly emission yet",
             )),
+            Stmt::StaticLocal { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_DECLARATION_REJECTION))
+            }
         }
     }
 

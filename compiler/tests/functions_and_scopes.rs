@@ -395,48 +395,32 @@ mutate($value);
 }
 
 #[test]
-fn static_local_declarations_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-function counter() {
-    static $count;
-}
-"#,
-            3,
-            5,
-        ),
-        (
-            r#"<?php
+fn static_local_declarations_persist_values_across_user_function_calls() {
+    let execution = run_source(
+        r#"<?php
 function counter() {
     static $count = 0;
+    $count = $count + 1;
+    return $count;
 }
-"#,
-            3,
-            5,
-        ),
-        (
-            r#"<?php
-function counter($enabled) {
-    if ($enabled)
-        static $count = 0;
-}
-"#,
-            4,
-            9,
-        ),
-    ];
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported static local variable declaration: function-local static storage is not implemented"
-        );
+function once() {
+    static $flag;
+    if (isset($flag)) {
+        return "set";
     }
+    $flag = true;
+    return "first";
+}
+
+echo counter(), "|", counter(), "\n";
+echo once(), "|", once();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|2\nfirst|set");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

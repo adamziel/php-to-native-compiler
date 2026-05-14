@@ -17660,3 +17660,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   fixture gates, then checkpoint with
   `tools/checkpoint.sh "runtime: add bounded string casts"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T01:00:00Z
+
+- Checkpoint before this task: `237db1c runtime: add bounded string casts`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 688, bounded function-local `static` declaration
+  parsing and interpreter execution for WordPress's `_wp_can_use_pcre_u()`
+  path.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone688/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_static_local.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes static_local`,
+  `cargo run -p phpc -- test tests/fixtures/milestone688`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone688`, and
+  `PHPC_BIN=/tmp/phpc-target-688/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: function-local static behavior outside the bounded
+  declaration/default slice, dynamic initializers, references, variable
+  variables, recursion/reentrancy edge behavior, included-file edge cases, exact
+  PHP diagnostics, reflection behavior, anonymous closures and `use` captures,
+  callback invocation, WordPress bootstrap environment, exact native errors,
+  and native lowering remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, focused
+  fixture gates, then checkpoint with
+  `tools/checkpoint.sh "functions: add bounded static locals"` if the full gate
+  passes.

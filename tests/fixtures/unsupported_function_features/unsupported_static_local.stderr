@@ -1,2 +1,2 @@
-parse error at 3:5: unsupported static local variable declaration: function-local static storage is not implemented
+parse error at 3:21: default parameter values only support constant expressions in the current subset
 

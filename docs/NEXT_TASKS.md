@@ -6291,17 +6291,25 @@ handled.
 
 ## Milestone 688: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound function-local
-  `static` variable declarations enough for WordPress's `_wp_can_use_pcre_u()`
-  path, with tests, CLI coverage, docs, and named unsupported edges for
-  persistent function-local storage semantics, initialization ordering,
-  references, included-file behavior, exact PHP diagnostics, and native
+- [x] Parser/runtime lane: implement bounded function-local `static` variable
+  declarations enough for WordPress's `_wp_can_use_pcre_u()` path, with tests,
+  CLI coverage, docs, and named unsupported edges for dynamic initialization,
+  references, variable variables, recursion/reentrancy edge behavior,
+  included-file behavior, exact PHP diagnostics, reflection behavior, and native
   lowering.
+
+## Milestone 689: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound anonymous closures and
+  `use` captures enough for WordPress's `_wp_can_use_pcre_u()` error-handler
+  path, with tests, CLI coverage, docs, and named unsupported edges for
+  by-reference capture semantics, callback invocation, exact PHP diagnostics,
+  and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 687 work, the latest committed checkpoint is
-  `f8f6e1d control: add bounded goto labels`, covering Milestone 686.
+- Before the current Milestone 688 work, the latest committed checkpoint is
+  `237db1c runtime: add bounded string casts`, covering Milestone 687.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

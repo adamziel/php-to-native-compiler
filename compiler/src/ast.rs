@@ -153,6 +153,10 @@ pub enum Stmt {
         names: Vec<String>,
         span: Span,
     },
+    StaticLocal {
+        declarations: Vec<StaticLocalDeclarator>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -194,6 +198,13 @@ pub enum AssignTarget {
 pub struct ConstDeclarator {
     pub name: String,
     pub value: Expr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaticLocalDeclarator {
+    pub name: String,
+    pub default: Option<Expr>,
     pub span: Span,
 }
 
