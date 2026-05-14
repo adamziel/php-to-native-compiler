@@ -195,6 +195,14 @@ require 'bootstrap.php';
         ),
         (
             r#"<?php
+require ABSPATH . WPINC . '/load.php';
+"#,
+            2,
+            1,
+            "unsupported require: include/require resolution and execution are not implemented",
+        ),
+        (
+            r#"<?php
 $ok = require_once 'bootstrap.php';
 "#,
             2,

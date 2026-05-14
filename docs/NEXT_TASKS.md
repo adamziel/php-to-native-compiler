@@ -5650,10 +5650,13 @@ handled.
 
 ## Milestone 633: Program Structure Prerequisite
 
-- [ ] Parser/runtime lane: choose the smallest include/require or namespace
+- [x] Parser/runtime lane: choose the smallest include/require or namespace
   prerequisite needed by the WordPress bootstrap inventory, implement or tighten
   its explicit unsupported boundary with CLI coverage, and keep native lowering
-  honest.
+  honest. Selected candidate: added a WordPress-shaped `require ABSPATH .
+  WPINC . '/load.php';` unsupported-boundary parser case and CLI fixture,
+  matching the first expected `wp-settings.php` bootstrap blocker while
+  include/require execution remains unimplemented.
 
 ## Milestone 634: Native Runtime Prerequisite
 

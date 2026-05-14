@@ -63,7 +63,8 @@ claims.
 
 The first bootstrap probe is expected to fail. Known blockers include:
 
-- include/require execution;
+- include/require execution; the first pinned boundary is the WordPress-shaped
+  `require ABSPATH . WPINC . '/load.php';` form used by bootstrap loading;
 - namespace and import resolution;
 - class inheritance, interfaces, traits, and modern object semantics;
 - exceptions and PHP-shaped warning/error behavior;

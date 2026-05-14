@@ -12997,6 +12997,22 @@ Next:
 
 Next:
 
+- Added Milestone 633, a WordPress-shaped include/require program-structure
+  boundary. The parser test matrix and unsupported dynamic feature fixtures now
+  pin `require ABSPATH . WPINC . '/load.php';`, matching the expected first
+  `wp-settings.php` bootstrap blocker while include/require execution remains
+  unimplemented.
+- Focused checks passed:
+  `cargo test -p phpc --test dynamic_features include_require_constructs_are_rejected_with_stable_parse_errors -- --test-threads=1`;
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`;
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_dynamic_features`
+  with all 16 unsupported dynamic fixtures passing and all 16 skipped by system
+  PHP comparison through `.phpc-only` markers.
+
+Next:
+
 - Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
   for the existing native scalar/null `is_object($value)` false-folding and
   `get_debug_type($value)` folding slice. The deterministic fake `clang`
