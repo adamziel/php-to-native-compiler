@@ -660,7 +660,11 @@
   optional aliases, namespace-qualified class declarations, and class-like
   references for declarations, `extends`, `new`, `instanceof`, static
   members, and `ClassName::class`. String class names remain literal and are
-  not import-expanded. Bracketed namespace blocks, global namespace blocks,
+  not import-expanded. A namespaced `class Child extends Parent {}` resolves
+  the parent name through the same lexical namespace/import table, but the
+  parent must already be declared in the current program or an executed
+  include/require path; autoload-triggered parent discovery is not implemented.
+  Bracketed namespace blocks, global namespace blocks,
   multiple namespaces in one file, namespace-scoped functions/constants,
   namespace-qualified function calls, grouped imports, function imports,
   constant imports, trait `use` execution, `__NAMESPACE__`, autoload
@@ -2828,6 +2832,7 @@
   signatures, interface inheritance, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
+  autoload-triggered parent class resolution,
   typed property storage/enforcement, instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, typed static properties,

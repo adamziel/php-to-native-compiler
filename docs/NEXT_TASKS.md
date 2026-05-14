@@ -6491,16 +6491,25 @@ handled.
   values, capture binding, `$this` binding, callable invocation, callback
   integration, exact PHP diagnostics, partial-output behavior, and native
   lowering.
-- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+- [x] Parser/runtime lane: implement or explicitly bound the next WordPress
   bootstrap missing-parent class blocker reported at `<bootstrap-shim>:7:1`,
   with tests, CLI coverage, docs, and named unsupported edges for autoload,
   include ordering, exact PHP fatal behavior, partial-output behavior, and
-  native lowering.
+  native lowering. The Milestone 710 slice proves namespaced single-parent
+  metadata when the parent is already declared, keeps absent parents as a
+  stable runtime boundary, updates the synthetic WordPress shim to declare the
+  missing parent, and advances the shim to the reached `try` execution
+  boundary at `<bootstrap-shim>:9:1`.
+- [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
+  bootstrap reached `try` blocker reported at `<bootstrap-shim>:9:1`, with
+  tests, CLI coverage, docs, and named unsupported edges for exception objects,
+  catch matching/binding, `finally`, partial-output behavior, exact PHP
+  warning/fatal semantics, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 709 work, the latest committed checkpoint is
-  `9dbc1be runtime: add declared enum metadata`, covering Milestone 708.
+- Before the current Milestone 710 work, the latest committed checkpoint is
+  `506dbe9 parser: accept arrow function syntax`, covering Milestone 709.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -956,6 +956,10 @@ class-like references in `extends`, `new`, `instanceof`, static members, and
 resolved through the lexical namespace/import table. Namespace and `use`
 statements are execution no-ops in `phpc run` because the parser has already
 resolved the class-like names in the AST.
+Class inheritance uses the same resolved class-like names. Parent classes must
+already be present in the interpreter's class metadata table from the current
+program or from an executed include/require path; class lookup does not invoke
+autoload callbacks.
 
 Unsupported namespace/import behavior remains: bracketed namespace blocks,
 global namespace blocks, multiple namespaces in one file, namespace-scoped

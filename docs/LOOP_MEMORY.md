@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T23:20:00Z
+
+- Checkpoint before this task: `506dbe9 parser: accept arrow function syntax`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 710, bounded namespaced-parent class metadata for
+  the synthetic WordPress missing-parent blocker at `<bootstrap-shim>:7:1`.
+- Files changed so far: `compiler/tests/object_model.rs`,
+  `compiler/tests/wordpress_inventory_cli.rs`,
+  `tests/fixtures/milestone710/*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test object_model class_inheritance -- --test-threads=1`,
+  `cargo test -p phpc --test object_model namespaced_class_declarations_record_single_parent_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone710`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone710`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: autoload-triggered parent discovery, include-order
+  discovery beyond executed local include/require paths, exact PHP fatal
+  wording, partial-output behavior, interface/trait parent semantics, and
+  native lowering remain explicit. The synthetic WordPress shim now reaches the
+  reached `try` execution blocker at `<bootstrap-shim>:9:1`.
+- Next concrete task: run `cargo fmt --check`, `cargo check -p phpc`,
+  `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "tests: bound namespaced parent metadata"` if the full
+  gate passes. Milestone 711 should bound the reached try/catch execution
+  blocker.
+
 ## Loop Event 2026-05-14T22:55:00Z
 
 - Checkpoint before this task: `9dbc1be runtime: add declared enum metadata`,

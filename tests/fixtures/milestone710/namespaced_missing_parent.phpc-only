@@ -1,0 +1,1 @@
+phpc intentionally reports the current missing-parent boundary before autoload-triggered parent resolution exists.

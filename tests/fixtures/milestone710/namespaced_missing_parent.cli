@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone710/namespaced_missing_parent.php:4:1: undefined class Synthetic\WordPress\BaseLoader
+--- stderr end ---

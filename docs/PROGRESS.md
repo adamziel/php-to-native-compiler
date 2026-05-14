@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 710, an explicit namespaced-parent class metadata slice for
+  the current WordPress synthetic missing-parent blocker. The object metadata
+  tests and CLI fixtures now prove that `namespace Synthetic\WordPress; class
+  Loader extends BaseLoader {}` resolves the parent to
+  `Synthetic\WordPress\BaseLoader` when that parent class is already declared,
+  while an absent namespaced parent remains a stable runtime boundary at the
+  class declaration span. The synthetic WordPress inventory fixture now declares
+  the parent and advances to the next reached blocker:
+  `runtime error at <bootstrap-shim>:9:1: unsupported call try: exception handling and stack unwinding are not implemented`.
+  Autoload-triggered parent discovery, include-order discovery beyond executed
+  local include/require paths, exact PHP fatal wording, partial-output
+  behavior, interface/trait parent semantics, and native lowering remain
+  explicit. Focused verification so far:
+  `cargo test -p phpc --test object_model class_inheritance -- --test-threads=1`,
+  `cargo test -p phpc --test object_model namespaced_class_declarations_record_single_parent_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone710`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone710`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`
+  passed.
 - Added Milestone 709, a bounded arrow-function syntax slice through
   `phpc run`. The parser now accepts `fn (...) => expr` as a closure-shaped
   expression with a synthetic return body while preserving traditional

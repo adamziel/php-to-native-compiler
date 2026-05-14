@@ -147,9 +147,10 @@ incorrect native code.
   diagnostics for PHP-forbidden static-property unset,
   dynamic static method calls through `$object::method()` and
   `$className::method()` for visible static methods,
-  single-parent metadata, object `isset` and `empty`, and selected metadata
-  builtins, including declared interface metadata, declared empty-trait
-  metadata, and declared unit-enum metadata
+  single-parent metadata including namespaced parent names when the parent is
+  already declared, object `isset` and `empty`, and selected metadata builtins,
+  including declared interface metadata, declared empty-trait metadata, and
+  declared unit-enum metadata
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
@@ -162,6 +163,7 @@ behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
 interface inheritance/implementation enforcement, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 try/catch/finally exception execution, exception objects and stack unwinding,
+autoload-triggered class discovery,
 array destructuring beyond simple positional statement-form `list(...)`,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the

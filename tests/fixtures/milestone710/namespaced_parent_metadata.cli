@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+Synthetic\WordPress\Loader
+Synthetic\WordPress\BaseLoader
+yes
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -31,7 +31,7 @@ fn wordpress_inventory_normalized_synthetic_snapshot_matches_fixture() {
     .expect("write synthetic version.php");
     fs::write(
         wp_includes.join("load.php"),
-        "<?php\nnamespace Synthetic\\WordPress;\nuse Synthetic\\Dependency;\ninterface Hookable {}\ntrait RegistersHooks {}\nenum Mode { case Front; }\nclass Loader extends BaseLoader {}\ntry { $callback = function () { return 1; }; } catch (Exception $e) {}\n$arrow = fn ($value) => $value;\n",
+        "<?php\nnamespace Synthetic\\WordPress;\nuse Synthetic\\Dependency;\ninterface Hookable {}\ntrait RegistersHooks {}\nenum Mode { case Front; }\nclass BaseLoader {}\nclass Loader extends BaseLoader {}\ntry { $callback = function () { return 1; }; } catch (Exception $e) {}\n$arrow = fn ($value) => $value;\n",
     )
     .expect("write synthetic load.php");
 

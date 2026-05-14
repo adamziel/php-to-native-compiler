@@ -77,11 +77,51 @@ echo "ready";
 }
 
 #[test]
+fn namespaced_class_declarations_record_single_parent_metadata() {
+    let source = r#"<?php
+namespace Synthetic\WordPress;
+
+class BaseLoader {}
+class Loader extends BaseLoader {}
+
+$loader = new Loader();
+echo Loader::class, "\n";
+echo get_parent_class($loader), "\n";
+echo is_subclass_of($loader, BaseLoader::class) ? "yes" : "no";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Synthetic\\WordPress\\Loader\nSynthetic\\WordPress\\BaseLoader\nyes"
+    );
+
+    let classes = class_metadata_source(source).unwrap();
+    let base = classes
+        .lookup_class("Synthetic\\WordPress\\BaseLoader")
+        .unwrap();
+    let child = classes
+        .lookup_class("Synthetic\\WordPress\\Loader")
+        .unwrap();
+    assert_eq!(child.parent_id(), Some(base.id()));
+}
+
+#[test]
 fn class_inheritance_metadata_reports_unsupported_boundaries() {
     let missing_parent = runtime_error("<?php\nclass Child extends Missing {}\n");
     assert_eq!(missing_parent.line, 2);
     assert_eq!(missing_parent.column, 1);
     assert_eq!(missing_parent.message, "undefined class Missing");
+
+    let namespaced_missing_parent = runtime_error(
+        "<?php\nnamespace Synthetic\\WordPress;\nclass Loader extends BaseLoader {}\n",
+    );
+    assert_eq!(namespaced_missing_parent.line, 3);
+    assert_eq!(namespaced_missing_parent.column, 1);
+    assert_eq!(
+        namespaced_missing_parent.message,
+        "undefined class Synthetic\\WordPress\\BaseLoader"
+    );
 
     let self_parent = runtime_error("<?php\nclass Box extends Box {}\n");
     assert_eq!(self_parent.line, 2);
