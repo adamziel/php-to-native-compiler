@@ -1,4 +1,2 @@
 <?php
-goto done;
-done:
-echo "done";
+echo goto done;

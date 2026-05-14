@@ -111,11 +111,9 @@ impl Parser {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("yield") => {
                 Err(self.error_at(self.peek().span, unsupported_yield_message()))
             }
-            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("goto") => {
-                self.parse_unsupported_goto()
-            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("goto") => self.parse_goto(),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
-                self.parse_unsupported_goto_label()
+                self.parse_goto_label()
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => {
                 if self.nested_statement_depth == 0 {
@@ -519,14 +517,17 @@ impl Parser {
         Err(self.error_at(span, unsupported_match_expression_message()))
     }
 
-    fn parse_unsupported_goto(&mut self) -> CompileResult<Stmt> {
+    fn parse_goto(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
-        Err(self.error_at(span, unsupported_goto_message()))
+        let label = self.consume_identifier("expected label name after goto")?;
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after goto statement")?;
+        Ok(Stmt::Goto { label, span })
     }
 
-    fn parse_unsupported_goto_label(&mut self) -> CompileResult<Stmt> {
-        let span = self.advance().span;
-        Err(self.error_at(span, unsupported_goto_message()))
+    fn parse_goto_label(&mut self) -> CompileResult<Stmt> {
+        let (name, span) = self.consume_identifier_with_span("expected goto label")?;
+        self.consume_keyword(TokenKind::Colon, "expected ':' after goto label")?;
+        Ok(Stmt::Label { name, span })
     }
 
     fn parse_unsupported_nested_const_declaration(&mut self) -> CompileResult<Stmt> {

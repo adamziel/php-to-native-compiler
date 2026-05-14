@@ -6273,16 +6273,24 @@ handled.
 
 ## Milestone 686: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound `goto` statements and
-  labels enough to parse WordPress's early UTF-8 scanner error path, including
-  tests for forward jumps within one function and explicit gaps for cross-scope
-  jumps, jumps into loops/switches, finally blocks, labels in included files,
-  exact PHP diagnostics, and native lowering unless proven.
+- [x] Parser/runtime lane: implement bounded `goto` statements and labels
+  enough to parse WordPress's early UTF-8 scanner error path, including tests
+  for active statement-list jumps and explicit gaps for exact PHP target
+  validation, duplicate label diagnostics, jumps into nested blocks,
+  cross-function jumps, included-file label boundaries, `finally` interaction,
+  and native lowering.
+
+## Milestone 687: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound scalar cast
+  expressions, starting with `(string)` in WordPress's
+  `_wp_utf8_encode_fallback()` path, with tests, CLI coverage, docs, and named
+  unsupported PHP casting/coercion and native-lowering edges.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 685 work, the latest committed checkpoint is
-  `38bbd0f functions: accept signature type syntax`, covering Milestone 684.
+- Before the current Milestone 686 work, the latest committed checkpoint is
+  `44c558f lexer: add hexadecimal integer literals`, covering Milestone 685.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

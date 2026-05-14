@@ -221,6 +221,7 @@ enum Flow {
     Break(Span),
     Continue(Span),
     Return(Value),
+    Goto { label: String, span: Span },
 }
 
 impl Interpreter {
@@ -390,6 +391,7 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
 
@@ -398,11 +400,27 @@ impl Interpreter {
         statements: &[Stmt],
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
-        for stmt in statements {
-            match self.execute_statement(stmt, scope)? {
+        let mut labels = HashMap::new();
+        for (index, stmt) in statements.iter().enumerate() {
+            if let Stmt::Label { name, .. } = stmt {
+                labels.insert(name.clone(), index);
+            }
+        }
+
+        let mut index = 0;
+        while index < statements.len() {
+            match self.execute_statement(&statements[index], scope)? {
                 Flow::Normal => {}
+                Flow::Goto { label, span } => {
+                    let Some(target) = labels.get(&label) else {
+                        return Ok(Flow::Goto { label, span });
+                    };
+                    index = *target;
+                    continue;
+                }
                 flow @ (Flow::Break(_) | Flow::Continue(_) | Flow::Return(_)) => return Ok(flow),
             }
+            index += 1;
         }
         Ok(Flow::Normal)
     }
@@ -452,6 +470,11 @@ impl Interpreter {
                 self.evaluate(expr, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::Goto { label, span } => Ok(Flow::Goto {
+                label: label.clone(),
+                span: *span,
+            }),
+            Stmt::Label { .. } => Ok(Flow::Normal),
             Stmt::If {
                 condition,
                 then_branch,
@@ -471,7 +494,7 @@ impl Interpreter {
                     match self.execute_statements(body, scope)? {
                         Flow::Normal | Flow::Continue(_) => {}
                         Flow::Break(_) => break,
-                        flow @ Flow::Return(_) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
                 }
                 Ok(Flow::Normal)
@@ -483,7 +506,7 @@ impl Interpreter {
                     match self.execute_statements(body, scope)? {
                         Flow::Normal | Flow::Continue(_) => {}
                         Flow::Break(_) => break,
-                        flow @ Flow::Return(_) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
 
                     if !self.evaluate(condition, scope)?.is_truthy() {
@@ -513,7 +536,7 @@ impl Interpreter {
                     match self.execute_statements(body, scope)? {
                         Flow::Normal | Flow::Continue(_) => {}
                         Flow::Break(_) => break,
-                        flow @ Flow::Return(_) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
 
                     if let Some(increment) = increment {
@@ -553,7 +576,7 @@ impl Interpreter {
                     match self.execute_statements(body, scope)? {
                         Flow::Normal | Flow::Continue(_) => {}
                         Flow::Break(_) => break,
-                        flow @ Flow::Return(_) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
                 }
 
@@ -739,6 +762,7 @@ impl Interpreter {
             Flow::Normal | Flow::Return(_) => Ok(Flow::Normal),
             Flow::Break(span) => Ok(Flow::Break(span)),
             Flow::Continue(span) => Ok(Flow::Continue(span)),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
 
@@ -836,7 +860,7 @@ impl Interpreter {
                         ),
                     ));
                 }
-                flow @ Flow::Return(_) => return Ok(flow),
+                flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
             }
             index += 1;
         }
@@ -3762,6 +3786,7 @@ impl Interpreter {
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
             Flow::Return(value) => Ok(value),
+            Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
 
@@ -6538,6 +6563,15 @@ fn runtime_visibility(visibility: ClassVisibility) -> Visibility {
 
 fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
+}
+
+fn undefined_goto_label_error(span: Span, label: &str) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("undefined goto label '{label}'"),
+    )
 }
 
 fn metadata_exists_autoload_flag(

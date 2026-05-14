@@ -17592,3 +17592,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `git diff --check`, then checkpoint with
   `tools/checkpoint.sh "lexer: add hexadecimal integer literals"` if the full
   gate passes.
+
+## Loop Event 2026-05-14T00:00:00Z
+
+- Checkpoint before this task: `44c558f lexer: add hexadecimal integer
+  literals`, pushed to `origin/master`.
+- Task attempted: Milestone 686, bounded `goto`/label parsing and interpreter
+  execution for WordPress's early `compat-utf8.php` scanner error paths.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/native_control_flow_boundary.rs`,
+  `compiler/tests/increment_decrement.rs`,
+  `tests/fixtures/milestone686/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_goto.*`,
+  `tests/fixtures/milestone175/native_control_flow_boundary_emit_ir.cli`,
+  `tests/fixtures/milestone561/alternate_switch_emit_ir.cli`, `README.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test syntax_boundaries goto`,
+  `cargo test -p phpc --test native_control_flow_boundary`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli`,
+  `cargo run -p phpc -- test tests/fixtures/milestone686`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone686`, and
+  `PHPC_BIN=/tmp/phpc-target-686/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: exact PHP `goto` target validation, duplicate label
+  diagnostics, jumps into nested blocks, cross-function jumps, included-file
+  label boundaries, `finally` interaction, scalar cast expressions, invoking
+  typed/reference-parameter functions, reference binding, string offsets,
+  WordPress bootstrap environment, exact native errors, and native lowering
+  remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, the focused
+  fixture gates, then checkpoint with
+  `tools/checkpoint.sh "control: add bounded goto labels"` if the full gate
+  passes.

@@ -753,6 +753,24 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone685`, and
   `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 686, bounded `goto`/label execution for the current
+  interpreter statement runtime. The parser now accepts `goto target;` and
+  `target:` labels, and `phpc run` can resolve labels in the active statement
+  list while nested statements propagate jumps outward. Native LLVM/assembly
+  emission still rejects `goto` and labels under the explicit control-flow
+  boundary. Exact PHP compile-time target validation, duplicate label
+  diagnostics, jumps into nested blocks, cross-function jumps, included-file
+  label boundaries, `finally` interaction, and native lowering remain explicit.
+  The real WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `wp-includes/compat-utf8.php:441:30`, where `(string)` cast expressions are
+  not yet parsed. Focused verification so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test syntax_boundaries goto`,
+  `cargo test -p phpc --test native_control_flow_boundary`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli`,
+  `cargo run -p phpc -- test tests/fixtures/milestone686`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone686`, and
+  `PHPC_BIN=/tmp/phpc-target-686/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -761,10 +779,10 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 686 should implement or explicitly bound `goto` statements and
-  labels enough to parse WordPress's early UTF-8 scanner error path while
-  keeping cross-scope jumps, jumps into loops/switches, finally blocks, exact
-  PHP diagnostics, and native lowering explicit unless proven.
+- Milestone 687 should implement or explicitly bound scalar cast expressions,
+  starting with `(string)` in WordPress's `_wp_utf8_encode_fallback()` path,
+  while keeping exact PHP casting/coercion edge cases and native lowering
+  explicit unless proven.
 
 ## 2026-05-12
 

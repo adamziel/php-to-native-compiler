@@ -50,6 +50,14 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    Goto {
+        label: String,
+        span: Span,
+    },
+    Label {
+        name: String,
+        span: Span,
+    },
     If {
         condition: Expr,
         then_branch: Vec<Stmt>,

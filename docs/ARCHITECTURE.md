@@ -1152,10 +1152,16 @@ continue rejecting `match` until those runtime and IR semantics exist.
 
 ## Goto Boundary
 
-`goto` statements and labels are rejected with a stable parse diagnostic before
-execution. They do not build AST nodes yet because jump-target resolution,
-cross-scope jump validation, interaction with future `finally` execution, and
-native control-flow lowering need explicit semantics first.
+`goto target;` statements and `target:` labels build AST nodes for the current
+interpreter path. Execution resolves labels in the active statement list and
+lets nested statements propagate jumps outward, which covers the WordPress
+UTF-8 scanner's forward error-path labels without pretending to implement every
+PHP jump rule.
+
+Exact PHP compile-time validation, duplicate label diagnostics, jumps into
+nested blocks, cross-function jumps, included-file label boundaries,
+interaction with future `finally` execution, and native control-flow lowering
+remain explicit unsupported zones.
 
 ## Heredoc/Nowdoc Boundary
 

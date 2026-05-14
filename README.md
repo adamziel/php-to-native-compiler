@@ -87,10 +87,11 @@ incorrect native code.
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
   operators, shifts, ternaries, and increments/decrements over documented value
   boundaries
-- `if`, loops, `switch`, `break`, `continue`, `foreach`, and user functions with
-  local scopes, defaults, returns, dynamic string-valued calls, and recursion
-  guarded by a fixed depth limit; parameter/return type syntax is accepted as
-  metadata only, without runtime type enforcement
+- `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
+  `foreach`, and user functions with local scopes, defaults, returns, dynamic
+  string-valued calls, and recursion guarded by a fixed depth limit;
+  parameter/return type syntax is accepted as metadata only, without runtime
+  type enforcement
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements; function-scope `global` imports remain unsupported
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,

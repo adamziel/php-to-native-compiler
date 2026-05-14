@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
+const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 
 #[test]
 fn phpc_run_still_handles_current_control_flow_subset() {
@@ -68,6 +68,7 @@ fn emit_ir_rejects_structured_control_flow_with_specific_boundary() {
         "<?php\nfor ($i = 0; $i < 1; $i = $i + 1) { echo $i; }\n",
         "<?php\ndo { echo 1; } while (false);\n",
         "<?php\nswitch (1) { case 1: echo 1; break; }\n",
+        "<?php\ngoto done;\ndone:\n",
         "<?php\nbreak;\n",
         "<?php\ncontinue;\n",
     ] {

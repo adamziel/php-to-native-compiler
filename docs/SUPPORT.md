@@ -496,7 +496,9 @@
 - explicit parse diagnostics for unsupported generator `yield` and
   `yield from` expressions
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
-- explicit parse diagnostics for unsupported `goto` statements and labels
+- bounded `goto target;` statements and `target:` labels in the current
+  statement runtime; labels in the active statement list can be reached from
+  nested statements that propagate the jump outward
 - explicit parse diagnostics for unsupported exponentiation syntax: `**` and
   `**=`
 - explicit parse diagnostics for unsupported unparenthesized nested ternary
@@ -2747,8 +2749,9 @@
   `for`, supported `do ... while`, supported array `foreach`, or supported
   `switch`, and `continue;` for the innermost active loop are implemented
 - native lowering for `if`/`elseif`/`else`, `while`, `for`, `do ... while`,
-  `switch`, `break`, and `continue`; generated code currently rejects those
-  forms before lowering conditions, bodies, cases, or loop-control flow
+  `switch`, `goto` labels, `break`, and `continue`; generated code currently
+  rejects those forms before lowering conditions, bodies, cases, jumps, or
+  loop-control flow
 - exception execution; `throw`, throw expressions, `try` blocks, `catch`
   clauses, and `finally` blocks currently fail with stable parse diagnostics
   before `Throwable`, `Exception`, custom exception classes, stack unwinding,
@@ -2758,9 +2761,11 @@
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
   order, exact native error objects, and native lowering are not implemented.
-- `goto` statements and labels currently fail with a stable parse diagnostic
-  before jump-target resolution, cross-scope jump validation, `finally`
-  interaction, or native lowering exists.
+- `goto` support is bounded to the current statement-list runtime slice.
+  Broader PHP behavior such as exact compile-time target validation, duplicate
+  label diagnostics, jumps into nested blocks, cross-function jumps, included
+  file label boundaries, `finally` interaction, and native lowering remains
+  unsupported.
 - heredoc/nowdoc string syntax currently fails with a stable lex diagnostic
   before multiline string tokenization, interpolation, indentation stripping,
   exact label parsing, runtime string construction, or native string lowering

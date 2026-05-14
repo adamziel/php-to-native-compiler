@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+start
+done
+nested
+--- stdout end ---
+stderr:
+--- stderr end ---

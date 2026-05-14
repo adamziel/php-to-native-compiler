@@ -1,6 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
+const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
@@ -665,34 +666,59 @@ fn emit_ir_rejects_trait_declaration_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_goto_syntax_has_stable_parse_errors() {
-    let cases = [
-        ("<?php\ngoto done;\ndone:\necho 'done';\n", 2, 1),
-        ("<?php\nGOTO done;\n", 2, 1),
-        ("<?php\ndone:\necho 'done';\n", 2, 1),
-        ("<?php\necho goto done;\n", 2, 6),
-    ];
-
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported goto: goto statements and labels are not implemented"
-        );
+fn goto_labels_execute_for_current_statement_list_subset() {
+    let execution = run_source(
+        r#"<?php
+echo "a";
+goto after;
+echo "skipped";
+after:
+echo "b";
+while (true) {
+    if (true) {
+        goto end_loop;
     }
+    echo "never";
+    end_loop:
+    echo "c";
+    break;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "abc");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn emit_ir_rejects_goto_syntax_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\ngoto done;\ndone:\n").unwrap_err();
+fn unresolved_goto_label_has_stable_runtime_error() {
+    let error = run_source("<?php\ngoto missing;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined goto label 'missing'");
+}
+
+#[test]
+fn unsupported_goto_expression_has_stable_parse_error() {
+    let error = parse_error("<?php\necho goto done;\n");
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
         "unsupported goto: goto statements and labels are not implemented"
     );
+}
+
+#[test]
+fn emit_ir_rejects_goto_after_parse() {
+    let error = php_compiler::emit_ir_source("<?php\ngoto done;\ndone:\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_CONTROL_FLOW_REJECTION);
 }
 
 #[test]
