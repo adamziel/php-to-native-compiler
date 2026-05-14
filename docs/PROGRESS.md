@@ -921,14 +921,32 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone694`, and
   `PHPC_BIN=/tmp/phpc-target-694/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 695, bounded `spl_autoload_register()` execution for the
+  current interpreter/runtime autoload policy. `phpc run` now accepts closure
+  expressions or string callback names plus optional boolean flags, returns
+  `true`, exposes the builtin through `function_exists`, `is_callable`, and
+  dynamic string calls, and deliberately does not store or invoke an autoload
+  stack. Native function-table introspection recognizes the name; direct native
+  calls still reject under the function-call boundary. Full closure values,
+  autoload stack behavior, unregistering, prepend ordering, class lookup
+  invocation, namespace/class resolution, exact PHP callable validation,
+  `TypeError`/exception behavior, and native autoload lowering remain explicit.
+  The real WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `<bootstrap-shim>:170:9`, unsupported PHP attribute syntax. Focused
+  verification so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test autoload_builtins`,
+  `cargo test -p phpc --test type_introspection_builtins`,
+  `cargo run -p phpc -- test tests/fixtures/milestone695`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone695`, and
+  `PHPC_BIN=/tmp/phpc-target-695/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 695 should implement or explicitly bound
-  `spl_autoload_register()` for WordPress's sodium compat loader, while keeping
-  closure value/runtime semantics, autoload stack behavior, namespace/class
-  resolution, exact PHP diagnostics, and native lowering explicit unless
-  proven.
+- Milestone 696 should implement or explicitly bound PHP attribute syntax for
+  WordPress class declarations, while keeping attribute metadata storage,
+  reflection behavior, namespace resolution, constructor argument evaluation,
+  exact PHP diagnostics, and native lowering explicit unless proven.
 
 ## 2026-05-12
 

@@ -779,6 +779,11 @@ Unix-style local paths. Native `function_exists("dirname")` and
 `is_callable("dirname")` use the known-function table, but direct native
 `dirname(...)` calls still reject under the function-call boundary until native
 path policy and string-return lowering are proven.
+`spl_autoload_register()` is currently an interpreter-only no-op registration
+boundary: it accepts closure expressions or string callback names with optional
+boolean flags and returns true, but does not store or invoke an autoload stack.
+Native function-table introspection recognizes the name, while direct native
+calls reject under the function-call boundary.
 Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`
 PHP 8.3 compatibility-target constant in the built-in answer table. Bare global
 constant reads and `constant($name)` still stay behind the native

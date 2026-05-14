@@ -66,6 +66,7 @@ echo is_callable("LOCAL_NAME") ? "1" : "0";
 echo is_callable("strlen") ? "1" : "0";
 echo is_callable("extension_loaded") ? "1" : "0";
 echo is_callable("dirname") ? "1" : "0";
+echo is_callable("spl_autoload_register") ? "1" : "0";
 echo is_callable("missing") ? "1" : "0";
 echo is_callable(42) ? "1" : "0";
 echo "\n";
@@ -75,7 +76,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1111100\n1");
+    assert_eq!(execution.stdout, "11111100\n1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -224,6 +225,7 @@ echo function_exists("strlen") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
 echo function_exists("extension_loaded") ? "1" : "0";
 echo function_exists("dirname") ? "1" : "0";
+echo function_exists("spl_autoload_register") ? "1" : "0";
 echo function_exists("missing") ? "1" : "0";
 echo function_exists("not valid") ? "1" : "0";
 echo "\n";
@@ -233,7 +235,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "11111100\n1");
+    assert_eq!(execution.stdout, "111111100\n1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -360,6 +362,7 @@ echo function_exists("STRLEN") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
 echo function_exists("extension_loaded") ? "1" : "0";
 echo function_exists("dirname") ? "1" : "0";
+echo function_exists("spl_autoload_register") ? "1" : "0";
 echo function_exists("missing_native_function") ? "1" : "0";
 echo function_exists($known) ? "1" : "0";
 echo function_exists($missing) ? "1" : "0";
@@ -368,7 +371,7 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
 }
@@ -403,6 +406,7 @@ echo is_callable("strlen") ? "1" : "0";
 echo is_callable("STRLEN") ? "1" : "0";
 echo is_callable("extension_loaded") ? "1" : "0";
 echo is_callable("dirname") ? "1" : "0";
+echo is_callable("spl_autoload_register") ? "1" : "0";
 echo is_callable("missing_native_function") ? "1" : "0";
 echo is_callable("missing_native_function", true) ? "1" : "0";
 echo is_callable("strlen", false) ? "1" : "0";
@@ -414,7 +418,7 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 8, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 9, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

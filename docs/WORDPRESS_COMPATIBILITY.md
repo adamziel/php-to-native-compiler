@@ -107,8 +107,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   Milestone 692 empty extension-registry policy. The previous
   `PHP_VERSION_ID` blocker is covered by the bounded Milestone 693 PHP 8.3
   compatibility-target constant. The previous `dirname()` blocker is covered
-  by the bounded Milestone 694 lexical Unix-style path builtin. The shim probe
-  now reaches `spl_autoload_register()` at `<bootstrap-shim>:9:1`.
+  by the bounded Milestone 694 lexical Unix-style path builtin. The previous
+  shim-probe `spl_autoload_register()` blocker is covered by the bounded
+  Milestone 695 no-op autoload registration policy. The shim probe now reaches
+  PHP attribute syntax at `<bootstrap-shim>:170:9`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

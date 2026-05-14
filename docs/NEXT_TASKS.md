@@ -6347,16 +6347,24 @@ handled.
 
 ## Milestone 695: WordPress Bridge Continuation
 
-- [ ] Runtime/autoload lane: implement or explicitly bound
+- [x] Runtime/autoload lane: implement or explicitly bound
   `spl_autoload_register()` for WordPress's sodium compat loader, with tests,
   CLI coverage, docs, and named unsupported edges for closure value/runtime
   semantics, autoload stack behavior, namespace/class resolution, exact PHP
   diagnostics, and native lowering.
 
+## Milestone 696: WordPress Bridge Continuation
+
+- [ ] Syntax/attribute lane: implement or explicitly bound PHP attribute syntax
+  for WordPress class declarations, with tests, CLI coverage, docs, and named
+  unsupported edges for attribute metadata storage, reflection behavior,
+  namespace resolution, constructor argument evaluation, exact PHP diagnostics,
+  and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 694 work, the latest committed checkpoint is
-  `9391a37 runtime: add bounded PHP_VERSION_ID`, covering Milestone 693.
+- Before the current Milestone 695 work, the latest committed checkpoint is
+  `8d33563 runtime: add bounded dirname`, covering Milestone 694.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

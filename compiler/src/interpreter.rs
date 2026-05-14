@@ -3721,6 +3721,9 @@ impl Interpreter {
             runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
         })? {
             Callable::Builtin(key) => {
+                if key == "spl_autoload_register" {
+                    return self.call_spl_autoload_register(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -3741,6 +3744,64 @@ impl Interpreter {
             Callable::Builtin(key) => self.call_builtin(&key, args, span),
             Callable::User(function) => self.call_user_function_with_values(function, args, span),
         }
+    }
+
+    fn call_spl_autoload_register(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "spl_autoload_register()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        match &args[0] {
+            Expr::Closure { .. } => {}
+            callback => match self.evaluate(callback, caller_scope)? {
+                Value::String(_) => {}
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "spl_autoload_register()",
+                            format!(
+                                "callback argument must be closure or string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            },
+        }
+
+        for (index, arg) in args.iter().enumerate().skip(1) {
+            match self.evaluate(arg, caller_scope)? {
+                Value::Bool(_) => {}
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "spl_autoload_register()",
+                            format!(
+                                "argument #{} must be bool in the current subset, got {}",
+                                index + 1,
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Value::Bool(true))
     }
 
     fn lookup_function(&self, name: &str) -> Option<Callable> {
@@ -6900,6 +6961,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_called_class"
             | "spl_object_id"
             | "spl_object_hash"
+            | "spl_autoload_register"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"

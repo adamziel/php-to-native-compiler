@@ -308,7 +308,8 @@
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
-  `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`;
+  `spl_object_id`, `spl_object_hash`, `spl_autoload_register`, `var_dump`,
+  and `print_r`;
   `gettype` returns PHP legacy type names for the current value model
   (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, and `object`);
   `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
@@ -345,6 +346,11 @@
   it does not resolve the filesystem, symlinks, include paths, stream wrappers,
   Windows drive/UNC paths, locale/codepage details, or PHP's exact coercion and
   `ValueError` behavior.
+  `spl_autoload_register($callback, $throw = true, $prepend = false)` accepts
+  closure expressions or string callback names plus optional boolean flags and
+  returns `true`. It currently records no autoload stack and never invokes the
+  callback; this is a WordPress bootstrap compatibility boundary, not full SPL
+  autoloading.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic empty compiler/runtime extension registry. It
   returns `false` for all names, including WordPress probe names such as
@@ -1952,8 +1958,8 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `get_class`, `is_object`, `get_debug_type`,
-  `class_exists`, `interface_exists`,
+  `dirname`, `extension_loaded`, `spl_autoload_register`, `get_class`,
+  `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
@@ -2010,6 +2016,10 @@
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
+  `spl_autoload_register` accepts closure and string callbacks in `phpc run`
+  without storing or invoking them; direct native calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -3458,6 +3468,12 @@
   canonicalization, symlink resolution, null-byte behavior, broad scalar
   coercions, exact `ValueError`/`TypeError` diagnostics, and native lowering
   beyond function-table introspection
+- `spl_autoload_register()` behavior beyond accepting closure/string callback
+  registrations as a no-op success, including autoload stack storage,
+  unregistering, invocation during class lookup, prepend ordering,
+  namespace-aware class resolution, exact callable validation, exact
+  `TypeError`/exception behavior, and native lowering beyond function-table
+  introspection
 - `extension_loaded()` behavior outside the deterministic empty extension
   registry, including exact extension inventory policy, aliases, host
   PHP/module discovery, dynamic loading side effects, `php.ini`/SAPI

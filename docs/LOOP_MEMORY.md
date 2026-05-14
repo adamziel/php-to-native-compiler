@@ -17875,3 +17875,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `cargo check -p phpc`, the updated focused gates,
   then checkpoint with `tools/checkpoint.sh "runtime: add bounded dirname"` if
   the full gate passes.
+
+## Loop Event 2026-05-14T04:30:00Z
+
+- Checkpoint before this task: `8d33563 runtime: add bounded dirname`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 695, bounded `spl_autoload_register()` execution
+  for WordPress's sodium compat loader.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/autoload_builtins.rs`,
+  `compiler/tests/type_introspection_builtins.rs`,
+  `tests/fixtures/milestone695/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `git diff --check`,
+  `cargo check -p phpc`, `cargo test -p phpc --test autoload_builtins`,
+  `cargo test -p phpc --test type_introspection_builtins`,
+  `cargo run -p phpc -- test tests/fixtures/milestone695`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone695`, and
+  `PHPC_BIN=/tmp/phpc-target-695/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: full closure values/invocation,
+  `spl_autoload_register()` autoload stack storage, unregistering, prepend
+  ordering, invocation during class lookup, namespace-aware class resolution,
+  exact callable validation, PHP `TypeError`/exception behavior, PHP attribute
+  syntax, WordPress bootstrap environment, exact native errors, and native
+  behavior beyond function-table introspection remain explicit.
+- Next concrete task: run the full checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded spl_autoload_register"` if the
+  full gate passes.

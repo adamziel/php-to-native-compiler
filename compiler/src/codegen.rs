@@ -6131,6 +6131,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "get_called_class"
             | "spl_object_id"
             | "spl_object_hash"
+            | "spl_autoload_register"
             | "property_exists"
             | "method_exists"
             | "get_class_methods"
