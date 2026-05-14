@@ -6415,8 +6415,8 @@ handled.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 701 work, the latest committed checkpoint is
-  `cf485bb runtime: add simple list assignment`, covering Milestone 700.
+- Before the current Milestone 702 work, the latest committed checkpoint is
+  `dbb1b58 runtime: add bounded bool casts`, covering Milestone 701.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
