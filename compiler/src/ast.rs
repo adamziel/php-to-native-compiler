@@ -659,6 +659,7 @@ pub enum UnaryOp {
 pub enum CastKind {
     String,
     Int,
+    Bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

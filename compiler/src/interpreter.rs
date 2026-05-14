@@ -6738,6 +6738,7 @@ impl Interpreter {
                     ),
                 )),
             },
+            CastKind::Bool => Ok(Value::Bool(value.is_truthy())),
         }
     }
 }

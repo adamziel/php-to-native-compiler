@@ -2642,10 +2642,10 @@ impl Parser {
         match name.to_ascii_lowercase().as_str() {
             "string" => Ok(Some(CastKind::String)),
             "int" | "integer" => Ok(Some(CastKind::Int)),
-            "bool" | "boolean" | "float" | "double" | "real" | "array" | "object" | "unset"
-            | "binary" => Err(self.error_at(
+            "bool" | "boolean" => Ok(Some(CastKind::Bool)),
+            "float" | "double" | "real" | "array" | "object" | "unset" | "binary" => Err(self.error_at(
                 self.peek().span,
-                "unsupported cast expression: only (string) and (int) casts are implemented",
+                "unsupported cast expression: only (string), (int), and (bool) casts are implemented",
             )),
             _ => Ok(None),
         }

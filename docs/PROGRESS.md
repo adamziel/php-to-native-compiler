@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 701, bounded `(bool)`/`(boolean)` cast execution through
+  `phpc run`. The parser now accepts both aliases, the interpreter reuses the
+  current PHP-shaped truthiness model for null, booleans, integers, floats,
+  strings, arrays, and objects, and native lowering continues to reject cast
+  expressions with the existing unary/cast boundary. Remaining cast forms
+  `(float)`, `(double)`, `(real)`, `(array)`, `(object)`, `(unset)`, and
+  `(binary)`, future resources, references/copy-on-write interactions, exact
+  PHP diagnostics, partial-output edge behavior, and native cast lowering
+  remain explicit. Focused verification: `cargo fmt --check`,
+  `cargo check -p phpc`, `cargo test -p phpc --test scalar_casts -- --test-threads=1`,
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone701`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone701`,
+  `cargo build -p phpc`,
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`,
+  and `git diff --check` passed. The WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:1714:23: default parameter values only support constant expressions in the current subset`,
+  corresponding to a `self::CRYPTO_GENERICHASH_BYTES` default in
+  `wp-includes/sodium_compat/src/Compat.php:1714`.
 - Added Milestone 700, simple positional statement-form `list($a, $b) = expr;`
   assignment through `phpc run`. The parser accepts only direct variable
   targets in statement position, the interpreter evaluates the right-hand side

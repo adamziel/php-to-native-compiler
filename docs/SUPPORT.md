@@ -1083,7 +1083,8 @@
 - Type coercion: scalar arithmetic supports `null`, booleans, integers, floats,
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
-  runtime error. Truthiness is implemented for current scalar values.
+  runtime error. Truthiness is implemented for current scalar, array, and
+  object values.
 - Cast expressions: `(string)` is implemented for the current scalar/null value
   model. It converts `null` and `false` to `""`, `true` to `"1"`, integers to
   decimal strings, floats through the current PHP-style float formatter, and
@@ -1091,10 +1092,14 @@
   scalar/null value model: `null` and `false` become `0`, `true` becomes `1`,
   integers are unchanged, finite in-range floats truncate toward zero,
   well-formed numeric strings convert through the current numeric parser, and
-  empty or non-numeric strings become `0`. Array/object cast behavior,
-  leading-numeric string casts such as `"42abc"`, non-finite or out-of-range
-  float-to-int behavior, resources, bool/float/array/object/unset/binary cast
-  forms, exact PHP diagnostics, and native lowering remain unsupported.
+  empty or non-numeric strings become `0`. `(bool)`/`(boolean)` is implemented
+  over the current value model using current PHP-shaped truthiness: `null`,
+  `false`, integer/float zero, `""`, `"0"`, and empty arrays are false; other
+  current scalars, non-empty arrays, and current objects are true. Array/object
+  behavior for `(string)` and `(int)`, leading-numeric string casts such as
+  `"42abc"`, non-finite or out-of-range float-to-int behavior, resources,
+  float/array/object/unset/binary cast forms, exact PHP diagnostics, and native
+  lowering remain unsupported.
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and

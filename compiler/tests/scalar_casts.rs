@@ -35,6 +35,35 @@ echo (int) "", "|", (int) "not numeric";
 }
 
 #[test]
+fn bool_casts_execute_for_current_value_subset() {
+    let execution = run_source(
+        r#"<?php
+echo (bool) null ? "true" : "false", "|";
+echo (boolean) false ? "true" : "false", "|";
+echo (bool) true ? "true" : "false", "\n";
+echo (bool) 0 ? "true" : "false", "|";
+echo (bool) 1 ? "true" : "false", "|";
+echo (bool) 0.0 ? "true" : "false", "|";
+echo (bool) -0.5 ? "true" : "false", "\n";
+echo (bool) "" ? "true" : "false", "|";
+echo (bool) "0" ? "true" : "false", "|";
+echo (bool) "false" ? "true" : "false", "\n";
+echo (bool) [] ? "true" : "false", "|";
+echo (bool) [0] ? "true" : "false", "\n";
+class Flag {}
+echo (bool) new Flag() ? "true" : "false";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "false|false|true\nfalse|true|false|true\nfalse|false|true\nfalse|true\ntrue"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn string_casts_reject_array_and_object_warning_paths_for_now() {
     let error = run_source("<?php\necho (string) [1];\n").unwrap_err();
 
@@ -72,14 +101,14 @@ fn int_casts_reject_unimplemented_warning_paths_for_now() {
 
 #[test]
 fn remaining_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (bool) \"1\";\n").unwrap_err();
+    let error = run_source("<?php\necho (float) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string) and (int) casts are implemented"
+        "unsupported cast expression: only (string), (int), and (bool) casts are implemented"
     );
 }
 
@@ -91,6 +120,11 @@ fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
     assert_eq!(error.message, LLVM_UNARY_REJECTION);
 
     let error = emit_ir_source("<?php\necho (int) 42;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+
+    let error = emit_ir_source("<?php\necho (bool) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_UNARY_REJECTION);

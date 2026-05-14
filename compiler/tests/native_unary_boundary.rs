@@ -44,6 +44,7 @@ fn emit_ir_rejects_unary_forms_before_lowering_operands() {
     for source in [
         "<?php\necho -\"5\";\n",
         "<?php\necho (string) 5;\n",
+        "<?php\necho (bool) 5;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0.0 : 2.5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? \"\" : \"php\";\necho !$value;\n",

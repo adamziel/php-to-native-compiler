@@ -85,8 +85,8 @@ incorrect native code.
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
   coalescing forms
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
-  operators, shifts, `(string)` and `(int)` casts over scalar/null values,
-  ternaries, and increments/decrements over documented value boundaries
+  operators, shifts, `(string)`, `(int)`, and `(bool)` casts over documented
+  current value boundaries, ternaries, and increments/decrements
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls, and
@@ -142,7 +142,7 @@ references, copy-on-write, namespaces/imports, include/require breadth beyond
 the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
-behavior outside the current `(string)` and `(int)` scalar/null slices,
+behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
 interfaces, traits, enums,
 try/catch/finally exception execution, exception objects and stack unwinding,
 array destructuring beyond simple positional statement-form `list(...)`,

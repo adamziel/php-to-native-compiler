@@ -18061,3 +18061,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   `tools/checkpoint.sh "runtime: add simple list assignment"` if no unrelated
   work is present. Milestone 701 should bound the next WordPress `(bool)` cast
   blocker at `wp-includes/sodium_compat/src/Compat.php:572`.
+
+## Loop Event 2026-05-14T08:05:00Z
+
+- Checkpoint before this task: `cf485bb runtime: add simple list assignment`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 701, bounded `(bool)`/`(boolean)` cast execution
+  for WordPress's sodium compat class.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/scalar_casts.rs`,
+  `compiler/tests/native_unary_boundary.rs`, `tests/fixtures/milestone701/*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test scalar_casts -- --test-threads=1`,
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone701`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone701`,
+  `cargo build -p phpc`,
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: `(float)`, `(double)`, `(real)`, `(array)`,
+  `(object)`, `(unset)`, `(binary)`, future resources,
+  references/copy-on-write interactions, exact PHP diagnostics,
+  partial-output behavior, WordPress bootstrap environment, exact native
+  errors, and native cast lowering remain explicit.
+- Next concrete task: run the full checkpoint gate with
+  `tools/checkpoint.sh "runtime: add bounded bool casts"` if no unrelated work
+  is present. Milestone 702 should bound the next WordPress default-parameter
+  blocker, `self::CRYPTO_GENERICHASH_BYTES` at
+  `wp-includes/sodium_compat/src/Compat.php:1714`.
