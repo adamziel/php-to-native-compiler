@@ -701,6 +701,9 @@ impl LlvmGenerator {
                 .map(IrValue::Bool)
                 .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
             "is_countable" | "is_iterable" => Ok(IrValue::Bool(false)),
+            "extension_loaded" if matches!(value, IrValue::String(_) | IrValue::StringPtr(_)) => {
+                Ok(IrValue::Bool(false))
+            }
             "is_object" => Ok(IrValue::Bool(false)),
             _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
         }
@@ -3429,6 +3432,9 @@ impl CGenerator {
                 .map(CValue::Bool)
                 .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
             "is_countable" | "is_iterable" => Ok(CValue::Bool(false)),
+            "extension_loaded" if matches!(value, CValue::String(_) | CValue::StringExpr(_)) => {
+                Ok(CValue::Bool(false))
+            }
             "is_object" => Ok(CValue::Bool(false)),
             _ => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
         }
@@ -5944,6 +5950,7 @@ fn is_native_type_introspection_builtin(name: &str) -> bool {
             | "is_numeric"
             | "is_countable"
             | "is_iterable"
+            | "extension_loaded"
             | "is_object"
             | "get_debug_type"
             | "class_exists"
@@ -6108,6 +6115,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "is_iterable"
             | "is_callable"
             | "function_exists"
+            | "extension_loaded"
             | "get_class"
             | "is_object"
             | "get_debug_type"

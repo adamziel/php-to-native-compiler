@@ -238,13 +238,18 @@ The repository already has a working Rust workspace with:
 - `phpc`: lexer, parser, AST, interpreter, CLI, fixture runner, and narrow LLVM
   IR/assembly emission;
 - `phpc run`: broad Milestone 1+ interpreter support for scalars, arrays,
-  loops, functions, constants, selected builtins, minimal objects, and stable
-  unsupported diagnostics;
+  loops, alternate conditional syntax, functions, syntax-only closure
+  declarations, constants, selected builtins including a deterministic
+  false-only `extension_loaded()` policy, minimal objects, bounded
+  `instanceof`, and stable unsupported diagnostics;
 - `phpc compile --emit-ir` and `--emit-asm`: intentionally narrower native
   lowering, mostly straight-line static scalar output and assignment behavior,
   plus explicit rejection coverage for unsupported constructs;
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
+- a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
+  probe currently advances through early compatibility includes and now stops
+  at the next named blocker, `PHP_VERSION_ID`.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

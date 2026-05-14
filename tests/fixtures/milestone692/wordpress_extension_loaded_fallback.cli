@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+fallback:Ada--- stdout end ---
+stderr:
+--- stderr end ---

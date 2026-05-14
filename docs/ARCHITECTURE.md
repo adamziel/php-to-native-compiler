@@ -774,6 +774,10 @@ builtin table. Documented builtin names fold to true and missing names fold to
 false; user-defined function tables, namespace/autoload-aware lookup,
 extension-loaded functions outside the documented table, dynamic callees, and
 runtime callable dispatch remain outside native lowering.
+Direct `extension_loaded($name)` calls with already-lowerable string names fold
+to false under the current deterministic empty extension registry; native code
+does not query host PHP modules, `php.ini`, SAPI state, or dynamic extension
+loading.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject
@@ -1190,3 +1194,6 @@ comparison.
 
 Zend extension loading is not an early target. Selected extensions will be
 implemented as runtime modules with documented dependencies and semantic gaps.
+Until that exists, `extension_loaded()` uses an empty compiler/runtime
+extension registry so compatibility probes take fallback paths instead of
+claiming host extension support.

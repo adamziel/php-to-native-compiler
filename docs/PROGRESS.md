@@ -861,14 +861,33 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`, and
   `PHPC_BIN=/tmp/phpc-target-691/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 692, bounded `extension_loaded()` execution for the current
+  interpreter/runtime extension policy. `phpc run` now accepts string
+  extension names, exposes `extension_loaded` through `function_exists`,
+  `is_callable`, and string-valued dynamic calls, and answers from a
+  deterministic empty extension registry so WordPress's early compatibility
+  probes take fallback paths instead of claiming host module support. Direct
+  native `extension_loaded($name)` calls with already-lowerable string names
+  fold to `false`; native code still does not model host module discovery,
+  `php.ini`, SAPI state, dynamic extension loading, or extension side effects.
+  Non-string argument coercion, exact PHP diagnostics, aliases, case-normalized
+  extension inventory beyond the empty table, and broader native behavior remain
+  explicit. The real WordPress 6.9.4 bootstrap-shim inventory now reaches
+  `<bootstrap-shim>:3:5`, `PHP_VERSION_ID`. Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test type_introspection_builtins extension_loaded`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists`,
+  `cargo run -p phpc -- test tests/fixtures/milestone692`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone692`, and
+  `PHPC_BIN=/tmp/phpc-target-692/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 692 should implement or explicitly bound `extension_loaded()` for
-  WordPress's early compatibility probes, while keeping exact extension
-  inventory policy, case normalization, host PHP/module discovery,
-  side effects, exact PHP diagnostics, and native lowering explicit unless
-  proven.
+- Milestone 693 should implement or explicitly bound `PHP_VERSION_ID` as a
+  built-in constant for WordPress's sodium compatibility loader, while keeping
+  PHP-version target policy, host/runtime version coupling, exact constant
+  catalog behavior, and native lowering explicit unless proven.
 
 ## 2026-05-12
 

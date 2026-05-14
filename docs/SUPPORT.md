@@ -301,7 +301,7 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `get_class`, `is_object`,
+  `function_exists`, `extension_loaded`, `get_class`, `is_object`,
   `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -338,6 +338,12 @@
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
+  `extension_loaded($name)` accepts string extension names and currently
+  answers from a deterministic empty compiler/runtime extension registry. It
+  returns `false` for all names, including WordPress probe names such as
+  `mbstring`, `json`, `hash`, and `sodium`, without querying host PHP modules,
+  `php.ini`, SAPI state, or dynamically loading extensions; non-string names
+  are rejected in the current subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -1545,6 +1551,10 @@
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
+  Direct `extension_loaded($name)` calls with already-lowerable string names
+  fold to `false` under the same empty extension-registry policy. Native code
+  does not model host extension discovery, ini state, dynamic module loading,
+  or extension side effects.
   Direct calls to array builtins such as `array_change_key_case(...)`,
   `array_column(...)`, `array_sum(...)`, `array_product(...)`, and
   callback-driven forms such as `array_reduce(...)` and `array_filter(...)`
@@ -1825,7 +1835,7 @@
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `get_class`,
+  `function_exists`, `extension_loaded`, `get_class`,
   `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -1935,7 +1945,7 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `get_class`, `is_object`, `get_debug_type`,
+  `extension_loaded`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
@@ -1986,7 +1996,10 @@
   builtin table; native user-defined function tables, dynamic calls,
   namespace/autoload-aware lookup, extension-loaded functions beyond documented
   builtins, non-string name coercion, and exact native
-  `TypeError`/deprecation behavior are not implemented.
+  `TypeError`/deprecation behavior are not implemented. `extension_loaded`
+  accepts string extension names, returns `false` from the current deterministic
+  empty extension registry, and rejects non-string names. Its native folding is
+  limited to direct false folding for already-lowerable string names.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -3428,6 +3441,11 @@
   extension-loaded functions beyond documented builtins, exact native
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
+- `extension_loaded()` behavior outside the deterministic empty extension
+  registry, including exact extension inventory policy, aliases, host
+  PHP/module discovery, dynamic loading side effects, `php.ini`/SAPI
+  differences, exact PHP diagnostics for invalid arguments, and native
+  lowering beyond direct false folding for already-lowerable string names
 - PHP standard library beyond documented builtins
 - `empty(...)` operands outside direct variables, direct array offsets, and
   direct public object-property operands, including nested offsets, dynamic

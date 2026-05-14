@@ -64,6 +64,7 @@ function local_name() {
 echo is_callable("local_name") ? "1" : "0";
 echo is_callable("LOCAL_NAME") ? "1" : "0";
 echo is_callable("strlen") ? "1" : "0";
+echo is_callable("extension_loaded") ? "1" : "0";
 echo is_callable("missing") ? "1" : "0";
 echo is_callable(42) ? "1" : "0";
 echo "\n";
@@ -73,7 +74,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "11100\n1");
+    assert_eq!(execution.stdout, "111100\n1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -220,6 +221,7 @@ echo function_exists("local_name") ? "1" : "0";
 echo function_exists("LOCAL_NAME") ? "1" : "0";
 echo function_exists("strlen") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
+echo function_exists("extension_loaded") ? "1" : "0";
 echo function_exists("missing") ? "1" : "0";
 echo function_exists("not valid") ? "1" : "0";
 echo "\n";
@@ -229,8 +231,39 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "111100\n1");
+    assert_eq!(execution.stdout, "1111100\n1");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn extension_loaded_uses_current_empty_extension_registry() {
+    let execution = run_source(
+        r#"<?php
+echo extension_loaded("mbstring") ? "1" : "0";
+echo extension_loaded("MBSTRING") ? "1" : "0";
+echo extension_loaded("json") ? "1" : "0";
+echo "\n";
+$call = "extension_loaded";
+echo $call("simplexml") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "000\n0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn extension_loaded_rejects_non_string_names_for_now() {
+    let error = run_source("<?php\nvar_dump(extension_loaded(42));\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "unsupported call extension_loaded(): extension name argument must be string in the current subset, got int"
+    );
 }
 
 #[test]
@@ -323,6 +356,7 @@ $missing = "missing_native_function";
 echo function_exists("strlen") ? "1" : "0";
 echo function_exists("STRLEN") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
+echo function_exists("extension_loaded") ? "1" : "0";
 echo function_exists("missing_native_function") ? "1" : "0";
 echo function_exists($known) ? "1" : "0";
 echo function_exists($missing) ? "1" : "0";
@@ -331,9 +365,27 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
+}
+
+#[test]
+fn emit_ir_folds_direct_extension_loaded_string_names_to_false() {
+    let ir = emit_ir_source(
+        r#"<?php
+$name = "mbstring";
+
+echo extension_loaded("mbstring") ? "1" : "0";
+echo extension_loaded("MBSTRING") ? "1" : "0";
+echo extension_loaded($name) ? "1" : "0";
+echo "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
+    assert!(!ir.contains("extension_loaded"), "{ir}");
 }
 
 #[test]
@@ -346,6 +398,7 @@ $syntax = true;
 
 echo is_callable("strlen") ? "1" : "0";
 echo is_callable("STRLEN") ? "1" : "0";
+echo is_callable("extension_loaded") ? "1" : "0";
 echo is_callable("missing_native_function") ? "1" : "0";
 echo is_callable("missing_native_function", true) ? "1" : "0";
 echo is_callable("strlen", false) ? "1" : "0";
@@ -357,7 +410,7 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

@@ -5088,6 +5088,22 @@ impl Interpreter {
                     )),
                 }
             }
+            "extension_loaded" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(_) => Ok(Value::Bool(false)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "extension_loaded()",
+                            format!(
+                                "extension name argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "get_class" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -6813,6 +6829,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_iterable"
             | "is_callable"
             | "function_exists"
+            | "extension_loaded"
             | "get_class"
             | "is_object"
             | "get_debug_type"

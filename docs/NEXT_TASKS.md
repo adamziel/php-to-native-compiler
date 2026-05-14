@@ -6324,16 +6324,24 @@ handled.
 
 ## Milestone 692: WordPress Bridge Continuation
 
-- [ ] Runtime/builtin lane: implement or explicitly bound `extension_loaded()`
+- [x] Runtime/builtin lane: implement or explicitly bound `extension_loaded()`
   for WordPress's early compatibility probes, with tests, CLI coverage, docs,
   and named unsupported edges for exact extension inventory policy, case
   normalization, host PHP/module discovery, side effects, exact PHP
   diagnostics, and native lowering.
 
+## Milestone 693: WordPress Bridge Continuation
+
+- [ ] Runtime/constants lane: implement or explicitly bound `PHP_VERSION_ID` as
+  a built-in constant for WordPress's sodium compatibility loader, with tests,
+  CLI coverage, docs, and named unsupported edges for PHP-version target
+  policy, host/runtime version coupling, exact constant catalog behavior, and
+  native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 691 work, the latest committed checkpoint is
-  `12bbb7e control: parse alternate if syntax`, covering Milestone 690.
+- Before the current Milestone 692 work, the latest committed checkpoint is
+  `04936fd objects: add bounded instanceof`, covering Milestone 691.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

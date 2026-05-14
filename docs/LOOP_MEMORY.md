@@ -17787,3 +17787,31 @@ injects this file into every prompt. Each Codex pass should update it with:
   gates, then checkpoint with
   `tools/checkpoint.sh "objects: add bounded instanceof"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T03:00:00Z
+
+- Checkpoint before this task: `04936fd objects: add bounded instanceof`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 692, bounded `extension_loaded()` execution for
+  WordPress's early compatibility probes.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/type_introspection_builtins.rs`,
+  `tests/fixtures/milestone692/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test type_introspection_builtins extension_loaded`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists`,
+  `cargo run -p phpc -- test tests/fixtures/milestone692`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone692`, and
+  `PHPC_BIN=/tmp/phpc-target-692/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: exact extension inventory policy, aliases, host
+  PHP/module discovery, dynamic extension loading side effects,
+  `php.ini`/SAPI differences, invalid-argument PHP diagnostics, `PHP_VERSION_ID`,
+  WordPress bootstrap environment, exact native errors, and native behavior
+  beyond direct false folding remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, the focused
+  gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded extension_loaded"` if the full gate
+  passes.
