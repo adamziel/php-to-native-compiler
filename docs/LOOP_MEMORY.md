@@ -17815,3 +17815,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   gates, then checkpoint with
   `tools/checkpoint.sh "runtime: add bounded extension_loaded"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T03:30:00Z
+
+- Checkpoint before this task: `9b78093 runtime: add bounded extension_loaded`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 693, bounded `PHP_VERSION_ID` execution with a
+  deterministic PHP 8.3 target value of `80300` for WordPress's early
+  PHP-version guard.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `tests/fixtures/milestone693/*`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test dynamic_features constant`,
+  `cargo test -p phpc --test native_global_constant_boundary`,
+  `cargo run -p phpc -- test tests/fixtures/milestone693`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone693`,
+  `cargo fmt --check`, `git diff --check`, and
+  `PHPC_BIN=/tmp/phpc-target-693/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: exact PHP patch-level target policy, host/runtime
+  version coupling, `PHP_VERSION`, SAPI/build metadata, the broader predefined
+  constant catalog, `dirname()`, WordPress bootstrap environment, exact native
+  errors, and native behavior beyond direct `defined()` folding remain
+  explicit.
+- Next concrete task: run `cargo check -p phpc`, any updated focused gates,
+  then checkpoint with `tools/checkpoint.sh "runtime: add bounded PHP_VERSION_ID"`
+  if the full gate passes.

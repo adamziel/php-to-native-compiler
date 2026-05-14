@@ -6040,6 +6040,7 @@ fn native_defined_result(name: &str) -> Option<bool> {
 
 fn builtin_global_constant_value(name: &str) -> Option<i64> {
     match name {
+        "PHP_VERSION_ID" => Some(80300),
         "CASE_LOWER" => Some(0),
         "CASE_UPPER" => Some(1),
         "ARRAY_FILTER_USE_BOTH" => Some(1),

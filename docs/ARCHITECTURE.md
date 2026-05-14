@@ -774,6 +774,11 @@ builtin table. Documented builtin names fold to true and missing names fold to
 false; user-defined function tables, namespace/autoload-aware lookup,
 extension-loaded functions outside the documented table, dynamic callees, and
 runtime callable dispatch remain outside native lowering.
+Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`
+PHP 8.3 compatibility-target constant in the built-in answer table. Bare global
+constant reads and `constant($name)` still stay behind the native
+global-constant boundary until generated code has a real constant table and
+version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
 to false under the current deterministic empty extension registry; native code
 does not query host PHP modules, `php.ini`, SAPI state, or dynamic extension

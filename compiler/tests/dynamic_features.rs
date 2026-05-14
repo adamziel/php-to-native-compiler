@@ -666,6 +666,7 @@ define("APP_NAME", "compiler");
 define("APP_VERSION", 2);
 echo APP_NAME, "|", APP_VERSION + 3, "\n";
 echo ARRAY_FILTER_USE_KEY, "|", ARRAY_FILTER_USE_BOTH, "\n";
+echo PHP_VERSION_ID, "|", PHP_VERSION_ID >= 80000, "\n";
 
 $items = ["name" => "Ada", "nested" => ["x" => 1]];
 define("APP_ITEMS", $items);
@@ -688,7 +689,7 @@ echo DYNAMIC_CONSTANT, "\n";
 
     assert_eq!(
         execution.stdout,
-        "compiler|5\n2|1\nAda|1|changed\ncompiler:inside\ndynamic\n"
+        "compiler|5\n2|1\n80300|1\nAda|1|changed\ncompiler:inside\ndynamic\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -727,6 +728,7 @@ fn constant_builtin_resolves_the_current_builtin_constant_slice() {
     let execution = run_source(
         r#"<?php
 echo constant("ARRAY_FILTER_USE_KEY"), "|", constant("ARRAY_FILTER_USE_BOTH"), "\n";
+echo constant("PHP_VERSION_ID"), "|", constant("PHP_VERSION_ID") >= 80000, "\n";
 $name = "ARRAY_FILTER_USE_KEY";
 echo constant($name), "\n";
 $call = "constant";
@@ -746,7 +748,7 @@ echo count($filtered), "|", $filtered["name"], "\n";
 
     assert_eq!(
         execution.stdout,
-        "2|1\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
+        "2|1\n80300|1\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -788,6 +790,7 @@ fn defined_builtin_introspects_current_constant_table() {
     let execution = run_source(
         r#"<?php
 echo defined("ARRAY_FILTER_USE_KEY"), "|", defined("ARRAY_FILTER_USE_BOTH"), "\n";
+echo defined("PHP_VERSION_ID"), "|", defined("PHP_VERSION"), "\n";
 echo defined("APP_NAME"), "|", defined("MISSING_CONST"), "\n";
 define("APP_NAME", "compiler");
 echo defined("APP_NAME"), "|", defined("MISSING_CONST"), "\n";
@@ -804,7 +807,7 @@ echo check_defined_inside_function(), "\n";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|1\n|\n1|\n1|\n1:1\n");
+    assert_eq!(execution.stdout, "1|1\n1|\n|\n1|\n1|\n1:1\n");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -945,14 +948,14 @@ const APP_NAME = "again";
 
     let builtin = runtime_error(
         r#"<?php
-const ARRAY_FILTER_USE_KEY = 4;
+const PHP_VERSION_ID = 4;
 "#,
     );
     assert_eq!(builtin.line, 2);
     assert_eq!(builtin.column, 1);
     assert_eq!(
         builtin.message,
-        "constant ARRAY_FILTER_USE_KEY is already defined"
+        "constant PHP_VERSION_ID is already defined"
     );
 
     let grouped = runtime_error(
@@ -1066,16 +1069,13 @@ define("APP_NAME", "again");
 fn define_rejects_builtin_constant_redefinition() {
     let error = runtime_error(
         r#"<?php
-define("ARRAY_FILTER_USE_KEY", 4);
+define("PHP_VERSION_ID", 4);
 "#,
     );
 
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "constant ARRAY_FILTER_USE_KEY is already defined"
-    );
+    assert_eq!(error.message, "constant PHP_VERSION_ID is already defined");
 }
 
 #[test]

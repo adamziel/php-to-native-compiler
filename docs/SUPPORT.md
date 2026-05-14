@@ -228,8 +228,9 @@
   ancestor, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, and `SORT_STRING`, which evaluate to integers `0`, `1`,
-  `2`, `1`, `0`, `1`, and `2`
+  `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID`, which evaluate to
+  integers `0`, `1`, `2`, `1`, `0`, `1`, `2`, and the current deterministic
+  PHP 8.3 compatibility target `80300`
 - runtime-defined constants through `define($name, $value)` and
   `constant($name)` over the current unqualified string-name and scalar/array
   value subset; `defined($name)` reports whether a supported unqualified name
@@ -243,7 +244,7 @@
   with supported keys, unary expressions, binary expressions over those values,
   and bare references to previously defined unqualified constants or the
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, and `SORT_STRING` constants
+  `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -1572,11 +1573,11 @@
   unqualified constant names with a uniform answer against the current exact
   built-in constant table. Exact `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, and `SORT_STRING` names fold to true; other supported
-  unqualified names fold to false. The Milestone 569 and 573 snapshots cover
-  the `SORT_REGULAR` and `SORT_NUMERIC` additions without broadening native
-  constant values, runtime-defined constant lookup, dynamic calls, arrays,
-  objects, or exact native PHP error behavior. A
+  `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` names fold to true;
+  other supported unqualified names fold to false. The Milestone 569 and 573
+  snapshots cover the `SORT_REGULAR` and `SORT_NUMERIC` additions without
+  broadening native constant values, runtime-defined constant lookup, dynamic
+  calls, arrays, objects, or exact native PHP error behavior. A
   selected-`clang` assembly snapshot validates that the deterministic folded
   LLVM IR for the `SORT_REGULAR`, `SORT_NUMERIC`, and `SORT_STRING` slices is
   handed to the chosen backend through stdin without widening production
@@ -3408,11 +3409,13 @@
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, and runtime-defined unqualified constants in
-  the current name/value subset;
-  unsupported
-  `define(...)` names or values, case-insensitive legacy constants, extension
-  constants, namespace-qualified constants, nested `const` declarations,
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and runtime-defined
+  unqualified constants in the current name/value subset; PHP version-string
+  constants such as `PHP_VERSION`, component constants such as
+  `PHP_MAJOR_VERSION`, patch-level host version coupling, SAPIs/build
+  metadata, extension constants, unsupported `define(...)` names or values,
+  case-insensitive legacy constants, namespace-qualified constants, nested
+  `const` declarations,
   dynamic declaration values, `constant()`/`defined()` lookup
   for class constants, names lexed as language keywords or literals for bare
   reads, magic constants other than `__LINE__`, `__FILE__`, `__DIR__`, and

@@ -104,8 +104,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   The previous `instanceof Countable` blocker in `wp-includes/compat.php` is
   covered by the bounded Milestone 691 `instanceof` runtime slice. The shim
   probe's previous `extension_loaded()` blocker is covered by the bounded
-  Milestone 692 empty extension-registry policy. The shim probe now reaches
-  `PHP_VERSION_ID` at `<bootstrap-shim>:3:5`.
+  Milestone 692 empty extension-registry policy. The previous
+  `PHP_VERSION_ID` blocker is covered by the bounded Milestone 693 PHP 8.3
+  compatibility-target constant. The shim probe now reaches `dirname()` at
+  `<bootstrap-shim>:41:18`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

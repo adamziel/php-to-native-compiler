@@ -6332,16 +6332,23 @@ handled.
 
 ## Milestone 693: WordPress Bridge Continuation
 
-- [ ] Runtime/constants lane: implement or explicitly bound `PHP_VERSION_ID` as
+- [x] Runtime/constants lane: implement or explicitly bound `PHP_VERSION_ID` as
   a built-in constant for WordPress's sodium compatibility loader, with tests,
   CLI coverage, docs, and named unsupported edges for PHP-version target
   policy, host/runtime version coupling, exact constant catalog behavior, and
   native lowering.
 
+## Milestone 694: WordPress Bridge Continuation
+
+- [ ] Runtime/path builtin lane: implement or explicitly bound `dirname()` for
+  WordPress's bootstrap path construction, with tests, CLI coverage, docs, and
+  named unsupported edges for path normalization policy, Windows paths, stream
+  wrappers, exact PHP diagnostics, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 692 work, the latest committed checkpoint is
-  `04936fd objects: add bounded instanceof`, covering Milestone 691.
+- Before the current Milestone 693 work, the latest committed checkpoint is
+  `9b78093 runtime: add bounded extension_loaded`, covering Milestone 692.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

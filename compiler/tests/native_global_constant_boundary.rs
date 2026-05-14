@@ -16,12 +16,13 @@ define("RUNTIME_BASE", 3);
 const FROM_DEFINE = RUNTIME_BASE + 1;
 const NAME = "compiler", MODE = ARRAY_FILTER_USE_KEY;
 echo ARRAY_FILTER_USE_BOTH, "|", FROM_DEFINE, "|", NAME, "|", MODE, "\n";
+echo PHP_VERSION_ID, "|", defined("PHP_VERSION_ID"), "\n";
 echo constant("RUNTIME_BASE"), "|", defined("RUNTIME_BASE"), "|", defined("MISSING_CONST");
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|4|compiler|2\n3|1|");
+    assert_eq!(execution.stdout, "1|4|compiler|2\n80300|1\n3|1|");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -29,6 +30,7 @@ echo constant("RUNTIME_BASE"), "|", defined("RUNTIME_BASE"), "|", defined("MISSI
 fn emit_ir_rejects_bare_constant_reads_with_specific_boundary() {
     for source in [
         "<?php\necho ARRAY_FILTER_USE_KEY;\n",
+        "<?php\necho PHP_VERSION_ID;\n",
         "<?php\ndefine(\"APP_NAME\", \"compiler\");\necho APP_NAME;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
@@ -72,6 +74,7 @@ echo defined("CASE_LOWER") ? "1" : "0";
 echo defined("CASE_UPPER") ? "1" : "0";
 echo defined("ARRAY_FILTER_USE_BOTH") ? "1" : "0";
 echo defined("ARRAY_FILTER_USE_KEY") ? "1" : "0";
+echo defined("PHP_VERSION_ID") ? "1" : "0";
 echo defined("SORT_STRING") ? "1" : "0";
 echo defined("MISSING_CONST") ? "1" : "0";
 echo defined($mode) ? "1" : "0";

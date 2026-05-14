@@ -881,13 +881,32 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone692`, and
   `PHPC_BIN=/tmp/phpc-target-692/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 693, bounded `PHP_VERSION_ID` execution for the current
+  interpreter/runtime constant policy. `phpc run`, bare global constant reads,
+  `constant("PHP_VERSION_ID")`, dynamic `constant($name)`, and
+  `defined("PHP_VERSION_ID")` now see a deterministic PHP 8.3 compatibility
+  target value of `80300`, which is enough for WordPress's early PHP-version
+  guard while keeping exact host PHP patch-level coupling, `PHP_VERSION`,
+  SAPI/build metadata, and the broader predefined constant catalog explicit.
+  Native `defined($name)` folding recognizes `PHP_VERSION_ID`; native bare
+  global constant reads, `constant()`, `define()`, top-level `const`
+  declarations, and runtime-defined constant tables still reject under the
+  existing global-constant lowering boundary. The real WordPress 6.9.4
+  bootstrap-shim inventory now reaches `<bootstrap-shim>:41:18`, undefined
+  function `dirname()`. Focused verification so far:
+  `cargo test -p phpc --test dynamic_features constant`,
+  `cargo test -p phpc --test native_global_constant_boundary`,
+  `cargo run -p phpc -- test tests/fixtures/milestone693`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone693`, and
+  `PHPC_BIN=/tmp/phpc-target-693/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
-- Milestone 693 should implement or explicitly bound `PHP_VERSION_ID` as a
-  built-in constant for WordPress's sodium compatibility loader, while keeping
-  PHP-version target policy, host/runtime version coupling, exact constant
-  catalog behavior, and native lowering explicit unless proven.
+- Milestone 694 should implement or explicitly bound `dirname()` for
+  WordPress's bootstrap path construction, while keeping filesystem path
+  normalization policy, Windows path behavior, stream wrappers, exact PHP
+  diagnostics, and native lowering explicit unless proven.
 
 ## 2026-05-12
 
