@@ -355,7 +355,8 @@ impl LlvmGenerator {
             }
             Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
-            | Stmt::UnsetParentStaticProperty { span, .. } => {
+            | Stmt::UnsetParentStaticProperty { span, .. }
+            | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Stmt::UnsetArrayIndex { span, .. } => {
@@ -400,7 +401,8 @@ impl LlvmGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
-            | Expr::ParentStaticProperty { span, .. } => {
+            | Expr::ParentStaticProperty { span, .. }
+            | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
@@ -826,7 +828,8 @@ impl LlvmGenerator {
             }
             AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
-            | AssignTarget::ParentStaticProperty { span, .. } => {
+            | AssignTarget::ParentStaticProperty { span, .. }
+            | AssignTarget::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
         }
@@ -3057,7 +3060,8 @@ impl CGenerator {
             }
             Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
-            | Stmt::UnsetParentStaticProperty { span, .. } => {
+            | Stmt::UnsetParentStaticProperty { span, .. }
+            | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Stmt::UnsetArrayIndex { span, .. } => {
@@ -3104,7 +3108,8 @@ impl CGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
-            | Expr::ParentStaticProperty { span, .. } => {
+            | Expr::ParentStaticProperty { span, .. }
+            | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             Expr::Array { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),
@@ -3532,7 +3537,8 @@ impl CGenerator {
             }
             AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
-            | AssignTarget::ParentStaticProperty { span, .. } => {
+            | AssignTarget::ParentStaticProperty { span, .. }
+            | AssignTarget::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
         }

@@ -107,10 +107,11 @@ incorrect native code.
   `self::method()` calls in instance context, narrow `ClassName::class`,
   `self::class`, and `parent::class` resolution, narrow class constants
   through `ClassName::CONST`, `self::CONST`, and `parent::CONST`,
-  narrow static properties through `ClassName::$prop`, `self::$prop`, and
-  `parent::$prop` with direct reads/writes, compound assignment,
-  pre/post increment/decrement, `isset`/`empty`, `??`, `??=`, and stable
-  `unset(...)` diagnostics for PHP-forbidden static-property unset,
+  narrow static properties through `ClassName::$prop`, `self::$prop`,
+  `parent::$prop`, and late-bound `static::$prop` in active called-class
+  context with direct reads/writes, compound assignment, pre/post
+  increment/decrement, `isset`/`empty`, `??`, `??=`, and stable `unset(...)`
+  diagnostics for PHP-forbidden static-property unset,
   single-parent metadata, object `isset` and `empty`, and selected metadata
   builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
@@ -120,14 +121,13 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, includes/requires, eval,
 generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
-and explicit parent calls, broader `self::`, all `static::` execution and late
-static binding, visibility enforcement beyond the current public and
+and explicit parent calls, broader `self::`/`static::` execution beyond the
+current method, class-name, and static-property slices, visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 instance property defaults,
-typed or multi-declarator class constants, late-bound static property and
-constant access through `static::`, `static::`
-late-bound property access, dynamic method/property names, resources, and
+typed or multi-declarator class constants, late-bound class constant access
+through `static::`, dynamic method/property names, resources, and
 native extension integration.
 
 ### Native Path

@@ -513,6 +513,10 @@ impl Interpreter {
                 self.execute_unset_parent_static_property(property, *span)?;
                 Ok(Flow::Normal)
             }
+            Stmt::UnsetLateStaticProperty { property, span } => {
+                self.execute_unset_late_static_property(property, *span)?;
+                Ok(Flow::Normal)
+            }
             Stmt::UnsetMany { targets, span } => {
                 for target in targets {
                     self.execute_unset_target(target, *span, scope)?;
@@ -650,6 +654,9 @@ impl Interpreter {
             UnsetTarget::ParentStaticProperty { property, .. } => {
                 self.execute_unset_parent_static_property(property, span)
             }
+            UnsetTarget::LateStaticProperty { property, .. } => {
+                self.execute_unset_late_static_property(property, span)
+            }
         }
     }
 
@@ -721,6 +728,15 @@ impl Interpreter {
             .get(parent_class_id)
             .expect("parent class id should resolve to class metadata");
         self.reject_static_property_unset(&parent_class_name, property, span)
+    }
+
+    fn execute_unset_late_static_property(&self, property: &str, span: Span) -> CompileResult<()> {
+        let (called_class_id, called_class_name) =
+            self.resolve_late_static_property_context(property, span)?;
+        self.classes
+            .get(called_class_id)
+            .expect("called class id should resolve to class metadata");
+        self.reject_static_property_unset(&called_class_name, property, span)
     }
 
     fn reject_static_property_unset(
@@ -834,6 +850,9 @@ impl Interpreter {
             }
             Expr::ParentStaticProperty { property, span } => {
                 self.evaluate_parent_static_property(property, *span)
+            }
+            Expr::LateStaticProperty { property, span } => {
+                self.evaluate_late_static_property(property, *span)
             }
             Expr::MethodCall {
                 target,
@@ -1194,6 +1213,10 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.write_parent_static_property(property, value, *span)
             }
+            AssignTarget::LateStaticProperty { property, span } => {
+                let value = self.evaluate(expr, scope)?;
+                self.write_late_static_property(property, value, *span)
+            }
         }
     }
 
@@ -1309,7 +1332,8 @@ impl Interpreter {
             },
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => {
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. } => {
                 let (declaring_class_id, property, value) =
                     self.read_static_property_target(target, span)?;
                 Ok((
@@ -1525,7 +1549,8 @@ impl Interpreter {
             },
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => {
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. } => {
                 let (declaring_class_id, property, value) =
                     self.read_static_property_target(target, span)?;
                 Ok((
@@ -1695,7 +1720,8 @@ impl Interpreter {
             }
             AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
-            | AssignTarget::ParentStaticProperty { span, .. } => {
+            | AssignTarget::ParentStaticProperty { span, .. }
+            | AssignTarget::LateStaticProperty { span, .. } => {
                 let (declaring_class_id, property, current) =
                     self.read_static_property_target(target, *span)?;
                 if !matches!(current, Value::Null) {
@@ -1821,6 +1847,9 @@ impl Interpreter {
             Expr::ParentStaticProperty { property, span } => {
                 self.evaluate_parent_static_property_for_null_coalescing(property, *span)?
             }
+            Expr::LateStaticProperty { property, span } => {
+                self.evaluate_late_static_property_for_null_coalescing(property, *span)?
+            }
             _ => {
                 return Err(runtime_error(
                     span,
@@ -1945,6 +1974,21 @@ impl Interpreter {
         self.read_resolved_static_property_for_isset(
             parent_class_id,
             &parent_class_name,
+            property,
+            span,
+        )
+    }
+
+    fn evaluate_late_static_property_for_null_coalescing(
+        &self,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let (called_class_id, called_class_name) =
+            self.resolve_late_static_property_context(property, span)?;
+        self.read_resolved_static_property_for_isset(
+            called_class_id,
+            &called_class_name,
             property,
             span,
         )
@@ -2344,6 +2388,12 @@ impl Interpreter {
         self.read_resolved_static_property(parent_class_id, &parent_class_name, property, span)
     }
 
+    fn evaluate_late_static_property(&self, property: &str, span: Span) -> CompileResult<Value> {
+        let (called_class_id, called_class_name) =
+            self.resolve_late_static_property_context(property, span)?;
+        self.read_resolved_static_property(called_class_id, &called_class_name, property, span)
+    }
+
     fn write_named_static_property(
         &mut self,
         class_name: &str,
@@ -2400,6 +2450,23 @@ impl Interpreter {
         )
     }
 
+    fn write_late_static_property(
+        &mut self,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let (called_class_id, called_class_name) =
+            self.resolve_late_static_property_context(property, span)?;
+        self.write_resolved_static_property(
+            called_class_id,
+            &called_class_name,
+            property,
+            value,
+            span,
+        )
+    }
+
     fn read_static_property_target(
         &self,
         target: &AssignTarget,
@@ -2438,6 +2505,11 @@ impl Interpreter {
                 let (parent_class_id, parent_class_name) =
                     self.resolve_parent_static_property_context(property, span)?;
                 (parent_class_id, parent_class_name, property.clone())
+            }
+            AssignTarget::LateStaticProperty { property, .. } => {
+                let (called_class_id, called_class_name) =
+                    self.resolve_late_static_property_context(property, span)?;
+                (called_class_id, called_class_name, property.clone())
             }
             _ => unreachable!("static property target helper called for non-static target"),
         };
@@ -2489,6 +2561,31 @@ impl Interpreter {
             .to_string();
 
         Ok((parent_class_id, parent_class_name))
+    }
+
+    fn resolve_late_static_property_context(
+        &self,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<(ClassId, String)> {
+        let Some(called_class_id) = self.called_class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("static::${property}"),
+                    "static property access requires method or static class context",
+                ),
+            ));
+        };
+
+        let called_class_name = self
+            .classes
+            .get(called_class_id)
+            .expect("called class context should resolve to class metadata")
+            .name()
+            .to_string();
+
+        Ok((called_class_id, called_class_name))
     }
 
     fn read_resolved_static_property(
@@ -5621,6 +5718,9 @@ impl Interpreter {
             Expr::ParentStaticProperty { property, span } => {
                 self.is_parent_static_property_set(property, *span)
             }
+            Expr::LateStaticProperty { property, span } => {
+                self.is_late_static_property_set(property, *span)
+            }
             _ => Err(runtime_error(
                 arg.span(),
                 RuntimeError::unsupported_call(
@@ -5708,6 +5808,12 @@ impl Interpreter {
             .is_some())
     }
 
+    fn is_late_static_property_set(&self, property: &str, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_late_static_property_for_null_coalescing(property, span)?
+            .is_some())
+    }
+
     fn call_empty(
         &mut self,
         args: &[Expr],
@@ -5751,6 +5857,9 @@ impl Interpreter {
             }
             Expr::ParentStaticProperty { property, span } => {
                 self.is_parent_static_property_empty(property, *span)
+            }
+            Expr::LateStaticProperty { property, span } => {
+                self.is_late_static_property_empty(property, *span)
             }
             _ => Err(runtime_error(
                 arg.span(),
@@ -5840,6 +5949,12 @@ impl Interpreter {
     fn is_parent_static_property_empty(&self, property: &str, span: Span) -> CompileResult<bool> {
         Ok(self
             .evaluate_parent_static_property_for_null_coalescing(property, span)?
+            .map_or(true, |value| !value.is_truthy()))
+    }
+
+    fn is_late_static_property_empty(&self, property: &str, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_late_static_property_for_null_coalescing(property, span)?
             .map_or(true, |value| !value.is_truthy()))
     }
 

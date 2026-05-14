@@ -107,6 +107,10 @@ pub enum Stmt {
         property: String,
         span: Span,
     },
+    UnsetLateStaticProperty {
+        property: String,
+        span: Span,
+    },
     UnsetMany {
         targets: Vec<UnsetTarget>,
         span: Span,
@@ -162,6 +166,10 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+    LateStaticProperty {
+        property: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -192,6 +200,10 @@ pub enum UnsetTarget {
         span: Span,
     },
     ParentStaticProperty {
+        property: String,
+        span: Span,
+    },
+    LateStaticProperty {
         property: String,
         span: Span,
     },
@@ -234,7 +246,8 @@ impl AssignTarget {
             | AssignTarget::Property { span, .. }
             | AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
-            | AssignTarget::ParentStaticProperty { span, .. } => *span,
+            | AssignTarget::ParentStaticProperty { span, .. }
+            | AssignTarget::LateStaticProperty { span, .. } => *span,
         }
     }
 }
@@ -388,6 +401,10 @@ pub enum Expr {
         property: String,
         span: Span,
     },
+    LateStaticProperty {
+        property: String,
+        span: Span,
+    },
     MethodCall {
         target: Box<Expr>,
         method: String,
@@ -504,6 +521,7 @@ impl Expr {
             | Expr::StaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
+            | Expr::LateStaticProperty { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }
             | Expr::StaticMethodCall { span, .. }

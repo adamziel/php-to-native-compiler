@@ -1700,6 +1700,85 @@ Box::call();
 }
 
 #[test]
+fn late_static_properties_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public static $shared = "base-default";
+    public static $maybe;
+    public static $count;
+    protected static $secret;
+
+    public static function seed($value) {
+        static::$shared = $value;
+        static::$secret = static::class . ":secret";
+        echo static::$shared, ":", static::$secret, "\n";
+        static::$shared .= ":x";
+        echo static::$shared, "\n";
+        static::$count ??= 0;
+        static::$count += 2;
+        echo static::$count++, ":", static::$count, "\n";
+        echo isset(static::$shared) ? "shared:set\n" : "shared:unset\n";
+        echo empty(static::$missing) ? "missing:empty\n" : "missing:not-empty\n";
+        echo static::$missing ?? "fallback", "\n";
+        static::$maybe ??= "maybe";
+        echo static::$maybe, "\n";
+    }
+}
+
+class Child extends Base {
+    public static $shared = "child-default";
+    public static $maybe;
+    public static $count;
+
+    public static function callParentSeed() {
+        parent::seed("parent-child");
+    }
+}
+
+Base::seed("base");
+Child::seed("child");
+Child::callParentSeed();
+echo Base::$shared, "\n";
+echo Child::$shared;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:Base:secret\nbase:x\n2:3\nshared:set\nmissing:empty\nfallback\nmaybe\nchild:Child:secret\nchild:x\n2:3\nshared:set\nmissing:empty\nfallback\nmaybe\nparent-child:Child:secret\nparent-child:x\n5:6\nshared:set\nmissing:empty\nfallback\nmaybe\nbase:x\nparent-child:x"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn late_static_properties_report_current_boundaries() {
+    let top_level = runtime_error("<?php\nstatic::$value;\n");
+    assert_eq!(
+        top_level.message,
+        "unsupported call static::$value: static property access requires method or static class context"
+    );
+
+    let unset_error = runtime_error(
+        r#"<?php
+class Box {
+    public static $value;
+
+    public static function clear() {
+        unset(static::$value);
+    }
+}
+Box::clear();
+"#,
+    );
+    assert_eq!(
+        unset_error.message,
+        "unsupported call Box::$value: static property unset is not supported; assign null to the static property in the current subset"
+    );
+}
+
+#[test]
 fn get_called_class_requires_no_arguments() {
     let error = runtime_error("<?php\nvar_dump(get_called_class(42));\n");
 
@@ -2843,6 +2922,7 @@ fn emit_ir_rejects_static_properties_until_native_object_lowering_exists() {
         "<?php\necho Box::$cache;\n",
         "<?php\nself::$cache;\n",
         "<?php\nparent::$cache;\n",
+        "<?php\nstatic::$cache;\n",
     ] {
         let error = php_compiler::emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen);
@@ -3872,14 +3952,6 @@ echo $box INSTANCEOF Box;
             4,
             11,
             "unsupported instanceof expression: class/interface relationship checks are not implemented",
-        ),
-        (
-            r#"<?php
-static::$value;
-"#,
-            2,
-            7,
-            "unsupported static:: property access: late static binding and static property storage are not implemented",
         ),
         (
             r#"<?php

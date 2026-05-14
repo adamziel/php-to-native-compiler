@@ -1022,6 +1022,9 @@ impl Parser {
                 UnsetTarget::ParentStaticProperty { property, .. } => {
                     Ok(Stmt::UnsetParentStaticProperty { property, span })
                 }
+                UnsetTarget::LateStaticProperty { property, .. } => {
+                    Ok(Stmt::UnsetLateStaticProperty { property, span })
+                }
             };
         }
 
@@ -1038,15 +1041,8 @@ impl Parser {
                 return self.parse_static_property_unset_target(Some(name), token.span);
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
-                self.consume_keyword(TokenKind::DoubleColon, "expected '::'")?;
-                let member = self.peek().clone();
-                return match member.kind {
-                    TokenKind::Variable(_) => Err(self.error_at(
-                        self.previous().span,
-                        "unsupported static:: property access: late static binding and static property storage are not implemented",
-                    )),
-                    _ => Err(self.error_at(token.span, unsupported_unset_message())),
-                };
+                return self
+                    .parse_static_property_unset_target(Some("static".to_string()), token.span);
             }
             _ => return Err(self.error_at(token.span, unsupported_unset_message())),
         };
@@ -1118,6 +1114,12 @@ impl Parser {
                     span: operator_span,
                 })
             }
+            Some(receiver) if receiver.eq_ignore_ascii_case("static") => {
+                Ok(UnsetTarget::LateStaticProperty {
+                    property,
+                    span: operator_span,
+                })
+            }
             Some(class_name) => Ok(UnsetTarget::StaticProperty {
                 class_name: class_name.to_string(),
                 property,
@@ -1165,6 +1167,7 @@ impl Parser {
                     | AssignTarget::StaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
+                    | AssignTarget::LateStaticProperty { .. }
             ) {
                 self.current = saved;
                 return Ok(None);
@@ -1256,7 +1259,8 @@ impl Parser {
                     | AssignTarget::Property { .. }
                     | AssignTarget::StaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
-                    | AssignTarget::ParentStaticProperty { .. } => {}
+                    | AssignTarget::ParentStaticProperty { .. }
+                    | AssignTarget::LateStaticProperty { .. } => {}
                     AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
@@ -1338,7 +1342,8 @@ impl Parser {
             | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => Ok(()),
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
@@ -1354,7 +1359,8 @@ impl Parser {
             | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
-            | AssignTarget::ParentStaticProperty { .. } => Ok(()),
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
@@ -1406,6 +1412,9 @@ impl Parser {
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
             }
+            Expr::LateStaticProperty { property, span } => {
+                Ok(AssignTarget::LateStaticProperty { property, span })
+            }
             _ => Err(unsupported_increment_decrement_target_message()),
         }
     }
@@ -1455,6 +1464,9 @@ impl Parser {
             }
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
+            }
+            Expr::LateStaticProperty { property, span } => {
+                Ok(AssignTarget::LateStaticProperty { property, span })
             }
             _ => Err(unsupported_compound_assignment_target_message()),
         }
@@ -1513,6 +1525,9 @@ impl Parser {
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
             }
+            Expr::LateStaticProperty { property, span } => {
+                Ok(AssignTarget::LateStaticProperty { property, span })
+            }
             Expr::Array { .. } => Err(unsupported_array_destructuring_assignment_message()),
             _ => Err(unsupported_assignment_expression_target_message()),
         }
@@ -1563,6 +1578,9 @@ impl Parser {
             }
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
+            }
+            Expr::LateStaticProperty { property, span } => {
+                Ok(AssignTarget::LateStaticProperty { property, span })
             }
             _ => Err(unsupported_null_coalescing_assignment_message()),
         }
@@ -2612,10 +2630,13 @@ impl Parser {
         if receiver.is_some_and(|receiver| receiver.eq_ignore_ascii_case("static")) {
             let member = self.peek().clone();
             return match member.kind {
-                TokenKind::Variable(_) => Err(self.error_at(
-                    operator_span,
-                    "unsupported static:: property access: late static binding and static property storage are not implemented",
-                )),
+                TokenKind::Variable(property) => {
+                    self.advance();
+                    Ok(Expr::LateStaticProperty {
+                        property,
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
                     self.advance();
                     Ok(Expr::StaticClassNameConstant {
@@ -2903,6 +2924,7 @@ impl Parser {
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -2969,6 +2991,7 @@ impl Parser {
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -3076,6 +3099,7 @@ impl Parser {
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -3176,6 +3200,7 @@ impl Parser {
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -3252,6 +3277,7 @@ impl Parser {
             | Expr::StaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => None,
         }
     }

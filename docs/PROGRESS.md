@@ -518,7 +518,26 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
   `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
-  and `git diff --check` passed.
+  and `git diff --check` passed. Full checkpoint verification with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-671 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/checkpoint.sh "objects: add late static method dispatch"`
+  passed with 756 fixture tests, 476 system PHP comparisons, and 280 skipped,
+  producing checkpoint `5227d3c objects: add late static method dispatch`.
+- Added Milestone 672, narrow late static property access. The parser now
+  accepts `static::$prop`, and the interpreter resolves reads, direct writes,
+  compound assignment, pre/post increment/decrement, `isset`, `empty`, `??`,
+  and `??=` through the active called class while reusing current static
+  property storage, inherited lookup, and visibility checks. Top-level
+  `static::$prop` and PHP-forbidden `unset(static::$prop)` keep stable runtime
+  diagnostics. `static::CONST`, typed static property metadata/enforcement,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native lowering remain explicit. Focused verification so far:
+  `cargo fmt`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model late_static_properties_execute_current_subset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model late_static_properties_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_static_properties_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone672`,
+  and `cargo run -p phpc -- test --compare-php tests/fixtures/milestone672`
+  passed.
 
 Next:
 

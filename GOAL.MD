@@ -204,9 +204,10 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   reads/writes, read-modify-write, `isset`/`empty`, `??`, `??=` forms, and
   stable diagnostics for PHP-forbidden static-property `unset(...)`, plus
   visible static-method dispatch through `ClassName::method(...)`,
-  `self::method(...)`, and `parent::method(...)`, now execute through
-  `phpc run`, but interfaces, traits, enums, late-bound static property and
-  class-constant access through `static::`, broader static member semantics,
+  `self::method(...)`, and `parent::method(...)`, plus late-bound
+  `static::$prop` reads/writes and read-modify-write forms in active
+  called-class context, now execute through `phpc run`, but interfaces,
+  traits, enums, late-bound class-constant access through `static::`, broader static member semantics,
   broader class constant semantics, cloning, magic methods, dynamic
   method/property names, broader `parent::`/`self::`/`static::`,
   typed property compatibility and instance property defaults,

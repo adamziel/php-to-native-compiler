@@ -508,10 +508,10 @@
   static, or multi-declarator class constants,
   unsupported `clone` expressions, unsupported
   `instanceof` expressions,
-  unsupported magic static receiver forms such as `static::`,
+  unsupported magic static receiver forms outside the current `static::class`,
+  `static::method(...)`, and `static::$prop` slices,
   anonymous class expressions, dynamic property names,
-  `static::$prop` late-bound static property access, and `static::CONST`
-  late-bound class constant access
+  and `static::CONST` late-bound class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
 - explicit lex diagnostics for unsupported PHP attribute syntax beginning with
@@ -738,9 +738,8 @@
   name while executing in class context. `static::class` resolves to the active
   called class for current instance and static method calls; outside method or
   static class context it fails with a stable runtime diagnostic.
-  `static::$prop` and `static::CONST` fail with distinct stable parse
-  diagnostics before late-bound static property storage or late-bound class
-  constants exist.
+  `static::CONST` fails with a distinct stable parse diagnostic before
+  late-bound class constants exist.
   Class constant declarations accept the current constant-expression value
   subset, and `ClassName::CONST`, `self::CONST`, and `parent::CONST` resolve
   declared or inherited class constants case-sensitively through `phpc run`
@@ -751,11 +750,13 @@
   Static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
   for PHP-forbidden `unset(...)` through
-  `ClassName::$prop`, `self::$prop`, and `parent::$prop` use class-level
+  `ClassName::$prop`, `self::$prop`, `parent::$prop`, and late-bound
+  `static::$prop` in active called-class context use class-level
   storage initialized from the current constant-expression default subset or
   `null`, resolve inherited properties case-sensitively, and enforce current
   visibility checks; typed properties, dynamic names, storage-removing
-  static-property unset, and `static::$prop` remain unsupported.
+  static-property unset, and `static::$prop` outside method/static class
+  context remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices for visible non-static or static method dispatch from active
   class context; non-static methods still require current `$this`.
@@ -2643,11 +2644,10 @@
   typed property storage/enforcement, instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, typed static properties,
-  late-bound static properties, storage-removing
-  static-property unset,
+  storage-removing static-property unset,
   and anonymous classes
-- static method dispatch through object receivers, late-bound `static::$prop`,
-  `static::CONST`, and broader `static::` through `::`
+- static method dispatch through object receivers, late-bound `static::CONST`,
+  and broader `static::` through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
 - `global` declarations / importing top-level variables into function scope

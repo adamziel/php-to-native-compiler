@@ -43,13 +43,13 @@ stored in class metadata and resolve case-sensitively through
 `ClassName::CONST`, `self::CONST`, and `parent::CONST` with current
 public/protected/private visibility checks. Untyped static properties are
 initialized from supported defaults or `null` in class-level storage and resolve
-case-sensitively through `ClassName::$prop`, `self::$prop`, and
-`parent::$prop`. `static::class` resolves from the current called-class context
-inside instance and static methods. `static::method(...)` resolves visible
-static methods through the current called class and forwards that context into
-nested calls. Static receiver forms through `static::$prop` and `static::CONST`
-still have distinct unsupported diagnostics until those late-bound member forms
-are modeled.
+case-sensitively through `ClassName::$prop`, `self::$prop`, `parent::$prop`,
+and late-bound `static::$prop` in active called-class context. `static::class`
+resolves from the current called-class context inside instance and static
+methods. `static::method(...)` resolves visible static methods through the
+current called class and forwards that context into nested calls. `static::CONST`
+still has a distinct unsupported diagnostic until that late-bound member form
+is modeled.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,
@@ -261,7 +261,8 @@ multiple constants in one declaration, `static::CONST`, namespace/alias-aware
 constant lookup, and dynamic string lookup through `constant()`/`defined()` are
 outside the current slice.
 Typed static properties, dynamic property names, storage-removing
-static-property unset, and `static::$prop` are outside the current slice.
+static-property unset, and top-level `static::$prop` execution are outside the
+current slice.
 
 The method-call syntax slice accepts `$object->method(...)` when `method` is a
 static identifier naming a declared or inherited public instance method, a

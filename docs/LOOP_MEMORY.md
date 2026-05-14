@@ -17189,3 +17189,37 @@ injects this file into every prompt. Each Codex pass should update it with:
   checkpoint, beginning at Milestones 615-619.
 - Checkpoint: current commit records this integration; final hash is reported
   by `git log` after commit creation.
+
+## Loop Event 2026-05-15T01:10:00Z
+
+- Checkpoint before this task: `5227d3c objects: add late static method
+  dispatch`, pushed to `origin/master`.
+- Task attempted: Milestone 672, narrow late-bound static property access
+  through `static::$prop`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone672/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_static_property.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model late_static_properties_execute_current_subset -- --test-threads=1`,
+  `cargo test -p phpc --test object_model late_static_properties_report_current_boundaries -- --test-threads=1`,
+  `cargo test -p phpc --test object_model emit_ir_rejects_static_properties_until_native_object_lowering_exists -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone672`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone672`
+  passed. After correcting a stale expected-stderr newline for
+  `unsupported_static_property.stderr`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo fmt --check`, and `git diff --check` also passed.
+- Remaining semantic gaps: `static::CONST`, object-receiver static method
+  dispatch, typed static property metadata/enforcement, broader class constant
+  semantics, trait composition, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering remain explicit.
+- Next concrete task: run the checkpoint full gate with
+  `tools/checkpoint.sh "objects: add late static property access"` if the full
+  gate passes.

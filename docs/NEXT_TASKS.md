@@ -6126,11 +6126,23 @@ handled.
 
 ## Milestone 672: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next late-static-binding/static-member
-  slice: `static::$prop`, `static::CONST`, typed static property metadata,
-  broader class constant semantics, or a documented blocker. Keep trait
-  composition, magic methods, references/copy-on-write, exact native error
-  objects, and native lowering explicit.
+- [x] Runtime/object lane: implement the narrow `static::$prop` late-bound
+  static property slice. Late static property reads, direct writes, compound
+  assignment, pre/post increment/decrement, `isset`, `empty`, `??`, and `??=`
+  now resolve through the active called class and reuse current static-property
+  storage/visibility rules. Top-level `static::$prop` and PHP-forbidden
+  `unset(static::$prop)` keep stable runtime diagnostics. Kept `static::CONST`,
+  typed static property metadata, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
+
+## Milestone 673: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next static/member slice:
+  `static::CONST`, typed static property metadata, broader class constant
+  semantics, object-receiver static method dispatch, or a documented blocker.
+  Keep trait composition, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

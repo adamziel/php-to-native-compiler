@@ -1,0 +1,28 @@
+exit: 0
+stdout:
+base:Base:secret
+base:x
+2:3
+shared:set
+missing:empty
+fallback
+maybe
+child:Child:secret
+child:x
+2:3
+shared:set
+missing:empty
+fallback
+maybe
+parent-child:Child:secret
+parent-child:x
+5:6
+shared:set
+missing:empty
+fallback
+maybe
+base:x
+parent-child:x
+--- stdout end ---
+stderr:
+--- stderr end ---
