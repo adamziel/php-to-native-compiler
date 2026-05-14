@@ -491,8 +491,7 @@
 - explicit parse diagnostics for unsupported function syntax: variadic
   parameters, variadic argument unpacking, reference expressions,
   function-scope reference parameter invocation, reference returns, type
-  declaration enforcement,
-  arrow functions, named arguments, first-class callable syntax such as
+  declaration enforcement, named arguments, first-class callable syntax such as
   `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
   `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
@@ -1973,9 +1972,12 @@
   capture syntax such as `use (&$name)`. Evaluating a closure expression still
   fails with a stable runtime diagnostic; closure values, invocation, capture
   binding, `$this` binding, static closures, callback integration, exact PHP
-  diagnostics, and native lowering are unsupported. Variadic parameters and
-  argument unpacking, reference returns, reference expressions, arrow functions,
-  named arguments, first-class callable syntax such as `strlen(...)` and
+  diagnostics, and native lowering are unsupported. Arrow function syntax
+  `fn (...) => expr` is parsed as a closure-shaped expression with a synthetic
+  return body, but evaluating it fails with the same closure-value boundary
+  before automatic capture binding or invocation exists. Variadic parameters
+  and argument unpacking, reference returns, reference expressions, named
+  arguments, first-class callable syntax such as `strlen(...)` and
   `$callback(...)`, empty call arguments, and `declare(strict_types=1)` are
   rejected with stable parse diagnostics. Function-local `static` declarations
   are supported for the current bounded direct-variable storage slice:
@@ -3534,7 +3536,8 @@
   function/constant namespace lookup, grouped/function/constant imports,
   string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
   native lowering
-- closure values/invocation, capture binding semantics, and arrow functions
+- closure values/invocation, capture binding semantics, arrow function
+  execution, and callable integration
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/try runtime
   boundaries

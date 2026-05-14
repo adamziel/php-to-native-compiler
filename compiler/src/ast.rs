@@ -587,6 +587,7 @@ pub enum Expr {
         captures: Vec<ClosureCapture>,
         return_type: Option<TypeDecl>,
         body: Vec<Stmt>,
+        is_arrow: bool,
         span: Span,
     },
     New {

@@ -916,6 +916,9 @@ reserved and rejected with stable parse diagnostics.
 First-class callable syntax such as `strlen(...)` and `$callback(...)` also
 stops at a stable parse diagnostic until Closure creation and callable object
 semantics exist.
+Arrow function syntax parses into the same closure-shaped expression boundary
+as anonymous closures, but evaluating it still fails before closure values,
+implicit captures, invocation, and callable integration exist.
 Magic class names in `new` expressions, including `new self()`,
 `new parent()`, and `new static()`, stop at a stable parse diagnostic until
 class context tracking, parent resolution, and late static binding exist.

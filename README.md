@@ -89,8 +89,9 @@ incorrect native code.
   current value boundaries, ternaries, and increments/decrements
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
-  `static` variables, defaults, returns, dynamic string-valued calls, and
-  recursion guarded by a fixed depth limit;
+  `static` variables, defaults, returns, dynamic string-valued calls,
+  arrow-function syntax that still fails when evaluated as a closure value,
+  and recursion guarded by a fixed depth limit;
   parameter/return type syntax is accepted as metadata only, without runtime
   type enforcement
 - top-level `global $name, ...;` declarations as no-op/import-compatible

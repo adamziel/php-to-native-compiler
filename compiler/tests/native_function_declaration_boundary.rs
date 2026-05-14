@@ -6,6 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
 
 #[test]
 fn phpc_run_still_handles_current_user_function_declarations_and_returns() {
@@ -98,6 +99,34 @@ fn emit_asm_rejects_function_declarations_before_backend_execution() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_arrow_function_values_with_specific_boundary() {
+    let error = emit_ir_source("<?php\n$fn = fn ($value) => $value;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(error.message, LLVM_CLOSURE_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_anonymous_closure_values_with_specific_boundary() {
+    let error = emit_ir_source("<?php\n$fn = function ($value) { return $value; };\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(error.message, LLVM_CLOSURE_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_arrow_function_values_before_backend_execution() {
+    let error = emit_asm_source("<?php\n$fn = fn ($value) => $value;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_CLOSURE_REJECTION);
 }
 
 #[test]

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone709/arrow_capture_boundary.php:3:7: unsupported call closure: arrow function values and invocation are not implemented
+--- stderr end ---

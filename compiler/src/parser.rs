@@ -3030,10 +3030,7 @@ impl Parser {
                 Err(self.error_at(token.span, unsupported_instanceof_message()))
             }
             TokenKind::Function => self.parse_closure_expression(token.span),
-            TokenKind::Fn => Err(self.error_at(
-                token.span,
-                "unsupported closure: arrow functions are not implemented",
-            )),
+            TokenKind::Fn => self.parse_arrow_function_expression(token.span),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Do => {
                 Err(self.error_at(token.span, unsupported_do_while_expression_message()))
@@ -3285,6 +3282,45 @@ impl Parser {
             captures,
             return_type,
             body,
+            is_arrow: false,
+            span,
+        })
+    }
+
+    fn parse_arrow_function_expression(&mut self, span: Span) -> CompileResult<Expr> {
+        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
+            let span = self.advance().span;
+            return Err(self.error_at(
+                span,
+                "unsupported reference return: returning closures by reference is not implemented",
+            ));
+        }
+
+        self.consume_keyword(TokenKind::LParen, "expected '(' after fn")?;
+        let params = self.parse_function_params_after_open()?;
+        let return_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            Some(self.parse_type_decl(unsupported_return_type_message())?)
+        } else {
+            None
+        };
+        self.consume_keyword(
+            TokenKind::FatArrow,
+            "expected '=>' after arrow function parameters",
+        )?;
+        self.function_body_depth += 1;
+        let value = self.parse_expression();
+        self.function_body_depth -= 1;
+        let value = value?;
+
+        Ok(Expr::Closure {
+            params,
+            captures: Vec::new(),
+            return_type,
+            body: vec![Stmt::Return {
+                value: Some(value),
+                span,
+            }],
+            is_arrow: true,
             span,
         })
     }

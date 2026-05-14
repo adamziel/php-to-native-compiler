@@ -6481,16 +6481,26 @@ handled.
   methods/constants/properties, enum interface implementation, built-in/internal
   enums, autoload interaction, exact PHP diagnostics, partial-output behavior,
   and native lowering.
+- [x] Parser/runtime lane: implement the bounded arrow-function syntax slice
+  for the WordPress bootstrap arrow-function blocker reported at
+  `<bootstrap-shim>:9:10`. The parser now accepts `fn (...) => expr` as a
+  closure-shaped expression with a synthetic return body, reached arrow
+  expressions fail at the explicit closure-value runtime boundary, native
+  lowering rejects closure expressions with a closure-specific codegen
+  boundary, and docs/tests name the remaining unsupported edges: closure
+  values, capture binding, `$this` binding, callable invocation, callback
+  integration, exact PHP diagnostics, partial-output behavior, and native
+  lowering.
 - [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
-  bootstrap arrow-function blocker reported at `<bootstrap-shim>:9:10`, with
-  tests, CLI coverage, docs, and named unsupported edges for closure values,
-  captures, `$this` binding, callable invocation, exact PHP diagnostics,
-  partial-output behavior, and native lowering.
+  bootstrap missing-parent class blocker reported at `<bootstrap-shim>:7:1`,
+  with tests, CLI coverage, docs, and named unsupported edges for autoload,
+  include ordering, exact PHP fatal behavior, partial-output behavior, and
+  native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 708 work, the latest committed checkpoint is
-  `04c8026 runtime: add declared trait metadata`, covering Milestone 707.
+- Before the current Milestone 709 work, the latest committed checkpoint is
+  `9dbc1be runtime: add declared enum metadata`, covering Milestone 708.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

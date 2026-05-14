@@ -718,8 +718,8 @@ $fn = function ($value) {
 }
 
 #[test]
-fn arrow_functions_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn arrow_function_values_have_stable_runtime_unsupported_error() {
+    let error = runtime_error(
         r#"<?php
 $fn = fn($value) => $value;
 "#,
@@ -729,7 +729,7 @@ $fn = fn($value) => $value;
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "unsupported closure: arrow functions are not implemented"
+        "unsupported call closure: arrow function values and invocation are not implemented"
     );
 }
 

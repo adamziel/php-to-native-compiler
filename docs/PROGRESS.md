@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 709, a bounded arrow-function syntax slice through
+  `phpc run`. The parser now accepts `fn (...) => expr` as a closure-shaped
+  expression with a synthetic return body while preserving traditional
+  anonymous closure parsing. Reached arrow expressions fail at a stable
+  runtime closure-value boundary, matching the current no-closure-values
+  model; closure allocation, invocation, automatic capture binding, `$this`
+  binding, static closures, callback integration, exact PHP diagnostics,
+  partial-output behavior, and native lowering remain explicit. Native lowering
+  now rejects closure expressions with a closure-specific codegen boundary
+  before backend execution. Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes arrow -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes closure -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_declaration_boundary arrow -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_declaration_boundary closure -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone709`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed. The synthetic WordPress bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:7:1: undefined class Synthetic\WordPress\BaseLoader`.
 - Added Milestone 708, bounded declared unit-enum metadata through `phpc run`.
   The parser now accepts top-level unbacked enum declarations with bare
   `case Name;` members, applies current namespace declaration resolution to

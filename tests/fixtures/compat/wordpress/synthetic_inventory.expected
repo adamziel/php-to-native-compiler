@@ -25,4 +25,4 @@ bootstrap_shim_probe:
   command: <phpc> run <bootstrap-shim>
   exit: 1
   stdout_bytes: 0
-  first_stderr_line: parse error at <bootstrap-shim>:9:10: unsupported closure: arrow functions are not implemented
+  first_stderr_line: runtime error at <bootstrap-shim>:7:1: undefined class Synthetic\WordPress\BaseLoader

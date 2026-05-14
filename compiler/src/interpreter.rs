@@ -1349,13 +1349,17 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 Ok(Value::Bool(self.value_instanceof(&value, class_name)))
             }
-            Expr::Closure { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "closure",
-                    "anonymous function values and invocation are not implemented",
-                ),
-            )),
+            Expr::Closure { span, is_arrow, .. } => {
+                let detail = if *is_arrow {
+                    "arrow function values and invocation are not implemented"
+                } else {
+                    "anonymous function values and invocation are not implemented"
+                };
+                Err(runtime_error(
+                    *span,
+                    RuntimeError::unsupported_call("closure", detail),
+                ))
+            }
             Expr::New {
                 class_name,
                 args,

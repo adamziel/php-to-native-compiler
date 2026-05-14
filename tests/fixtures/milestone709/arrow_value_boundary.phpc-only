@@ -1,0 +1,1 @@
+phpc intentionally rejects reached arrow function values before closure allocation, capture binding, and invocation exist.

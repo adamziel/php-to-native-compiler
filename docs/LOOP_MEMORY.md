@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T22:55:00Z
+
+- Checkpoint before this task: `9dbc1be runtime: add declared enum metadata`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 709, bounded arrow-function syntax for the
+  synthetic WordPress bootstrap arrow-function blocker at `<bootstrap-shim>:9:10`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/native_function_declaration_boundary.rs`,
+  `tests/fixtures/milestone709/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_arrow_function.*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes arrow -- --test-threads=1`,
+  `cargo test -p phpc --test functions_and_scopes closure -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_declaration_boundary arrow -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_declaration_boundary closure -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone709`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  `cargo test -p phpc --test unsupported_function_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: closure values and invocation, automatic arrow
+  capture binding, explicit closure capture binding, `$this` binding, static
+  closures, callback integration, exact PHP diagnostics, partial-output
+  behavior, WordPress bootstrap environment, exact native errors, and native
+  closure lowering remain explicit. The synthetic WordPress shim now reaches
+  the missing-parent class blocker at `<bootstrap-shim>:7:1`.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, focused
+  gates if needed, then checkpoint with
+  `tools/checkpoint.sh "parser: accept arrow function syntax"` if the full
+  gate passes. Milestone 710 should bound the missing parent class/autoload
+  blocker.
+
 ## Loop Event 2026-05-14T11:15:00Z
 
 - Checkpoint before this task: `da8829c runtime: add bounded namespace class

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_function_features/unsupported_arrow_function.php:2:7: unsupported closure: arrow functions are not implemented
+runtime error at tests/fixtures/unsupported_function_features/unsupported_arrow_function.php:2:7: unsupported call closure: arrow function values and invocation are not implemented
 --- stderr end ---
