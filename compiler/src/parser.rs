@@ -2336,23 +2336,42 @@ impl Parser {
             .span;
         if receiver.is_some_and(|receiver| receiver.eq_ignore_ascii_case("parent")) {
             let member = self.peek().clone();
-            if let TokenKind::Identifier(method) = member.kind {
-                if matches!(self.peek_next().kind, TokenKind::LParen) {
+            return match member.kind {
+                TokenKind::Variable(_) => Err(self.error_at(
+                    operator_span,
+                    "unsupported parent static property access: static property storage is not implemented",
+                )),
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => Err(self
+                    .error_at(
+                        operator_span,
+                        "unsupported parent class name constant: parent::class resolution is not implemented",
+                    )),
+                TokenKind::Identifier(method) if matches!(self.peek_next().kind, TokenKind::LParen) => {
                     self.advance();
                     self.consume_keyword(TokenKind::LParen, "expected '(' after method name")?;
                     let args = self.parse_call_arguments_after_open()?;
-                    return Ok(Expr::ParentMethodCall {
+                    Ok(Expr::ParentMethodCall {
                         method,
                         args,
                         span: operator_span,
-                    });
+                    })
                 }
-            }
-
-            return Err(self.error_at(
-                operator_span,
-                "unsupported parent static member access: only parent method calls are implemented",
-            ));
+                TokenKind::Identifier(_) => Err(self.error_at(
+                    operator_span,
+                    "unsupported parent class constant access: class constants are not implemented",
+                )),
+                TokenKind::Class => Err(self.error_at(
+                    operator_span,
+                    "unsupported parent class name constant: parent::class resolution is not implemented",
+                )),
+                _ => Err(self.error_at(
+                    operator_span,
+                    format!(
+                        "expected parent member name after '::', found {}",
+                        token_name(&member.kind)
+                    ),
+                )),
+            };
         }
         if receiver.is_some_and(is_magic_static_receiver) {
             return Err(self.error_at(operator_span, unsupported_magic_static_receiver_message()));
@@ -3474,7 +3493,7 @@ fn unsupported_class_name_constant_message() -> &'static str {
 }
 
 fn unsupported_magic_static_receiver_message() -> &'static str {
-    "unsupported magic static receiver: self, parent, and static resolution is not implemented"
+    "unsupported magic static receiver: self and static resolution is not implemented"
 }
 
 fn unsupported_magic_class_name_message() -> &'static str {

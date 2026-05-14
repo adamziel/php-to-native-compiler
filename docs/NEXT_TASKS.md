@@ -5803,13 +5803,27 @@ handled.
 
 ## Milestone 648: Parent Static Receiver Refinement
 
-- [ ] Runtime/object lane: choose the next smallest parent/static receiver
+- [x] Runtime/object lane: choose the next smallest parent/static receiver
   refinement: static parent method diagnostics, parent static property/constant
   parse diagnostics, `self::` class-context design, or a focused visibility
-  compatibility improvement for explicit parent calls. Keep static storage,
-  late static binding, property override compatibility, trait composition,
-  magic methods, references/copy-on-write, exact native error objects, and
-  native lowering explicit.
+  compatibility improvement for explicit parent calls. Added distinct parse
+  diagnostics and CLI fixture coverage for parent static property access,
+  parent class constants, and `parent::class`, while keeping
+  `parent::method(...)` as the only supported parent receiver slice. Kept
+  static storage, late static binding, `self::`/`static::`, property override
+  compatibility, trait composition, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering explicit.
+
+## Milestone 649: Self Receiver Boundary
+
+- [ ] Runtime/object lane: choose the next smallest `self::` or static member
+  boundary: parse and reject `self::method(...)` with class-context-aware
+  diagnostics, implement a narrow same-class instance call if feasible, or
+  document why static/self dispatch needs a broader storage/design step first.
+  Keep static properties, class constants, late static binding,
+  property override compatibility, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

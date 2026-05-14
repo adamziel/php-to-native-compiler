@@ -1019,7 +1019,9 @@ Static member syntax
 through `::`, including
 `ClassName::$prop`, `ClassName::method()`, `ClassName::CONST`, `self::`, and
 `static::`, is rejected with explicit parse diagnostics until static storage,
-dispatch, late static binding, and class constants exist. Native lowering
+dispatch, late static binding, and class constants exist. Unsupported parent
+static property, parent class constant, and `parent::class` forms also stop at
+distinct parse diagnostics. Native lowering
 rejects class declarations, inheritance metadata, parent method calls, object
 instantiation, object property reads/writes, instance method calls, and
 object metadata builtins with a specific object/class codegen diagnostic,

@@ -661,8 +661,9 @@
   class-name constant resolution exists. Magic static receivers `self::` and
   `static::` fail with a stable parse diagnostic before class-context or
   late-static-binding resolution exists. `parent::method(...)` calls are the
-  supported parent receiver slice; parent static property and constant access
-  remain unsupported.
+  supported parent receiver slice; parent static property access,
+  parent class constants, and `parent::class` fail with stable parse
+  diagnostics.
   Public, same-class private, and protected same-class/child instance method
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
@@ -2524,7 +2525,8 @@
   implementation,
   typed property storage/enforcement, property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  class constant declarations, constants, and anonymous classes
+  class constant declarations, constants, parent static properties/constants,
+  and anonymous classes
 - static property access, static method calls, class constant access,
   class-name constant access, and magic static receivers such as `self::`,
   `parent::`, and `static::` through `::`

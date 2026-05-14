@@ -107,6 +107,20 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone647`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone647`, and
   `git diff --check` passed.
+- Added Milestone 648, parent static receiver diagnostics. Now that
+  `parent::method(...)` is the supported parent receiver slice, the parser
+  reports distinct stable diagnostics for unsupported `parent::$property`,
+  `parent::CONST`, and `parent::class` forms, with CLI fixture coverage for
+  parent static property access. Static storage, class constants,
+  `self::`/`static::`, late static binding, broader static member semantics,
+  property override compatibility, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native object
+  lowering remain explicit. Focused verification: `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -118,10 +132,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 648 should take the next parent/static receiver refinement:
-  static parent method diagnostics, parent static property/constant parse
-  diagnostics, `self::` class-context design, or a focused visibility
-  compatibility improvement for explicit parent calls.
+- Milestone 649 should take the next `self::` or static member boundary:
+  parse and reject `self::method(...)` with class-context-aware diagnostics,
+  implement a narrow same-class instance call if feasible, or document why
+  static/self dispatch needs a broader storage/design step first.
 
 ## 2026-05-12
 

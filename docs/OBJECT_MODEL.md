@@ -26,7 +26,9 @@ chain while reusing the current `$this` object. Dynamic method/property
 names still fail with explicit parse diagnostics. Static
 member access through `::` outside the current parent method-call slice also
 fails with explicit parse diagnostics until static property storage, static
-method dispatch, and class constants exist.
+method dispatch, and class constants exist. Parent static property access,
+parent class constants, and `parent::class` have distinct unsupported
+diagnostics.
 The current introspection slice can check declared methods with
 `method_exists($object_or_class, $method)` without executing or dispatching
 those methods. It can also evaluate `is_a($object_or_class, $class_name[,

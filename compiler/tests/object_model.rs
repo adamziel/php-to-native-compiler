@@ -2542,7 +2542,31 @@ self::$value;
 "#,
             2,
             5,
-            "unsupported magic static receiver: self, parent, and static resolution is not implemented",
+            "unsupported magic static receiver: self and static resolution is not implemented",
+        ),
+        (
+            r#"<?php
+parent::$value;
+"#,
+            2,
+            7,
+            "unsupported parent static property access: static property storage is not implemented",
+        ),
+        (
+            r#"<?php
+parent::VERSION;
+"#,
+            2,
+            7,
+            "unsupported parent class constant access: class constants are not implemented",
+        ),
+        (
+            r#"<?php
+parent::class;
+"#,
+            2,
+            7,
+            "unsupported parent class name constant: parent::class resolution is not implemented",
         ),
         (
             r#"<?php
@@ -2550,7 +2574,7 @@ static::class;
 "#,
             2,
             7,
-            "unsupported magic static receiver: self, parent, and static resolution is not implemented",
+            "unsupported magic static receiver: self and static resolution is not implemented",
         ),
         (
             r#"<?php

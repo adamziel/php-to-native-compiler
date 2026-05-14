@@ -74,6 +74,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: finish focused checks, update progress with exact
   commands, then run checkpoint if the full gate passes.
 
+## Loop Event 2026-05-14T14:29:40Z
+
+- Checkpoint: `8c5b653 objects: add explicit parent method dispatch`, pushed
+  to `origin/master`.
+- Task attempted: Milestone 648, parent static receiver diagnostics.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_parent_static_member.*`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/ARCHITECTURE.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: static storage, parent class constants,
+  `parent::class`, `self::`/`static::`, late static binding, broader static
+  member semantics, property override compatibility, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native object
+  lowering remain explicit.
+- Next concrete task: run focused checks and checkpoint if the full gate
+  passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 
