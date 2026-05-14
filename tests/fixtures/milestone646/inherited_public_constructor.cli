@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+base:11
+11|Ada
+base:7--- stdout end ---
+stderr:
+--- stderr end ---

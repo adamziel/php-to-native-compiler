@@ -1,12 +1,13 @@
 # Object/Class Metadata Model
 
 This document records the current object/class boundary. It is a narrow
-instantiation slice, not full PHP object execution.
+object-execution slice, not full PHP object execution.
 
 The current implementation parses top-level class declarations into metadata,
 including a single `extends Parent` link between declared classes, and can
-evaluate `new ClassName(...)` for declared classes, including public instance
-`__construct` execution. It stores class identity plus `null`
+evaluate `new ClassName(...)` for declared classes, including public or
+inherited public instance `__construct` execution. It stores class identity
+plus `null`
 instance-property slots for the exact class and inherited public properties,
 and can read/write public instance properties by static property name and check
 direct public property operands with
@@ -37,8 +38,9 @@ represented yet.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and currently
-returns the same public instance property slice; protected/private
-property-name mangling and visibility-context behavior are not represented yet.
+returns public inherited slots plus exact-class non-public instance properties
+with PHP-style mangled keys. Non-public inherited slots and visibility-context
+behavior are not represented yet.
 `get_called_class()` is recognized as a zero-argument callable boundary, but it
 currently fails with a stable unsupported-call diagnostic until method/static
 class context and late static binding exist.
@@ -102,19 +104,21 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_object_vars($object)` returns public exact and inherited instance
   property names in parent-to-child slot order with their current slot values
   for current object values;
-- `get_mangled_object_vars($object)` returns the same public instance
-  property slice for current object values until protected/private name
-  mangling and visibility-context behavior exist;
+- `get_mangled_object_vars($object)` returns public inherited slots plus
+  exact-class non-public instance properties with PHP-style mangled keys for
+  current object values until non-public inherited slots and visibility-context
+  behavior exist;
 - `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
-  identity using case-insensitive class metadata lookup; string first
-  arguments are considered only when `allow_string` is true;
+  identity and single-parent ancestor relationships using case-insensitive
+  class metadata lookup; string first arguments are considered only when
+  `allow_string` is true;
 - `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts
   current object values and string first arguments, with string first
-  arguments considered only when `allow_string` is true, and returns false
-  because the current metadata records no parent/interface relationships;
+  arguments considered only when `allow_string` is true, and walks the current
+  single-parent metadata chain while interface traversal remains unsupported;
 - `get_parent_class($object_or_class)` accepts current object values or
-  declared string class names and returns false because the current metadata
-  records no parent class relationship;
+  declared string class names and returns the immediate parent class name when
+  one is recorded, otherwise false;
 - `get_called_class()` validates its zero-argument call shape and then fails
   with a stable unsupported-call diagnostic because no method/static class
   context is tracked yet;
@@ -142,11 +146,12 @@ runtime after registration.
 The current syntax slice also accepts `new ClassName(...)` with an identifier
 class name. Instantiation looks up the class case-insensitively, allocates an
 object value using the declared class spelling, initializes instance properties
-to `null`, and then executes a declared public instance `__construct` method
-with `$this` bound to the new object handle. Constructor arguments use the
-current positional argument and default-parameter subset. Undefined classes,
-constructor arguments for classes without constructors, non-public
-constructors, and static constructors produce stable runtime errors.
+to `null`, and then executes a declared or inherited public instance
+`__construct` method with `$this` bound to the new object handle. Constructor
+arguments use the current positional argument and default-parameter subset.
+Undefined classes, constructor arguments for classes without constructors,
+non-public constructors, explicit `parent::__construct` calls, and static
+constructors produce stable runtime errors.
 
 The property syntax slice accepts `$object->name` reads and direct-variable
 `$object->name = <expr>` writes when `name` is a declared public instance
@@ -216,8 +221,9 @@ default property values, multiple properties in one declaration, constants,
 static property storage, late static binding, magic methods, namespaces,
 autoloading, anonymous classes, attributes, reflection, dynamic properties,
 cloning, destructors, serialization hooks, visibility enforcement,
-`self`/`parent`/`static`, constructor behavior beyond public instance
-`__construct`, constructor arguments for classes without constructors,
+`self`/`parent`/`static`, constructor behavior beyond public/inherited public
+instance `__construct`, explicit `parent::__construct` calls, constructor
+arguments for classes without constructors,
 non-public inherited property slots, property override compatibility,
 non-public property/constructor access, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,

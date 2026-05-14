@@ -26,6 +26,28 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T14:15:14Z
+
+- Task attempted: Milestone 646, inherited public constructor dispatch for the
+  current single-parent object model.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone646/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_constructor_execution.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: focused object-model test file, milestone646 fixture run,
+  milestone646 system PHP comparison, and unsupported object feature fixture
+  run passed in the active session before checkpoint verification.
+- Remaining semantic gaps: explicit `parent::__construct` and
+  `parent::method()` calls, non-public constructor visibility, non-public
+  inherited property slots, property override compatibility, static members,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native object lowering remain unsupported.
+- Next concrete task: run final focused checks, then checkpoint with
+  `tools/checkpoint.sh "objects: add inherited public constructor dispatch"`
+  if the full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

@@ -150,8 +150,9 @@
   flags for the documented subset
 - object instantiation with `new ClassName(...)` for declared classes. Classes
   without `__construct` are supported only with no constructor arguments.
-  Declared public instance `__construct` methods execute with scoped `$this`,
-  positional arguments, and the current default-parameter subset.
+  Declared or inherited public instance `__construct` methods execute with
+  scoped `$this`, positional arguments, and the current default-parameter
+  subset.
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`
@@ -531,12 +532,13 @@
   ClassName(...)` looks up declared classes case-insensitively, initializes
   instance properties to `null`, skips static properties, treats object values
   as truthy, and lets direct `isset($object_variable)` return true. Public
-  instance `__construct` methods execute after object allocation with `$this`
-  bound to the new object handle. Undefined classes, constructor arguments for
-  classes without constructors, non-public constructors, and static
-  constructors fail with stable runtime diagnostics. Public instance property
-  reads and direct-variable writes work by static property name; property names
-  are case-sensitive, and
+  or inherited public instance `__construct` methods execute after object
+  allocation with `$this` bound to the new object handle. Undefined classes,
+  constructor arguments for classes without constructors, non-public
+  constructors, explicit `parent::__construct` calls, and static constructors
+  fail with stable runtime diagnostics. Public instance property reads and
+  direct-variable writes work by static property name; property names are
+  case-sensitive, and
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
   false for `null` slots, missing property names, undefined target variables,
@@ -2337,8 +2339,9 @@
   available through dynamic function lookup. PHP's complete warning behavior is
   not implemented.
 - Object/class gaps: nested and conditional class declarations, constructor
-  behavior beyond public instance `__construct`, non-public inherited property
-  slots, property override compatibility, parent constructors,
+  behavior beyond public/inherited public instance `__construct`,
+  non-public inherited property slots, property override compatibility,
+  explicit `parent::__construct` calls,
   `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
@@ -2365,12 +2368,13 @@
   `self`/`parent`/`static`, object comparisons, `instanceof` relationship
   checks, object-to-string conversion, object callables, and native lowering
   are unsupported.
-- Constructor boundary: public instance `__construct` methods execute in
-  `phpc run` with scoped `$this`. Constructor arguments for classes without a
-  constructor, non-public constructors, static constructors, constructor
-  promotion, inheritance and parent constructor calls, named arguments,
-  references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
-  native lowering remain unsupported.
+- Constructor boundary: public instance `__construct` methods, including
+  inherited public constructors, execute in `phpc run` with scoped `$this`.
+  Constructor arguments for classes without a constructor, non-public
+  constructors, static constructors, constructor promotion, explicit
+  `parent::__construct` calls, named arguments, references/copy-on-write,
+  exact PHP `Error`/`TypeError` object behavior, and native lowering remain
+  unsupported.
 - Scalar arithmetic gaps: leading numeric strings with trailing non-numeric
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
@@ -2497,9 +2501,10 @@
 - constructor arguments for classes without a declared constructor, non-public
   constructors, and static constructors currently fail with stable runtime
   diagnostics
-- unsupported class forms including nested/conditional declarations,
-  inheritance, interface declarations and `implements` clauses, interface
-  constants, interface method signatures, interface inheritance, trait
+- unsupported class forms including nested/conditional declarations, broader
+  inheritance rules beyond the current single-parent metadata chain, interface
+  declarations and `implements` clauses, interface constants, interface method
+  signatures, interface inheritance, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
   typed property storage/enforcement, property defaults, multiple properties in

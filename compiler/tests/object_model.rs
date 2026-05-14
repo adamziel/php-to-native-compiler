@@ -1932,6 +1932,44 @@ echo $default->label();
 }
 
 #[test]
+fn inherited_public_constructors_execute_with_child_this_binding() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $id;
+
+    public function __construct($id = 7) {
+        $this->id = $id;
+    }
+
+    public function label() {
+        return "base:" . $this->id;
+    }
+}
+
+class Child extends Base {
+    public $name;
+
+    public function rename($name) {
+        $this->name = $name;
+    }
+}
+
+$child = new Child(11);
+$child->rename("Ada");
+echo $child->label(), "\n";
+echo $child->id, "|", $child->name, "\n";
+$default = new Child();
+echo $default->label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "base:11\n11|Ada\nbase:7");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn constructor_dispatch_reports_current_unsupported_boundaries() {
     let argument_error = runtime_error(
         r#"<?php
@@ -1962,7 +2000,25 @@ $box = new Box();
     assert_eq!(private_constructor.column, 8);
     assert_eq!(
         private_constructor.message,
-        "unsupported object instantiation for Box: non-public constructors require same-class construction context; protected constructor visibility and inherited constructor dispatch are not implemented"
+        "unsupported object instantiation for Box: non-public constructor Box::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented"
+    );
+
+    let protected_inherited_constructor = runtime_error(
+        r#"<?php
+class Base {
+    protected function __construct() {}
+}
+class Child extends Base {}
+
+$child = new Child();
+"#,
+    );
+
+    assert_eq!(protected_inherited_constructor.line, 7);
+    assert_eq!(protected_inherited_constructor.column, 10);
+    assert_eq!(
+        protected_inherited_constructor.message,
+        "unsupported object instantiation for Child: non-public constructor Base::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented"
     );
 
     let static_constructor = runtime_error(

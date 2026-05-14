@@ -756,23 +756,15 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let (class_id, declared_class_name, constructor) = {
+        let (class_id, declared_class_name) = {
             let class = self
                 .classes
                 .lookup_class(class_name)
                 .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
-            (
-                class.id(),
-                class.name().to_string(),
-                class.method("__construct").map(|method| {
-                    (
-                        method.name().to_string(),
-                        method.visibility(),
-                        method.is_static(),
-                    )
-                }),
-            )
+            (class.id(), class.name().to_string())
         };
+
+        let constructor = self.resolve_instance_method(class_id, "__construct");
 
         let class = self
             .classes
@@ -791,7 +783,13 @@ impl Interpreter {
             &inherited_public_properties,
             object_id,
         );
-        let Some((constructor_name, constructor_visibility, constructor_is_static)) = constructor
+        let Some((
+            constructor_class_id,
+            constructor_class_name,
+            constructor_name,
+            constructor_visibility,
+            constructor_is_static,
+        )) = constructor
         else {
             if !args.is_empty() {
                 return Err(runtime_error(
@@ -815,19 +813,22 @@ impl Interpreter {
             ));
         }
 
-        if !self.can_call_constructor(class_id, constructor_visibility) {
+        if !self.can_call_constructor(constructor_class_id, constructor_visibility) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
                     declared_class_name,
-                    "non-public constructors require same-class construction context; protected constructor visibility and inherited constructor dispatch are not implemented",
+                    format!(
+                        "non-public constructor {}::__construct() requires same-class construction context; protected/private constructor visibility is not fully implemented",
+                        constructor_class_name
+                    ),
                 ),
             ));
         }
 
         let function = self
             .methods
-            .get(&(class_id, constructor_name.to_ascii_lowercase()))
+            .get(&(constructor_class_id, constructor_name.to_ascii_lowercase()))
             .cloned()
             .expect("declared constructor metadata should have a stored function body");
         let function = function.as_ref();
@@ -839,7 +840,12 @@ impl Interpreter {
             values.push(self.evaluate(arg, scope)?);
         }
 
-        self.call_user_function_with_this(function, object.clone(), values, Some(class_id))?;
+        self.call_user_function_with_this(
+            function,
+            object.clone(),
+            values,
+            Some(constructor_class_id),
+        )?;
         Ok(Value::Object(object))
     }
 

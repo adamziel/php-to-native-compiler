@@ -72,6 +72,24 @@ Implemented:
   constructors, `parent::`/`self::`/`static::`, traits, magic methods,
   references/copy-on-write, exact native error objects, and native object
   lowering remain explicit.
+- Added Milestone 646, inherited public constructor lookup and dispatch. `new
+  Child(...)` now walks inherited instance methods for `__construct` when the
+  child class does not declare one, executes an inherited public constructor
+  with `$this` bound to the child object handle, uses the current positional
+  argument/default-parameter subset, and preserves the declaring parent class
+  as the active method context. Non-public inherited constructors now report a
+  stable diagnostic naming the declaring class. Explicit `parent::__construct`,
+  `parent::method()`, non-public constructor visibility, non-public inherited
+  property slots, constructor promotion, property override compatibility,
+  traits, magic methods, references/copy-on-write, exact native error objects,
+  and native object lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone646`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone646`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -83,10 +101,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 646 should take the next object inheritance slice: inherited
-  constructor lookup/dispatch or `parent::__construct`/`parent::method`
-  parsing if feasible, or document the static-receiver/call-context blocker
-  before broader parent calls.
+- Milestone 647 should take the next object inheritance slice:
+  `parent::__construct`/`parent::method` parsing and dispatch if feasible, or
+  document the static-receiver/call-context blocker before broader parent
+  calls.
 
 ## 2026-05-12
 

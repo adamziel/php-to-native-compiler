@@ -57,8 +57,8 @@ Implemented now:
   `new ClassName(...)` over declared classes, process-local object handles,
   public instance properties including inherited public slots, single-parent
   metadata, inherited method lookup, public/same-class private/protected
-  same-class and child instance method dispatch, and public instance
-  `__construct` dispatch with scoped `$this`
+  same-class and child instance method dispatch, and public/inherited public
+  instance `__construct` dispatch with scoped `$this`
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -73,8 +73,8 @@ Planned runtime values and semantics:
 - copy-on-write containers
 - dynamic method/property names, visibility enforcement for non-public
   properties/constructors, static members, magic methods, property override
-  compatibility, broader inheritance and constructor semantics, and exact PHP
-  object lifecycle behavior
+  compatibility, explicit `parent::` calls, broader inheritance and
+  constructor semantics, and exact PHP object lifecycle behavior
 
 The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
@@ -926,10 +926,11 @@ autoload interaction, and namespace-aware native lowering.
 
 ## Object/Class Boundary
 
-The current object/class step is a narrow public-property boundary, not full PHP
-object execution. `php_runtime` has a `PhpClassTable`, stable `ClassId` handles,
-class metadata, property metadata, method metadata, visibility markers, derived
-object shapes for instance-property layout, and minimal object values. Class and
+The current object/class step is a narrow object-execution boundary, not full
+PHP object execution. `php_runtime` has a `PhpClassTable`, stable `ClassId`
+handles, class metadata, property metadata, method metadata, visibility
+markers, derived object shapes for instance-property layout, and minimal
+object values. Class and
 method lookup are case-insensitive, property lookup is case-sensitive, and
 duplicate class/member metadata produces structured runtime errors.
 
@@ -937,11 +938,11 @@ duplicate class/member metadata produces structured runtime errors.
 registry. The accepted member subset records public/protected/private
 visibility, static flags, property names without defaults, and method names
 whose parameters/bodies use the existing function parser subset. `new
-ClassName(...)` can instantiate a declared class and execute a public instance
-`__construct` method with `$this` bound to the new object handle. Classes
-without constructors still require no constructor arguments. The allocated
-object stores class identity and `null` instance-property slots in declaration
-order while skipping static properties.
+ClassName(...)` can instantiate a declared class and execute a public or
+inherited public `__construct` method with `$this` bound to the new object
+handle. Classes without constructors still require no constructor arguments.
+The allocated object stores class identity and `null` instance-property slots
+in declaration order while skipping static properties.
 
 `phpc run` can read and write public instance properties by static property
 name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
@@ -1004,7 +1005,8 @@ type-boundary diagnostic.
 Missing properties, non-object targets, and non-public properties still produce
 stable runtime diagnostics for normal reads/writes. Public, same-class private,
 and protected same-class/child instance methods can execute through `phpc run`
-with `$this` bound to the receiver object handle. Objects do not enforce
+with `$this` bound to the receiver object handle, and inherited public
+constructors execute during child instantiation. Objects do not enforce
 non-public property/constructor visibility, expose reflection, implement
 dynamic method/property names, `parent::`/`self::`/`static::`, property override
 compatibility, broader inheritance/constructor semantics, or exact PHP

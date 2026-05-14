@@ -5776,11 +5776,24 @@ handled.
 
 ## Milestone 646: Parent Constructor and Parent Method Boundary
 
-- [ ] Runtime/object lane: choose the next smallest parent-call slice:
+- [x] Runtime/object lane: choose the next smallest parent-call slice:
   inherited public constructor lookup, `parent::__construct`, or
-  `parent::method()` parsing/dispatch if feasible. If static-receiver parsing
-  and class-context modeling need a sharper design first, document that
-  blocker. Keep non-public constructor visibility, static properties/methods,
+  `parent::method()` parsing/dispatch if feasible. Implemented inherited
+  public constructor lookup and dispatch for `new Child(...)` when the child
+  has no constructor, with `$this` bound to the child object and method context
+  from the declaring parent. Kept explicit `parent::__construct`,
+  `parent::method()`, non-public constructor visibility, static
+  properties/methods, property override compatibility, trait composition,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering explicit.
+
+## Milestone 647: Static Parent Receiver Boundary
+
+- [ ] Runtime/object lane: add the next smallest parent-call slice by parsing
+  and diagnosing or executing `parent::__construct`/`parent::method()` with
+  correct class context. If broader static receiver modeling is required
+  first, pin the parser/runtime blocker with tests and docs. Keep non-public
+  constructor visibility, static properties/methods, late static binding,
   property override compatibility, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.
