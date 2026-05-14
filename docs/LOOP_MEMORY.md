@@ -17997,3 +17997,31 @@ injects this file into every prompt. Each Codex pass should update it with:
   focused gates, then checkpoint with
   `tools/checkpoint.sh "runtime: add bounded try blocks"` if the full gate
   passes. Milestone 699 should bound the next WordPress cast blocker.
+
+## Loop Event 2026-05-14T06:45:00Z
+
+- Checkpoint before this task: `c51f25f runtime: add bounded try blocks`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 699, bounded `(int)`/`(integer)` cast execution for
+  WordPress's sodium compat class methods.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/scalar_casts.rs`,
+  `tests/fixtures/milestone699/*`, `README.md`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test scalar_casts`,
+  `cargo run -p phpc -- test tests/fixtures/milestone699`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone699`, and
+  `PHPC_BIN=/tmp/phpc-target-699/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: leading-numeric string casts such as `"42abc"`,
+  array/object/resource casts, bool/float/array/object/unset/binary cast
+  forms, non-finite or out-of-range float-to-int behavior, exact PHP
+  diagnostics, warning recovery, partial-output behavior, WordPress bootstrap
+  environment, exact native errors, and native cast lowering remain explicit.
+- Next concrete task: run `git diff --check`, `cargo check -p phpc`, focused
+  gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded int casts"` if the full gate
+  passes. Milestone 700 should bound the next WordPress array destructuring
+  assignment blocker.

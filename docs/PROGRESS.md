@@ -998,11 +998,28 @@ Implemented:
   `PHPC_BIN=/tmp/phpc-target-698/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
 
+- Added Milestone 699, bounded `(int)`/`(integer)` cast execution for the
+  current scalar/null runtime value model. `phpc run` now parses integer cast
+  syntax and converts `null`, booleans, integers, finite in-range floats,
+  well-formed numeric strings, empty strings, and non-numeric strings through a
+  documented narrow slice while keeping leading-numeric strings, arrays,
+  objects, resources, non-finite/out-of-range floats, exact PHP diagnostics,
+  warning recovery, and native lowering explicit. The real WordPress 6.9.4
+  bootstrap-shim inventory now reaches `<bootstrap-shim>:419:9`, unsupported
+  array destructuring assignment. Focused verification so far:
+  `cargo test -p phpc --test scalar_casts`,
+  `cargo run -p phpc -- test tests/fixtures/milestone699`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone699`,
+  `cargo fmt --check`, and
+  `PHPC_BIN=/tmp/phpc-target-699/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+
 Next:
 
-- Milestone 699 should implement or explicitly bound the next WordPress
-  bootstrap cast blocker at `<bootstrap-shim>:319:20`, while keeping exact PHP
-  scalar cast warnings, object/array/resource behavior, source mapping,
+- Milestone 700 should implement or explicitly bound the next WordPress
+  bootstrap array destructuring assignment blocker at `<bootstrap-shim>:419:9`,
+  while keeping list assignment semantics, references/copy-on-write,
+  nested destructuring, missing-key notices, exact PHP diagnostics,
   partial-output behavior, and native lowering explicit unless proven.
 
 ## 2026-05-12

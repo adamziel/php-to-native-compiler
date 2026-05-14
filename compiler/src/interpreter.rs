@@ -6653,8 +6653,77 @@ impl Interpreter {
                     ),
                 )),
             },
+            CastKind::Int => match value {
+                Value::Null => Ok(Value::Int(0)),
+                Value::Bool(value) => Ok(Value::Int(if value { 1 } else { 0 })),
+                Value::Int(value) => Ok(Value::Int(value)),
+                Value::Float(value) => cast_float_to_int(value, "(int)", span),
+                Value::String(value) => cast_string_to_int(&value, span),
+                Value::Array(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(int)",
+                        "array-to-int cast behavior is not implemented",
+                    ),
+                )),
+                Value::Object(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(int)",
+                        "object-to-int cast behavior is not implemented",
+                    ),
+                )),
+            },
         }
     }
+}
+
+fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    if trimmed.is_empty() {
+        return Ok(Value::Int(0));
+    }
+    if !starts_with_numeric_prefix(trimmed) {
+        return Ok(Value::Int(0));
+    }
+
+    if let Ok(value) = trimmed.parse::<i64>() {
+        return Ok(Value::Int(value));
+    }
+    if let Ok(value) = trimmed.parse::<f64>() {
+        return cast_float_to_int(value, "(int)", span);
+    }
+
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "(int)",
+            "leading-numeric string cast behavior is not implemented",
+        ),
+    ))
+}
+
+fn starts_with_numeric_prefix(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some('+' | '-') => matches!(chars.next(), Some('0'..='9') | Some('.')),
+        Some('0'..='9') | Some('.') => true,
+        _ => false,
+    }
+}
+
+fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileResult<Value> {
+    if !value.is_finite() || value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable,
+                "non-finite or out-of-range float-to-int cast behavior is not implemented",
+            ),
+        ));
+    }
+
+    Ok(Value::Int(value.trunc() as i64))
 }
 
 fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {

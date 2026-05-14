@@ -115,8 +115,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   bounded Milestone 697 throw-statement runtime boundary, not by real PHP
   exception support. The previous unsupported `try/catch/finally` syntax
   blocker is covered only by the bounded Milestone 698 try-block runtime
-  boundary, not by real PHP exception execution. The shim probe now reaches
-  unsupported cast syntax beyond `(string)` at `<bootstrap-shim>:319:20`.
+  boundary, not by real PHP exception execution. The previous unsupported
+  `(int)` cast syntax blocker is covered by the bounded Milestone 699
+  scalar/null integer-cast slice. The shim probe now reaches unsupported array
+  destructuring assignment at `<bootstrap-shim>:419:9`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

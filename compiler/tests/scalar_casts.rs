@@ -20,6 +20,21 @@ echo ((string) true) === "1" ? "string" : "other";
 }
 
 #[test]
+fn int_casts_execute_for_current_scalar_and_null_subset() {
+    let execution = run_source(
+        r#"<?php
+echo (int) null, "|", (int) false, "|", (int) true, "\n";
+echo (integer) 42, "|", (int) -3.8, "|", (int) " 15 ", "|", (int) "2.9", "\n";
+echo (int) "", "|", (int) "not numeric";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|0|1\n42|-3|15|2\n0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn string_casts_reject_array_and_object_warning_paths_for_now() {
     let error = run_source("<?php\necho (string) [1];\n").unwrap_err();
 
@@ -33,21 +48,49 @@ fn string_casts_reject_array_and_object_warning_paths_for_now() {
 }
 
 #[test]
-fn non_string_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (int) \"42\";\n").unwrap_err();
+fn int_casts_reject_unimplemented_warning_paths_for_now() {
+    let error = run_source("<?php\necho (int) [1];\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call (int): array-to-int cast behavior is not implemented"
+    );
+
+    let error = run_source("<?php\necho (int) \"42abc\";\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call (int): leading-numeric string cast behavior is not implemented"
+    );
+}
+
+#[test]
+fn remaining_casts_have_stable_parse_error() {
+    let error = run_source("<?php\necho (bool) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string) casts are implemented"
+        "unsupported cast expression: only (string) and (int) casts are implemented"
     );
 }
 
 #[test]
 fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
     let error = emit_ir_source("<?php\necho (string) 42;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+
+    let error = emit_ir_source("<?php\necho (int) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_UNARY_REJECTION);

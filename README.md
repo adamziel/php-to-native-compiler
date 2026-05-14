@@ -85,8 +85,8 @@ incorrect native code.
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
   coalescing forms
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
-  operators, shifts, `(string)` casts over scalar/null values, ternaries, and
-  increments/decrements over documented value boundaries
+  operators, shifts, `(string)` and `(int)` casts over scalar/null values,
+  ternaries, and increments/decrements over documented value boundaries
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls, and
@@ -141,7 +141,8 @@ references, copy-on-write, namespaces/imports, include/require breadth beyond
 the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
 generators, closure values and invocation, type declaration enforcement, cast
-behavior outside the current `(string)` scalar/null slice, interfaces, traits, enums,
+behavior outside the current `(string)` and `(int)` scalar/null slices,
+interfaces, traits, enums,
 try/catch/finally exception execution, exception objects and stack unwinding,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the

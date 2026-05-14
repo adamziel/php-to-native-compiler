@@ -1164,6 +1164,16 @@ reflection data, target validation, namespace-aware attribute name resolution,
 constructor argument evaluation, repeated-attribute rules, or native lowering
 exists yet.
 
+## Cast Boundary
+
+Cast expressions are AST-backed, but execution is intentionally limited to the
+current scalar/null runtime value model. `(string)` handles scalar/null values
+through the runtime echo-string conversion boundary. `(int)`/`(integer)` handles
+scalar/null values through a narrow integer-cast policy for WordPress bootstrap
+parsing and focused fixtures. Array, object, resource, leading-numeric string,
+non-finite or out-of-range float behavior, exact PHP warning/error recovery,
+and native cast lowering remain explicit boundaries.
+
 ## Exception Boundary
 
 Exception syntax is reserved by the lexer/parser today, but the boundary is no

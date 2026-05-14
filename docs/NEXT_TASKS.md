@@ -6380,16 +6380,24 @@ handled.
 
 ## Milestone 699: WordPress Bridge Continuation
 
-- [ ] Runtime/cast lane: implement or explicitly bound the next WordPress
+- [x] Runtime/cast lane: implement or explicitly bound the next WordPress
   bootstrap cast expression blocker beyond the current `(string)` slice, with
   tests, CLI coverage, docs, and named unsupported edges for exact PHP scalar
   cast warnings, object/array/resource behavior, partial-output behavior,
   exact PHP diagnostics, and native lowering.
 
+## Milestone 700: WordPress Bridge Continuation
+
+- [ ] Runtime/assignment lane: implement or explicitly bound the next WordPress
+  bootstrap array destructuring assignment blocker, with tests, CLI coverage,
+  docs, and named unsupported edges for list assignment semantics,
+  references/copy-on-write, nested destructuring, missing-key notices,
+  exact PHP diagnostics, partial-output behavior, and native lowering.
+
 ## Latest Checkpoint
 
-- Before the current Milestone 698 work, the latest committed checkpoint is
-  `7beacfa runtime: add bounded throw statements`, covering Milestone 697.
+- Before the current Milestone 699 work, the latest committed checkpoint is
+  `c51f25f runtime: add bounded try blocks`, covering Milestone 698.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
