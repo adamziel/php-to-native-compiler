@@ -2085,6 +2085,26 @@ impl PhpObject {
         Ok(!matches!(property.value, Value::Null))
     }
 
+    pub fn is_property_set_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        let Some(property) = properties.iter().find(|property| property.name == name) else {
+            return Ok(false);
+        };
+
+        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        Ok(!matches!(property.value, Value::Null))
+    }
+
     pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<Value>> {
         let properties = self.properties.borrow();
         let Some(property) = properties.iter().find(|property| property.name == name) else {
@@ -2118,6 +2138,26 @@ impl PhpObject {
         if property.visibility != Visibility::Public {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires visibility enforcement, which is not implemented",
+                self.class_name, name
+            )));
+        }
+
+        Ok(!property.value.is_truthy())
+    }
+
+    pub fn is_property_empty_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        let Some(property) = properties.iter().find(|property| property.name == name) else {
+            return Ok(true);
+        };
+
+        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
             )));
         }

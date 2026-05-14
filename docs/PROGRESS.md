@@ -182,6 +182,22 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
   `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
   `git diff --check` passed.
+- Added Milestone 653, same-class non-public property `isset`/`empty`
+  context. Direct `isset($object->property)` and `empty($object->property)`
+  now work for exact-class private/protected property slots while executing a
+  method on that same class, including same-class peer objects. External
+  non-public `isset`/`empty` still fail with stable diagnostics, and inherited
+  non-public property slots, child-context protected property access,
+  compound assignment, increment/decrement, null coalescing, property override
+  compatibility, exact native error objects, and native lowering remain
+  explicit. Focused verification: `cargo fmt --check`,
+  `cargo check -p phpc`, `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_errors isset_non_public_property_access_remains_explicitly_unsupported -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone653`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone653`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
+  `git diff --check` passed.
 
 Next:
 

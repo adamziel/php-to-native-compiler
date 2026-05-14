@@ -200,6 +200,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: rerun focused checks after docs, then checkpoint if the
   full gate passes.
 
+## Loop Event 2026-05-14T15:44:00Z
+
+- Checkpoint: `7c787c5 objects: allow same-class non-public property access`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 653, same-class non-public property
+  `isset`/`empty` context.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/runtime_errors.rs`,
+  `tests/fixtures/milestone653/same_class_non_public_property_isset_empty.*`,
+  `tests/fixtures/runtime_errors/non_public_property_access.phpc-only`,
+  `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_errors isset_non_public_property_access_remains_explicitly_unsupported -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone653`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone653`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
+  `git diff --check` passed after docs updates.
+- Remaining semantic gaps: inherited non-public property slots, child-context
+  protected property access, non-public compound/increment/null-coalescing
+  forms, static properties, class constants, property override compatibility,
+  magic methods, references/copy-on-write, exact native error objects, and
+  native lowering remain explicit.
+- Next concrete task: rerun focused checks after docs, then checkpoint if the
+  full gate passes.
+
 
 ## Loop Event 2026-05-11T22:38:26Z
 

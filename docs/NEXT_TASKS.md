@@ -5874,12 +5874,27 @@ handled.
 
 ## Milestone 653: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next smallest object visibility slice:
+- [x] Runtime/object lane: choose the next smallest object visibility slice:
   protected property access from child method context if inherited non-public
   slots are modeled first, non-public property `isset`/`empty` context for the
   exact-class subset, compound/increment read-modify-write for same-class
   non-public properties, or a documented blocker for property declaration
-  ownership metadata. Keep static properties, class constants, property
+  ownership metadata. Implemented direct `isset($object->property)` and
+  `empty($object->property)` for exact-class private/protected slots in active
+  same-class method context, including same-class peer objects. Kept inherited
+  non-public property slots, child-context protected property access,
+  compound/increment/null-coalescing forms, static properties, class constants,
+  property override compatibility, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
+
+## Milestone 654: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next smallest object property slice:
+  compound assignment or increment/decrement read-modify-write for same-class
+  non-public properties, property declaration ownership metadata needed for
+  inherited non-public slots, or a documented blocker for child protected
+  property visibility. Keep static properties, class constants, property
   override compatibility, trait composition, magic methods,
   references/copy-on-write, exact native error objects, and native lowering
   explicit.

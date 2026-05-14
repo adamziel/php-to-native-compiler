@@ -4479,7 +4479,7 @@ impl Interpreter {
 
         match caller_scope.read_named(name) {
             Some(Value::Object(object)) => object
-                .is_public_property_set(property)
+                .is_property_set_from_context(property, self.class_context.last().copied())
                 .map_err(|error| runtime_error(span, error)),
             Some(_) | None => Ok(false),
         }
@@ -4572,7 +4572,7 @@ impl Interpreter {
 
         match caller_scope.read_named(name) {
             Some(Value::Object(object)) => object
-                .is_public_property_empty(property)
+                .is_property_empty_from_context(property, self.class_context.last().copied())
                 .map_err(|error| runtime_error(span, error)),
             Some(_) | None => Ok(true),
         }

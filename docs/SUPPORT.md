@@ -185,7 +185,8 @@
   left-to-right, and executes the resolved method body with the declaring class
   as the active method context.
 - `isset($object->name)` for direct public instance property operands on direct
-  object variables
+  object variables, plus exact-class private/protected property operands while
+  executing a method on the same class
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
   `SORT_NUMERIC`, and `SORT_STRING`, which evaluate to integers `0`, `1`,
@@ -2312,22 +2313,26 @@
   encountered. `array_search` is also available through string-valued dynamic
   function calls. `isset` supports direct variable
   operands, direct array offset operands such as `isset($array[$key])`,
-  and direct public object-property
-  operands such as `isset($object->name)`; it can safely check undefined
+  and direct public object-property operands such as `isset($object->name)`.
+  In active same-class method context, direct exact-class private/protected
+  object-property operands are also supported. `isset` can safely check undefined
   variables, missing/null array slots, undefined array variables, non-array
   array targets, and undefined object-property targets. Nested array offsets,
-  append offset operands, dynamic property names, non-public property operands,
-  complex lvalues, and general expression operands remain unsupported. `empty`
+  append offset operands, dynamic property names, non-public property operands
+  outside same-class method context, complex lvalues, and general expression
+  operands remain unsupported. `empty`
   supports one direct variable operand, one direct array offset operand such
   as `empty($array[$key])`, or one direct public object-property operand such
-  as `empty($object->name)`; undefined variables, missing array keys,
+  as `empty($object->name)`. In active same-class method context, direct
+  exact-class private/protected object-property operands are also supported;
+  undefined variables, missing array keys,
   undefined array targets, non-array array targets, missing object properties,
   undefined object targets, and non-object property targets are treated as
   empty, and existing values use the current PHP truthiness rules. Nested array
-  offsets, dynamic property names, non-public property visibility context for
-  `empty`, append offset operands, complex lvalues, general expression
-  operands, magic methods, and unsupported array-key coercions remain
-  unsupported.
+  offsets, dynamic property names, non-public property visibility context
+  outside same-class method context, append offset operands, complex lvalues,
+  general expression operands, magic methods, and unsupported array-key
+  coercions remain unsupported.
   `array_key_first`, `array_key_last`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
@@ -2393,8 +2398,8 @@
   dynamic property names, dynamic method names, protected visibility outside
   same-class/child method contexts, non-public property access outside
   same-class method context, inherited non-public property slots,
-  non-public-property `isset`/`empty`/compound/increment/null-coalescing
-  visibility context, broader constructor visibility context, static member
+  non-public property compound/increment/null-coalescing visibility context,
+  broader constructor visibility context, static member
   execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
   declarations, autoload side effects from property introspection,

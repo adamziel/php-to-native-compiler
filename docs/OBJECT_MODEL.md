@@ -97,8 +97,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   same-class peer objects. Inherited non-public slots and child-context
   protected property access remain unsupported;
 - direct `isset($object->name)` checks return true for non-null public slots
-  and false for null or missing slots;
+  and same-class non-public slots in active same-class method context, and
+  false for null or missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
+  falsey same-class non-public slots in active same-class method context,
   missing slots, undefined target variables, and non-object target variables;
 - public, same-class private, and protected same-class/child instance method
   calls use case-insensitive declared-or-inherited method lookup, evaluate
@@ -256,13 +258,15 @@ slices, constructor behavior beyond public/inherited public instance
 `__construct` and explicit parent calls, constructor arguments for classes without constructors,
 non-public inherited property slots, property override compatibility,
 non-public property access outside same-class method context, broader
-non-public property forms such as `isset`/`empty`/compound assignment,
+non-public property forms such as compound assignment, increment/decrement,
+and null coalescing,
 non-public constructor access beyond the current constructor slice, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
-operands, complex object-property `isset` operands, dynamic property-name
-`empty` operands, non-public property visibility context for `empty`, complex
+operands outside same-class method context, complex object-property `isset`
+operands, dynamic property-name `empty` operands, non-public property
+visibility context for `empty` outside same-class method context, complex
 object-property `empty` operands, magic `__isset`/`__get` behavior for
 `empty`, object-property `unset`, property uninitialization,
 typed/uninitialized property behavior, magic `__unset` behavior,

@@ -1015,9 +1015,9 @@ instance method/constructor context against the current class's parent chain
 with the current `$this` object. `self::method(...)` calls execute from active
 instance method/constructor context against the current class and inherited
 method chain with the current `$this` object. Objects do not enforce
-non-public property visibility beyond same-class plain read/write, or full
-constructor visibility, expose reflection, implement dynamic method/property
-names, broader `parent::`/`self::`/`static::`, property override
+non-public property visibility beyond same-class plain read/write plus
+`isset`/`empty`, or full constructor visibility, expose reflection, implement
+dynamic method/property names, broader `parent::`/`self::`/`static::`, property override
 compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
 Static member syntax

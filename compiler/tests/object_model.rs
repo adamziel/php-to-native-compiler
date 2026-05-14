@@ -188,6 +188,41 @@ echo $second->describe();
 }
 
 #[test]
+fn same_class_non_public_instance_properties_support_isset_and_empty() {
+    let source = r#"<?php
+class Box {
+    private $secret;
+    protected $label;
+
+    public function set($secret, $label) {
+        $this->secret = $secret;
+        $this->label = $label;
+    }
+
+    public function checks($other) {
+        echo isset($this->secret) ? "this-secret:set\n" : "this-secret:unset\n";
+        echo empty($this->secret) ? "this-secret:empty\n" : "this-secret:not-empty\n";
+        echo isset($other->label) ? "peer-label:set\n" : "peer-label:unset\n";
+        echo empty($other->label) ? "peer-label:empty" : "peer-label:not-empty";
+    }
+}
+
+$first = new Box();
+$second = new Box();
+$first->set("0", "main");
+$second->set(null, "");
+$first->checks($second);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "this-secret:set\nthis-secret:empty\npeer-label:set\npeer-label:empty"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn object_handles_preserve_identity_across_supported_value_copies() {
     let source = r#"<?php
 class Box {
@@ -364,7 +399,7 @@ echo empty($box->secret);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported object property access: non-public property Box::$secret requires visibility enforcement, which is not implemented"
+        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
     );
 }
 
