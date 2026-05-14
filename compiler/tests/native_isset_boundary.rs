@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
+const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 
 #[test]
 fn phpc_run_still_handles_current_direct_variable_isset_subset() {
@@ -51,6 +51,7 @@ fn emit_ir_rejects_unsupported_isset_forms_before_lowering_operands() {
     for source in [
         "<?php\n$items = 1;\necho isset($items[0]) ? 1 : 0;\n",
         "<?php\n$box = 1;\necho isset($box->name) ? 1 : 0;\n",
+        "<?php\necho isset(Counter::$count) ? 1 : 0;\n",
         "<?php\n$left = 1;\n$right = 2;\necho isset($left, $right) ? 1 : 0;\n",
         "<?php\necho isset(missing_call()) ? 1 : 0;\n",
     ] {

@@ -595,7 +595,7 @@ echo empty(make_box()->name);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call empty(): only direct variables, direct array offset operands, and direct object property operands are supported"
+        "unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported"
     );
 }
 
@@ -2532,6 +2532,76 @@ for (LoopCounter::$i = 0; LoopCounter::$i < 2; LoopCounter::$i++) {
         "5\n5\n7\nab\nfirst\nfirst\n7\n8\n9\n9:child\nloop0\nloop1\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn static_properties_support_current_isset_empty_and_null_coalescing_subset() {
+    let execution = run_source(
+        r#"<?php
+class Flags {
+    public static $nullable;
+    public static $flag;
+    public static $zero;
+    public static $blank;
+    public static $text;
+}
+class Base {
+    protected static $secret;
+    public static $shared;
+}
+class Child extends Base {
+    public function run() {
+        parent::$secret = "hidden";
+        self::$shared = "shared";
+        echo isset(parent::$secret) ? "secret:set\n" : "secret:unset\n";
+        echo empty(parent::$secret) ? "secret:empty\n" : "secret:not-empty\n";
+        echo parent::$secret ?? "secret-fallback", "\n";
+        echo self::$shared ?? "shared-fallback", "\n";
+    }
+}
+
+Flags::$flag = false;
+Flags::$zero = 0;
+Flags::$blank = "";
+Flags::$text = "ok";
+echo isset(Flags::$nullable) ? "nullable:set\n" : "nullable:unset\n";
+echo isset(Flags::$flag) ? "flag:set\n" : "flag:unset\n";
+echo isset(Flags::$zero) ? "zero:set\n" : "zero:unset\n";
+echo isset(Flags::$blank) ? "blank:set\n" : "blank:unset\n";
+echo isset(Flags::$text) ? "text:set\n" : "text:unset\n";
+echo empty(Flags::$nullable) ? "nullable:empty\n" : "nullable:not-empty\n";
+echo empty(Flags::$flag) ? "flag:empty\n" : "flag:not-empty\n";
+echo empty(Flags::$zero) ? "zero:empty\n" : "zero:not-empty\n";
+echo empty(Flags::$blank) ? "blank:empty\n" : "blank:not-empty\n";
+echo empty(Flags::$text) ? "text:empty\n" : "text:not-empty\n";
+echo Flags::$nullable ?? "fallback", "\n";
+echo Flags::$text ?? "fallback", "\n";
+echo isset(Flags::$missing) ? "missing:set\n" : "missing:unset\n";
+echo empty(Flags::$missing) ? "missing:empty\n" : "missing:not-empty\n";
+echo Flags::$missing ?? "missing-fallback", "\n";
+$child = new Child();
+$child->run();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "nullable:unset\nflag:set\nzero:set\nblank:set\ntext:set\nnullable:empty\nflag:empty\nzero:empty\nblank:empty\ntext:not-empty\nfallback\nok\nmissing:unset\nmissing:empty\nmissing-fallback\nsecret:set\nsecret:not-empty\nhidden\nshared\n"
+    );
+
+    let visibility_error = runtime_error(
+        r#"<?php
+class Root {
+    protected static $name;
+}
+isset(Root::$name);
+"#,
+    );
+    assert_eq!(
+        visibility_error.message,
+        "unsupported call Root::$name: protected static property is not visible from the current class context"
+    );
 }
 
 #[test]

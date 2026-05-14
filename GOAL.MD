@@ -164,7 +164,8 @@ The major missing areas are not side quests. They are the compatibility roadmap.
   resolution and narrow class constants through `ClassName::CONST`,
   `self::CONST`, and `parent::CONST`, plus narrow static properties through
   `ClassName::$prop`, `self::$prop`, and `parent::$prop` with direct
-  reads/writes and read-modify-write/`??=` forms, now execute through
+  reads/writes, read-modify-write, `isset`/`empty`, `??`, and `??=` forms,
+  now execute through
   `phpc run`, but interfaces, traits, enums, static methods, broader static
   member semantics, broader class constant semantics, cloning, magic methods,
   dynamic method/property names, broader

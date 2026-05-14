@@ -1675,12 +1675,24 @@ impl Interpreter {
             } => self.evaluate_direct_object_property_for_null_coalescing(
                 target, property, *span, scope,
             )?,
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => self
+                .evaluate_named_static_property_for_null_coalescing(class_name, property, *span)?,
+            Expr::SelfStaticProperty { property, span } => {
+                self.evaluate_self_static_property_for_null_coalescing(property, *span)?
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                self.evaluate_parent_static_property_for_null_coalescing(property, *span)?
+            }
             _ => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "??",
-                        "left operand must be a direct variable, direct array offset, or direct object property in the current subset",
+                        "left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset",
                     ),
                 ));
             }
@@ -1701,9 +1713,9 @@ impl Interpreter {
         let Expr::Variable(name, _) = target else {
             return Err(runtime_error(
                 target.span(),
-                RuntimeError::unsupported_call(
-                    "??",
-                    "left operand must be a direct variable, direct array offset, or direct object property in the current subset",
+                    RuntimeError::unsupported_call(
+                        "??",
+                        "left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset",
                 ),
             ));
         };
@@ -1728,9 +1740,9 @@ impl Interpreter {
         let Expr::Variable(name, _) = target else {
             return Err(runtime_error(
                 target.span(),
-                RuntimeError::unsupported_call(
-                    "??",
-                    "left operand must be a direct variable, direct array offset, or direct object property in the current subset",
+                    RuntimeError::unsupported_call(
+                        "??",
+                        "left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset",
                 ),
             ));
         };
@@ -1750,6 +1762,58 @@ impl Interpreter {
             }
             Some(_) | None => Ok(None),
         }
+    }
+
+    fn evaluate_named_static_property_for_null_coalescing(
+        &self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        self.read_resolved_static_property_for_isset(class_id, class_name, property, span)
+    }
+
+    fn evaluate_self_static_property_for_null_coalescing(
+        &self,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some(current_class_id) = self.class_context.last().copied() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("self::${property}"),
+                    "self static property access requires instance method context",
+                ),
+            ));
+        };
+
+        let class_name = self
+            .classes
+            .get(current_class_id)
+            .expect("active class context should resolve to class metadata")
+            .name()
+            .to_string();
+        self.read_resolved_static_property_for_isset(current_class_id, &class_name, property, span)
+    }
+
+    fn evaluate_parent_static_property_for_null_coalescing(
+        &self,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let (parent_class_id, parent_class_name) =
+            self.resolve_parent_static_property_context(property, span)?;
+        self.read_resolved_static_property_for_isset(
+            parent_class_id,
+            &parent_class_name,
+            property,
+            span,
+        )
     }
 
     fn evaluate_property_read(
@@ -2187,6 +2251,34 @@ impl Interpreter {
             .get(&(declaring_class_id, property.to_string()))
             .cloned()
             .unwrap_or(Value::Null))
+    }
+
+    fn read_resolved_static_property_for_isset(
+        &self,
+        class_id: ClassId,
+        _class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some((declaring_class_id, declaring_class_name, visibility)) =
+            self.resolve_static_property(class_id, property)
+        else {
+            return Ok(None);
+        };
+
+        self.ensure_static_property_visible(
+            declaring_class_id,
+            &declaring_class_name,
+            property,
+            visibility,
+            span,
+        )?;
+
+        Ok(self
+            .static_properties
+            .get(&(declaring_class_id, property.to_string()))
+            .cloned()
+            .filter(|value| !matches!(value, Value::Null)))
     }
 
     fn write_resolved_static_property(
@@ -5165,11 +5257,22 @@ impl Interpreter {
                 property,
                 span,
             } => self.is_direct_object_property_set(target, property, *span, caller_scope),
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => self.is_named_static_property_set(class_name, property, *span),
+            Expr::SelfStaticProperty { property, span } => {
+                self.is_self_static_property_set(property, *span)
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                self.is_parent_static_property_set(property, *span)
+            }
             _ => Err(runtime_error(
                 arg.span(),
                 RuntimeError::unsupported_call(
                     "isset()",
-                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                    "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             )),
         }
@@ -5184,9 +5287,9 @@ impl Interpreter {
         let Expr::Variable(name, _) = target else {
             return Err(runtime_error(
                 target.span(),
-                RuntimeError::unsupported_call(
-                    "isset()",
-                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                    RuntimeError::unsupported_call(
+                        "isset()",
+                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -5210,9 +5313,9 @@ impl Interpreter {
         let Expr::Variable(name, _) = target else {
             return Err(runtime_error(
                 target.span(),
-                RuntimeError::unsupported_call(
-                    "isset()",
-                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                    RuntimeError::unsupported_call(
+                        "isset()",
+                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -5227,6 +5330,29 @@ impl Interpreter {
             }
             Some(_) | None => Ok(false),
         }
+    }
+
+    fn is_named_static_property_set(
+        &self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_named_static_property_for_null_coalescing(class_name, property, span)?
+            .is_some())
+    }
+
+    fn is_self_static_property_set(&self, property: &str, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_self_static_property_for_null_coalescing(property, span)?
+            .is_some())
+    }
+
+    fn is_parent_static_property_set(&self, property: &str, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_parent_static_property_for_null_coalescing(property, span)?
+            .is_some())
     }
 
     fn call_empty(
@@ -5262,11 +5388,22 @@ impl Interpreter {
                 property,
                 span,
             } => self.is_direct_object_property_empty(target, property, *span, caller_scope),
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => self.is_named_static_property_empty(class_name, property, *span),
+            Expr::SelfStaticProperty { property, span } => {
+                self.is_self_static_property_empty(property, *span)
+            }
+            Expr::ParentStaticProperty { property, span } => {
+                self.is_parent_static_property_empty(property, *span)
+            }
             _ => Err(runtime_error(
                 arg.span(),
                 RuntimeError::unsupported_call(
                     "empty()",
-                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                    "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             )),
         }
@@ -5281,9 +5418,9 @@ impl Interpreter {
         let Expr::Variable(name, _) = target else {
             return Err(runtime_error(
                 target.span(),
-                RuntimeError::unsupported_call(
-                    "empty()",
-                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                    RuntimeError::unsupported_call(
+                        "empty()",
+                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -5307,9 +5444,9 @@ impl Interpreter {
         let Expr::Variable(name, _) = target else {
             return Err(runtime_error(
                 target.span(),
-                RuntimeError::unsupported_call(
-                    "empty()",
-                    "only direct variables, direct array offset operands, and direct object property operands are supported",
+                    RuntimeError::unsupported_call(
+                        "empty()",
+                        "only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported",
                 ),
             ));
         };
@@ -5328,6 +5465,29 @@ impl Interpreter {
             }
             Some(_) | None => Ok(true),
         }
+    }
+
+    fn is_named_static_property_empty(
+        &self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_named_static_property_for_null_coalescing(class_name, property, span)?
+            .map_or(true, |value| !value.is_truthy()))
+    }
+
+    fn is_self_static_property_empty(&self, property: &str, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_self_static_property_for_null_coalescing(property, span)?
+            .map_or(true, |value| !value.is_truthy()))
+    }
+
+    fn is_parent_static_property_empty(&self, property: &str, span: Span) -> CompileResult<bool> {
+        Ok(self
+            .evaluate_parent_static_property_for_null_coalescing(property, span)?
+            .map_or(true, |value| !value.is_truthy()))
     }
 
     fn apply_binary(

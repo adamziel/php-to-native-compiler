@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
+const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 
 #[test]
 fn phpc_run_still_handles_current_direct_variable_empty_subset() {
@@ -67,6 +67,7 @@ fn emit_ir_rejects_unsupported_empty_forms_before_lowering_operands() {
     for source in [
         "<?php\n$items = 1;\necho empty($items[0]) ? 1 : 0;\n",
         "<?php\n$box = 1;\necho empty($box->name) ? 1 : 0;\n",
+        "<?php\necho empty(Counter::$count) ? 1 : 0;\n",
         "<?php\n$left = 1;\n$right = 2;\necho empty($left, $right) ? 1 : 0;\n",
         "<?php\necho empty(missing_call()) ? 1 : 0;\n",
     ] {

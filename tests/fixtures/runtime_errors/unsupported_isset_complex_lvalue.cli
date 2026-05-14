@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/unsupported_isset_complex_lvalue.php:3:12: unsupported call isset(): only direct variables, direct array offset operands, and direct object property operands are supported
+runtime error at tests/fixtures/runtime_errors/unsupported_isset_complex_lvalue.php:3:12: unsupported call isset(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported
 --- stderr end ---

@@ -1,0 +1,24 @@
+exit: 0
+stdout:
+nullable:unset
+flag:set
+zero:set
+blank:set
+text:set
+nullable:empty
+flag:empty
+zero:empty
+blank:empty
+text:not-empty
+fallback
+ok
+missing:unset
+missing:empty
+missing-fallback
+secret:set
+secret:not-empty
+hidden
+shared
+--- stdout end ---
+stderr:
+--- stderr end ---

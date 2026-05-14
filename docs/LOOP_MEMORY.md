@@ -248,12 +248,47 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone663`
   passed, along with `cargo fmt --check` and `git diff --check`.
 - Remaining semantic gaps: `static::$prop`, static methods, typed/default
-  static properties, dynamic static property names, static-property
-  `isset`/`empty`/`??`, late static binding, trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  remain explicit.
+  static properties, dynamic static property names, late static binding, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering remain explicit.
 - Next concrete task: use
   `tools/checkpoint.sh "objects: add static property mutation"` if the full
+  gate passes.
+
+## Loop Event 2026-05-14T22:45:00Z
+
+- Checkpoint before this task: `79121e2 objects: add static property
+  mutation`, pushed to `origin/master`.
+- Task attempted: Milestone 664, static property `isset`/`empty`/`??` for the
+  existing untyped/no-default static-property slice.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/array_isset.rs`, `compiler/tests/empty.rs`,
+  `compiler/tests/null_coalescing.rs`,
+  `compiler/tests/native_isset_boundary.rs`,
+  `compiler/tests/native_empty_boundary.rs`, `tests/fixtures/milestone664/*`,
+  `tests/fixtures/runtime_errors/unsupported_isset_complex_lvalue.*`,
+  `tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.*`,
+  `README.md`, `GOAL.MD`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties -- --test-threads=1`,
+  `cargo test -p phpc --test array_isset -- --test-threads=1`,
+  `cargo test -p phpc --test empty -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing -- --test-threads=1`,
+  `cargo test -p phpc --test native_isset_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test native_empty_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone664`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone664`
+  passed.
+- Remaining semantic gaps: `static::$prop`, static methods, typed/default
+  static properties, dynamic static property names, static-property `unset`,
+  late static binding, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run formatting/diff checks, then checkpoint with
+  `tools/checkpoint.sh "objects: add static property isset empty"` if the full
   gate passes.
 
 ## Loop Event 2026-05-14T14:15:14Z

@@ -1047,11 +1047,11 @@ in one declaration, `static::CONST`, and dynamic class-constant string lookup
 remain unsupported. Direct `ClassName::$prop`, `self::$prop`, and
 `parent::$prop` resolve untyped/no-default static properties through
 interpreter-owned class-level storage and support direct reads/writes,
-compound assignment, pre/post increment/decrement, and `??=`; defaults, typed
-static properties, dynamic names, static-property `isset`/`empty`/`??`, and
-`static::$prop` remain unsupported. `static::method(...)`, `static::CONST`,
-and `static::class` stop at distinct parse diagnostics until late static
-binding is modeled. Native lowering
+compound assignment, pre/post increment/decrement, `isset`, `empty`, `??`,
+and `??=`; defaults, typed static properties, dynamic names, static-property
+`unset`, and `static::$prop` remain unsupported. `static::method(...)`,
+`static::CONST`, and `static::class` stop at distinct parse diagnostics until
+late static binding is modeled. Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, parent/self method calls, object instantiation,
 object property reads/writes, instance method calls, and

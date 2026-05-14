@@ -364,6 +364,29 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone663`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone663`
   passed.
+- Added Milestone 664, narrow static property `isset`/`empty`/`??` support.
+  `phpc run` now treats declared untyped/no-default static properties through
+  `ClassName::$prop`, `self::$prop`, and `parent::$prop` as supported
+  null-aware operands: `isset` is false for null or missing declared property
+  names, `empty` follows current PHP truthiness, and `??` preserves falsey
+  non-null values while falling back for null or missing declared property
+  names. Current public/protected/private visibility checks still apply, so
+  non-visible declared static properties remain stable runtime errors rather
+  than full PHP's suppressed non-public `isset` behavior. `static::$prop`,
+  static methods, typed/default static properties, dynamic static property
+  names, static-property `unset`, late static binding, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit. Focused verification:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model static_properties -- --test-threads=1`,
+  `cargo test -p phpc --test array_isset -- --test-threads=1`,
+  `cargo test -p phpc --test empty -- --test-threads=1`,
+  `cargo test -p phpc --test null_coalescing static_property -- --test-threads=1`,
+  `cargo test -p phpc --test native_isset_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test native_empty_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone664`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone664`
+  passed.
 
 Next:
 
@@ -375,10 +398,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 664 should take the next object storage/static slice: static
-  method boundaries, static-property `isset`/`empty`/`??`, broader class
-  constant semantics, or a documented blocker if typed/default property
-  metadata must land first.
+- Milestone 665 should take the next object storage/static slice: static
+  method boundaries, static-property `unset`, broader class constant
+  semantics, or a documented blocker if typed/default property metadata must
+  land first.
 
 ## 2026-05-12
 
@@ -2316,7 +2339,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unset_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unset_non_array.php:3:1: invalid array access: cannot unset offset on int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php:3:12: unsupported call empty(): only direct variables, direct array offset operands, and direct object property operands are supported`.
+  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_empty_complex_lvalue.php:3:12: unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, and supported static property operands are supported`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/break_outside_loop.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/break_outside_loop.php:2:1: invalid loop control: break cannot be used outside a loop`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/continue_outside_loop.php`

@@ -436,7 +436,7 @@ fn complex_null_coalescing_left_operands_remain_explicitly_unsupported() {
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call ??: left operand must be a direct variable, direct array offset, or direct object property in the current subset"
+        "unsupported call ??: left operand must be a direct variable, direct array offset, direct object property, or supported static property in the current subset"
     );
 }
 
@@ -460,6 +460,19 @@ fn emit_ir_rejects_object_property_null_coalescing_until_native_lowering_exists(
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 10);
+    assert_eq!(
+        error.message,
+        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
+    );
+}
+
+#[test]
+fn emit_ir_rejects_static_property_null_coalescing_until_native_lowering_exists() {
+    let error = emit_ir_source("<?php\n$value = Counter::$count ?? 'fallback';\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 17);
     assert_eq!(
         error.message,
         "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
