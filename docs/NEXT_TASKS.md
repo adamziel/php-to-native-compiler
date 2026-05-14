@@ -2106,8 +2106,3372 @@ handled.
 
 ## Milestone 224: Native Scalar Reassignment Assembly Coverage
 
-- [ ] Add explicit `phpc compile --emit-asm` CLI coverage for a lowerable
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for a lowerable
   straight-line scalar reassignment program, including fixture CLI coverage,
   documentation of the current static-variable overwrite boundary, and named
   gaps for native symbol-table storage, references/copy-on-write, exact native
   PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 225: Native Scalar Reassignment C Fallback Coverage
+
+- [x] Add explicit `phpc compile --emit-asm` CLI coverage for the documented
+  `cc -S` fallback using a lowerable straight-line scalar reassignment program,
+  including fixture CLI coverage, generated C fallback validation,
+  documentation of the current static-variable overwrite boundary, and named
+  gaps for native symbol-table storage, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 226: Native Scalar Reassignment IR Snapshot Coverage
+
+- [x] Add explicit `phpc compile --emit-ir` CLI coverage for a lowerable
+  straight-line scalar reassignment program, including committed IR snapshot
+  coverage that shows only the final overwritten scalar values are emitted,
+  documentation of the current static-variable overwrite boundary, and named
+  gaps for native symbol-table storage, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 227: Native Scalar Reassignment Unit Coverage
+
+- [x] Add focused unit coverage for `emit_ir_source` on a lowerable
+  straight-line scalar reassignment program, asserting final overwritten scalar
+  values are emitted and overwritten values are absent before broader native
+  symbol-table storage, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering exist.
+
+## Milestone 228: Native Scalar Reassignment ASM API Coverage
+
+- [x] Add focused API-level coverage for `emit_asm_source` on a lowerable
+  straight-line scalar reassignment program, using the existing available
+  backend skip pattern and documenting that this only proves assembly emission
+  succeeds for the current static overwrite subset, not linking/execution,
+  native symbol-table storage, references/copy-on-write, exact native PHP
+  errors, or broader native lowering.
+
+## Milestone 229: Native Scalar Reassignment Boundary Consolidation
+
+- [x] Review the scalar reassignment native-lowering coverage added in
+  Milestones 224 through 228 for duplicate fixture or test structure, then
+  consolidate helpers or documentation only where it reduces maintenance risk
+  without weakening the explicit CLI, fallback, IR snapshot, and API coverage.
+
+## Milestone 230: Native Scalar Reassignment Focused Regression Run
+
+- [x] Run the focused scalar reassignment regression set covering Milestones
+  224 through 229, including fixture tests, system PHP comparisons, `--emit-ir`
+  snapshot coverage, `--emit-asm` selected-backend and C-fallback CLI coverage,
+  and API-level unit coverage. Fix any failures before considering the
+  reassignment boundary complete enough for a later full-suite gate.
+
+## Milestone 231: Native Scalar Reassignment Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the scalar reassignment
+  native-lowering coverage, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 232: Native Scalar Reassignment Checkpoint Decision
+
+- [x] Decide whether to checkpoint the scalar reassignment native-lowering
+  coverage now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 233: Native Integer Arithmetic Lowering Slice
+
+- [x] Lower static straight-line integer `+`, `-`, and `*` expressions through
+  `phpc compile --emit-ir` and `--emit-asm`, including deterministic LLVM IR
+  and C fallback assembly CLI coverage, fixture coverage through `phpc run`
+  and system PHP comparison, updated diagnostics for unsupported arithmetic
+  operands/operators, documentation, and named gaps for PHP numeric coercion,
+  floats, `/`, `%`, overflow behavior, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 234: Native Integer Arithmetic Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native integer
+  arithmetic lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 235: Native Integer Arithmetic Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer arithmetic lowering
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 236: Native Integer Unary Minus Lowering Slice
+
+- [x] Lower static straight-line integer unary minus through `phpc compile
+  --emit-ir` and `--emit-asm`, including deterministic LLVM IR and C fallback
+  assembly CLI coverage, fixture coverage through `phpc run` and system PHP
+  comparison, updated diagnostics for unsupported unary operands/operators,
+  documentation, and named gaps for PHP numeric coercion, floats, booleans,
+  strings, nulls, arrays, objects, logical not, overflow behavior,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 237: Native Integer Unary Minus Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native integer unary
+  minus lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 238: Native Integer Unary Minus Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer unary minus lowering
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 239: Native Boolean Logical Not Lowering Slice
+
+- [x] Lower static straight-line boolean logical not through `phpc compile
+  --emit-ir` and `--emit-asm`, including deterministic LLVM IR and C fallback
+  assembly CLI coverage, fixture coverage through `phpc run` and system PHP
+  comparison, updated diagnostics for unsupported unary operands/operators,
+  documentation, and named gaps for general PHP truthiness conversion, numeric
+  coercion, float/string/null/array/object unary operands, overflow behavior,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 240: Native Boolean Logical Not Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native boolean logical
+  not lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 241: Native Boolean Logical Not Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean logical not lowering
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 242: Native Static Strict Identity Lowering Slice
+
+- [x] Lower static straight-line strict identity `===` and `!==` for already
+  lowerable integer literals and booleans through `phpc compile --emit-ir` and
+  `--emit-asm`, including deterministic LLVM IR and C fallback assembly CLI
+  coverage, fixture coverage through `phpc run` and system PHP comparison,
+  updated diagnostics for unsupported comparison operands/operators,
+  documentation, and named gaps for loose comparisons, ordering comparisons,
+  strings, floats, nulls, arrays, objects, dynamic integer expression results,
+  PHP comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 243: Native Static Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native static strict
+  identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 244: Native Static Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native static strict identity lowering
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 245: Native Static String Concatenation Lowering Slice
+
+- [x] Lower static straight-line string concatenation `.` for already lowerable
+  string operands through `phpc compile --emit-ir` and `--emit-asm`, including
+  deterministic LLVM IR and C fallback assembly CLI coverage, fixture coverage
+  through `phpc run` and system PHP comparison, updated diagnostics for
+  unsupported concatenation operands/operators, documentation, and named gaps
+  for PHP scalar-to-string conversion, arrays, objects, resources,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 246: Native Static String Concatenation Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native static string
+  concatenation lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 247: Native Static String Concatenation Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native static string concatenation
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 248: Native Static String Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering to already
+  lowerable string operands through `phpc compile --emit-ir` and `--emit-asm`,
+  including deterministic LLVM IR and C fallback assembly CLI coverage, fixture
+  coverage through `phpc run` and system PHP comparison, documentation, and
+  named gaps for loose comparisons, ordering comparisons, floats, nulls,
+  arrays, objects, dynamic string allocation beyond the static straight-line
+  subset, PHP comparison coercions, references/copy-on-write, exact native PHP
+  errors, linking/execution, and broader native lowering.
+
+## Milestone 249: Native Static String Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native static string
+  strict-identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 250: Native Static String Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native static string strict-identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 251: Native Static Float Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering to already
+  lowerable float operands through `phpc compile --emit-ir` and `--emit-asm`,
+  including deterministic LLVM IR and C fallback assembly CLI coverage, fixture
+  coverage through `phpc run` and system PHP comparison, documentation, and
+  named gaps for loose comparisons, ordering comparisons, nulls, arrays,
+  objects, mixed int/float identity semantics beyond static rejection, NaN and
+  non-literal float sources, PHP comparison coercions, references/copy-on-write,
+  exact native PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 252: Native Static Float Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native static float
+  strict-identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 253: Native Static Float Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native static float strict-identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 254: Native Static Null Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering to already
+  lowerable `null` operands through `phpc compile --emit-ir` and `--emit-asm`,
+  including deterministic LLVM IR and C fallback assembly CLI coverage, fixture
+  coverage through `phpc run` and system PHP comparison, documentation, and
+  named gaps for mixed null/scalar identity semantics beyond static rejection,
+  loose comparisons, ordering comparisons, arrays, objects, PHP comparison
+  coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 255: Native Static Null Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native static null
+  strict-identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 256: Native Static Null Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native static null strict-identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 257: Native Mixed Scalar Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering for already
+  lowerable scalar operands with different PHP scalar types, including dynamic
+  integer expression results where the type alone determines identity, through
+  `phpc compile --emit-ir` and `--emit-asm`; include deterministic LLVM IR and
+  C fallback assembly CLI coverage, fixture coverage through `phpc run` and
+  system PHP comparison, documentation, and named gaps for same-type dynamic
+  integer identity, loose comparisons, ordering comparisons, arrays, objects,
+  PHP comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 258: Native Mixed Scalar Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native mixed scalar
+  strict-identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 259: Native Mixed Scalar Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native mixed scalar strict-identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 260: Native Dynamic Integer Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering for same-type
+  dynamic integer operands in the straight-line subset, including integer
+  expression results compared with integer literals or previously assigned
+  integer expressions, through `phpc compile --emit-ir` and `--emit-asm`;
+  include deterministic LLVM IR and C fallback assembly CLI coverage, fixture
+  coverage through `phpc run` and system PHP comparison, documentation, and
+  named gaps for floats, strings, booleans, nulls beyond already static or
+  type-only folds, loose comparisons, ordering comparisons, arrays, objects,
+  PHP comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 261: Native Dynamic Integer Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native dynamic integer
+  strict-identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 262: Native Dynamic Integer Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native dynamic integer strict-identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 263: Native Dynamic Boolean Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering for same-type
+  dynamic boolean operands in the straight-line subset, including boolean
+  expression results compared with boolean literals or previously assigned
+  boolean expressions, through `phpc compile --emit-ir` and `--emit-asm`;
+  include deterministic LLVM IR and C fallback assembly CLI coverage, fixture
+  coverage through `phpc run` and system PHP comparison, documentation, and
+  named gaps for PHP truthiness conversion, logical operator lowering,
+  dynamic floats, strings, and nulls beyond already static or type-only folds,
+  loose comparisons, ordering comparisons, arrays, objects, PHP comparison
+  coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 264: Native Dynamic Boolean Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native dynamic boolean
+  strict-identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 265: Native Dynamic Boolean Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native dynamic boolean strict-identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 266: Native Mixed Dynamic Boolean Strict Identity Coverage Slice
+
+- [x] Add explicit native strict identity `===` and `!==` coverage for dynamic
+  boolean operands compared with different scalar types, proving the
+  straight-line type-only fold through `phpc compile --emit-ir` and
+  `--emit-asm`; include deterministic LLVM IR and C fallback assembly CLI
+  coverage, fixture coverage through `phpc run` and system PHP comparison,
+  documentation, and named gaps for PHP truthiness conversion, logical
+  operator lowering, dynamic floats, strings, and nulls beyond already static
+  or type-only folds, loose comparisons, ordering comparisons, arrays, objects,
+  PHP comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 267: Native Mixed Dynamic Boolean Strict Identity Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native mixed dynamic
+  boolean strict-identity coverage slice, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 268: Native Mixed Dynamic Boolean Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native mixed dynamic boolean
+  strict-identity coverage slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 269: Native Dynamic Boolean Logical Not Lowering Slice
+
+- [x] Extend native logical not `!` lowering for already-native dynamic boolean
+  expression operands in the straight-line subset, including boolean results
+  produced by strict-identity lowering, through `phpc compile --emit-ir` and
+  `--emit-asm`; include deterministic LLVM IR and C fallback assembly CLI
+  coverage, fixture coverage through `phpc run` and system PHP comparison,
+  documentation, and named gaps for PHP truthiness conversion, logical
+  operator lowering, dynamic floats, strings, and nulls, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 270: Native Dynamic Boolean Logical Not Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native dynamic boolean
+  logical-not lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 271: Native Dynamic Boolean Logical Not Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native dynamic boolean logical-not
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 272: Native Boolean Logical Operator Lowering Slice
+
+- [x] Extend native logical operator lowering for already lowerable boolean
+  operands in the straight-line subset, including static booleans and native
+  boolean expression results for `&&`, `||`, `and`, `or`, and `xor`, through
+  `phpc compile --emit-ir` and `--emit-asm`; include deterministic LLVM IR and
+  C fallback assembly CLI coverage, fixture coverage through `phpc run` and
+  system PHP comparison, documentation, and named gaps for PHP truthiness
+  conversion, short-circuiting with unsupported or side-effecting right-hand
+  operands, dynamic floats, strings, and nulls, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 273: Native Boolean Logical Operator Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native boolean logical
+  operator lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 274: Native Boolean Logical Operator Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean logical-operator lowering
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 275: Native Integer Bitwise Lowering Slice
+
+- [x] Lower integer bitwise `&`, `|`, `^`, and unary `~` for operands that are
+  already lowerable integers in the straight-line subset through `phpc compile
+  --emit-ir` and `--emit-asm`; include deterministic LLVM IR and C fallback
+  assembly CLI coverage, fixture coverage through `phpc run` and system PHP
+  comparison, documentation, and named gaps for PHP bytewise string bitwise
+  behavior, scalar-to-int coercion for non-integer operands, shift operators
+  and shift diagnostics, arrays, objects, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 276: Native Integer Bitwise Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native integer bitwise
+  lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 277: Native Integer Bitwise Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer bitwise lowering slice
+  now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 278: Native Integer Shift Lowering Slice
+
+- [x] Lower integer shift `<<` and `>>` for operands that are already lowerable
+  integers in the straight-line subset when the shift count is statically known
+  and in the range 0 through 63, through `phpc compile --emit-ir` and
+  `--emit-asm`; include deterministic LLVM IR and C fallback assembly CLI
+  coverage, fixture coverage through `phpc run` and system PHP comparison,
+  documentation, and named gaps for dynamic shift counts, negative and large
+  shift-count diagnostics, PHP bytewise string bitwise behavior, scalar-to-int
+  coercion for non-integer operands, arrays, objects, references/copy-on-write,
+  exact native PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 279: Native Integer Shift Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native integer shift
+  lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 280: Native Integer Shift Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer shift lowering slice now
+  or continue into the next smallest native-lowering slice. If checkpointing,
+  use `tools/checkpoint.sh` and include the focused and full-suite test results
+  in the checkpoint message.
+
+## Milestone 281: Native Boolean Ternary Lowering Slice
+
+- [x] Lower full ternary `condition ? if_true : if_false` when the condition is
+  already a lowerable boolean or native boolean expression and both branch
+  values are already lowerable integers or booleans in the straight-line
+  subset, through `phpc compile --emit-ir` and `--emit-asm`; include
+  deterministic LLVM IR and C fallback assembly CLI coverage, fixture coverage
+  through `phpc run` and system PHP comparison, documentation, and named gaps
+  for PHP truthiness conversion, lazy branch evaluation for unsupported or
+  side-effecting branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 282: Native Boolean Ternary Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native boolean ternary
+  lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 283: Native Boolean Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean ternary lowering slice
+  now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 284: Native Float Ternary Lowering Slice
+
+- [x] Extend full ternary `condition ? if_true : if_false` native lowering to
+  branch values that are already lowerable floats in the straight-line subset,
+  through `phpc compile --emit-ir` and `--emit-asm`; include deterministic LLVM
+  IR and C fallback assembly CLI coverage, fixture coverage through `phpc run`
+  and system PHP comparison, documentation, and named gaps for PHP truthiness
+  conversion, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 285: Native Float Ternary Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native float ternary
+  lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 286: Native Float Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native float ternary lowering slice now
+  or continue into the next smallest native-lowering slice. If checkpointing,
+  use `tools/checkpoint.sh` and include the focused and full-suite test results
+  in the checkpoint message.
+
+## Milestone 287: Native String Ternary Lowering Slice
+
+- [x] Extend full ternary `condition ? if_true : if_false` native lowering to
+  branch values that are already lowerable strings in the straight-line subset,
+  through `phpc compile --emit-ir` and `--emit-asm`; include deterministic LLVM
+  IR and C fallback assembly CLI coverage, fixture coverage through `phpc run`
+  and system PHP comparison, documentation, and named gaps for PHP truthiness
+  conversion, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, runtime string allocation beyond the static string
+  subset, exact native PHP errors, linking/execution, and broader native
+  lowering.
+
+## Milestone 288: Native String Ternary Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native string ternary
+  lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 289: Native String Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native string ternary lowering slice now
+  or continue into the next smallest native-lowering slice. If checkpointing,
+  use `tools/checkpoint.sh` and include the focused and full-suite test results
+  in the checkpoint message.
+
+## Milestone 290: Native Static Boolean Mixed Ternary Folding Slice
+
+- [x] Fold full ternary `condition ? if_true : if_false` when the condition is
+  a statically known boolean and both branch values are already lowerable scalar
+  values, including mixed selected/unselected branch types, through
+  `phpc compile --emit-ir` and `--emit-asm`; include deterministic LLVM IR and
+  C fallback assembly CLI coverage, fixture coverage through `phpc run` and
+  system PHP comparison, documentation, and named gaps for dynamic mixed-type
+  ternaries, PHP truthiness conversion, lazy branch evaluation for unsupported
+  or side-effecting branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+
+## Milestone 291: Native Static Boolean Mixed Ternary Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native static boolean
+  mixed ternary folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 292: Native Static Boolean Mixed Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native static boolean mixed ternary
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 293: Native Float Arithmetic Lowering Slice
+
+- [x] Lower static straight-line float `+`, `-`, and `*` expressions when both
+  operands are already lowerable floats through `phpc compile --emit-ir` and
+  `--emit-asm`; include deterministic LLVM IR and C fallback assembly CLI
+  coverage, fixture coverage through `phpc run` and system PHP comparison,
+  documentation, and named gaps for mixed int/float arithmetic, PHP numeric
+  coercion, `/`, `%`, division/modulo zero checks, modulo coercions, overflow
+  behavior, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+
+## Milestone 294: Native Float Arithmetic Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native float arithmetic
+  lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 295: Native Float Arithmetic Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native float arithmetic lowering slice
+  now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 296: Native Float Unary Minus Lowering Slice
+
+- [x] Lower static straight-line float unary minus through `phpc compile
+  --emit-ir` and `--emit-asm`; include deterministic LLVM IR and C fallback
+  assembly CLI coverage, fixture coverage through `phpc run` and system PHP
+  comparison, documentation, and named gaps for boolean/string/null unary-minus
+  coercion, arrays, objects, overflow behavior, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native lowering.
+
+## Milestone 297: Native Float Unary Minus Full-Suite Gate
+
+- [x] Run `tools/run-tests.sh` before checkpointing the native float unary
+  minus lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 298: Native Float Unary Minus Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native float unary minus lowering slice
+  now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 299: Native Dynamic Float Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering for same-type
+  dynamic float operands in the straight-line subset. Preserve static float
+  identity folding, emit LLVM `fcmp` and C fallback comparisons for dynamic
+  lowerable float expressions, keep loose/order comparison and non-lowerable
+  operand rejection explicit, and add fixture, CLI, assembly fallback, docs,
+  and focused verification.
+
+## Milestone 300: Native Dynamic Float Strict Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native dynamic float strict
+  identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 301: Native Dynamic Float Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native dynamic float strict identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 302: Native Mixed Dynamic Float Strict Identity Coverage
+
+- [x] Add explicit native strict identity `===` and `!==` coverage for dynamic
+  float expression results compared with different scalar types. Prove the
+  type-only fold keeps the lowerable float expression boundary honest, emits no
+  runtime comparison or numeric output, and preserves the existing loose/order
+  comparison and non-lowerable operand rejection boundaries.
+
+## Milestone 303: Native Mixed Dynamic Float Strict Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native mixed dynamic float strict
+  identity coverage slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 304: Native Mixed Dynamic Float Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native mixed dynamic float strict
+  identity coverage slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 305: Native Dynamic String Strict Identity Lowering Slice
+
+- [x] Extend native strict identity `===` and `!==` lowering for same-type
+  dynamic string pointer operands in the straight-line subset. Use `strcmp` for
+  already lowerable string pointers, keep runtime string allocation and dynamic
+  null identity unsupported, and add fixture, CLI, assembly fallback, docs, and
+  focused verification.
+
+## Milestone 306: Native Dynamic String Strict Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native dynamic string strict
+  identity lowering slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 307: Native Dynamic String Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native dynamic string strict identity
+  lowering slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 308: Native Mixed Dynamic String Strict Identity Coverage
+
+- [x] Add explicit native strict identity `===` and `!==` coverage for dynamic
+  string pointer expression results compared with different scalar types. Prove
+  the type-only fold keeps the lowerable string pointer boundary honest, emits
+  no runtime string comparison or numeric output, and preserves the existing
+  loose/order comparison and unsupported operand boundaries.
+
+## Milestone 309: Native Mixed Dynamic String Strict Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native mixed dynamic string strict
+  identity coverage slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 310: Native Mixed Dynamic String Strict Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native mixed dynamic string strict
+  identity coverage slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 311: Native Null Ternary Folding Slice
+
+- [x] Extend native full ternary lowering for dynamic boolean conditions when
+  both branches are `null`. Fold the result to `null` without emitting a native
+  select, branch, numeric output, or tagged value, and keep mixed dynamic branch
+  values, null coalescing, PHP truthiness, and side-effecting branch laziness
+  unsupported.
+
+## Milestone 312: Native Null Ternary Full-Suite Gate
+
+- [x] Run the full project test gate for the native null ternary folding slice,
+  fix any failures, and document the result in `docs/PROGRESS.md` and
+  `docs/LOOP_MEMORY.md` if running under unattended loop automation.
+
+## Milestone 313: Native Null Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native null ternary folding slice now or
+  continue into the next smallest native-lowering slice. If checkpointing, use
+  `tools/checkpoint.sh` and include the focused and full-suite test results in
+  the checkpoint message.
+
+## Milestone 314: Native Integer Modulo Lowering Slice
+
+- [x] Extend native arithmetic lowering for integer `%` when both operands are
+  already lowerable integers and the divisor is a statically known positive
+  integer. Emit LLVM `srem` and C `%`, keep division, dynamic/zero/non-positive
+  divisors, PHP numeric coercion, negative-divisor/min-int edge cases, and
+  runtime modulo diagnostics unsupported, and add fixture, CLI, assembly
+  fallback, docs, and focused verification.
+
+## Milestone 315: Native Integer Modulo Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer modulo lowering
+  slice, fix any failures, and document the result in `docs/PROGRESS.md` and
+  `docs/LOOP_MEMORY.md` if running under unattended loop automation.
+
+## Milestone 316: Native Integer Modulo Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer modulo lowering slice now
+  or continue into the next smallest native-lowering slice. If checkpointing,
+  use `tools/checkpoint.sh` and include the focused and full-suite test results
+  in the checkpoint message.
+
+## Milestone 317: Native Modulo Runtime-Check Boundary Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  modulo cases that need runtime checks, such as dynamic integer divisors or
+  non-positive static divisors. Keep PHP numeric coercions, modulo coercions,
+  negative-divisor/min-int edge cases, references/copy-on-write, exact native
+  PHP errors, and broader native arithmetic lowering explicitly unsupported
+  unless executable code, fixtures, CLI coverage, docs, and focused tests prove
+  the narrower behavior.
+
+## Milestone 318: Native Modulo Runtime-Check Boundary Full-Suite Gate
+
+- [x] Run the full project test gate for the native modulo runtime-check
+  boundary slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 319: Native Modulo Runtime-Check Boundary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native modulo runtime-check boundary
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 320: Native Integer Division Boundary Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  integer division `/`, either by tightening diagnostics and CLI fixture
+  coverage for runtime-check/coercion gaps or by lowering a narrow safe subset
+  only if division-by-zero, truncation, overflow, PHP numeric coercions,
+  references/copy-on-write, exact native PHP errors, and broader native
+  arithmetic behavior remain explicitly unsupported unless executable code,
+  fixtures, CLI coverage, docs, and focused tests prove otherwise.
+
+## Milestone 321: Native Integer Division Boundary Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer division boundary
+  slice, fix any failures, and document the result in `docs/PROGRESS.md` and
+  `docs/LOOP_MEMORY.md` if running under unattended loop automation.
+
+## Milestone 322: Native Integer Division Boundary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer division boundary slice
+  now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 323: Native Mixed Numeric Arithmetic Boundary Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  mixed int/float arithmetic, either by tightening diagnostics and CLI fixture
+  coverage for PHP numeric-coercion gaps or by lowering a narrow safe subset
+  only if PHP result types, overflow/INF/NAN behavior, scalar coercions,
+  references/copy-on-write, exact native PHP errors, and broader native
+  arithmetic behavior remain explicitly unsupported unless executable code,
+  fixtures, CLI coverage, docs, and focused tests prove otherwise.
+
+## Milestone 324: Native Mixed Numeric Arithmetic Boundary Full-Suite Gate
+
+- [x] Run the full project test gate for the native mixed numeric arithmetic
+  boundary slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 325: Native Mixed Numeric Arithmetic Boundary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native mixed numeric arithmetic boundary
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 326: Native Scalar Coercion Arithmetic Boundary Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-coercion arithmetic operands such as booleans, nulls, or numeric
+  strings in `+`, `-`, and `*`, either by tightening diagnostics and CLI
+  fixture coverage for PHP numeric-coercion gaps or by lowering a narrow safe
+  subset only if PHP result types, string numeric parsing, warnings/recovery,
+  overflow/INF/NAN behavior, references/copy-on-write, exact native PHP errors,
+  and broader native arithmetic behavior remain explicitly unsupported unless
+  executable code, fixtures, CLI coverage, docs, and focused tests prove
+  otherwise.
+
+## Milestone 327: Native Scalar Coercion Arithmetic Boundary Full-Suite Gate
+
+- [x] Run the full project test gate for the native scalar-coercion arithmetic
+  boundary slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 328: Native Scalar Coercion Arithmetic Boundary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native scalar-coercion arithmetic
+  boundary slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 329: Native Integer Overflow Arithmetic Boundary Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  integer overflow behavior in native `+`, `-`, and `*`, either by tightening
+  diagnostics and CLI fixture coverage for overflow-sensitive cases or by
+  lowering a narrow checked subset only if PHP integer/float promotion,
+  overflow diagnostics or conversion behavior, references/copy-on-write, exact
+  native PHP errors, and broader native arithmetic behavior remain explicitly
+  unsupported unless executable code, fixtures, CLI coverage, docs, and focused
+  tests prove otherwise.
+
+## Milestone 330: Native Integer Overflow Arithmetic Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer-overflow arithmetic
+  boundary slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 331: Native Integer Overflow Arithmetic Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer-overflow arithmetic
+  boundary slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 332: Native Integer Arithmetic Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  integer-producing expressions that are currently not statically tracked after
+  lowering, such as unary minus, bitwise operators, shifts, or integer
+  ternaries. Either preserve safe known-result tracking where executable code,
+  fixtures, CLI coverage, docs, and focused tests prove it, or reject the
+  not-statically-proven cases with a specific diagnostic until native PHP
+  overflow behavior, runtime checks, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering exist.
+
+## Milestone 333: Native Integer Unary-Minus Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer unary-minus
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 334: Native Integer Unary-Minus Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer unary-minus
+  result-tracking slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 335: Native Integer Bitwise Result Tracking Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  integer bitwise results used by later checked integer arithmetic. Preserve
+  safe known-result tracking for lowerable integer `&`, `|`, `^`, and `~`
+  where executable code, fixtures, CLI coverage, docs, and focused tests prove
+  it, or reject not-statically-proven cases with a specific diagnostic until
+  native PHP bitwise coercions, overflow behavior, runtime checks,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering exist.
+
+## Milestone 336: Native Integer Bitwise Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer bitwise
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 337: Native Integer Bitwise Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer bitwise result-tracking
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 338: Native Integer Shift Result Tracking Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  integer shift results used by later checked integer arithmetic. Preserve safe
+  known-result tracking for lowerable integer `<<` and `>>` with statically
+  known safe counts where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or reject not-statically-proven cases with a specific
+  diagnostic until native PHP shift coercions, shift diagnostics, overflow
+  behavior, runtime checks, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering exist.
+
+## Milestone 339: Native Integer Shift Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer shift
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 340: Native Integer Shift Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer shift result-tracking
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 341: Native Integer Ternary Result Tracking Slice
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  integer ternary results used by later checked integer arithmetic. Preserve
+  safe known-result tracking for lowerable integer full-ternary branches when
+  both branch values are statically known and checked, or reject
+  not-statically-proven cases with a specific diagnostic until native PHP
+  truthiness, branch laziness with side effects, overflow behavior, runtime
+  checks, references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering exist.
+
+## Milestone 342: Native Integer Ternary Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer ternary
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 343: Native Integer Ternary Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer ternary result-tracking
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 344: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 345: Native Integer Modulo Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer modulo
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 346: Native Integer Modulo Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer modulo result-tracking
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 347: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 348: Native Bounded Integer Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded integer
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 349: Native Bounded Integer Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded integer result-tracking
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 350: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 351: Native Bounded Integer Bitwise/Shift Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded integer
+  bitwise/shift result-tracking slice, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 352: Native Bounded Integer Bitwise/Shift Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded integer bitwise/shift
+  result-tracking slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 353: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 354: Native Bounded Integer Strict-Identity Fold Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded integer
+  strict-identity folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 355: Native Bounded Integer Strict-Identity Fold Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded integer strict-identity
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 356: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 357: Native Boolean Logical Folding Full-Suite Gate
+
+- [x] Run the full project test gate for the native boolean logical folding
+  slice, fix any failures, and document the result in `docs/PROGRESS.md` and
+  `docs/LOOP_MEMORY.md` if running under unattended loop automation.
+
+## Milestone 358: Native Boolean Logical Folding Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean logical folding slice
+  now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 359: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 360: Native Bounded String Strict-Identity Fold Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded string
+  strict-identity folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 361: Native Bounded String Strict-Identity Fold Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded string strict-identity
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 362: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 363: Native Bounded Float Strict-Identity Fold Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded float
+  strict-identity folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 364: Native Bounded Float Strict-Identity Fold Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded float strict-identity
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 365: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 366: Native Bounded Boolean Strict-Identity Fold Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded boolean
+  strict-identity folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 367: Native Bounded Boolean Strict-Identity Fold Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded boolean strict-identity
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 368: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 369: Native Bounded Float Arithmetic Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native bounded float arithmetic
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 370: Native Bounded Float Arithmetic Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bounded float arithmetic
+  result-tracking slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 371: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 372: Native Reflexive Scalar Strict-Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native reflexive scalar
+  strict-identity folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 373: Native Reflexive Scalar Strict-Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native reflexive scalar strict-identity
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 374: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 375: Native Integer Strict-Identity Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer strict-identity
+  result-tracking slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 376: Native Integer Strict-Identity Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer strict-identity
+  result-tracking slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 377: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 378: Native Integer Comparison Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native integer loose/ordering
+  comparison result-tracking slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 379: Native Integer Comparison Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native integer loose/ordering
+  comparison result-tracking slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 380: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 381: Native Float Comparison Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native finite float loose/ordering
+  comparison result-tracking slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 382: Native Float Comparison Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native finite float loose/ordering
+  comparison result-tracking slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 383: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 384: Native Boolean Comparison Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native boolean loose/ordering
+  comparison result-tracking slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 385: Native Boolean Comparison Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean loose/ordering comparison
+  result-tracking slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 386: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 387: Native String Comparison Result Tracking Full-Suite Gate
+
+- [x] Run the full project test gate for the native known ASCII nonnumeric
+  string loose/ordering comparison result-tracking slice, fix any failures, and
+  document the result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if
+  running under unattended loop automation.
+
+## Milestone 388: Native String Comparison Result Tracking Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native known ASCII nonnumeric string
+  loose/ordering comparison result-tracking slice now or continue into the
+  next smallest native-lowering slice. If checkpointing, use
+  `tools/checkpoint.sh` and include the focused and full-suite test results in
+  the checkpoint message.
+
+## Milestone 389: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 390: Native Null Comparison Boundary Full-Suite Gate
+
+- [x] Run the full project test gate for the native same-type null
+  loose/ordering comparison slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 391: Native Null Comparison Boundary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native same-type null loose/ordering
+  comparison slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 392: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 393: Native Broader ASCII String Comparison Full-Suite Gate
+
+- [x] Run the full project test gate for the native known ASCII nonnumeric
+  NUL-free string comparison boundary expansion, fix any failures, and document
+  the result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 394: Native Broader ASCII String Comparison Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native known ASCII nonnumeric NUL-free
+  string comparison boundary expansion now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 395: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 396: Native Identical String Ternary Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical string ternary
+  folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 397: Native Identical String Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical string ternary folding
+  slice now or continue into the next smallest native-lowering slice. If
+  checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 398: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 399: Native Identical Boolean Expression Ternary Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical boolean
+  expression ternary folding slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 400: Native Identical Boolean Expression Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical boolean expression
+  ternary folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 401: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 402: Native Identical Integer Expression Ternary Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical integer
+  expression ternary folding slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 403: Native Identical Integer Expression Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical integer expression
+  ternary folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 404: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 405: Native Identical Float Expression Ternary Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical float expression
+  ternary folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 406: Native Identical Float Expression Ternary Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical float expression
+  ternary folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 407: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 408: Native Identical Boolean Expression Logical Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical boolean
+  expression logical `&&`/`||` folding slice, fix any failures, and document
+  the result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 409: Native Identical Boolean Expression Logical Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical boolean expression
+  logical folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 410: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 411: Native Identical Boolean Expression Xor Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical boolean
+  expression `xor` folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 412: Native Identical Boolean Expression Xor Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical boolean expression
+  `xor` folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 413: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 414: Native Identical Integer Expression Bitwise Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical integer
+  expression bitwise folding slice, fix any failures, and document the result
+  in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended
+  loop automation.
+
+## Milestone 415: Native Identical Integer Expression Bitwise Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical integer expression
+  bitwise folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 416: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 417: Native Identical Integer Expression Subtraction Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical integer
+  expression subtraction folding slice, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 418: Native Identical Integer Expression Subtraction Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical integer expression
+  subtraction folding slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 419: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 420: Native Identical Float Expression Subtraction Full-Suite Gate
+
+- [x] Run the full project test gate for the native identical finite float
+  expression subtraction folding slice, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 421: Native Identical Float Expression Subtraction Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native identical finite float expression
+  subtraction folding slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 422: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 423: Native Integer Additive Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native tracked integer additive
+  identity folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 424: Native Integer Additive Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native tracked integer additive identity
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 425: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 426: Native Integer Multiplicative Identity Full-Suite Gate
+
+- [x] Run the full project test gate for the native tracked integer
+  multiplicative identity folding slice, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 427: Native Integer Multiplicative Identity Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native tracked integer multiplicative
+  identity folding slice now or continue into the next smallest native-lowering
+  slice. If checkpointing, use `tools/checkpoint.sh` and include the focused
+  and full-suite test results in the checkpoint message.
+
+## Milestone 428: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 429: Native Integer Multiplication-By-Zero Full-Suite Gate
+
+- [x] Run the full project test gate for the native tracked integer
+  multiplication-by-zero folding slice, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 430: Native Integer Multiplication-By-Zero Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native tracked integer
+  multiplication-by-zero folding slice now or continue into the next smallest
+  native-lowering slice. If checkpointing, use `tools/checkpoint.sh` and
+  include the focused and full-suite test results in the checkpoint message.
+
+## Milestone 431: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 432: Native Integer Shift-By-Zero Full-Suite Gate
+
+- [x] Run the full project test gate for the native tracked integer
+  shift-by-zero folding slice, fix any failures, and document the result in
+  `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under unattended loop
+  automation.
+
+## Milestone 433: Native Integer Shift-By-Zero Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native tracked integer shift-by-zero
+  folding slice now or continue into the next smallest native-lowering slice.
+  If checkpointing, use `tools/checkpoint.sh` and include the focused and
+  full-suite test results in the checkpoint message.
+
+## Milestone 434: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 435: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 436: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 437: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 438: Native Bitwise Identity Batch Full-Suite Gate
+
+- [x] Run the full project test gate for the focused native bitwise identity
+  batch after Milestones 435 through 437, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 439: Native Bitwise Identity Batch Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native bitwise identity batch now or
+  continue into the next smallest native-lowering slice. If checkpointing, use
+  `tools/checkpoint.sh` and include the focused and full-suite test results in
+  the checkpoint message.
+
+## Milestone 440: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 441: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 442: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 443: Native Boolean Identity Batch Full-Suite Gate
+
+- [x] Run the full project test gate for the focused native boolean identity
+  batch after Milestones 440 through 442, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 444: Native Boolean Identity Batch Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean identity batch now or
+  continue into the next smallest native-lowering slice. If checkpointing, use
+  `tools/checkpoint.sh` and include the focused and full-suite test results in
+  the checkpoint message.
+
+## Milestone 445: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 446: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 447: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 448: Native Boolean Folding Batch Full-Suite Gate
+
+- [x] Run the full project test gate for the focused native boolean folding
+  batch after Milestones 445 through 447, fix any failures, and document the
+  result in `docs/PROGRESS.md` and `docs/LOOP_MEMORY.md` if running under
+  unattended loop automation.
+
+## Milestone 449: Native Boolean Folding Batch Checkpoint Decision
+
+- [x] Decide whether to checkpoint the native boolean folding batch now or
+  continue into the next smallest native-lowering slice. If checkpointing, use
+  `tools/checkpoint.sh` and include the focused and full-suite test results in
+  the checkpoint message.
+
+## Milestone 450: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 451: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 452: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 453: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 454: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 455: Native Integer Literal Shift-by-Zero Folding
+
+- [x] Extend native shift-by-zero folding to integer literal operands for the
+  current lowerable shift subset. Preserve the existing static shift-count
+  boundary, prove the LLVM and C fallback paths with focused tests and CLI
+  fixtures, and keep dynamic counts, negative or large counts, PHP scalar
+  coercion, string bitwise behavior, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported gaps.
+
+## Milestone 456: Native Single-Known Integer Bitwise-Not Folding
+
+- [x] Fold unary `~` for statically known single-result integer operands in the
+  current lowerable bitwise subset. Preserve emitted native bitwise-not
+  operations for multi-value bounded operands, prove LLVM and C fallback paths
+  with focused tests and CLI fixtures, and keep PHP bytewise string bitwise
+  behavior, scalar-to-int coercion, arrays, objects, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering as named
+  unsupported gaps.
+
+## Milestone 457: Native Single-Known Integer Unary-Minus Folding
+
+- [x] Fold unary `-` for statically known single-result integer operands in the
+  current lowerable unary subset. Preserve emitted native unary-minus
+  operations for multi-value bounded operands, keep overflow-sensitive integer
+  negation rejected, prove LLVM and C fallback paths with focused tests and CLI
+  fixtures, and keep PHP numeric coercion, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering as named
+  unsupported gaps.
+
+## Milestone 458: Native Single-Known Float Unary-Minus Folding
+
+- [x] Fold unary `-` for statically known single-result nonzero finite float
+  operands in the current lowerable unary subset. Preserve signed-zero,
+  overflow/INF/NAN, multi-value bounded operands, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported or non-folded boundaries, and prove
+  LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 459: Native Single-Known Boolean Logical-Not Folding
+
+- [x] Fold LLVM IR logical not over statically known single-result native
+  boolean expression operands in the current lowerable unary subset. Keep
+  ambiguous boolean expressions and the C assembly fallback's comparison-shaped
+  logical-not expressions honest, prove behavior with focused tests and CLI
+  fixtures, and keep PHP truthiness coercion, short-circuit side effects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported gaps.
+
+## Milestone 460: Native C Fallback Boolean Logical-Not Folding
+
+- [x] Extend the C assembly fallback's tracked boolean result handling so
+  comparison-shaped integer strict-identity operands can feed single-known
+  boolean logical-not folding. Prove the LLVM and C fallback paths with
+  focused tests and CLI fixtures, and keep ambiguous boolean expressions, PHP
+  truthiness coercion, short-circuit side effects, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering as named
+  unsupported gaps.
+
+## Milestone 461: Native Nonzero Float Additive Identity Folding
+
+- [x] Fold tracked finite nonzero float additive identities in the current
+  native arithmetic subset: `$x + 0.0`, `0.0 + $x`, and `$x - 0.0` reuse the
+  existing expression in LLVM IR and the C assembly fallback. Preserve emitted
+  arithmetic for possible signed-zero identities, keep non-finite float
+  behavior, PHP numeric coercion, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported or
+  non-folded boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 462: Native Float Left-Zero Subtraction Folding
+
+- [x] Fold `0.0 - $x` to the known negated literal when `$x` is a
+  single-result statically known nonzero finite float operand in the current
+  native arithmetic subset. Preserve emitted arithmetic for possible
+  signed-zero left-zero subtraction, keep non-finite float behavior, PHP
+  numeric coercion, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported or non-folded
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 463: Native Positive Float Multiplication-By-Zero Folding
+
+- [x] Fold `$x * 0.0` and `0.0 * $x` to positive `0.0` when `$x` is a
+  statically known finite positive float operand in the current native
+  arithmetic subset. Preserve emitted arithmetic for negative and
+  signed-zero-sensitive multiplication-by-zero cases, keep non-finite float
+  behavior, PHP numeric coercion, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported or
+  non-folded boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 464: Native Float Multiplication-By-Negative-One Folding
+
+- [x] Fold `$x * -1.0` and `-1.0 * $x` to the known negated literal when `$x`
+  is a single-result statically known nonzero finite float operand in the
+  current native arithmetic subset. Preserve emitted arithmetic for possible
+  signed-zero multiplication by `-1.0`, keep non-finite float behavior, PHP
+  numeric coercion, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported or non-folded
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 465: Native Tracked Float Arithmetic Folding
+
+- [x] Fold tracked single-result finite nonzero float expression arithmetic for
+  `$x + literal`, `$x - literal`, and `$x * literal` to the known float literal
+  when exactly one operand is a tracked expression in the current native
+  arithmetic subset. Preserve emitted arithmetic for literal-only float
+  arithmetic, zero-result arithmetic, signed-zero-sensitive cases, non-finite
+  float behavior, PHP numeric coercion, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering as named unsupported or
+  non-folded boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 466: Native Tracked Integer Arithmetic Folding
+
+- [x] Fold tracked single-result integer expression arithmetic with exactly
+  one tracked expression operand and one literal operand for `+`, `-`, and `*`
+  to the known integer literal after checked overflow analysis in the current
+  native arithmetic subset. Preserve emitted arithmetic for literal-only
+  integer arithmetic and tracked-expression plus tracked-expression integer
+  arithmetic, keep overflow-sensitive arithmetic, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported or non-folded boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 467: Native Tracked Integer Bitwise Folding
+
+- [x] Fold tracked single-result integer expression bitwise operations with
+  exactly one tracked expression operand and one literal operand for `&`, `|`,
+  and `^` to the known integer literal in the current native bitwise subset.
+  Preserve emitted operations for literal-only integer bitwise and
+  tracked-expression plus tracked-expression integer bitwise expressions, keep
+  PHP bytewise string bitwise behavior, scalar-to-int coercion, references and
+  copy-on-write, exact native PHP errors, and broader native expression
+  lowering as named unsupported or non-folded boundaries, and prove the LLVM
+  and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 468: Native Tracked Integer Shift Folding
+
+- [x] Fold tracked single-result integer expression shifts with static safe
+  nonzero counts to the known integer literal in the current native shift
+  subset. Preserve emitted operations for literal-only shifts and non-single
+  tracked integer shifts, keep overflow-sensitive left shifts, dynamic or
+  invalid shift counts, PHP scalar-to-int coercion, string bitwise behavior,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported or non-folded boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 469: Native Tracked Integer Comparison Folding
+
+- [x] Fold same-type integer loose/ordering comparisons with exactly one
+  tracked single-result integer expression operand and one integer literal
+  operand to a static boolean in the current native comparison subset.
+  Preserve literal-only comparison folding, emitted comparisons for non-single
+  tracked integer operands, PHP comparison coercion gaps, references and
+  copy-on-write, exact native PHP errors, and broader native expression
+  lowering as named unsupported or non-folded boundaries, and prove the LLVM
+  and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 470: Native Tracked Float Comparison Folding
+
+- [x] Fold same-type finite-float loose/ordering comparisons with exactly one
+  tracked single-result float expression operand and one finite-float literal
+  operand to a static boolean in the current native comparison subset.
+  Preserve literal-only comparison folding, emitted comparisons for non-single
+  tracked float operands, non-finite float behavior, PHP comparison coercion
+  gaps, references and copy-on-write, exact native PHP errors, and broader
+  native expression lowering as named unsupported or non-folded boundaries,
+  and prove the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 471: Native Bounded String Comparison Folding
+
+- [x] Fold known ASCII nonnumeric NUL-free string loose/ordering comparisons
+  to a static boolean when every possible safe string outcome matches in the
+  current native comparison subset. Preserve emitted `strcmp` comparisons for
+  ambiguous bounded string operands, keep numeric-looking, unknown, non-ASCII,
+  and NUL-containing string comparisons rejected, and keep PHP comparison
+  coercion gaps, references and copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported or non-folded
+  boundaries. Prove the LLVM and C fallback paths with focused tests and CLI
+  fixtures.
+
+## Milestone 472: Native Single-Result Scalar Ternary Folding
+
+- [x] Fold dynamic integer, finite-float, and boolean ternaries whose possible
+  branch values collapse to a single known result without emitting a redundant
+  select or C conditional expression. Preserve emitted ternaries for ambiguous
+  same-type branches, keep mixed-type branches rejected until native tagged
+  values exist, and keep PHP truthiness/coercion gaps, branch side-effect
+  ordering, references and copy-on-write, exact native PHP errors, and broader
+  native expression lowering as named unsupported or non-folded boundaries.
+  Prove the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 473: Native Boolean Expression Comparison Folding
+
+- [x] Fold same-type boolean expression loose/ordering comparisons to a static
+  boolean when tracked possible boolean operands prove one result in the
+  current native comparison subset. Preserve emitted native comparisons for
+  ambiguous boolean expressions, keep PHP truthiness/coercion gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported or non-folded boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 474: Native Bounded Integer Comparison Folding
+
+- [x] Fold same-type integer loose/ordering comparisons to a static boolean
+  when tracked possible integer operands prove one result in the current
+  native comparison subset. Preserve emitted native comparisons for ambiguous
+  bounded integer comparisons, keep PHP numeric/coercion gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported or non-folded boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 475: Native Bounded Float Comparison Folding
+
+- [x] Fold same-type finite-float loose/ordering comparisons to a static
+  boolean when tracked possible finite-float operands prove one result in the
+  current native comparison subset. Preserve emitted native comparisons for
+  ambiguous bounded float comparisons, keep non-finite float behavior, PHP
+  numeric/coercion gaps, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported or non-folded
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 476: Native Boolean Logical Known-Result Folding
+
+- [x] Fold native boolean expression `&&`/`and`, `||`/`or`, and `xor`
+  operations to a static boolean when tracked possible boolean operands prove
+  one result in the current native logical subset. Preserve emitted native
+  logical operations for ambiguous boolean expressions, keep PHP truthiness,
+  short-circuit side-effect gaps, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported or
+  non-folded boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 477: Native Tracked-Expression Integer Arithmetic Folding
+
+- [x] Fold tracked integer expression arithmetic for `+`, `-`, and `*` to the
+  known integer literal when tracked possible integer operands prove one result
+  after checked overflow analysis in the current native arithmetic subset.
+  Preserve emitted arithmetic for literal-only integer arithmetic and
+  ambiguous tracked-expression plus tracked-expression integer arithmetic, keep
+  overflow-sensitive arithmetic, PHP numeric coercion, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering as named
+  unsupported or non-folded boundaries, and prove the LLVM and C fallback paths
+  with focused tests and CLI fixtures.
+
+## Milestone 478: Native Tracked-Expression Integer Bitwise Folding
+
+- [x] Fold tracked integer expression bitwise operations for `&`, `|`, and
+  `^` to the known integer literal when tracked possible integer operands
+  prove one result in the current native bitwise subset. Preserve emitted
+  operations for literal-only integer bitwise and ambiguous tracked-expression
+  plus tracked-expression integer bitwise expressions, keep PHP bytewise string
+  bitwise behavior, scalar-to-int coercion, references and copy-on-write,
+  exact native PHP errors, and broader native expression lowering as named
+  unsupported or non-folded boundaries, and prove the LLVM and C fallback paths
+  with focused tests and CLI fixtures.
+
+## Milestone 479: Native Tracked Integer Shift Count Folding
+
+- [x] Accept tracked integer expression shift counts when they prove one safe
+  count from 0 through 63 in the current native shift subset, using that
+  proven count for LLVM IR and C fallback lowering. Preserve emitted
+  literal-left shifts, reject ambiguous tracked shift counts and invalid
+  counts, keep PHP scalar-to-int coercion, string bitwise behavior,
+  overflow-sensitive shifts, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering as named unsupported or non-folded
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 480: Native Tracked-Expression Float Arithmetic Folding
+
+- [x] Fold tracked finite nonzero float expression arithmetic for `+`, `-`,
+  and `*` to the known float literal when tracked possible finite-float
+  operands prove one nonzero result in the current native arithmetic subset.
+  Preserve emitted operations for literal-only float arithmetic, zero-result
+  float arithmetic, and ambiguous tracked-expression plus tracked-expression
+  float arithmetic, keep signed-zero-sensitive behavior, non-finite floats, PHP
+  numeric coercion, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported or non-folded
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 481: Native Single-Result String Ternary Concatenation Folding
+
+- [x] Fold string concatenation operands that are ternary expressions proving
+  one static string result into the existing generated static string constant
+  path. Preserve rejection for ambiguous string ternary concatenation, PHP
+  scalar-to-string conversion, runtime string allocation, arrays, objects,
+  resources, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering as named unsupported boundaries, and prove the
+  LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 482: Native Boolean Short Ternary Lowering
+
+- [x] Lower short ternary `?:` for already-lowerable boolean conditions in the
+  current straight-line native subset. Preserve rejection for non-boolean
+  truthiness/coercion, non-boolean fallback values when the fallback is needed,
+  null coalescing, arrays, objects, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 483: Native Static-False Short Ternary Scalar Fallback Folding
+
+- [x] Fold static-false short ternary `false ?: fallback` to any
+  already-lowerable scalar fallback in the current straight-line native subset,
+  while preserving static-true fallback laziness. Preserve rejection for
+  dynamic non-boolean truthiness/coercion, dynamic non-boolean fallback values,
+  null coalescing, arrays, objects, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 484: Native Single-Known Integer Short Ternary Folding
+
+- [x] Fold short ternary `?:` when an already-lowerable integer condition has
+  one statically known truthiness result in the current straight-line native
+  subset: proven nonzero integer conditions reuse the integer result, and
+  proven zero integer conditions use the fallback. Preserve rejection for
+  ambiguous integer truthiness, broader non-boolean truthiness/coercion, null
+  coalescing, arrays, objects, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 485: Native Single-Known Float Short Ternary Folding
+
+- [x] Fold short ternary `?:` when an already-lowerable finite float condition
+  has one statically known truthiness result in the current straight-line
+  native subset: proven nonzero finite float conditions reuse the float result,
+  and proven zero float conditions use the fallback. Preserve rejection for
+  ambiguous float truthiness, non-finite floats, broader non-boolean
+  truthiness/coercion, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 486: Native Known-String Short Ternary Folding
+
+- [x] Fold short ternary `?:` when an already-lowerable known string condition
+  has one statically known PHP string-truthiness result in the current
+  straight-line native subset: known truthy strings reuse the string result,
+  and known falsey `""`/`"0"` strings use the fallback. Preserve rejection for
+  ambiguous string truthiness, untracked string expressions, broader
+  non-boolean truthiness/coercion, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 487: Native Known-String Logical-Not Folding
+
+- [x] Fold logical not `!` when an already-lowerable known string operand has
+  one statically known PHP string-truthiness result in the current
+  straight-line native subset: known falsey `""`/`"0"` strings fold to `true`,
+  and known truthy strings fold to `false`. Preserve rejection for ambiguous
+  string truthiness, untracked string expressions, broader truthiness/coercion,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported boundaries, and
+  prove the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 488: Native Known-Numeric Logical-Not Folding
+
+- [x] Fold logical not `!` when an already-lowerable known integer or finite
+  float operand has one statically known PHP truthiness result in the current
+  straight-line native subset: known zero numeric operands fold to `true`, and
+  known nonzero numeric operands fold to `false`. Preserve rejection for
+  ambiguous numeric truthiness, non-finite floats, untracked numeric
+  expressions, broader truthiness/coercion, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 489: Native Known-Scalar Logical Truthiness Folding
+
+- [x] Fold logical `&&`, `||`, and `xor` when both already-lowerable scalar
+  operands have one statically known PHP truthiness result in the current
+  straight-line native subset. Preserve rejection for ambiguous scalar
+  truthiness, untracked scalar operands, non-finite floats, null truthiness
+  beyond this documented folding subset, short-circuit cases that would need skipped unsupported or side-effecting
+  operands, arrays, objects, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering as named unsupported boundaries, and
+  prove the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 490: Native Null Logical-Not Folding
+
+- [x] Fold logical not `!null` to `true` in the current straight-line native
+  subset. Preserve rejection for broader null truthiness beyond the documented
+  logical binary and conditional folding subsets, non-null ambiguous truthiness, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 491: Native Null Short Ternary Fallback Folding
+
+- [x] Fold short ternary `?:` when an already-lowerable `null` condition is
+  used in the current straight-line native subset: `null ?: fallback` lowers to
+  the fallback. Preserve rejection for broader null truthiness beyond the
+  documented logical binary folding subset, null coalescing, lazy unsupported branch skipping,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 492: Native Single-Known Integer Full Ternary Condition Folding
+
+- [x] Fold full ternary `?:` condition selection when an already-lowerable
+  integer condition has one statically known PHP truthiness result in the
+  current straight-line native subset: known nonzero integer conditions select
+  the true branch, and known zero integer conditions select the false branch.
+  Preserve rejection for ambiguous integer truthiness, unsupported branch
+  skipping, broader PHP truthiness/coercion, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and C
+  fallback paths with focused tests and CLI fixtures.
+
+## Milestone 493: Native Single-Known Float Full Ternary Condition Folding
+
+- [x] Fold full ternary `?:` condition selection when an already-lowerable
+  finite-float condition has one statically known PHP truthiness result in the
+  current straight-line native subset: known nonzero finite-float conditions
+  select the true branch, and known zero finite-float conditions select the
+  false branch. Preserve rejection for ambiguous float truthiness, non-finite
+  floats, unsupported branch skipping, broader PHP truthiness/coercion, null
+  coalescing, arrays, objects, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 494: Native Known-String Full Ternary Condition Folding
+
+- [x] Fold full ternary `?:` condition selection when an already-lowerable known
+  string condition has one statically known PHP string-truthiness result in the
+  current straight-line native subset: known truthy strings select the true
+  branch, and known falsey `""`/`"0"` strings select the false branch. Preserve
+  rejection for ambiguous string truthiness, untracked string expressions,
+  unsupported branch skipping, broader PHP truthiness/coercion, null coalescing,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 495: Native Null Full Ternary Condition Folding
+
+- [x] Fold full ternary `?:` condition selection when an already-lowerable
+  `null` condition is used in the current straight-line native subset:
+  `null ? true_branch : false_branch` lowers to the false branch after both
+  branches lower. Preserve rejection for unsupported branch skipping, broader
+  null truthiness beyond the documented logical binary folding subset, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and C
+  fallback paths with focused tests and CLI fixtures.
+
+## Milestone 496: Native Null Logical Truthiness Folding
+
+- [x] Fold logical `&&`, `||`, and `xor` when both operands are already
+  lowerable and any `null` operand has statically known falsey PHP truthiness in
+  the current straight-line native subset. Preserve rejection for
+  short-circuit cases that would need skipped unsupported or side-effecting
+  operands, null coalescing, arrays, objects, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering as named
+  unsupported boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 497: Native Static Full Ternary Selected-Branch Lowering
+
+- [x] Lower only the selected full ternary branch when the condition has a
+  statically known truthiness result in the current straight-line native subset,
+  allowing unsupported unselected branches such as arrays to stay unlowered.
+  Preserve rejection for dynamic branch skipping, dynamic PHP truthiness,
+  ambiguous scalar truthiness, null coalescing, arrays in selected branches,
+  objects, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering as named unsupported boundaries, and prove the
+  LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 498: Native Static Logical Short-Circuit Folding
+
+- [x] Lower statically decisive known-left logical `&&`/`and` and `||`/`or`
+  cases without lowering the skipped right-hand operand in the current
+  straight-line native subset. Preserve rejection for `xor` right-hand skipping,
+  dynamic short-circuiting, selected/evaluated unsupported right-hand operands,
+  ambiguous scalar truthiness, untracked scalar operands, null coalescing,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering as named unsupported boundaries, and prove
+  the LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 499: Native Integer Bitwise OR All-Ones Folding
+
+- [x] Fold tracked integer expression and integer literal `$x | -1` and
+  `-1 | $x` forms to `-1` after both operands lower in the current
+  straight-line native subset. Preserve rejection for PHP scalar-to-int
+  coercion, string bitwise behavior in native lowering, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 500: Native Integer Bitwise XOR All-Ones Folding
+
+- [x] Fold single-known integer `$x ^ -1` and `-1 ^ $x` forms to the known
+  bitwise-not result after both operands lower in the current straight-line
+  native subset. Preserve emitted/tracked behavior for ambiguous integer
+  operands and rejection for PHP scalar-to-int coercion, string bitwise
+  behavior in native lowering, arrays, objects, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering as named
+  unsupported boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 501: Native Untracked Integer Bitwise Identity Folding
+
+- [x] Fold `& 0`, `& -1`, `| 0`, and `^ 0` identity or annihilator forms after
+  both operands lower even when the other already-lowerable integer operand is
+  intentionally untracked, such as overflow-sensitive shift results. Preserve
+  emitted untracked shift results, rejection for arithmetic that would need
+  exact overflow tracking, PHP scalar-to-int coercion, string bitwise behavior
+  in native lowering, arrays, objects, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering as named unsupported
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 502: Native Untracked Integer Arithmetic Identity Folding
+
+- [x] Fold `+ 0`, `- 0`, `* 1`, and `* 0` identity or annihilator forms after
+  both operands lower even when the other already-lowerable integer operand is
+  intentionally untracked, such as overflow-sensitive shift results. Preserve
+  emitted untracked shift results, rejection for non-identity arithmetic that
+  would need exact overflow tracking, PHP scalar coercion, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering as named
+  unsupported boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 503: Native Untracked Integer Shift-By-Zero Folding
+
+- [x] Fold `$x << 0` and `$x >> 0` after both operands lower even when the
+  already-lowerable left integer operand is intentionally untracked, such as an
+  overflow-sensitive shift result. Preserve emitted untracked shift results,
+  rejection for nonzero untracked shift/result-tracking cases that would imply
+  exact overflow semantics, PHP scalar coercion, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering as named
+  unsupported boundaries, and prove the LLVM and C fallback paths with focused
+  tests and CLI fixtures.
+
+## Milestone 504: Native Untracked Reflexive Integer Comparison Folding
+
+- [x] Fold same-expression integer loose/ordering comparisons after both
+  operands lower even when the integer operand is intentionally untracked, such
+  as an overflow-sensitive shift result: `$x == $x`, `$x <= $x`, and
+  `$x >= $x` fold true, while `$x != $x`, `$x < $x`, and `$x > $x` fold false.
+  Preserve emitted untracked source values, PHP comparison coercion gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 505: Native Untracked Identical Integer Bitwise Folding
+
+- [x] Fold identical integer bitwise operands after both operands lower even
+  when the integer value is intentionally untracked, such as an
+  overflow-sensitive shift result: `$x & $x` and `$x | $x` reuse `$x`, while
+  `$x ^ $x` folds to zero. Preserve emitted untracked source values, PHP
+  scalar-to-int coercion gaps, string bitwise behavior in native lowering,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 506: Native Untracked Identical Integer Subtraction Folding
+
+- [x] Fold identical integer subtraction after both operands lower even when
+  the integer value is intentionally untracked, such as an overflow-sensitive
+  shift result. Preserve emitted untracked source values, rejection for other
+  non-identity arithmetic that would need exact overflow tracking, PHP scalar
+  coercion, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering as named unsupported boundaries, and prove the
+  LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 507: Native Untracked Integer Modulo-By-One Folding
+
+- [x] Fold integer modulo by one after both operands lower even when the
+  dividend is intentionally untracked, such as an overflow-sensitive shift
+  result. Preserve emitted untracked source values, rejection for other modulo
+  cases that need runtime divisor checks, PHP scalar coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 508: Native Untracked Identical Integer Ternary Folding
+
+- [x] Fold identical integer full-ternary branches after both branches lower
+  even when the integer value is intentionally untracked, such as an
+  overflow-sensitive shift result. Preserve emitted untracked source values,
+  dynamic mixed-type branch rejection, unsupported truthiness/coercion gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 509: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical float full-ternary branches after both branches lower even
+  when the float value is intentionally untracked, such as a non-finite
+  overflowing float multiplication. Preserve emitted untracked source values,
+  non-finite float result-tracking and truthiness gaps, dynamic mixed-type
+  branch rejection, unsupported truthiness/coercion gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 510: Native Scalar Result Tracking Follow-up
+
+- [x] Fold double unary bitwise-not `~~$x` over already-lowerable integer
+  operands to `$x`, including intentionally untracked integer expressions such
+  as overflow-sensitive shift results. Preserve emitted untracked source
+  values, rejection for non-integer native bitwise operands, PHP scalar-to-int
+  coercion gaps, string bitwise behavior in native lowering,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 511: Native Scalar Result Tracking Follow-up
+
+- [x] Fold double logical-not `!!$x` over already-lowerable known scalar
+  operands through the existing known-truthiness subset: integers, finite
+  floats, strings, and `null`. Preserve rejection for ambiguous truthiness,
+  untracked numeric/string operands, non-finite floats, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering as named unsupported boundaries, and prove the LLVM and
+  C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 512: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical native boolean expression loose/ordering comparisons after
+  both operands lower, including ambiguous boolean expressions: `$flag ==
+  $flag`, `$flag <= $flag`, and `$flag >= $flag` fold true, while `$flag !=
+  $flag`, `$flag < $flag`, and `$flag > $flag` fold false. Preserve the
+  source ambiguous boolean expression, other ambiguous boolean comparisons,
+  PHP comparison coercion gaps, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering as named unsupported
+  boundaries, and prove the LLVM and C fallback paths with focused tests and
+  CLI fixtures.
+
+## Milestone 513: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical native string pointer loose/ordering comparisons after
+  both operands lower, even when the string pointer expression is intentionally
+  untracked because its possible value set exceeds the current small tracker:
+  `$text == $text`, `$text <= $text`, and `$text >= $text` fold true, while
+  `$text != $text`, `$text < $text`, and `$text > $text` fold false. Preserve
+  the source untracked string expression in LLVM IR, keep non-identical unknown
+  string comparisons rejected until safe value sets or runtime-backed string
+  comparison semantics exist, and prove the LLVM and C fallback paths with
+  focused tests and CLI fixtures.
+
+## Milestone 514: Native Scalar Result Tracking Follow-up
+
+- [x] Fold empty-string concatenation identity for already-lowerable string
+  operands, including untracked string pointer expressions whose possible
+  value set exceeds the current small tracker: `$text . ""` and `"" . $text`
+  reuse `$text` without runtime string allocation. Preserve the source
+  untracked string expression in LLVM IR, keep non-empty ambiguous string
+  concatenation rejected until runtime string allocation exists, and prove the
+  LLVM and C fallback paths with focused tests and CLI fixtures.
+
+## Milestone 515: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical direct string-variable short ternary identity for
+  already-lowerable string pointer operands, including untracked string pointer
+  expressions whose possible value set exceeds the current small tracker:
+  `$text ?: $text` reuses `$text` without proving string truthiness. Preserve
+  the source untracked string expression in LLVM IR, keep non-identical
+  untracked string short ternaries rejected until general native PHP
+  truthiness/lazy fallback behavior exists, and prove the LLVM and C fallback
+  paths with focused tests and CLI fixtures.
+
+## Milestone 516: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical direct integer-variable short ternary identity for
+  already-lowerable integer operands, including intentionally untracked
+  integer expressions such as overflow-sensitive shift results: `$value ?:
+  $value` reuses `$value` without proving integer truthiness. Preserve the
+  source untracked integer expression in LLVM IR, keep non-identical untracked
+  integer short ternaries rejected until general native PHP truthiness/lazy
+  fallback behavior exists, and prove the LLVM and C fallback paths with
+  focused tests and CLI fixtures.
+
+## Milestone 517: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical direct float-variable short ternary identity for
+  already-lowerable float operands, including intentionally untracked
+  non-finite float-producing expressions such as overflowing float
+  multiplication: `$value ?: $value` reuses `$value` without proving float
+  truthiness. Preserve the source untracked float expression in LLVM IR, keep
+  non-identical untracked float short ternaries rejected until general native
+  PHP truthiness/lazy fallback behavior exists, and prove the LLVM and C
+  fallback paths with focused tests and CLI fixtures.
+
+## Milestone 518: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical direct boolean-variable short ternary identity for
+  already-lowerable boolean expression operands: `$flag ?: $flag` reuses
+  `$flag` without emitting a redundant boolean select. Preserve the source
+  boolean expression in LLVM IR, keep non-identical boolean short ternaries on
+  the existing lowerable boolean fallback path, and prove the LLVM and C
+  fallback paths with focused tests and CLI fixtures.
+
+## Milestone 519: Native Scalar Result Tracking Follow-up
+
+- [x] Fold identical direct-variable full ternary identity for already-lowerable
+  scalar operands, starting with intentionally untracked integer expressions:
+  `$value ? $value : $value` reuses `$value` without proving integer
+  truthiness. Preserve the source untracked integer expression in LLVM IR,
+  keep non-identical untracked integer full ternaries rejected until general
+  native PHP truthiness/lazy branch behavior exists, and prove the LLVM and C
+  fallback paths with focused tests and CLI fixtures.
+
+## Milestone 520: Native Scalar Result Tracking Follow-up
+
+- [x] Prove identical direct-variable full ternary identity for already-lowerable
+  float operands, including intentionally untracked non-finite float-producing
+  expressions: `$value ? $value : $value` reuses `$value` without proving
+  float truthiness. Preserve the source untracked float expression in LLVM IR,
+  keep non-identical untracked float full ternaries rejected until general
+  native PHP truthiness/lazy branch behavior exists, and prove the LLVM and C
+  fallback paths with focused tests and CLI fixtures.
+
+## Milestone 521: Native Scalar Result Tracking Follow-up
+
+- [x] Prove identical direct-variable full ternary identity for already-lowerable
+  string pointer operands, including untracked string pointer expressions whose
+  possible value set exceeds the current small tracker: `$text ? $text :
+  $text` reuses `$text` without proving string truthiness. Preserve the source
+  untracked string expression in LLVM IR, keep non-identical untracked string
+  full ternaries rejected until general native PHP truthiness/lazy branch
+  behavior exists, and prove the LLVM and C fallback paths with focused tests
+  and CLI fixtures.
+
+## Milestone 522: Native Scalar Result Tracking Follow-up
+
+- [x] Prove identical direct-variable full ternary identity for already-lowerable
+  boolean expression operands: `$flag ? $flag : $flag` reuses `$flag` without
+  emitting a redundant boolean select. Preserve the source boolean expression
+  in LLVM IR, keep non-identical boolean full ternaries on the existing
+  lowerable boolean branch path, and prove the LLVM and C fallback paths with
+  focused tests and CLI fixtures.
+
+## Milestone 523: Native Scalar Result Tracking Follow-up
+
+- [x] Add the next honest native-codegen boundary or executable slice for
+  scalar-producing expressions that are currently lowerable but not tracked
+  precisely enough for later scalar lowering. Preserve safe known-result
+  tracking only where executable code, fixtures, CLI coverage, docs, and
+  focused tests prove it, or keep/reinforce a specific diagnostic until native
+  PHP truthiness/coercion, runtime checks, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering exist.
+
+## Milestone 530: Runtime Type-Introspection Follow-up
+
+- [x] Add `is_numeric($value)` for the current runtime value model, including
+  direct and string-valued dynamic calls, fixture/CLI coverage, system PHP
+  comparison, support documentation, and explicit native-codegen rejection
+  while runtime-backed function-call lowering remains unsupported.
+
+## Milestone 531: Parser Lane Call Syntax
+
+- [x] Parser lane: accept optional trailing commas in positional call argument
+  lists while preserving rejection for empty, named, unpacked, and reference
+  arguments.
+
+## Milestone 532: Runtime Type-Introspection Follow-up
+
+- [x] Runtime lane: add `is_countable($value)` for current arrays while naming
+  unsupported `Countable` object/interface semantics and native lowering.
+
+## Milestone 533: IR/Lowering Type-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct scalar/null
+  type-introspection calls in native output while keeping dynamic calls,
+  arrays, objects, wrong arity, and runtime-backed callable dispatch rejected.
+
+## Milestone 534: Parser Lane Function Syntax
+
+- [x] Parser lane: accept optional trailing commas in user-function and
+  class-method declaration parameter lists while preserving rejection for empty
+  parameter slots and keeping native function declaration lowering rejected.
+
+## Milestone 535: Runtime Type-Introspection Follow-up
+
+- [x] Runtime lane: add `is_iterable($value)` for current arrays while naming
+  unsupported `Traversable`/generator object semantics and native lowering.
+
+## Milestone 536: IR/Lowering Type-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct scalar/null and proven
+  string-valued `is_numeric` calls in native output while keeping dynamic
+  calls, arrays, objects, wrong arity, `is_countable`, `is_iterable`, and
+  runtime-backed callable dispatch rejected.
+
+## Milestone 537: IR/Lowering Type-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct scalar/null/string
+  `is_countable` and `is_iterable` calls to false in native output while
+  keeping arrays, objects, dynamic calls, wrong arity, and runtime-backed
+  callable dispatch rejected.
+
+## Milestone 538: IR/Lowering Object-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct scalar/null/string
+  `is_object` calls to false and direct scalar/null/string `get_debug_type`
+  calls to current runtime type-name strings while keeping arrays, objects,
+  dynamic calls, wrong arity, and broader object metadata lowering rejected.
+
+## Milestone 539: IR/Lowering Object-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct `class_exists`,
+  `interface_exists`, `trait_exists`, and `enum_exists` calls with
+  already-lowerable string names and optional already-lowerable boolean
+  autoload flags to false in native output while keeping arrays, objects,
+  dynamic calls, wrong arity, broader object metadata, native class tables,
+  autoloading, and runtime-backed callable dispatch rejected.
+
+## Milestone 540: IR/Lowering Object-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct `property_exists` and
+  `method_exists` calls with already-lowerable string class names and
+  already-lowerable string member names to false in native output while
+  keeping arrays, objects, non-string arguments, dynamic calls, wrong arity,
+  native class/member tables, autoloading, and runtime-backed callable dispatch
+  rejected.
+
+## Milestone 541: IR/Lowering Object-Introspection Follow-up
+
+- [x] IR/lowering lane: statically fold direct `is_a` and `is_subclass_of`
+  calls with already-lowerable string object/class names, already-lowerable
+  string target class names, and optional already-lowerable boolean
+  `allow_string` flags to false in native output while keeping arrays, objects,
+  non-string arguments, dynamic calls, wrong arity, native class tables,
+  inheritance, autoloading, and runtime-backed callable dispatch rejected.
+
+## Milestone 542: Runtime Type-Introspection Follow-up
+
+- [x] Runtime lane: add `is_callable($value)` for the current one-argument
+  string function-name subset, returning true for current user functions and
+  documented callable builtins and false for missing names or non-string
+  values, while naming unsupported optional arguments, array/object callables,
+  method callables, namespace/autoload resolution, and native lowering.
+
+## Milestone 543: Runtime Type-Introspection Follow-up
+
+- [x] Runtime lane: extend `is_callable` with the optional boolean
+  `syntax_only` flag for the current string function-name subset, reporting
+  string callable syntax without name resolution when the flag is true while
+  keeping callable-name output, array/object callables, method callables,
+  namespace/autoload resolution, and native lowering unsupported.
+
+## Milestone 544: Runtime Type-Introspection Follow-up
+
+- [x] Runtime lane: add `function_exists($name)` for the current runtime
+  string function-name subset, checking current user functions and documented
+  callable builtins while naming unsupported non-string name coercion,
+  namespace/autoload-aware lookup, extension-loaded functions beyond documented
+  builtins, exact native `TypeError`/deprecation behavior, and native lowering.
+
+## Milestone 545: Parser Generator Boundary
+
+- [x] Parser lane: add an explicit stable parse diagnostic for unsupported
+  generator `yield` and `yield from` syntax in statement and expression
+  positions, while naming unsupported generator functions, generator objects,
+  key/value yields, by-reference yields, `send`/`throw`/`return` semantics,
+  delegation, and native lowering.
+
+## Milestone 546: Native Direct-Variable `isset` Folding
+
+- [x] IR/lowering lane: statically fold direct `isset($name)` in
+  `phpc compile --emit-ir` and the `--emit-asm` C fallback for the current
+  straight-line static-variable map, while keeping array offsets, object
+  properties, complex operands, multiple operands, unset/mutation
+  interactions, references/copy-on-write, and exact native error behavior
+  explicitly rejected.
+
+## Milestone 547: Independent Lane Candidates
+
+- [x] IR/lowering lane: statically fold direct `function_exists($name)` calls
+  in `phpc compile --emit-ir` and the `--emit-asm` C fallback when `$name` is
+  an already-lowerable string with a uniform known result in the documented
+  builtin table, while keeping user-defined function tables, dynamic calls,
+  wrong arity, non-string names, namespace/autoload-aware lookup,
+  extension-loaded functions beyond documented builtins, exact native
+  `TypeError`/deprecation behavior, and runtime-backed callable dispatch
+  unsupported.
+
+## Milestone 548: Independent Lane Candidates
+
+- [x] IR/lowering lane: statically fold direct `is_callable($value)` and
+  `is_callable($value, $syntax_only)` calls in `phpc compile --emit-ir` and
+  the `--emit-asm` C fallback when `$value` is an already-lowerable string and
+  the optional syntax-only flag is an already-lowerable boolean, while keeping
+  callable-name output, array/object/method callables, dynamic calls, wrong
+  arity, non-string values, non-bool syntax-only flags, user-defined native
+  function tables, namespace/autoload-aware lookup, extension-loaded functions
+  beyond documented builtins, exact native `TypeError`/deprecation behavior,
+  and runtime-backed callable dispatch unsupported.
+
+## Milestone 549: Independent Lane Candidates
+
+- [x] IR/lowering lane: statically fold direct `is_callable(...)` calls with
+  already-lowerable non-string scalar/null values to false in
+  `phpc compile --emit-ir` and the `--emit-asm` C fallback, including known
+  boolean syntax-only flags, while keeping callable-name output,
+  array/object/method callables, dynamic calls, wrong arity, non-bool
+  syntax-only flags, user-defined native function tables,
+  namespace/autoload-aware lookup, extension-loaded functions beyond
+  documented builtins, exact native `TypeError`/deprecation behavior, and
+  runtime-backed callable dispatch unsupported.
+
+## Milestone 550: Independent Lane Candidates
+
+- [x] Parser lane: add stable parse diagnostics and CLI coverage for
+  unsupported `goto` statements and labels before implementing jump targets,
+  cross-scope jump validation, `finally` interaction, or native lowering.
+
+## Milestone 551: Independent Lane Candidates
+
+- [x] Runtime lane: extend `is_callable($value, true)` syntax-only handling to
+  recognize current two-element array callable shapes such as
+  `["ClassName", "method"]` and `[$object, "method"]` without resolving or
+  invoking them, while keeping normal array callable resolution, dynamic
+  invocation, callable-name output, visibility-sensitive method callability,
+  `__invoke`, static callable strings, namespace/autoload behavior, exact
+  native `TypeError` behavior, and native lowering unsupported.
+
+## Milestone 552: Independent Lane Candidates
+
+- [x] Compiler-output lane: add selected-`clang` `--emit-asm` CLI coverage for
+  an already-implemented native type-introspection folding slice, proving the
+  chosen backend receives deterministic LLVM IR through stdin while keeping
+  production lowering behavior unchanged.
+
+## Milestone 553: Independent Lane Candidates
+
+- [x] Runtime lane: consider normal-mode `is_callable([$object_or_class,
+  $method])` resolution against the current declared method metadata without
+  implementing array callable invocation, inheritance, trait/interface method
+  lookup, visibility-sensitive caller context, `__call`, namespace/autoload
+  behavior, exact native `TypeError` behavior, or native lowering.
+
+## Milestone 554: Independent Lane Candidates
+
+- [x] Parser lane: add stable diagnostics for unsupported PHP heredoc/nowdoc
+  string syntax before implementing multiline string tokenization,
+  interpolation, indentation stripping, or native string lowering.
+
+## Milestone 555: Independent Lane Candidates
+
+- [x] Tests/docs lane: add an unsupported syntax boundary closure checklist to
+  the lane worker docs, using the current `yield`, `goto`, and heredoc/nowdoc
+  boundaries as examples. Keep this slice documentation and verification only:
+  no compiler, runtime, or codegen edits.
+
+## Milestone 556: Independent Lane Candidates
+
+- [x] IR/lowering lane: consider native direct-variable `empty($name)` folding
+  for the straight-line scalar/null lowering subset, including missing
+  variables as true and explicit codegen rejections for array offsets, object
+  properties, complex operands, arrays, unset interactions, and ambiguous
+  truthiness.
+
+## Milestone 557: Independent Lane Candidates
+
+- [x] Runtime lane: consider `array_change_key_case($array, $case =
+  CASE_LOWER)` for the current ordered array model, preserving integer keys,
+  lowercasing/uppercasing ASCII string keys, preserving insertion order and
+  duplicate overwrite behavior, and naming gaps for invalid arguments,
+  Unicode/locale behavior, references/copy-on-write, and native lowering.
+
+## Milestone 558: Independent Lane Candidates
+
+- [x] Compiler-output lane: add selected-`clang` `--emit-asm` CLI coverage for
+  existing native direct `function_exists($name)` folding, proving the fake
+  backend receives deterministic folded LLVM IR through stdin without changing
+  production lowering behavior.
+
+## Milestone 559: Independent Lane Candidates
+
+- [x] Compiler-output lane: add selected-`clang` `--emit-asm` CLI coverage for
+  existing native direct-variable `empty($name)` folding, proving the fake
+  backend receives deterministic folded LLVM IR through stdin without changing
+  production lowering behavior.
+
+## Milestone 560: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the lane-worker current queue and post-559
+  rotation notes so parser, IR/lowering, runtime, compiler-output, and
+  tests/docs workers each have one small milestone candidate and stale
+  completed-lane assignments do not persist.
+
+## Milestone 561: Independent Lane Candidates
+
+- [x] Parser lane: implement alternate `switch (...): ... endswitch;` syntax
+  by reusing the existing switch AST/interpreter path, adding stable
+  diagnostics for malformed alternate switch forms, CLI coverage, docs, and
+  named unsupported edge cases while keeping native switch lowering rejected.
+
+## Milestone 562: Independent Lane Candidates
+
+- [x] IR/lowering lane: add native direct `strlen($value)` folding for
+  already-lowerable known string operands, with narrow `--emit-ir` and
+  fallback `--emit-asm` coverage, and keep non-string coercions, arrays,
+  objects, dynamic calls, runtime lookup, and exact native PHP errors
+  explicitly rejected.
+
+## Milestone 563: Independent Lane Candidates
+
+- [x] Runtime lane: add `array_unique($array, SORT_STRING)` for `phpc run`
+  over the current scalar value subset, update the unsupported sort-flag
+  runtime error coverage, add focused fixtures and system PHP comparison, and
+  keep other sort flags, non-scalar values, references/copy-on-write, exact PHP
+  warnings, and native lowering explicitly unsupported.
+
+## Milestone 564: Independent Lane Candidates
+
+- [x] Compiler-output lane: add selected-`clang` `--emit-asm` CLI coverage for
+  existing native direct-variable `isset($name)` folding, proving the fake
+  backend receives deterministic folded LLVM IR through stdin without changing
+  production lowering behavior.
+
+## Milestone 565: Independent Lane Candidates
+
+- [x] Compiler-output lane: add selected-`clang` `--emit-asm` CLI coverage for
+  existing native direct `is_numeric($value)` folding, proving deterministic
+  folded LLVM IR reaches the selected backend through stdin without changing
+  production lowering behavior.
+
+## Milestone 566: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next already-implemented scalar/string
+  builtin with a deterministic native folding opportunity, add narrow
+  `--emit-ir` and fallback `--emit-asm` coverage, and keep arrays, objects,
+  dynamic calls, runtime lookup, and exact native PHP errors explicitly
+  rejected.
+
+## Milestone 567: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the documented unsupported gaps, implement it through `phpc run` with
+  focused fixtures and system PHP comparison where applicable, and keep native
+  lowering explicitly rejected.
+
+## Milestone 568: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next selected-`clang` `--emit-asm`
+  coverage target from an existing native scalar/string folding slice, add a
+  deterministic fake-backend stdin validation snapshot, and leave production
+  lowering unchanged.
+
+## Milestone 569: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next small deterministic native folding
+  slice from the already-supported scalar/string boundary, add focused
+  `--emit-ir` and fallback `--emit-asm` coverage, and keep runtime-backed
+  lookup, arrays, objects, dynamic calls, and exact native PHP errors
+  explicitly rejected.
+
+## Milestone 570: Independent Lane Candidates
+
+- [x] Runtime lane: add `array_unique($array, SORT_NUMERIC)` for `phpc run`
+  over the current scalar numeric-coercion subset, update unsupported
+  sort-flag runtime error coverage, add focused fixtures and system PHP
+  comparison, and keep other sort flags, non-numeric values,
+  references/copy-on-write, exact PHP warnings, and native lowering explicitly
+  unsupported.
+
+## Milestone 571: Independent Lane Candidates
+
+- [x] Parser lane: choose the next narrow parser syntax expansion or syntax
+  boundary from the documented unsupported gaps, add parser/fixture coverage,
+  update support docs with named unsupported edge cases, and avoid runtime or
+  native lowering changes unless a later lane explicitly takes them. Selected
+  candidate: stable parse diagnostics for unsupported `list(...)` and `[...]`
+  array destructuring assignment targets.
+
+## Milestone 572: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose another selected-backend or fallback CLI
+  contract gap from existing native output behavior, add deterministic CLI
+  coverage, and leave production lowering behavior unchanged unless the gap is
+  itself in CLI/output handling.
+
+## Milestone 573: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next small deterministic native folding
+  slice from the already-supported scalar/string boundary, add focused
+  `--emit-ir` and fallback `--emit-asm` coverage, and keep runtime-backed
+  lookup, arrays, objects, dynamic calls, and exact native PHP errors
+  explicitly rejected. Selected candidate: extend static native
+  `defined($name)` folding to the current `SORT_NUMERIC` built-in constant.
+
+## Milestone 574: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected.
+
+## Milestone 575: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` stdin validation for existing native
+  `defined("SORT_NUMERIC")` folding.
+
+## Milestone 576: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate: support current
+  `array_key_exists($key, $array)` null and boolean key coercions.
+
+## Milestone 577: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` stdin validation for existing native
+  `defined("SORT_STRING")` folding.
+
+## Milestone 578: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate: support
+  no-warning integral finite float key coercions for
+  `array_key_exists($key, $array)`.
+
+## Milestone 579: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` stdin validation for the existing broader native
+  `defined($name)` built-in constant answer table.
+
+## Milestone 580: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate: support
+  `array_combine($keys, $values)` null and boolean key-value coercions.
+
+## Milestone 581: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` stdin validation for existing native scalar/null
+  `is_countable($value)` and `is_iterable($value)` false-folding.
+
+## Milestone 582: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate: support
+  `array_combine($keys, $values)` integral finite float key-value coercions.
+
+## Milestone 583: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` stdin validation for existing native scalar/null
+  `is_object($value)` false-folding and `get_debug_type($value)` folding.
+
+## Milestone 584: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate: support
+  `array_fill_keys($keys, $value)` null, boolean, and integral finite float
+  key-value coercions.
+
+## Milestone 585: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` stdin validation for existing native static metadata-exists
+  false-folding.
+
+## Milestone 586: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate:
+  `array_column($rows, $column_key)` for array rows and public object rows.
+
+## Milestone 587: Independent Lane Candidates
+
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+  Selected candidate: recognize and reject unsupported exponentiation syntax
+  `**` and `**=` with a stable parse diagnostic.
+
+## Milestone 588: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output. Selected candidate:
+  include `array_change_key_case` in native `function_exists`/`is_callable`
+  callable lookup folding while keeping direct array builtin calls rejected.
+
+## Milestone 589: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the split-lane queue after the 583/584 batch,
+  keep `GOAL.MD`, `docs/LANE_WORKERS.md`, `docs/NEXT_TASKS.md`,
+  `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned, and record the focused
+  test/full-gate policy without requiring workspace-wide tests for every
+  narrow lane slice. Selected candidate: close the post-583/584 queue refresh,
+  carry forward the focused lane-test policy, and leave the next active
+  per-lane milestones at compiler-output 590, IR/lowering 591, parser 592,
+  runtime 593, and tests/docs 594.
+
+## Milestone 590: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` empty assembly stdout remains a final diagnostic without
+  falling back to `llc` or `cc`.
+
+## Milestone 591: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output. Selected candidate:
+  native callable lookup folding coverage for `array_column` while direct
+  `array_column(...)` native execution remains rejected.
+
+## Milestone 592: Independent Lane Candidates
+
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+  Selected candidate: first-class callable syntax such as `strlen(...)` and
+  `$callback(...)` now stops at a stable parse boundary.
+
+## Milestone 593: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate:
+  `array_column($rows, $column_key, $index_key)` for int/string result index
+  values over array rows and current public object rows.
+
+## Milestone 594: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the split-lane queue after the current 590-593
+  implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
+  `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
+  record focused verification commands, and identify the next checkpoint point
+  where the serialized full gate should run. Selected candidate: close the
+  590-593 split-lane batch in planning docs, open the next per-lane queue, and
+  record that `tools/run-tests.sh` should run before the next checkpoint batch.
+
+## Milestone 595: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` whitespace-only assembly stdout remains a final diagnostic
+  without falling back to `llc` or `cc`.
+
+## Milestone 596: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output. Selected candidate:
+  native callable lookup folding coverage for `array_count_values` while
+  direct `array_count_values(...)` native execution remains rejected.
+
+## Milestone 597: Independent Lane Candidates
+
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+  Selected candidate: magic class names in `new` expressions such as
+  `new self()`, `new parent()`, and `new static()` now stop at a stable parse
+  boundary.
+
+## Milestone 598: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate:
+  `get_mangled_object_vars($object)` now includes public, protected, and
+  private instance slots with PHP-style mangled keys.
+
+## Milestone 599: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the split-lane queue after the next
+  implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
+  `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
+  record focused verification commands, and identify the next checkpoint point
+  where the serialized full gate should run. Selected candidate: close the
+  595-598 split-lane batch in planning docs, open the next per-lane queue, and
+  record that `tools/run-tests.sh` should run before checkpointing.
+
+## Milestone 600: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected-`clang` success with whitespace-only stdout and stderr diagnostics
+  remains a final invalid-output diagnostic without falling back to `llc` or
+  `cc`.
+
+## Milestone 601: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output. Selected candidate:
+  native callable lookup folding coverage for `array_sum` while direct
+  `array_sum(...)` native execution remains rejected.
+
+## Milestone 602: Independent Lane Candidates
+
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+  Selected candidate: anonymous class expressions such as `new class {}` and
+  `new class() {}` now stop at a stable parse boundary.
+
+## Milestone 603: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected.
+  Selected candidate: `array_column($rows, $column_key, $index_key)` now
+  accepts null, boolean, and integral finite float row values as result index
+  values, while lossy/non-finite floats, arrays, objects, resources, and native
+  lowering remain unsupported.
+
+## Milestone 604: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the split-lane queue after the next
+  implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
+  `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
+  record focused verification commands, and identify the next checkpoint point
+  where the serialized full gate should run. Selected candidate: close the
+  600-603 split-lane batch in planning docs, open the next per-lane queue, and
+  record that `tools/run-tests.sh` should run before checkpointing.
+
+## Milestone 605: Independent Lane Candidates
+
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling. Selected candidate:
+  selected `llc` success with whitespace-only stdout and stderr diagnostics
+  remains a final invalid-output diagnostic without falling back to the
+  `cc -S` fallback.
+
+## Milestone 606: Independent Lane Candidates
+
+- [x] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output. Selected candidate:
+  native callable lookup folding coverage for `array_product` while direct
+  `array_product(...)` native execution remains rejected.
+
+## Milestone 607: Independent Lane Candidates
+
+- [x] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+  Selected candidate: clone expressions such as `clone $object` now have
+  focused parser, `--emit-ir`, and `phpc run` fixture coverage for the existing
+  stable parse boundary.
+
+## Milestone 608: Independent Lane Candidates
+
+- [x] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected. Selected candidate:
+  `array_filter($array, $callback, $mode)` and the null-callback form now
+  accept boolean mode flags, with `false` using the value-only mode and `true`
+  using the value/key mode while native lowering remains rejected.
+
+## Milestone 609: Independent Lane Candidates
+
+- [x] Tests/docs lane: refresh the split-lane queue after the next
+  implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
+  `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
+  record focused verification commands, and identify the next checkpoint point
+  where the serialized full gate should run. Selected candidate: close the
+  605-608 split-lane batch in planning docs, open the next per-lane queue, and
+  record that `tools/run-tests.sh` should run before checkpointing.
+
+## Milestone 610: Independent Lane Candidates
+
+- [ ] Compiler-output lane: choose the next deterministic CLI artifact or
+  backend contract coverage target from existing native output behavior, add
+  focused snapshot coverage, and leave production lowering behavior unchanged
+  unless the gap is itself in CLI/output handling.
+
+## Milestone 611: Independent Lane Candidates
+
+- [ ] IR/lowering lane: choose the next narrow native IR/lowering refinement
+  or precise rejection boundary from already documented interpreter behavior,
+  add focused `--emit-ir`/`--emit-asm` coverage, and keep unsupported native
+  cases rejected before misleading backend output.
+
+## Milestone 612: Independent Lane Candidates
+
+- [ ] Parser lane: choose the next small syntax or parse-diagnostic boundary
+  from the documented unsupported gaps, add parser/unit coverage plus
+  `phpc run` CLI snapshots where applicable, and do not widen runtime or native
+  support claims unless another lane implements and tests the behavior.
+
+## Milestone 613: Independent Lane Candidates
+
+- [ ] Runtime lane: choose the next small array/object builtin refinement from
+  the remaining documented unsupported gaps, implement it through `phpc run`
+  with focused fixtures and system PHP comparison where applicable, and keep
+  native lowering explicitly rejected.
+
+## Milestone 614: Independent Lane Candidates
+
+- [ ] Tests/docs lane: refresh the split-lane queue after the next
+  implementation batch, keep `GOAL.MD`, `docs/LANE_WORKERS.md`,
+  `docs/NEXT_TASKS.md`, `docs/SUPPORT.md`, and `docs/PROGRESS.md` aligned,
+  record focused verification commands, and identify the next checkpoint point
+  where the serialized full gate should run.
+
+## Tests/Docs Lane: Parallel Worker Operations
+
+- [x] Document the lane/subagent worktree protocol, focused-test command shape,
+  lane ownership boundaries, and handoff requirements so parser, IR/lowering,
+  runtime, compiler-output, and tests/docs workers can advance separate
+  milestones without sharing one cargo target directory or overwriting active
+  implementation slices.

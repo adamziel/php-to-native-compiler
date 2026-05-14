@@ -3820,10 +3820,9021 @@ Still fails:
   This pins the current fallback static scalar output path without claiming
   runtime-backed output conversion, linking/execution, exact native PHP
   errors, or broader native lowering.
+- Added explicit `phpc compile --emit-asm` CLI coverage for a lowerable
+  straight-line scalar reassignment program. The Milestone 224 fixture runs
+  through `phpc run` and system PHP, and the assembly CLI test invokes
+  `--emit-asm` with a deterministic fake `clang` that validates generated LLVM
+  IR contains the final reassigned string and integer values while rejecting
+  the overwritten values. This pins the current static-variable overwrite
+  boundary without claiming native symbol-table storage,
+  references/copy-on-write behavior, assembly linking/execution, exact native
+  PHP errors, or broader native lowering.
+- Added explicit `phpc compile --emit-asm` C fallback CLI coverage for a
+  lowerable straight-line scalar reassignment program. The Milestone 225
+  fixture runs through `phpc run` and system PHP, and the assembly CLI test
+  hides LLVM assembly tools while exposing a deterministic fake `cc` that
+  validates generated C fallback source contains the final reassigned string
+  and integer values while rejecting the overwritten values. This pins the same
+  static-variable overwrite boundary for the documented fallback path without
+  claiming native symbol-table storage, references/copy-on-write behavior,
+  assembly linking/execution, exact native PHP errors, or broader native
+  lowering.
+- Added explicit `phpc compile --emit-ir` CLI coverage for a lowerable
+  straight-line scalar reassignment program. The Milestone 226 fixture runs
+  through `phpc run` and system PHP, and the committed IR snapshot shows only
+  the final overwritten string and integer values are emitted. This pins the
+  same static-variable overwrite boundary without claiming native symbol-table
+  storage, references/copy-on-write behavior, assembly linking/execution,
+  exact native PHP errors, or broader native lowering.
+- Added focused `emit_ir_source` unit coverage for a lowerable straight-line
+  scalar reassignment program. The test asserts the final overwritten string
+  and integer values are present in generated IR and the overwritten values are
+  absent, without claiming native symbol-table storage,
+  references/copy-on-write behavior, assembly linking/execution, exact native
+  PHP errors, or broader native lowering.
+- Added focused `emit_asm_source` API coverage for a lowerable straight-line
+  scalar reassignment program using the existing available-backend skip
+  pattern. This proves assembly emission succeeds for the current static
+  overwrite subset when a backend is available, without claiming
+  linking/execution, native symbol-table storage, references/copy-on-write
+  behavior, exact native PHP errors, or broader native lowering.
+- Reviewed the scalar reassignment native-lowering coverage added across
+  Milestones 224 through 228. The only low-risk consolidation was extracting a
+  shared backend-availability helper for the API-level assembly tests; the
+  deterministic CLI fake-backend helpers remain explicit to preserve their
+  per-boundary validation.
+- Ran the focused scalar reassignment regression set for Milestones 224 through
+  229. Passing commands: `cargo run -p phpc -- test tests/fixtures/milestone224`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone224`;
+  `cargo run -p phpc -- test tests/fixtures/milestone225`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone225`;
+  `cargo run -p phpc -- test tests/fixtures/milestone226`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone226`;
+  `cargo test -p phpc --test native_assembly_cli native_scalar_reassignment`;
+  and `cargo test -p phpc --test native_scalar_echo_boundary`.
+- Ran the full-suite gate for the scalar reassignment native-lowering coverage.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 476 passed and 0 failed, and `phpc test --compare-php` with
+  476 fixture tests passed, 220 system PHP comparisons, and 256 skipped.
+- Continued past the scalar reassignment checkpoint decision into the next
+  native-lowering slice. LLVM IR and the C assembly fallback now lower
+  straight-line integer `+`, `-`, and `*` expressions when both operands are
+  already lowerable integers, including values read from previous static
+  assignments in the same straight-line lowering pass. The Milestone 233
+  fixture has committed `--emit-ir` output plus deterministic fake-backend
+  `--emit-asm` coverage for the LLVM path and `cc -S` fallback. Unsupported
+  arithmetic operands/operators now use a tightened diagnostic that preserves
+  rejection for floats, strings, booleans, nulls, arrays, objects, `/`, `%`,
+  PHP numeric coercion, division/modulo checks, modulo coercions, overflow
+  behavior, references/copy-on-write, exact native PHP errors, linking/execution,
+  and broader native lowering.
+- Focused native integer arithmetic checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_arithmetic`;
+  `cargo run -p phpc -- test tests/fixtures/milestone233`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone233`; and
+  the shared arithmetic diagnostic regression command
+  `cargo test -p phpc --test native_string_arithmetic --test modulo_operator --test native_division_safety`.
+- Ran the full-suite gate for the native integer arithmetic lowering slice.
+  The first `tools/run-tests.sh` attempt found one stale Milestone 1 test that
+  still expected integer `1 + 2` to reject; that test now covers integer
+  division rejection instead, and `cargo test -p phpc --test milestone1`
+  passed. The rerun of `tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 477 passed and 0 failed, and
+  `phpc test --compare-php` with 477 fixture tests passed, 221 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native integer arithmetic checkpoint decision into a
+  narrow unary slice. LLVM IR and the C assembly fallback now lower unary minus
+  when the operand is already a lowerable integer in the same straight-line
+  subset, including integer values produced by previous lowerable expressions.
+  The Milestone 236 fixture has committed `--emit-ir` output plus deterministic
+  fake-backend `--emit-asm` coverage for the LLVM path and `cc -S` fallback.
+  Unsupported unary operands/operators now use a tightened diagnostic that
+  preserves rejection for floats, strings, booleans, nulls, arrays, objects,
+  logical not, PHP numeric coercion, truthiness conversion, overflow behavior,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native integer unary-minus checks passed:
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_unary_minus`;
+  `cargo run -p phpc -- test tests/fixtures/milestone236`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone236`.
+- Ran the full-suite gate for the native integer unary-minus lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 478 passed and 0 failed, and `phpc test --compare-php` with
+  478 fixture tests passed, 222 system PHP comparisons, and 256 skipped.
+- Continued past the native integer unary-minus checkpoint decision into a
+  narrow boolean unary slice. LLVM IR and the C assembly fallback now lower
+  logical not when the operand is already a lowerable boolean in the same
+  straight-line subset. The Milestone 239 fixture has committed `--emit-ir`
+  output plus deterministic fake-backend `--emit-asm` coverage for the LLVM
+  path and `cc -S` fallback. Unsupported unary operands/operators continue to
+  use the tightened diagnostic that preserves rejection for float, string,
+  null, array, and object unary operands, general PHP truthiness conversion,
+  PHP numeric coercion, overflow behavior, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native lowering.
+- Focused native boolean logical-not checks passed:
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_logical_not`;
+  `cargo run -p phpc -- test tests/fixtures/milestone239`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone239`.
+- Ran the full-suite gate for the native boolean logical-not lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 479 passed and 0 failed, and `phpc test --compare-php` with
+  479 fixture tests passed, 223 system PHP comparisons, and 256 skipped.
+- Continued past the native boolean logical-not checkpoint decision into a
+  narrow comparison slice. LLVM IR and the C assembly fallback now lower strict
+  identity `===` and `!==` when both operands are already lowerable integer
+  literals or already lowerable booleans in the same straight-line subset. The
+  Milestone 242 fixture has committed `--emit-ir` output plus deterministic
+  fake-backend `--emit-asm` coverage for the LLVM path and `cc -S` fallback.
+  Unsupported comparison operands/operators preserve rejection for loose
+  comparisons, ordering comparisons, strings, floats, nulls, arrays, objects,
+  dynamic integer expression results, PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native static strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_static_strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone242`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone242`.
+- Ran the full-suite gate for the native static strict-identity lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 480 passed and 0 failed, and `phpc test --compare-php` with
+  480 fixture tests passed, 224 system PHP comparisons, and 256 skipped.
+- Continued past the native static strict-identity checkpoint decision into the
+  next narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` already has unrelated pre-existing edits outside this
+  interactive session's active work.
+- LLVM IR and the C assembly fallback now lower string concatenation `.` when
+  both operands are already lowerable strings in the same straight-line subset,
+  including strings read from previous static assignments and nested
+  string-only concat expressions. The result is folded into a generated static
+  string constant. The Milestone 245 fixture has committed `--emit-ir` output
+  plus deterministic fake-backend `--emit-asm` coverage for the LLVM path and
+  `cc -S` fallback. Unsupported concatenation operands/operators preserve
+  rejection for PHP scalar-to-string conversion, arrays, objects, resources,
+  runtime string allocation, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native static string-concatenation checks passed:
+  `cargo test -p phpc --test native_concat_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_static_string_concat`;
+  `cargo run -p phpc -- test tests/fixtures/milestone245`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone245`.
+- Ran the full-suite gate for the native static string-concatenation lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 481 passed and 0 failed, and
+  `phpc test --compare-php` with 481 fixture tests passed, 225 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native static string-concatenation checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+- LLVM IR and the C assembly fallback now lower strict identity `===` and
+  `!==` when both operands are already lowerable strings in the same
+  straight-line subset, including strings read from previous static
+  assignments and string-only concatenation results. The Milestone 248 fixture
+  has committed `--emit-ir` output plus deterministic fake-backend
+  `--emit-asm` coverage for the LLVM path and `cc -S` fallback. Unsupported
+  comparison operands/operators preserve rejection for loose comparisons,
+  ordering comparisons, floats, nulls, arrays, objects, dynamic string
+  allocation beyond the static straight-line subset, PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native static string strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_static_string_strict_identity`;
+  `cargo test -p phpc --test strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone248`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone248`.
+- Ran the full-suite gate for the native static string strict-identity lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 482 passed and 0 failed, and
+  `phpc test --compare-php` with 482 fixture tests passed, 226 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native static string strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+- LLVM IR and the C assembly fallback now lower strict identity `===` and
+  `!==` when both operands are already lowerable floats in the same
+  straight-line subset. The Milestone 251 fixture has committed `--emit-ir`
+  output plus deterministic fake-backend `--emit-asm` coverage for the LLVM
+  path and `cc -S` fallback. Unsupported comparison operands/operators
+  preserve rejection for loose comparisons, ordering comparisons, nulls,
+  arrays, objects, mixed int/float identity semantics beyond static rejection,
+  NaN and non-literal float sources, PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native static float strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_static_float_strict_identity`;
+  `cargo test -p phpc --test strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone251`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone251`.
+- Ran the full-suite gate for the native static float strict-identity lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 483 passed and 0 failed, and
+  `phpc test --compare-php` with 483 fixture tests passed, 227 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native static float strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+- LLVM IR and the C assembly fallback now lower strict identity `===` and
+  `!==` when both operands are already lowerable `null` values in the same
+  straight-line subset. The Milestone 254 fixture has committed `--emit-ir`
+  output plus deterministic fake-backend `--emit-asm` coverage for the LLVM
+  path and `cc -S` fallback. Unsupported comparison operands/operators
+  preserve rejection for mixed null/scalar identity semantics beyond static
+  rejection, loose comparisons, ordering comparisons, arrays, objects, PHP
+  comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native static null strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_static_null_strict_identity`;
+  `cargo test -p phpc --test strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone254`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone254`.
+- Ran the full-suite gate for the native static null strict-identity lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 484 passed and 0 failed, and
+  `phpc test --compare-php` with 484 fixture tests passed, 228 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native static null strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
 
 Next:
 
-- Add Milestone 224, explicit `phpc compile --emit-asm` CLI coverage for a
-  lowerable straight-line scalar reassignment program, documenting the current
-  native static-variable overwrite boundary before broader symbol-table-backed
+- LLVM IR and the C assembly fallback now fold strict identity `===` and `!==`
+  for already lowerable scalar operands with different PHP scalar types in the
+  same straight-line subset. This includes dynamic integer expression results
+  when the opposite operand has a different static scalar type, because PHP
+  strict identity is determined by type alone in that case. The Milestone 257
+  fixture has committed `--emit-ir` output plus deterministic fake-backend
+  `--emit-asm` coverage for the LLVM path and `cc -S` fallback. Unsupported
+  comparison operands/operators preserve rejection for same-type dynamic
+  integer identity, loose comparisons, ordering comparisons, arrays, objects,
+  PHP comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native mixed scalar strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_mixed_scalar_strict_identity`;
+  `cargo test -p phpc --test strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone257`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone257` with
+  1 fixture compared against system PHP and 0 skipped.
+- Ran the full-suite gate for the native mixed scalar strict-identity lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 485 passed and 0 failed, and
+  `phpc test --compare-php` with 485 fixture tests passed, 229 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native mixed scalar strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower same-type dynamic integer
+  strict identity `===` and `!==` in the straight-line subset. LLVM emits
+  integer `icmp` operations and selects between static `"1"` and empty-string
+  constants for PHP-shaped boolean echo output; the C fallback emits guarded
+  `printf("%s", "1")` calls. The Milestone 260 fixture has committed
+  `--emit-ir` output plus deterministic fake-backend `--emit-asm` coverage for
+  the LLVM path and `cc -S` fallback. Unsupported comparison
+  operands/operators preserve rejection for dynamic float, string, boolean, or
+  null identity beyond static/type-only folds, loose comparisons, ordering
+  comparisons, arrays, objects, PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native dynamic integer strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_integer_strict_identity`;
+  `cargo test -p phpc --test strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone260`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone260` with
+  1 fixture compared against system PHP and 0 skipped.
+- Ran the full-suite gate for the native dynamic integer strict-identity
+  lowering slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 486 passed and 0 failed, and
+  `phpc test --compare-php` with 486 fixture tests passed, 230 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native dynamic integer strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower same-type dynamic boolean
+  strict identity `===` and `!==` in the straight-line subset. The supported
+  dynamic booleans are native boolean expression results already produced by
+  strict-identity lowering; this does not add PHP truthiness conversion or
+  logical operator lowering. The Milestone 263 fixture has committed
+  `--emit-ir` output plus deterministic fake-backend `--emit-asm` coverage for
+  the LLVM path and `cc -S` fallback. Unsupported comparison
+  operands/operators preserve rejection for dynamic floats, strings, and nulls
+  beyond static/type-only folds, PHP truthiness conversion, logical operator
+  lowering, loose comparisons, ordering comparisons, arrays, objects, PHP
+  comparison coercions, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native dynamic boolean strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_boolean_strict_identity`;
+  `cargo test -p phpc --test strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone263`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone263` with
+  1 fixture compared against system PHP and 0 skipped.
+- Ran the full-suite gate for the native dynamic boolean strict-identity
+  lowering slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 487 passed and 0 failed, and
+  `phpc test --compare-php` with 487 fixture tests passed, 231 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native dynamic boolean strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added explicit native mixed-scalar strict identity coverage for dynamic
+  boolean operands. The Milestone 266 fixture proves a boolean expression
+  produced by native strict-identity lowering can be echoed and then compared
+  with integer, string, null, and float operands through the type-only strict
+  identity fold, without emitting runtime boolean comparisons or numeric echo
+  calls for the mixed comparisons. The fixture has committed `--emit-ir`
+  output plus deterministic fake-backend `--emit-asm` coverage for the LLVM
+  path and `cc -S` fallback. Unsupported gaps remain PHP truthiness conversion,
+  logical operator lowering, dynamic floats, strings, and nulls beyond already
+  static or type-only folds, loose comparisons, ordering comparisons, arrays,
+  objects, PHP comparison coercions, references/copy-on-write, exact native PHP
+  errors, linking/execution, and broader native lowering.
+- Focused native mixed dynamic boolean strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_mixed_dynamic_boolean_strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone266`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone266` with
+  1 fixture compared against system PHP and 0 skipped.
+- Ran the full-suite gate for the native mixed dynamic boolean strict-identity
+  coverage slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 488 passed and 0 failed, and
+  `phpc test --compare-php` with 488 fixture tests passed, 232 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native mixed dynamic boolean strict-identity checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower logical not `!` for
+  already-native dynamic boolean expression operands in the straight-line
+  subset, including boolean values produced by native strict-identity
+  lowering. LLVM emits `xor i1 ..., true`; the C fallback carries a negated
+  boolean expression and still emits PHP-shaped boolean output. The Milestone
+  269 fixture has committed `--emit-ir` output plus deterministic fake-backend
+  `--emit-asm` coverage for the LLVM path and `cc -S` fallback. Unsupported
+  gaps remain PHP truthiness conversion, binary logical operator lowering,
+  dynamic floats, strings, and nulls, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native dynamic boolean logical-not checks passed:
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_boolean_logical_not`;
+  `cargo run -p phpc -- test tests/fixtures/milestone269`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone269` with
+  1 fixture compared against system PHP and 0 skipped.
+- Ran the full-suite gate for the native dynamic boolean logical-not lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 489 passed and 0 failed, and
+  `phpc test --compare-php` with 489 fixture tests passed, 233 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native dynamic boolean logical-not checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower binary logical operators
+  `&&`, `||`, `and`, `or`, and `xor` for operands that are already lowerable
+  booleans or native boolean expression results in the straight-line subset.
+  Static boolean pairs fold at compile time; dynamic boolean expression pairs
+  lower to native boolean operations and still echo PHP-shaped boolean output.
+  The Milestone 272 fixture has committed `--emit-ir` output plus deterministic
+  fake-backend `--emit-asm` coverage for the LLVM path and `cc -S` fallback.
+  Unsupported gaps remain PHP truthiness conversion, short-circuiting when the
+  skipped right-hand side would be unsupported or side-effecting, dynamic
+  floats, strings, and nulls, arrays, objects, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native lowering.
+- Focused native boolean logical-operator checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_logical_boundary`;
+  `cargo test -p phpc --test logical_operators --test logical_xor emit_ir_rejects`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_logical_operator`;
+  `cargo run -p phpc -- test tests/fixtures/milestone272`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone272` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native boolean logical-operator lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 490 passed and 0 failed, and
+  `phpc test --compare-php` with 490 fixture tests passed, 234 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native boolean logical-operator checkpoint decision into
+  the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower integer bitwise `&`, `|`, `^`,
+  and unary `~` when operands are already lowerable integers in the
+  straight-line subset. LLVM emits `and`, `or`, `xor`, and `xor ..., -1` over
+  `i64`; the C fallback emits the corresponding integer bitwise expressions
+  and still uses PHP-shaped integer output. The Milestone 275 fixture has
+  committed `--emit-ir` output plus deterministic fake-backend `--emit-asm`
+  coverage for the LLVM path and `cc -S` fallback. Unsupported gaps remain PHP
+  bytewise string bitwise behavior, scalar-to-int coercion for non-integer
+  operands, shift operators and shift diagnostics, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native integer bitwise checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_bitwise_boundary`;
+  `cargo test -p phpc --test bitwise_operators --test bitwise_not --test shift_operators emit_ir`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_bitwise`;
+  `cargo run -p phpc -- test tests/fixtures/milestone275`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone275` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer bitwise lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 491 passed and 0 failed, and `phpc test --compare-php`
+  with 491 fixture tests passed, 235 system PHP comparisons, and 256 skipped.
+- Continued past the native integer bitwise checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower integer shifts `<<` and `>>`
+  when the left operand is already a lowerable integer and the shift count is
+  a statically known value from 0 through 63. LLVM emits `shl` and arithmetic
+  `ashr`; the C fallback emits the corresponding integer shift expressions and
+  still uses PHP-shaped integer output. The Milestone 278 fixture has committed
+  `--emit-ir` output plus deterministic fake-backend `--emit-asm` coverage for
+  the LLVM path and `cc -S` fallback. Unsupported gaps remain dynamic shift
+  counts, negative and large shift-count diagnostics, PHP bytewise string
+  bitwise behavior, scalar-to-int coercion for non-integer operands, arrays,
+  objects, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native integer shift checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_bitwise_boundary`;
+  `cargo test -p phpc --test shift_operators emit_ir`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_shift`;
+  `cargo run -p phpc -- test tests/fixtures/milestone278`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone278` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer shift lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 492 passed and 0 failed, and `phpc test --compare-php`
+  with 492 fixture tests passed, 236 system PHP comparisons, and 256 skipped.
+- Continued past the native integer shift checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower full ternary
+  `condition ? if_true : if_false` when the condition is already a lowerable
+  boolean or native boolean expression and both branch values are already
+  lowerable integers or booleans in the straight-line subset. LLVM emits
+  `select`; the C fallback emits conditional expressions and still uses
+  PHP-shaped integer/boolean output. The Milestone 281 fixture has committed
+  `--emit-ir` output plus deterministic fake-backend `--emit-asm` coverage for
+  the LLVM path and `cc -S` fallback. Unsupported gaps remain PHP truthiness
+  conversion, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native boolean ternary checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test ternary_expression --test null_coalescing --test syntax_boundaries emit_ir_rejects`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_ternary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone281`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone281` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native boolean ternary lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 493 passed and 0 failed, and `phpc test --compare-php`
+  with 493 fixture tests passed, 237 system PHP comparisons, and 256 skipped.
+- Continued past the native boolean ternary checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now extend full ternary
+  `condition ? if_true : if_false` native lowering to branch values that are
+  already lowerable floats in the straight-line subset. LLVM emits `select`
+  over `double`; the C fallback emits conditional expressions and still uses
+  PHP-shaped float output. The Milestone 284 fixture has committed `--emit-ir`
+  output plus deterministic fake-backend `--emit-asm` coverage for the LLVM
+  path and `cc -S` fallback. Unsupported gaps remain PHP truthiness
+  conversion, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native float ternary checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_float_ternary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone284`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone284` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native float ternary lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 494 passed and 0 failed, and
+  `phpc test --compare-php` with 494 fixture tests passed, 238 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native float ternary checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now extend full ternary
+  `condition ? if_true : if_false` native lowering to branch values that are
+  already lowerable strings in the straight-line subset. LLVM emits `select`
+  over `ptr` values to generated static string constants or previously
+  selected string pointers; the C fallback emits conditional expressions over
+  string literals/expressions and still uses PHP-shaped string output. The
+  Milestone 287 fixture has committed `--emit-ir` output plus deterministic
+  fake-backend `--emit-asm` coverage for the LLVM path and `cc -S` fallback.
+  Unsupported gaps remain PHP truthiness conversion, lazy branch evaluation for
+  unsupported or side-effecting branches, short ternary, null coalescing,
+  arrays, objects, references/copy-on-write, runtime string allocation beyond
+  the static string subset, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native string ternary checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_string_ternary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone287`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone287` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native string ternary lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 495 passed and 0 failed, and
+  `phpc test --compare-php` with 495 fixture tests passed, 239 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native string ternary checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now fold full ternary
+  `condition ? if_true : if_false` when the condition is a statically known
+  boolean and both branches are already lowerable scalar values, including
+  mixed selected/unselected branch types. Dynamic mixed-type branch values still
+  reject until native tagged values exist. The Milestone 290 fixture has
+  committed `--emit-ir` output plus deterministic fake-backend `--emit-asm`
+  coverage for the LLVM path and `cc -S` fallback, and those fake backends
+  verify that no runtime `select`/conditional expression or unselected scalar
+  branch output is emitted. Unsupported gaps remain dynamic mixed-type
+  ternaries, PHP truthiness conversion, lazy branch evaluation for unsupported
+  or side-effecting branches, short ternary, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native static boolean mixed ternary checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_static_mixed_ternary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone290`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone290` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native static boolean mixed ternary folding
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 496 passed and 0 failed, and
+  `phpc test --compare-php` with 496 fixture tests passed, 240 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native static boolean mixed ternary checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower float `+`, `-`, and `*` when
+  both operands are already lowerable floats in the straight-line subset. LLVM
+  emits `fadd`, `fsub`, and `fmul` over `double`; the C fallback emits the
+  corresponding float expressions and still uses PHP-shaped float output. The
+  Milestone 293 fixture has committed `--emit-ir` output plus deterministic
+  fake-backend `--emit-asm` coverage for the LLVM path and `cc -S` fallback.
+  Unsupported gaps remain mixed int/float arithmetic, PHP numeric coercion,
+  `/`, `%`, division/modulo zero checks, modulo coercions, overflow behavior,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native float arithmetic checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_float_arithmetic`;
+  `cargo run -p phpc -- test tests/fixtures/milestone293`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone293` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native float arithmetic lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 497 passed and 0 failed, and
+  `phpc test --compare-php` with 497 fixture tests passed, 241 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native float arithmetic checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower float unary minus when the
+  operand is already a lowerable float in the straight-line subset. LLVM emits
+  `fsub double 0.0, ...`; the C fallback emits the corresponding unary
+  negation expression and still uses PHP-shaped float output. The Milestone 296
+  fixture has committed `--emit-ir` output plus deterministic fake-backend
+  `--emit-asm` coverage for the LLVM path and `cc -S` fallback. Unsupported
+  gaps remain boolean/string/null unary-minus coercion, arrays, objects,
+  overflow behavior, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native float unary-minus checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_float_unary_minus`;
+  `cargo run -p phpc -- test tests/fixtures/milestone296`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone296` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native float unary-minus lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 498 passed and 0 failed, and
+  `phpc test --compare-php` with 498 fixture tests passed, 242 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native float unary-minus checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower same-type dynamic float strict
+  identity `===` and `!==` when both operands are already lowerable floats in
+  the straight-line subset. LLVM emits `fcmp oeq`/`fcmp une` over `double`; the
+  C fallback emits `==`/`!=` against the lowerable float expressions, and both
+  paths keep PHP-shaped boolean echo output. The Milestone 299 fixture has
+  committed `--emit-ir` output plus deterministic fake-backend `--emit-asm`
+  coverage for the LLVM path and `cc -S` fallback. Unsupported gaps remain
+  loose comparisons, ordering comparisons, dynamic string/null identity beyond
+  static/type-only folds, PHP comparison coercions, non-lowerable float
+  sources, arrays, objects, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native dynamic float strict-identity checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_comparison_boundary dynamic_float_strict_identity`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_float_strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone299`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone299` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native dynamic float strict-identity lowering
+  slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 499 passed and 0 failed, and
+  `phpc test --compare-php` with 499 fixture tests passed, 243 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native dynamic float strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added explicit native mixed dynamic-float strict identity coverage for
+  already lowerable float expression results compared with different scalar
+  types. LLVM IR still lowers the float expression, then folds cross-type
+  `===`/`!==` by PHP scalar type without emitting `fcmp`, `select`, numeric
+  output, or runtime comparison calls. The C assembly fallback emits only the
+  folded PHP-shaped boolean/string output for this side-effect-free expression
+  path. The Milestone 302 fixture has committed `--emit-ir` output plus
+  deterministic fake-backend `--emit-asm` coverage for the LLVM path and
+  `cc -S` fallback. Unsupported gaps remain loose comparisons, ordering
+  comparisons, dynamic string/null identity beyond static/type-only folds, PHP
+  comparison coercions, non-lowerable float sources, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native mixed dynamic-float strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary mixed_dynamic_float_strict_identity`;
+  `cargo test -p phpc --test native_assembly_cli native_mixed_dynamic_float_strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone302`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone302` with
+  1 fixture compared against system PHP and 0 skipped; `cargo fmt --check`;
+  and `git diff --check`.
+
+Next:
+
+- Ran the full-suite gate for the native mixed dynamic-float strict-identity
+  coverage slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 500 passed and 0 failed, and
+  `phpc test --compare-php` with 500 fixture tests passed, 244 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native mixed dynamic-float strict-identity checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower same-type dynamic string strict
+  identity `===` and `!==` when both operands are already lowerable string
+  pointers in the straight-line subset. LLVM declares and calls `strcmp`, then
+  compares the result against zero with `icmp`; the C fallback includes
+  `<string.h>` and emits the matching `strcmp(...) == 0` or `!= 0` expression.
+  Both paths keep PHP-shaped boolean echo output. The Milestone 305 fixture has
+  committed `--emit-ir` output plus deterministic fake-backend `--emit-asm`
+  coverage for the LLVM path and `cc -S` fallback. Unsupported gaps remain
+  loose comparisons, ordering comparisons, dynamic null identity beyond
+  static/type-only folds, PHP comparison coercions, runtime string allocation,
+  arrays, objects, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native dynamic string strict-identity checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_comparison_boundary dynamic_string_strict_identity`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_string_strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone305`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone305` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native dynamic string strict-identity
+  lowering slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 501 passed and 0 failed, and
+  `phpc test --compare-php` with 501 fixture tests passed, 245 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native dynamic string strict-identity checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added explicit native mixed dynamic-string strict identity coverage for
+  already lowerable string pointer expression results compared with different
+  scalar types. LLVM IR still lowers the string pointer expression, then folds
+  cross-type `===`/`!==` by PHP scalar type without emitting `strcmp`, numeric
+  output, or runtime comparison calls. The C assembly fallback emits only the
+  folded PHP-shaped boolean/string output for this side-effect-free expression
+  path. The Milestone 308 fixture has committed `--emit-ir` output plus
+  deterministic fake-backend `--emit-asm` coverage for the LLVM path and
+  `cc -S` fallback. Unsupported gaps remain loose comparisons, ordering
+  comparisons, dynamic null identity beyond static/type-only folds, PHP
+  comparison coercions, runtime string allocation, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native mixed dynamic-string strict-identity checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_comparison_boundary mixed_dynamic_string_strict_identity`;
+  `cargo test -p phpc --test native_assembly_cli native_mixed_dynamic_string_strict_identity`;
+  `cargo run -p phpc -- test tests/fixtures/milestone308`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone308` with
+  1 fixture compared against system PHP and 0 skipped; `cargo fmt --check`;
+  and `git diff --check`.
+
+Next:
+
+- Ran the full-suite gate for the native mixed dynamic-string strict-identity
+  coverage slice. `tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 502 passed and 0 failed, and
+  `phpc test --compare-php` with 502 fixture tests passed, 246 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native mixed dynamic-string strict-identity checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now fold full ternary expressions with a
+  lowerable dynamic boolean condition and `null` in both branches. The fold
+  still evaluates the lowerable condition, but the result is `null`, so it
+  emits no native `select`, branch, numeric output, tagged value, or runtime
+  null representation. The Milestone 311 fixture has committed `--emit-ir`
+  output plus deterministic fake-backend `--emit-asm` coverage for the LLVM
+  path and `cc -S` fallback. Unsupported gaps remain mixed dynamic branch
+  values, PHP truthiness, lazy branch evaluation for unsupported or
+  side-effecting branches, short ternary `?:`, null coalescing `??`, null-aware
+  lookup, arrays, objects, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native lowering.
+- Focused native null ternary checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_conditional_boundary null`;
+  `cargo test -p phpc --test native_assembly_cli native_null_ternary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone311`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone311` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native null ternary folding slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 503 passed and 0 failed, and
+  `phpc test --compare-php` with 503 fixture tests passed, 247 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native null ternary checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- LLVM IR and the C assembly fallback now lower integer `%` when both operands
+  are already lowerable integers and the divisor is a statically known positive
+  integer. LLVM emits `srem i64`; the C fallback emits the corresponding `%`
+  expression. The Milestone 314 fixture has committed `--emit-ir` output plus
+  deterministic fake-backend `--emit-asm` coverage for the LLVM path and
+  `cc -S` fallback. Unsupported gaps remain division `/`, dynamic, zero, or
+  non-positive modulo divisors, PHP numeric coercions, modulo coercions,
+  negative-divisor/min-int modulo edge cases, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native lowering.
+- Focused native integer modulo checks passed:
+  `cargo check -p phpc`;
+  `cargo test -p phpc --test native_arithmetic_boundary modulo`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_modulo`;
+  `cargo test -p phpc --test modulo_operator --test milestone1 modulo`;
+  `cargo run -p phpc -- test tests/fixtures/milestone314`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone314` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer modulo lowering slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 504 passed and 0 failed, and
+  `phpc test --compare-php` with 504 fixture tests passed, 248 system PHP
+  comparisons, and 256 skipped. The gate also refreshed the older Milestone
+  161 native modulo rejection fixture so it still exercises an unsupported
+  dynamic divisor boundary after static-positive integer `%` became lowerable.
+- Continued past the native integer modulo checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added a native modulo runtime-check boundary. LLVM IR emission and the C
+  assembly fallback still lower integer `%` only with a statically known
+  positive divisor, but dynamic, zero, or non-positive integer divisors now
+  reject with a modulo-specific codegen diagnostic instead of the generic
+  arithmetic diagnostic. The older Milestone 161 rejection fixture and the new
+  Milestone 317 fixture pin the dynamic-divisor boundary. Unsupported gaps
+  remain PHP numeric coercions, modulo coercions, negative-divisor/min-int
+  edge behavior, references/copy-on-write, exact native PHP errors, runtime
+  modulo checks, linking/execution, and broader native arithmetic lowering.
+- Focused native modulo runtime-check boundary checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary modulo`;
+  `cargo test -p phpc --test modulo_operator --test milestone1 modulo`;
+  `cargo test -p phpc --test native_modulo_codegen_cli`;
+  `cargo run -p phpc -- test tests/fixtures/milestone317`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone317` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native modulo runtime-check boundary slice.
+  `tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 505 passed and 0 failed, and
+  `phpc test --compare-php` with 505 fixture tests passed, 249 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native modulo runtime-check boundary checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added a native integer division boundary. LLVM IR emission and the C assembly
+  fallback now reject `/` with a division-specific codegen diagnostic instead
+  of the generic arithmetic diagnostic, covering static zero divisors, dynamic
+  divisors, nonzero integer division, and string-operand division. The older
+  Milestone 162 and 163 CLI snapshots now pin the division-specific diagnostic,
+  and the new Milestone 320 fixture covers nonzero integer `/` through `phpc
+  run`, `phpc compile --emit-ir`, and system PHP comparison. Unsupported gaps
+  remain native PHP division semantics, runtime zero checks, float result
+  conversion, avoiding misleading integer truncation, overflow/INF/NAN
+  behavior, PHP numeric coercions, references/copy-on-write, exact native PHP
+  errors, linking/execution, and broader native arithmetic lowering.
+- Focused native integer division boundary checks passed:
+  `cargo test -p phpc --test native_division_safety`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_string_arithmetic --test native_division_safety --test modulo_operator`;
+  `cargo test -p phpc --test native_arithmetic_boundary --test milestone1 division`;
+  `cargo run -p phpc -- test tests/fixtures/milestone320`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone320` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer division boundary slice.
+  After clearing generated `target/` artifacts to recover local disk space, the
+  serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 506 passed and 0 failed, and
+  `phpc test --compare-php` with 506 fixture tests passed, 250 system PHP
+  comparisons, and 256 skipped.
+- Continued past the native integer division checkpoint decision into the next
+  narrow native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added a native mixed numeric arithmetic boundary. LLVM IR emission and the C
+  assembly fallback now reject mixed int/float `+`, `-`, and `*` with a
+  mixed-numeric-specific codegen diagnostic instead of the generic arithmetic
+  diagnostic. Same-type integer and same-type float `+`, `-`, and `*` lowering
+  remain supported, `/` keeps its division-specific rejection, and modulo
+  runtime-check/coercion gaps keep their existing boundaries. The older
+  Milestone 178 arithmetic rejection snapshot now pins the mixed-numeric
+  diagnostic, and the new Milestone 323 fixture covers mixed numeric arithmetic
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison.
+  Unsupported gaps remain native PHP numeric promotion, exact result typing,
+  overflow/INF/NAN behavior, scalar coercions, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native arithmetic lowering.
+- Focused native mixed numeric arithmetic boundary checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary mixed`;
+  `cargo test -p phpc --test native_arithmetic_boundary arithmetic`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_string_arithmetic --test modulo_operator --test native_division_safety`;
+  `cargo run -p phpc -- test tests/fixtures/milestone323`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone323` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native mixed numeric arithmetic boundary
+  slice. `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 507 passed and 0
+  failed, and `phpc test --compare-php` with 507 fixture tests passed, 251
+  system PHP comparisons, and 256 skipped.
+- Continued past the native mixed numeric arithmetic checkpoint decision into
+  the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added a native scalar-coercion arithmetic boundary. LLVM IR emission and the
+  C assembly fallback now reject booleans, nulls, and strings in `+`, `-`, and
+  `*` with a scalar-coercion-specific codegen diagnostic instead of the generic
+  arithmetic diagnostic. Numeric-string modulo coercion, `/`, mixed int/float
+  promotion, and same-type native arithmetic keep their existing boundaries.
+  The older Milestone 164 string arithmetic rejection snapshot now pins the
+  scalar-coercion diagnostic, and the new Milestone 326 fixture covers boolean
+  arithmetic coercion through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison. Unsupported gaps remain PHP numeric coercion, string numeric
+  parsing, warnings/recovery behavior, exact result typing, overflow/INF/NAN
+  behavior, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native arithmetic lowering.
+- Focused native scalar-coercion arithmetic boundary checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary scalar`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_string_arithmetic`;
+  `cargo test -p phpc --test native_string_arithmetic --test modulo_operator --test native_division_safety`;
+  `cargo run -p phpc -- test tests/fixtures/milestone326`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone326` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native scalar-coercion arithmetic boundary
+  slice. `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 508 passed and 0
+  failed, and `phpc test --compare-php` with 508 fixture tests passed, 252
+  system PHP comparisons, and 256 skipped.
+- Continued past the native scalar-coercion arithmetic checkpoint decision into
+  the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added a native integer overflow arithmetic boundary. LLVM IR emission and the
+  C assembly fallback now track statically known integer results through the
+  straight-line native arithmetic subset and reject integer `+`, `-`, and `*`
+  when the result would overflow `i64` or cannot be statically proven safe.
+  Same-type float arithmetic, mixed int/float diagnostics, scalar-coercion
+  diagnostics, `/`, and modulo runtime-check boundaries keep their existing
+  behavior. The new Milestone 329 fixture pins an overflowing integer addition
+  through `phpc run` and `phpc compile --emit-ir`; it is marked `phpc-only`
+  because the current interpreter/runtime wraps this temporary overflow case
+  while system PHP promotes differently. Unsupported gaps remain PHP integer
+  overflow promotion, runtime overflow checks, exact native PHP errors,
+  references/copy-on-write, linking/execution, and broader native arithmetic
+  lowering.
+- Focused native integer overflow arithmetic boundary checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone329`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone329` with
+  0 fixtures compared against system PHP and 1 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer overflow arithmetic boundary
+  slice. `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 509 passed and 0
+  failed, and `phpc test --compare-php` with 509 fixture tests passed, 252
+  system PHP comparisons, and 257 skipped.
+- Continued past the native integer overflow arithmetic checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native integer unary-minus result tracking. LLVM IR emission and the C
+  assembly fallback now preserve statically known integer values after unary
+  minus when negation is proven not to overflow, allowing later checked integer
+  `+`, `-`, and `*` lowering to remain honest instead of rejecting the
+  negated value as unknown. The new Milestone 332 fixture covers a lowerable
+  `10 + 2`, unary-minus, and later integer addition chain through `phpc run`,
+  `phpc compile --emit-ir`, and system PHP comparison. Unsupported gaps remain
+  unary integer overflow behavior, PHP numeric coercion, bitwise/shift/ternary
+  result tracking, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native expression lowering.
+- Focused native integer unary-minus result-tracking checks passed:
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_unary_minus`;
+  `cargo run -p phpc -- test tests/fixtures/milestone332`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone332` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer unary-minus result-tracking
+  slice. `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 510 passed and 0
+  failed, and `phpc test --compare-php` with 510 fixture tests passed, 253
+  system PHP comparisons, and 257 skipped.
+- Continued past the native integer unary-minus result-tracking checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native integer bitwise result tracking. LLVM IR emission and the C
+  assembly fallback now preserve statically known integer values after
+  lowerable integer `&`, `|`, `^`, and unary `~`, allowing later checked
+  integer `+`, `-`, and `*` lowering to use those bitwise results when they are
+  proven. The new Milestone 335 fixture covers a lowerable `6 + 2`, integer
+  bitwise chain, unary bitwise not, and later integer addition through
+  `phpc run`, `phpc compile --emit-ir`, and system PHP comparison.
+  Unsupported gaps remain PHP bytewise string bitwise behavior, scalar-to-int
+  coercion for non-integer operands, shift result tracking, dynamic or
+  not-statically-known bitwise results used by later checked arithmetic,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Focused native integer bitwise result-tracking checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_bitwise`;
+  `cargo run -p phpc -- test tests/fixtures/milestone335`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone335` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer bitwise result-tracking slice.
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 511 passed and 0
+  failed, and `phpc test --compare-php` with 511 fixture tests passed, 254
+  system PHP comparisons, and 257 skipped.
+- Continued past the native integer bitwise result-tracking checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native integer shift result tracking. LLVM IR emission and the C
+  assembly fallback now preserve statically known integer values after
+  lowerable integer `>>` and after lowerable integer `<<` when the result is
+  statically proven to fit in `i64`, allowing later checked integer `+`, `-`,
+  and `*` lowering to use those shift results when they are proven. Left-shift
+  results that would overflow stay unknown so later checked arithmetic rejects
+  them with the integer-overflow boundary instead of implying PHP overflow
+  semantics. The new Milestone 338 fixture covers a lowerable `6 + 2`, safe
+  left shift, right shifts, and later integer addition through `phpc run`,
+  `phpc compile --emit-ir`, and system PHP comparison. Unsupported gaps remain
+  PHP shift coercions, exact shift diagnostics, overflow-sensitive left-shift
+  result behavior, dynamic shift counts, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native expression lowering.
+- Focused native integer shift result-tracking checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_shift`;
+  `cargo run -p phpc -- test tests/fixtures/milestone338`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone338` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer shift result-tracking slice.
+  After clearing unrelated browser caches to recover disk space, the serialized
+  command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 512 passed and 0
+  failed, and `phpc test --compare-php` with 512 fixture tests passed, 255
+  system PHP comparisons, and 257 skipped.
+- Continued past the native integer shift result-tracking checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native integer ternary result tracking. LLVM IR emission and the C
+  assembly fallback now preserve up to two statically known possible integer
+  values for lowerable dynamic integer full-ternary results, allowing later
+  checked integer `+`, `-`, and `*` lowering to use those values when all
+  resulting arithmetic combinations remain bounded. Ternary arithmetic
+  combinations with more than two possible integer results still reject with
+  the integer-overflow boundary instead of widening native support beyond the
+  proven subset. The new Milestone 341 fixture covers a lowerable dynamic
+  integer ternary and later integer addition through `phpc run`,
+  `phpc compile --emit-ir`, and system PHP comparison. Unsupported gaps remain
+  general PHP truthiness, lazy branch evaluation with side effects, tagged
+  mixed-type branch values, broader possible-value tracking, runtime checks,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Focused native integer ternary result-tracking checks passed:
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_ternary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone341`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone341` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer ternary result-tracking slice.
+  After clearing generated `target/` artifacts to recover disk space, the
+  serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, including the Rust test suite, `phpc test` fixture run with 513
+  passed and 0 failed, and `phpc test --compare-php` with 513 fixture tests
+  passed, 256 system PHP comparisons, and 257 skipped.
+- Continued past the native integer ternary result-tracking checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native integer modulo result tracking. LLVM IR emission and the C
+  assembly fallback now preserve statically known integer results after
+  lowerable integer `%` when the divisor is already the existing statically
+  known positive integer subset and the dividend has known possible integer
+  values, allowing later checked integer `+`, `-`, and `*` lowering to use the
+  modulo result when all combinations remain bounded. Modulo lowering still
+  rejects dynamic, zero, and non-positive divisors with the modulo runtime-check
+  boundary, and modulo results that are not statically known enough for later
+  checked arithmetic still do not imply broader native PHP runtime checks. The
+  new Milestone 344 fixture covers a lowerable integer ternary, static positive
+  modulo, and later integer addition through `phpc run`, `phpc compile
+  --emit-ir`, and system PHP comparison. Unsupported gaps remain PHP modulo
+  coercions, dynamic divisor checks, negative-divisor/min-int edge behavior,
+  integer overflow promotion, runtime checks, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native expression lowering.
+- Focused native integer modulo result-tracking checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone344`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone344` with
+  1 fixture compared against system PHP and 0 skipped; and
+  `cargo test -p phpc --test native_assembly_cli native_integer_modulo --
+  --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native integer modulo result-tracking slice.
+  After clearing generated `target/` artifacts to recover disk space, the
+  serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, including the Rust test suite, `phpc test` fixture run with 514
+  passed and 0 failed, and `phpc test --compare-php` with 514 fixture tests
+  passed, 257 system PHP comparisons, and 257 skipped.
+- Continued past the native integer modulo result-tracking checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native bounded integer result tracking. LLVM IR emission and the C
+  assembly fallback now keep a small set of up to four statically known
+  possible integer values instead of only one or two, allowing independently
+  lowerable integer ternaries and later checked integer `+`, `-`, and `*`
+  combinations to continue when every possible result remains bounded. Larger
+  possible-value sets still reject with the integer-overflow boundary instead
+  of widening native support into unbounded symbolic execution or implying PHP
+  integer overflow promotion. The new Milestone 347 fixture covers two
+  independent lowerable integer ternaries and later integer addition through
+  `phpc run`, `phpc compile --emit-ir`, and system PHP comparison. Unsupported
+  gaps remain broader possible-value tracking, native PHP truthiness and
+  coercion, runtime checks, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native expression lowering.
+- Focused native bounded integer result-tracking checks passed:
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone347`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone347` with
+  1 fixture compared against system PHP and 0 skipped;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_ternary --
+  --test-threads=1`; and
+  `cargo test -p phpc --test native_assembly_cli native_integer_arithmetic --
+  --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native bounded integer result-tracking slice.
+  After clearing generated `target/` artifacts to recover disk space, the
+  serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, including the Rust test suite, `phpc test` fixture run with 515
+  passed and 0 failed, and `phpc test --compare-php` with 515 fixture tests
+  passed, 258 system PHP comparisons, and 257 skipped.
+- Continued past the native bounded integer result-tracking checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native bounded integer bitwise/shift result tracking. LLVM IR emission
+  and the C assembly fallback now preserve bounded possible-value sets through
+  lowerable integer unary minus, unary bitwise-not, binary `&`, `|`, `^`, and
+  safe `<<`/`>>` results, allowing later checked integer `+`, `-`, and `*`
+  lowering to use those results when every possible value stays within the
+  existing small cap. Overflow-sensitive left-shift result sets still remain
+  unknown so later arithmetic rejects instead of implying PHP integer overflow
+  behavior. The new Milestone 350 fixture covers bounded integer ternaries
+  feeding bitwise, shift, unary minus, unary bitwise-not, and later checked
+  integer arithmetic through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison. Unsupported gaps remain broader possible-value tracking,
+  PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics,
+  runtime checks, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native expression lowering.
+- Focused native bounded integer bitwise/shift result-tracking checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary`;
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone350`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone350` with
+  1 fixture compared against system PHP and 0 skipped;
+  `cargo test -p phpc --test native_assembly_cli native_integer_bitwise --
+  --test-threads=1`; and
+  `cargo test -p phpc --test native_assembly_cli native_integer_shift --
+  --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native bounded integer bitwise/shift
+  result-tracking slice. After clearing generated `target` artifacts to
+  recover disk space, the serialized command
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including
+  the Rust test suite, `phpc test` fixture run with 516 passed and 0 failed,
+  and `phpc test --compare-php` with 516 fixture tests passed, 259 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native bounded integer bitwise/shift result-tracking
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Added native bounded integer strict-identity folding. LLVM IR emission and
+  the C assembly fallback now fold integer `===`/`!==` when bounded possible
+  integer value sets prove every comparison outcome is identical, allowing
+  later scalar lowering such as static ternary selection to use that proven
+  boolean without emitting an unnecessary runtime comparison. Ambiguous bounded
+  integer identity still lowers dynamically, preserving the existing native
+  comparison path instead of pretending value correlation exists. The new
+  Milestone 353 fixture covers a bounded integer ternary feeding proven
+  `!==`, proven `===`, and a later selected integer ternary through `phpc run`,
+  `phpc compile --emit-ir`, and system PHP comparison. Unsupported gaps remain
+  ambiguous bounded identity folding, PHP comparison coercions, loose/order
+  comparisons, array/object identity, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native expression lowering.
+- Focused native bounded integer strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone353`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone353` with
+  1 fixture compared against system PHP and 0 skipped; and
+  `cargo test -p phpc --test native_assembly_cli
+  native_dynamic_integer_strict_identity -- --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native bounded integer strict-identity
+  folding slice. After clearing generated `target/` artifacts to recover disk
+  space, the serialized command
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including
+  the Rust test suite, `phpc test` fixture run with 517 passed and 0 failed,
+  and `phpc test --compare-php` with 517 fixture tests passed, 260 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native bounded integer strict-identity folding checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native boolean logical folding for already lowerable boolean operands.
+  LLVM IR emission and the C assembly fallback now fold static boolean
+  identity and annihilator edges such as `true || $flag`, `false && $flag`,
+  `$flag && true`, `$flag || false`, and `$flag xor false` after both operands
+  have already lowered, preserving proven boolean results for later scalar
+  lowering without accepting unsupported right-hand operands or broader PHP
+  truthiness. Dynamic boolean cases that are not statically proven still lower
+  through native boolean operations. The new Milestone 356 fixture covers
+  folded static logical edges feeding later integer ternaries through
+  `phpc run`, `phpc compile --emit-ir`, and system PHP comparison.
+  Unsupported gaps remain general PHP truthiness conversion, true
+  short-circuiting to skip unsupported or side-effecting right-hand operands,
+  dynamic float/string/null truthiness, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Focused native boolean logical folding checks passed:
+  `cargo test -p phpc --test native_logical_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone356`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone356` with
+  1 fixture compared against system PHP and 0 skipped; and
+  `cargo test -p phpc --test native_assembly_cli native_boolean_logical_operator -- --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native boolean logical folding slice. The
+  serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 518 passed and 0 failed, and `phpc test --compare-php`
+  with 518 fixture tests passed, 261 system PHP comparisons, and 257 skipped.
+- Continued past the native boolean logical folding checkpoint decision into
+  the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Added native bounded string strict-identity folding. LLVM IR emission and
+  the C assembly fallback now preserve bounded possible string values through
+  lowerable dynamic string ternaries, then fold string `===`/`!==` when every
+  possible comparison outcome is identical. Ambiguous bounded string identity
+  still lowers through `strcmp`, preserving the existing native comparison
+  path instead of pretending branch correlation exists. The new Milestone 359
+  fixture covers a bounded string ternary feeding proven `!==`, proven `===`,
+  and an ambiguous `===` through `phpc run`, `phpc compile --emit-ir`, and
+  system PHP comparison. Unsupported gaps remain ambiguous bounded string
+  identity folding, dynamic string allocation beyond the current static
+  string subset, PHP comparison coercions, loose/order comparisons,
+  array/object identity, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native expression lowering.
+- Focused native bounded string strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone359`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone359` with
+  1 fixture compared against system PHP and 0 skipped; and
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_string_strict_identity -- --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native bounded string strict-identity
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 519 passed and 0 failed, and
+  `phpc test --compare-php` with 519 fixture tests passed, 262 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native bounded string strict-identity folding checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native bounded float strict-identity folding. LLVM IR emission and the
+  C assembly fallback now preserve bounded possible float values through
+  lowerable dynamic float ternaries, then fold float `===`/`!==` when every
+  possible comparison outcome is identical. Ambiguous bounded float identity
+  still lowers through the existing `fcmp`/C comparison path. The new
+  Milestone 362 fixture covers a bounded float ternary feeding proven `!==`,
+  proven `===`, and an ambiguous `===` through `phpc run`, `phpc compile
+  --emit-ir`, and system PHP comparison. Unsupported gaps remain ambiguous
+  bounded float identity folding, floating NaN/INF edge behavior beyond the
+  current finite literal subset, PHP comparison coercions, loose/order
+  comparisons, array/object identity, references/copy-on-write, exact native
+  PHP errors, linking/execution, and broader native expression lowering.
+- Focused native bounded float strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone362`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone362` with
+  1 fixture compared against system PHP and 0 skipped; and
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_float_strict_identity -- --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native bounded float strict-identity
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 520 passed and 0 failed, and
+  `phpc test --compare-php` with 520 fixture tests passed, 263 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native bounded float strict-identity folding checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native bounded boolean strict-identity folding. LLVM IR emission and
+  the C assembly fallback now preserve bounded possible boolean values through
+  lowerable dynamic boolean ternaries, logical operators, and logical-not,
+  then fold boolean `===`/`!==` when every possible comparison outcome is
+  identical. Ambiguous bounded boolean identity still lowers through the
+  existing native boolean comparison path, and relation-sensitive proofs such
+  as `$x !== !$x` remain intentionally out of scope for the current value-set
+  tracker. The new Milestone 365 fixture covers a bounded boolean ternary and
+  logical-not feeding proven `===`, proven false `===`, and an ambiguous
+  `===` through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison. Unsupported gaps remain ambiguous bounded boolean identity
+  folding, value-correlation proofs across related expressions, PHP
+  truthiness/coercion, loose/order comparisons, array/object identity,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Focused native bounded boolean strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_logical_boundary`;
+  `cargo run -p phpc -- test tests/fixtures/milestone365`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone365` with
+  1 fixture compared against system PHP and 0 skipped; and
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_boolean_strict_identity -- --test-threads=1`.
+
+Next:
+
+- Ran the full-suite gate for the native bounded boolean strict-identity
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 521 passed and 0 failed, and
+  `phpc test --compare-php` with 521 fixture tests passed, 264 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native bounded boolean strict-identity folding checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native bounded float arithmetic result tracking. LLVM IR emission and
+  the C assembly fallback now preserve bounded finite float results through
+  lowerable same-type float `+`, `-`, and `*`, plus finite float unary-minus,
+  then reuse those facts for later strict-identity folding when every possible
+  comparison outcome is identical. Ambiguous bounded float identity still
+  lowers through the existing `fcmp`/C comparison path. The new Milestone 368
+  fixture covers proven float arithmetic strict-identity folding and an
+  ambiguous float arithmetic identity through `phpc run`, `phpc compile
+  --emit-ir`, and system PHP comparison. The older dynamic float strict-identity
+  fixture now uses an actually ambiguous float ternary so it continues to cover
+  dynamic `fcmp` lowering after finite float arithmetic became provable.
+  Unsupported gaps remain float overflow/INF/NAN result tracking, mixed
+  int/float arithmetic, PHP numeric coercions, division, ambiguous bounded
+  identity folding, value-correlation proofs, references/copy-on-write, exact
+  native PHP errors, linking/execution, and broader native expression lowering.
+- Focused native bounded float arithmetic result-tracking checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary`;
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_unary_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_float_strict_identity -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone368`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone368` with
+  1 fixture compared against system PHP and 0 skipped;
+  `cargo run -p phpc -- test tests/fixtures/milestone299`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone299` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native bounded float arithmetic
+  result-tracking slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 522 passed and 0 failed, and
+  `phpc test --compare-php` with 522 fixture tests passed, 265 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native bounded float arithmetic result-tracking checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native reflexive scalar strict-identity folding for safe lowerable
+  dynamic scalar operands. LLVM IR emission and the C assembly fallback now
+  fold identical integer, boolean, already-lowerable string pointer, and finite
+  tracked float operands for `===`/`!==`, so `$x === $x` and `$x !== $x` avoid
+  runtime comparisons in those cases. Broader value-correlation proofs across
+  related expressions such as `$x` and `!$x`, ambiguous bounded identity
+  folding, untracked float `NAN`/`INF` edges, PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering remain unsupported. The new Milestone 371
+  fixture covers reflexive dynamic integer, finite float, string pointer, and
+  boolean strict identity through `phpc run`, `phpc compile --emit-ir`, and
+  system PHP comparison. Existing dynamic integer and boolean strict-identity
+  snapshots were updated where their final `$same === $value` comparisons now
+  fold.
+- Focused native reflexive scalar strict-identity checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_integer_strict_identity -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_boolean_strict_identity -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_string_strict_identity -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_float_strict_identity -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone371`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone371` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native reflexive scalar strict-identity
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 523 passed and 0 failed, and
+  `phpc test --compare-php` with 523 fixture tests passed, 266 system PHP
+  comparisons, and 257 skipped.
+- Continued past the native reflexive scalar strict-identity checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native integer strict-identity result tracking for later boolean
+  scalar lowering. LLVM IR emission and the C assembly fallback still emit
+  lowerable integer `===`/`!==` comparisons as `icmp`/C comparisons when that
+  path is needed for existing native comparison coverage, but now preserve
+  statically known comparison results for later boolean identity/logical
+  lowering. Ambiguous bounded integer identity still remains dynamic and
+  untracked instead of pretending branch correlation exists. The new
+  Milestone 374 fixture covers known true and known false integer
+  strict-identity results feeding later boolean identity folds, plus an
+  ambiguous integer identity result that still lowers through dynamic boolean
+  comparison, through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison. The older dynamic boolean strict-identity fixture now uses
+  genuinely ambiguous integer-derived boolean expressions so it continues to
+  cover dynamic boolean comparison lowering after known integer identity
+  results became tracked. Unsupported gaps remain ambiguous bounded identity
+  folding, broader value-correlation proofs, PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Focused native integer strict-identity result-tracking checks passed:
+  `cargo test -p phpc --test native_comparison_boundary`;
+  `cargo test -p phpc --test native_conditional_boundary`;
+  `cargo test -p phpc --test native_logical_boundary`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_boolean_logical_not -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_boolean_strict_identity -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_dynamic_integer_strict_identity -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone374`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone374` with
+  1 fixture compared against system PHP and 0 skipped;
+  `cargo run -p phpc -- test tests/fixtures/milestone263`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone263` with
+  1 fixture compared against system PHP and 0 skipped; plus
+  `cargo run -p phpc -- test tests/fixtures/milestone269`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone269` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer strict-identity
+  result-tracking slice. The first serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` exposed a stale
+  `strict_identity.rs` expectation that still used a now-statically-known
+  `$sum === 3` boolean result as a dynamic boolean identity input. That test now
+  uses an ambiguous integer-derived boolean input, matching the supported
+  dynamic boolean lowering boundary. The focused rerun `cargo test -p phpc
+  --test strict_identity` passed.
+- The second serialized full-suite gate `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test suite,
+  `phpc test` fixture run with 524 passed and 0 failed, and `phpc test
+  --compare-php` with 524 fixture tests passed, 267 system PHP comparisons, and
+  257 skipped.
+- Continued past the native integer strict-identity result-tracking checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Added native same-type integer loose/ordering comparison lowering for
+  `==`, `!=`, `<`, `<=`, `>`, and `>=` in the current straight-line integer
+  subset. LLVM IR emission lowers dynamic integer comparisons to signed
+  `icmp`, and the C assembly fallback emits equivalent C integer comparisons.
+  Statically known integer comparison results remain tracked for later boolean
+  scalar lowering even when the comparison itself stays emitted, so known true
+  or false comparison results can feed later strict boolean identity folds.
+  Ambiguous bounded integer comparisons remain dynamic and untracked rather
+  than pretending branch correlation exists. Unsupported comparison gaps remain
+  string/bool/null/float loose or ordering comparisons, mixed-type comparison
+  coercions, arrays/objects/resources, `NAN`/`INF` float edges, broader
+  value-correlation proofs, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native expression lowering. Unsupported
+  operands still reject with the comparison-specific codegen diagnostic.
+- The new Milestone 377 fixture covers dynamic same-type integer
+  loose/ordering comparisons, known comparison-result tracking for later
+  boolean identity folds, and an ambiguous integer comparison result that stays
+  dynamic, through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison.
+- Focused native integer comparison result-tracking checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone377`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone377` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native integer loose/ordering comparison
+  result-tracking slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 525 passed and 0 failed, and `phpc test
+  --compare-php` with 525 fixture tests passed, 268 system PHP comparisons, and
+  257 skipped.
+- Continued past the native integer loose/ordering comparison result-tracking
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Added native same-type finite float loose/ordering comparison lowering for
+  `==`, `!=`, `<`, `<=`, `>`, and `>=` in the current straight-line finite
+  float subset. LLVM IR emission lowers dynamic finite float comparisons to
+  ordered `fcmp` predicates, and the C assembly fallback emits equivalent C
+  finite-float comparisons. Statically known finite float comparison results
+  remain tracked for later boolean scalar lowering even when the comparison
+  itself stays emitted, so known true or false comparison results can feed
+  later strict boolean identity folds. Ambiguous bounded finite float
+  comparisons remain dynamic and untracked. Unsupported comparison gaps remain
+  string/bool/null loose or ordering comparisons, mixed-type comparison
+  coercions, arrays/objects/resources, untracked or non-finite `NAN`/`INF`
+  float edges, broader value-correlation proofs, references/copy-on-write,
+  exact native PHP errors, linking/execution, and broader native expression
+  lowering. Unsupported operands still reject with the comparison-specific
+  codegen diagnostic.
+- The new Milestone 380 fixture covers dynamic same-type finite float
+  loose/ordering comparisons, known finite-float comparison-result tracking for
+  later boolean identity folds, and an ambiguous finite-float comparison result
+  that stays dynamic, through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison.
+- Focused native finite float comparison result-tracking checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone380`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone380` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Ran the full-suite gate for the native finite float loose/ordering
+  comparison result-tracking slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 526 passed and 0 failed, and `phpc test
+  --compare-php` with 526 fixture tests passed, 269 system PHP comparisons, and
+  257 skipped.
+- Continued past the native finite float loose/ordering comparison
+  result-tracking checkpoint decision into the next narrow native-lowering
+  slice. A checkpoint was not created here because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and `docs/LOOP_MEMORY.md` still
+  has unrelated pre-existing edits outside this interactive session's active
+  work.
+
+Next:
+
+- Added native same-type boolean loose/ordering comparison lowering for `==`,
+  `!=`, `<`, `<=`, `>`, and `>=` in the current straight-line boolean subset.
+  LLVM IR emission lowers dynamic boolean comparisons to `icmp` predicates
+  using unsigned ordering for `i1`, and the C assembly fallback emits
+  equivalent C boolean comparisons. Statically known boolean comparison results
+  remain tracked for later boolean scalar lowering even when the comparison
+  itself stays emitted, so known true or false comparison results can feed
+  later strict boolean identity folds. Ambiguous bounded boolean comparisons
+  remain dynamic and untracked. Unsupported comparison gaps remain loose
+  string/null comparisons, mixed-type comparison coercions, arrays/objects/
+  resources, untracked or non-finite `NAN`/`INF` float edges, broader
+  value-correlation proofs, references/copy-on-write, exact native PHP errors,
+  linking/execution, and broader native expression lowering. Unsupported
+  operands still reject with the comparison-specific codegen diagnostic.
+- The new Milestone 383 fixture covers dynamic same-type boolean
+  loose/ordering comparisons, known boolean comparison-result tracking for
+  later boolean identity folds, and an ambiguous boolean comparison result that
+  stays dynamic, through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison.
+- Focused native boolean comparison result-tracking checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone383`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone383` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native boolean loose/ordering comparison
+  result-tracking slice.
+
+Next:
+
+- Ran the full-suite gate for the native boolean loose/ordering comparison
+  result-tracking slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 527 passed and 0 failed, and `phpc test
+  --compare-php` with 527 fixture tests passed, 270 system PHP comparisons, and
+  257 skipped.
+- Continued past the native boolean loose/ordering comparison result-tracking
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native identical boolean expression `xor` folding for the current
+  straight-line scalar subset. When both operands of `xor` are exactly the same
+  already-lowerable native boolean expression, LLVM IR now folds the result to
+  `false` instead of emitting a redundant `xor i1 expr, expr`; the C assembly
+  fallback returns `false` instead of emitting an equivalent `!=` expression.
+  Broader value-correlation proofs across related expressions, general PHP
+  truthiness, and unsupported or side-effecting operands remain unchanged and
+  unsupported where documented.
+- The new Milestone 410 fixture covers identical boolean expression `xor`
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving the redundant XOR is not emitted and the
+  folded `false` result feeds later scalar lowering.
+- Focused native identical boolean expression `xor` checks passed:
+  `cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone410`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone410` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical boolean expression `xor`
+  folding slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical boolean expression `xor`
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 536 passed and 0 failed, and `phpc test --compare-php` with
+  536 fixture tests passed, 279 system PHP comparisons, and 257 skipped.
+- Continued past the native identical boolean expression `xor` checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Completed three narrow native ternary redundancy/result-tracking slices:
+  identical boolean expression branches, identical tracked integer expression
+  branches, and identical tracked float expression branches now reuse the
+  already-lowerable native expression instead of emitting redundant LLVM
+  `select` instructions or equivalent C fallback conditional expressions.
+  Static string, `null`/`null`, and static boolean ternary folding behavior is
+  unchanged. Literal-only integer/float ternaries and broader mixed-type
+  ternaries are also unchanged. Unsupported ternary gaps remain general PHP
+  truthiness, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, null-aware lookup, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Added Milestone 398, 401, and 404 fixtures covering the new boolean,
+  integer, and float expression folds through `phpc run`, `phpc compile
+  --emit-ir`, and system PHP comparison, with committed IR snapshots proving
+  the redundant selects are not emitted.
+- Focused checks passed for each slice:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone398`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone398`;
+  `cargo run -p phpc -- test tests/fixtures/milestone401`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone401`;
+  `cargo run -p phpc -- test tests/fixtures/milestone404`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone404`.
+- Full-suite gates passed after each completed slice. The latest serialized
+  gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed
+  with 534 fixture tests, 0 failures, 277 system PHP comparisons, and 257
+  skipped comparisons.
+- Continued past the native identical float expression ternary checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 407: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Completed two native logical expression result/redundancy slices after the
+  ternary work. Identical native boolean expression operands for `&&`/`and`
+  and `||`/`or` now reuse the existing expression instead of emitting redundant
+  LLVM `and i1`/`or i1` instructions or equivalent C fallback expressions.
+  Identical native boolean expression operands for `xor` now fold to `false`
+  instead of emitting `xor i1 expr, expr` or equivalent C fallback `!=`.
+  Broader value-correlation proofs across related expressions, general PHP
+  truthiness conversion, and short-circuit cases that skip unsupported or
+  side-effecting operands remain unchanged and unsupported where documented.
+- Added Milestone 407 and 410 fixtures covering identical boolean expression
+  logical `&&`/`||` and `xor` through `phpc run`, `phpc compile --emit-ir`, and
+  system PHP comparison, with committed IR snapshots proving the redundant
+  native boolean operations are not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone407`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone407`;
+  `cargo run -p phpc -- test tests/fixtures/milestone410`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone410`.
+- Full-suite gates passed after both completed logical slices. The latest
+  serialized gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`,
+  passed with 536 fixture tests, 0 failures, 279 system PHP comparisons, and
+  257 skipped comparisons.
+- Continued past the native identical boolean expression `xor` checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 413: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native identical tracked integer expression bitwise folding for the
+  currently lowerable integer expression subset. Identical tracked integer
+  expression operands for `&` and `|` now reuse the existing expression, while
+  identical tracked integer expression operands for `^` fold to zero instead of
+  emitting redundant LLVM bitwise instructions or equivalent C fallback
+  expressions. Literal-only integer bitwise expressions, PHP scalar-to-int
+  coercion for non-integer operands, string bitwise behavior, references and
+  copy-on-write, exact native PHP errors, and broader native expression lowering
+  remain unchanged and unsupported where documented.
+- Added the Milestone 413 fixture covering the new bitwise expression fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving redundant native bitwise operations are not
+  emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone413`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone413`.
+- Full-suite gate passed for the completed bitwise slice. The serialized gate,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed with 537
+  fixture tests, 0 failures, 280 system PHP comparisons, and 257 skipped
+  comparisons.
+- Continued past the native identical tracked integer expression bitwise
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 416: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native identical tracked integer expression bitwise folding for the
+  current straight-line scalar subset. When both operands are the same
+  already-tracked native integer expression, LLVM IR and the C assembly
+  fallback now reuse that expression for `&` and `|`, and fold `^` to integer
+  zero. Literal-only bitwise operations, string bitwise operands, scalar-to-int
+  coercion, references/copy-on-write, exact native PHP errors, linking/
+  execution, and broader native lowering remain unchanged and unsupported where
+  documented.
+- The new Milestone 413 fixture covers identical tracked integer expression
+  `&`, `|`, and `^` through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison, with a committed IR snapshot proving the redundant native
+  bitwise operations are not emitted and the reused/folded values still feed
+  later checked integer arithmetic.
+- Focused native identical integer expression bitwise checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone413`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone413` with
+  1 fixture compared against system PHP and 0 skipped.
+- The full-suite gate for this bitwise slice passed. The serialized command
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed with 537
+  fixture tests, 0 failures, 280 system PHP comparisons, and 257 skipped
+  comparisons.
+- Continued past the native identical integer expression bitwise checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 416: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native identical tracked integer expression bitwise folding for the
+  current straight-line scalar subset. When both operands are the same
+  already-tracked native integer expression, LLVM IR and the C assembly
+  fallback now reuse that expression for `&` and `|`, and fold `^` to integer
+  zero. Literal-only bitwise operations, string bitwise operands, scalar-to-int
+  coercion, references/copy-on-write, exact native PHP errors, linking/
+  execution, and broader native lowering remain unchanged and unsupported where
+  documented.
+- The new Milestone 413 fixture covers identical tracked integer expression
+  `&`, `|`, and `^` through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison, with a committed IR snapshot proving the redundant native
+  bitwise operations are not emitted and the reused/folded values still feed
+  later checked integer arithmetic.
+- Focused native identical integer expression bitwise checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone413`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone413` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical integer expression bitwise
+  folding slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical integer expression bitwise
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 537 passed and 0 failed, and `phpc test --compare-php` with
+  537 fixture tests passed, 280 system PHP comparisons, and 257 skipped.
+- Continued past the native identical integer expression bitwise checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native identical boolean expression logical folding for the current
+  straight-line scalar subset. When both operands of `&&`/`and` or `||`/`or`
+  are exactly the same already-lowerable native boolean expression, LLVM IR now
+  returns that expression directly instead of emitting redundant `and i1` or
+  `or i1` instructions; the C assembly fallback returns the same boolean
+  expression instead of emitting equivalent `&&` or `||` expressions. `xor`,
+  broader value-correlation proofs, general PHP truthiness, and short-circuit
+  cases that skip unsupported or side-effecting operands remain unchanged and
+  unsupported where documented.
+- The new Milestone 407 fixture covers identical boolean expression logical
+  `&&` and `||` through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison, with a committed IR snapshot proving the redundant boolean ops
+  are not emitted and the reused expression still feeds later scalar lowering.
+- Focused native identical boolean expression logical checks passed:
+  `cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone407`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone407` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical boolean expression logical
+  folding slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical boolean expression logical
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 535 passed and 0 failed, and `phpc test --compare-php` with
+  535 fixture tests passed, 278 system PHP comparisons, and 257 skipped.
+- Continued past the native identical boolean expression logical checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native identical tracked float expression ternary folding for the
+  current straight-line scalar subset. When both branches of a dynamic full
+  ternary are the same already-tracked native float expression, LLVM IR now
+  returns that expression directly instead of emitting a redundant
+  `select i1 condition, double expr, double expr`; the C assembly fallback
+  returns the same float expression instead of emitting an equivalent
+  conditional expression. Literal-only float ternaries and broader mixed-type
+  ternaries are unchanged. Unsupported ternary gaps remain general PHP
+  truthiness, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, null-aware lookup, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- The new Milestone 404 fixture covers an identical tracked float expression
+  ternary through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison, with a committed IR snapshot proving the redundant float select
+  is not emitted and the reused expression still feeds later checked float
+  arithmetic.
+- Focused native identical float expression ternary checks passed:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone404`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone404` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical float expression ternary
+  folding slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical float expression ternary
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 534 passed and 0 failed, and `phpc test --compare-php` with
+  534 fixture tests passed, 277 system PHP comparisons, and 257 skipped.
+- Continued past the native identical float expression ternary checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native identical tracked integer expression ternary folding for the
+  current straight-line scalar subset. When both branches of a dynamic full
+  ternary are the same already-tracked native integer expression, LLVM IR now
+  returns that expression directly instead of emitting a redundant
+  `select i1 condition, i64 expr, i64 expr`; the C assembly fallback returns
+  the same integer expression instead of emitting an equivalent conditional
+  expression. Literal-only integer ternaries and broader mixed-type ternaries
+  are unchanged. Unsupported ternary gaps remain general PHP truthiness, lazy
+  branch evaluation for unsupported or side-effecting branches, short ternary,
+  null coalescing, null-aware lookup, arrays, objects, references/copy-on-write,
+  exact native PHP errors, linking/execution, and broader native expression
+  lowering.
+- The new Milestone 401 fixture covers an identical tracked integer expression
+  ternary through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison, with a committed IR snapshot proving the redundant integer select
+  is not emitted and the reused expression still feeds later checked integer
+  arithmetic.
+- Focused native identical integer expression ternary checks passed:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone401`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone401` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical integer expression ternary
+  folding slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical integer expression ternary
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 533 passed and 0 failed, and `phpc test --compare-php` with
+  533 fixture tests passed, 276 system PHP comparisons, and 257 skipped.
+- Continued past the native identical integer expression ternary checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native identical boolean expression ternary folding for the current
+  straight-line scalar subset. When both branches of a dynamic full ternary are
+  exactly the same already-lowerable native boolean expression, LLVM IR now
+  returns that expression directly instead of emitting a redundant
+  `select i1 condition, i1 expr, i1 expr`; the C assembly fallback returns the
+  same boolean expression instead of emitting an equivalent conditional
+  expression. Literal boolean branch folding and broader mixed-type ternaries
+  are unchanged. Unsupported ternary gaps remain general PHP truthiness, lazy
+  branch evaluation for unsupported or side-effecting branches, short ternary,
+  null coalescing, null-aware lookup, arrays, objects, references/copy-on-write,
+  exact native PHP errors, linking/execution, and broader native expression
+  lowering.
+- The new Milestone 398 fixture covers an identical boolean expression ternary
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving the redundant boolean select is not emitted.
+- Focused native identical boolean expression ternary checks passed:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone398`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone398` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical boolean expression ternary
+  folding slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical boolean expression ternary
+  folding slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 532 passed and 0 failed, and `phpc test --compare-php` with
+  532 fixture tests passed, 275 system PHP comparisons, and 257 skipped.
+- Continued past the native identical boolean expression ternary checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native identical static string ternary folding. When both branches of
+  a lowerable full ternary are exactly the same static string or the same
+  string expression, LLVM IR and the C assembly fallback now return that string
+  directly instead of emitting a redundant pointer `select` or C conditional
+  expression. This does not expand PHP truthiness, mixed branch types, lazy
+  branch evaluation, or side-effect behavior; it only removes a redundant
+  native selection after all operands are already lowerable.
+- The new Milestone 395 fixture covers an identical string ternary through
+  `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with an IR
+  snapshot proving the pointer select is not emitted.
+- Focused native identical string ternary checks passed:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone395`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone395` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native identical string ternary folding
+  slice.
+
+Next:
+
+- Ran the full-suite gate for the native identical string ternary folding
+  slice. The serialized command `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0
+  tools/run-tests.sh` passed, including the Rust test suite, `phpc test`
+  fixture run with 531 passed and 0 failed, and `phpc test --compare-php` with
+  531 fixture tests passed, 274 system PHP comparisons, and 257 skipped.
+- Continued past the native identical string ternary checkpoint decision into
+  the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Expanded native same-type string loose/ordering comparison lowering from the
+  earlier letters/underscore-only subset to known ASCII nonnumeric NUL-free
+  strings. The native lowerers still use `strcmp` and still require statically
+  known string value sets before lowering, but now allow safe punctuation,
+  spaces, and non-leading digits such as `alpha-2`, `zeta!`, and `a 1`.
+  Numeric-looking strings with leading optional whitespace followed by `+`,
+  `-`, `.`, or a digit remain rejected, as do unknown, non-ASCII, or
+  NUL-containing strings, so generated code does not imply PHP numeric-string
+  comparison coercions or binary string edge-case support.
+- The new Milestone 392 fixture covers broader known ASCII nonnumeric string
+  loose/ordering comparisons, known false string comparison-result tracking
+  for later boolean identity folds, and ambiguous string comparison results
+  that stay dynamic, through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison.
+- Focused native broader ASCII string comparison checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone392`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone392` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native known ASCII nonnumeric NUL-free string
+  comparison boundary expansion.
+
+Next:
+
+- Ran the full-suite gate for the native known ASCII nonnumeric NUL-free string
+  comparison boundary expansion. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 530 passed and 0 failed, and `phpc test
+  --compare-php` with 530 fixture tests passed, 273 system PHP comparisons, and
+  257 skipped.
+- Continued past the native known ASCII nonnumeric NUL-free string comparison
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native same-type `null` loose/ordering comparison lowering for `==`,
+  `!=`, `<`, `<=`, `>`, and `>=` in the current straight-line scalar subset.
+  LLVM IR and the C assembly fallback fold `null` versus `null` comparisons to
+  PHP's constant outcomes (`==`, `<=`, and `>=` true; `!=`, `<`, and `>`
+  false), so no runtime comparison is emitted. Mixed null comparisons remain
+  rejected so generated code does not imply PHP scalar coercions or truthiness
+  behavior that native lowering does not yet implement. Unsupported comparison
+  gaps remain mixed-type comparison coercions, numeric-looking/unknown/
+  non-ASCII string comparisons, arrays/objects/resources, untracked or
+  non-finite `NAN`/`INF` float edges, broader value-correlation proofs,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering. Unsupported operands still reject with
+  the comparison-specific codegen diagnostic.
+- The new Milestone 389 fixture covers same-type null loose/ordering
+  comparison outcomes through `phpc run`, `phpc compile --emit-ir`, and system
+  PHP comparison.
+- Focused native null comparison boundary checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone389`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone389` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native same-type null loose/ordering
+  comparison slice.
+
+Next:
+
+- Ran the full-suite gate for the native same-type null loose/ordering
+  comparison slice. The serialized command `CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 tools/run-tests.sh` passed, including the Rust test
+  suite, `phpc test` fixture run with 529 passed and 0 failed, and `phpc test
+  --compare-php` with 529 fixture tests passed, 272 system PHP comparisons, and
+  257 skipped.
+- Continued past the native same-type null loose/ordering comparison
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Added native known ASCII nonnumeric string loose/ordering comparison
+  lowering for `==`, `!=`, `<`, `<=`, `>`, and `>=` in the current
+  straight-line string subset. LLVM IR emission lowers dynamic string
+  comparisons through `strcmp` followed by signed integer comparison, and the C
+  assembly fallback emits equivalent `strcmp(...) <op> 0` expressions.
+  Statically known string comparison results remain tracked for later boolean
+  scalar lowering even when the comparison itself stays emitted, so known true
+  or false string comparison results can feed later strict boolean identity
+  folds. Ambiguous bounded string comparisons remain dynamic and untracked.
+  Numeric-looking, unknown, or non-ASCII string comparisons remain rejected so
+  generated code does not imply PHP numeric-string comparison coercions.
+  Unsupported comparison gaps remain loose null comparisons, mixed-type
+  comparison coercions, arrays/objects/resources, untracked or non-finite
+  `NAN`/`INF` float edges, broader value-correlation proofs,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering. Unsupported operands still reject with
+  the comparison-specific codegen diagnostic.
+- The new Milestone 386 fixture covers dynamic known ASCII nonnumeric string
+  loose/ordering comparisons, known string comparison-result tracking for
+  later boolean identity folds, and an ambiguous string comparison result that
+  stays dynamic, through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison.
+- Focused native string comparison result-tracking checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone386`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone386` with
+  1 fixture compared against system PHP and 0 skipped.
+
+Next:
+
+- Run the full-suite gate for the native known ASCII nonnumeric string
+  loose/ordering comparison result-tracking slice.
+
+Next:
+
+- Ran the full-suite gate for the native known ASCII nonnumeric string
+  loose/ordering comparison result-tracking slice. The serialized command
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed,
+  including the Rust test suite, `phpc test` fixture run with 528 passed and 0
+  failed, and `phpc test --compare-php` with 528 fixture tests passed, 271
+  system PHP comparisons, and 257 skipped.
+- Continued past the native known ASCII nonnumeric string loose/ordering
+  comparison result-tracking checkpoint decision into the next narrow
+  native-lowering slice. A checkpoint was not created here because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Pick the next small native scalar result-tracking boundary that can be proved
+  with executable code, focused tests, CLI fixture coverage, documentation, and
+  a full-suite gate.
+
+Next:
+
+- Completed three narrow native ternary redundancy/result-tracking slices:
+  identical boolean expression branches, identical tracked integer expression
+  branches, and identical tracked float expression branches now reuse the
+  already-lowerable native expression instead of emitting redundant LLVM
+  `select` instructions or equivalent C fallback conditional expressions.
+  Static string, `null`/`null`, and static boolean ternary folding behavior is
+  unchanged. Literal-only integer/float ternaries and broader mixed-type
+  ternaries are also unchanged. Unsupported ternary gaps remain general PHP
+  truthiness, lazy branch evaluation for unsupported or side-effecting
+  branches, short ternary, null coalescing, null-aware lookup, arrays, objects,
+  references/copy-on-write, exact native PHP errors, linking/execution, and
+  broader native expression lowering.
+- Added Milestone 398, 401, and 404 fixtures covering the new boolean,
+  integer, and float expression folds through `phpc run`, `phpc compile
+  --emit-ir`, and system PHP comparison, with committed IR snapshots proving
+  the redundant selects are not emitted.
+- Focused checks passed for each slice:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone398`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone398`;
+  `cargo run -p phpc -- test tests/fixtures/milestone401`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone401`;
+  `cargo run -p phpc -- test tests/fixtures/milestone404`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone404`.
+- Full-suite gates passed after each completed slice. The latest serialized
+  gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed
+  with 534 fixture tests, 0 failures, 277 system PHP comparisons, and 257
+  skipped comparisons.
+- Continued past the native identical float expression ternary checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 407: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Completed two native logical expression result/redundancy slices after the
+  ternary work. Identical native boolean expression operands for `&&`/`and`
+  and `||`/`or` now reuse the existing expression instead of emitting redundant
+  LLVM `and i1`/`or i1` instructions or equivalent C fallback expressions.
+  Identical native boolean expression operands for `xor` now fold to `false`
+  instead of emitting `xor i1 expr, expr` or equivalent C fallback `!=`.
+  Broader value-correlation proofs across related expressions, general PHP
+  truthiness conversion, and short-circuit cases that skip unsupported or
+  side-effecting operands remain unchanged and unsupported where documented.
+- Added Milestone 407 and 410 fixtures covering identical boolean expression
+  logical `&&`/`||` and `xor` through `phpc run`, `phpc compile --emit-ir`, and
+  system PHP comparison, with committed IR snapshots proving the redundant
+  native boolean operations are not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone407`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone407`;
+  `cargo run -p phpc -- test tests/fixtures/milestone410`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone410`.
+- Full-suite gates passed after both completed logical slices. The latest
+  serialized gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`,
+  passed with 536 fixture tests, 0 failures, 279 system PHP comparisons, and
+  257 skipped comparisons.
+- Continued past the native identical boolean expression `xor` checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 413: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native identical tracked integer expression bitwise folding for the
+  currently lowerable integer expression subset. Identical tracked integer
+  expression operands for `&` and `|` now reuse the existing expression, while
+  identical tracked integer expression operands for `^` fold to zero instead of
+  emitting redundant LLVM bitwise instructions or equivalent C fallback
+  expressions. Literal-only integer bitwise expressions, PHP scalar-to-int
+  coercion for non-integer operands, string bitwise behavior, references and
+  copy-on-write, exact native PHP errors, and broader native expression lowering
+  remain unchanged and unsupported where documented.
+- Added the Milestone 413 fixture covering the new bitwise expression fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving redundant native bitwise operations are not
+  emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone413`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone413`.
+- Full-suite gate passed for the completed bitwise slice. The serialized gate,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed with 537
+  fixture tests, 0 failures, 280 system PHP comparisons, and 257 skipped
+  comparisons.
+- Continued past the native identical tracked integer expression bitwise
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 416: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native identical tracked integer expression subtraction folding for the
+  currently lowerable integer expression subset. Identical tracked integer
+  expression operands for `-` now fold to zero instead of emitting redundant
+  LLVM `sub i64 expr, expr` instructions or equivalent C fallback subtraction
+  expressions. Literal-only integer subtraction, mixed numeric arithmetic,
+  scalar-to-int or string numeric coercion, division, dynamic modulo checks,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 416 fixture covering the new subtraction expression fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving redundant native subtraction is not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone416`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone416`.
+- Full-suite gate passed for the completed subtraction slice. The serialized
+  gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed
+  with 538 fixture tests, 0 failures, 281 system PHP comparisons, and 257
+  skipped comparisons.
+- Continued past the native identical tracked integer expression subtraction
+  checkpoint decision into the next narrow native-lowering slice. A checkpoint
+  was not created here because `tools/checkpoint.sh` intentionally stages the
+  full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing
+  edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 419: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native identical tracked finite float expression subtraction folding
+  for the currently lowerable finite float expression subset. Identical tracked
+  finite float expression operands for `-` now fold to `0.0` instead of
+  emitting redundant LLVM `fsub double expr, expr` instructions or equivalent C
+  fallback subtraction expressions. Literal-only float subtraction, non-finite
+  float result tracking, mixed numeric arithmetic, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 419 fixture covering the new finite float subtraction
+  expression fold through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison, with a committed IR snapshot proving redundant native float
+  subtraction is not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone419`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone419`.
+- Full-suite gate passed for the completed finite float subtraction slice. The
+  serialized gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`,
+  passed with 539 fixture tests, 0 failures, 282 system PHP comparisons, and
+  257 skipped comparisons.
+- Continued past the native identical tracked finite float expression
+  subtraction checkpoint decision into the next narrow native-lowering slice. A
+  checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 422: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native tracked integer additive identity folding for the currently
+  lowerable integer expression subset. Tracked integer expression operands for
+  `$x + 0`, `0 + $x`, and `$x - 0` now reuse the existing expression instead
+  of emitting redundant LLVM integer add/sub instructions or equivalent C
+  fallback arithmetic expressions. Literal-only arithmetic identities, general
+  algebraic simplification, mixed numeric arithmetic, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 422 fixture covering the additive identity fold through
+  `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with a
+  committed IR snapshot proving redundant native add/sub instructions are not
+  emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone422`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone422`.
+- Full-suite gate passed for the completed additive identity slice. The
+  serialized gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`,
+  passed with 540 fixture tests, 0 failures, 283 system PHP comparisons, and
+  257 skipped comparisons.
+- Continued past the native tracked integer additive identity checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 425: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native tracked integer multiplicative identity folding for the
+  currently lowerable integer expression subset. Tracked integer expression
+  operands for `$x * 1` and `1 * $x` now reuse the existing expression instead
+  of emitting redundant LLVM integer multiply instructions or equivalent C
+  fallback arithmetic expressions. Multiplication by zero, literal-only
+  arithmetic identities, general algebraic simplification, mixed numeric
+  arithmetic, PHP numeric coercion, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unchanged and
+  unsupported where documented.
+- Added the Milestone 425 fixture covering the multiplicative identity fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving redundant native multiply instructions are
+  not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone425`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone425`.
+- Full-suite gate passed for the completed multiplicative identity slice. The
+  serialized gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`,
+  passed with 541 fixture tests, 0 failures, 284 system PHP comparisons, and
+  257 skipped comparisons.
+- Continued past the native tracked integer multiplicative identity checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 428: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native tracked integer multiplication-by-zero folding for the currently
+  lowerable integer expression subset. Tracked integer expression operands for
+  `$x * 0` and `0 * $x` now fold to zero instead of emitting redundant LLVM
+  integer multiply instructions or equivalent C fallback arithmetic
+  expressions. Literal-only arithmetic identities, general algebraic
+  simplification, mixed numeric arithmetic, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 428 fixture covering the multiplication-by-zero fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with
+  a committed IR snapshot proving redundant native multiply instructions are
+  not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone428`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone428`.
+- Full-suite gate passed for the completed multiplication-by-zero slice. The
+  serialized gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`,
+  passed with 542 fixture tests, 0 failures, 285 system PHP comparisons, and
+  257 skipped comparisons.
+- Continued past the native tracked integer multiplication-by-zero checkpoint
+  decision into the next narrow native-lowering slice. A checkpoint was not
+  created here because `tools/checkpoint.sh` intentionally stages the full
+  dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits
+  outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 431: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and a full-suite gate.
+
+Next:
+
+- Added native tracked integer shift-by-zero folding for the currently
+  lowerable integer shift subset. Tracked integer expression operands for
+  `$x << 0` and `$x >> 0` now reuse the existing expression instead of
+  emitting redundant LLVM `shl`/`ashr` instructions or equivalent C fallback
+  shift expressions. Literal-only shifts, dynamic shift counts, negative and
+  large shift counts, PHP scalar-to-int and string behavior, references and
+  copy-on-write, exact native PHP errors, and broader native expression lowering
+  remain unchanged and unsupported where documented.
+- Added the Milestone 431 fixture covering the shift-by-zero fold through
+  `phpc run`, `phpc compile --emit-ir`, and system PHP comparison, with a
+  committed IR snapshot proving redundant native shift instructions are not
+  emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone431`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone431`.
+- Full-suite gate passed for the completed shift-by-zero slice. The serialized
+  gate, `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed
+  with 543 fixture tests, 0 failures, 286 system PHP comparisons, and 257
+  skipped comparisons.
+- Continued past the native tracked integer shift-by-zero checkpoint decision
+  into the next narrow native-lowering slice. A checkpoint was not created here
+  because `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Start Milestone 434: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native tracked finite float multiplicative identity folding for the
+  currently lowerable finite float expression subset. Tracked finite float
+  expression operands for `$x * 1.0` and `1.0 * $x` now reuse the existing
+  expression instead of emitting redundant LLVM `fmul` instructions or
+  equivalent C fallback multiplication expressions. Float `+ 0.0`, `- 0.0`,
+  `* 0.0`, non-finite float behavior, signed-zero-sensitive algebraic folds,
+  mixed numeric arithmetic, PHP numeric coercion, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 434 fixture covering the finite float multiplicative
+  identity fold through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison, with a committed IR snapshot proving redundant native float
+  multiply instructions are not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone434`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone434`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  immediately before this slice with 543 fixture tests, 0 failures, 286 system
+  PHP comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 435: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native tracked integer bitwise zero-identity folding for the currently
+  lowerable integer bitwise subset. Tracked integer expression operands for
+  `$x | 0`, `0 | $x`, `$x ^ 0`, and `0 ^ $x` now reuse the existing expression
+  instead of emitting redundant LLVM `or`/`xor` instructions or equivalent C
+  fallback bitwise expressions. Bitwise string behavior, scalar-to-int
+  coercion, bitwise `& -1` identities, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering remain unchanged and
+  unsupported where documented.
+- Added the Milestone 435 fixture covering the bitwise zero-identity fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison,
+  with a committed IR snapshot proving redundant native bitwise zero
+  instructions are not emitted.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone435`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone435`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before the current focused-test batch with 543 fixture tests, 0 failures, 286
+  system PHP comparisons, and 257 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 436: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native tracked integer bitwise all-ones identity folding for the
+  currently lowerable integer bitwise subset. Tracked integer expression
+  operands for `$x & -1` and `-1 & $x`, including equivalent statically known
+  `-1` operands produced inside the current native subset, now reuse the
+  existing expression instead of emitting redundant LLVM `and` instructions or
+  equivalent C fallback bitwise expressions. Bitwise string behavior,
+  scalar-to-int coercion, broader bitwise identities, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 436 fixture covering the bitwise all-ones identity fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison,
+  with a committed IR snapshot proving redundant native `and` instructions are
+  not emitted for the identity.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone436`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone436`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before the current focused-test batch with 543 fixture tests, 0 failures, 286
+  system PHP comparisons, and 257 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 437: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native tracked integer bitwise zero-annihilator folding for the
+  currently lowerable integer bitwise subset. Tracked integer expression
+  operands for `$x & 0` and `0 & $x` now fold to zero instead of emitting
+  redundant LLVM `and` instructions or equivalent C fallback bitwise
+  expressions. Bitwise string behavior, scalar-to-int coercion, broader
+  bitwise identities, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering remain unchanged and unsupported where
+  documented.
+- Added the Milestone 437 fixture covering the bitwise zero-annihilator fold
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison,
+  with a committed IR snapshot proving redundant native `and` instructions are
+  not emitted for the annihilator.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone437`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone437`.
+- The full-suite gate is queued as Milestone 438 for the focused native
+  bitwise identity batch before adding more native bitwise identity slices.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 438: run the full project test gate for the focused native
+  bitwise identity batch from Milestones 435 through 437, fix any failures, and
+  document the result.
+
+Next:
+
+- Full-suite gate passed for the focused native bitwise identity batch covering
+  Milestones 435 through 437. The serialized gate,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed with 547
+  fixture tests, 0 failures, 290 system PHP comparisons, and 257 skipped
+  comparisons.
+- This gate covers the tracked integer bitwise zero identities, all-ones
+  identity, and zero-annihilator folds added in the batch, plus the previously
+  focused native float multiplicative identity slice from Milestone 434.
+- A checkpoint still has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and `docs/LOOP_MEMORY.md` still
+  has unrelated pre-existing edits outside this interactive session's active
+  work.
+
+Next:
+
+- Start Milestone 439: decide whether to checkpoint the native bitwise identity
+  batch now or continue into the next smallest native-lowering slice.
+
+Next:
+
+- Continued past the native bitwise identity batch checkpoint decision into the
+  next narrow native-lowering slice. A checkpoint was not created because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Start Milestone 440: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native syntactic boolean double logical-not folding for the currently
+  lowerable boolean expression subset. Dynamic boolean expressions such as
+  `!!$flag` now reuse the original native boolean expression instead of
+  emitting redundant LLVM `xor i1 ..., true` instructions or equivalent C
+  fallback inversions. The fold is intentionally limited to syntactic double
+  logical-not over already-lowerable booleans or native boolean expression
+  results; PHP truthiness for integers, strings, nulls, arrays, objects,
+  side-effecting operands, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering remain unchanged and unsupported
+  where documented.
+- Added the Milestone 440 fixture covering boolean double logical-not folding
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison,
+  with a committed IR snapshot proving redundant native boolean inversions are
+  not emitted for the syntactic double-not form.
+- Focused checks passed:
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone440`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone440`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 547 fixture tests, 0 failures, 290 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 441: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native dynamic boolean strict-identity folding for boolean-literal
+  comparisons in the currently lowerable boolean expression subset. Dynamic
+  boolean expression operands compared with boolean literals now fold for
+  `$flag === true`, `true === $flag`, `$flag !== false`, and `false !== $flag`
+  by reusing the original native boolean expression instead of emitting
+  redundant LLVM `icmp` instructions or equivalent C fallback comparisons.
+  The inverse literal cases continue to use the existing boolean inversion
+  path. Loose comparison, PHP truthiness for non-booleans, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 441 fixture covering boolean-literal strict-identity
+  folding through `phpc run`, `phpc compile --emit-ir`, and system PHP
+  comparison, with a committed IR snapshot proving redundant native boolean
+  literal comparisons are not emitted.
+- Updated existing comparison-result tracking IR snapshots where the new
+  boolean-literal identity fold removes redundant `icmp ... true` or
+  `icmp ... false` instructions from later scalar lowering.
+- Focused checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone441`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone441`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this focused-test batch with 547 fixture tests, 0 failures, 290 system
+  PHP comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 442: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added explicit native inverse boolean-literal strict-identity coverage for
+  the currently lowerable dynamic boolean expression subset. Dynamic boolean
+  expression operands compared with inverse boolean literals now use the native
+  boolean inversion path for `$flag === false`, `false === $flag`,
+  `$flag !== true`, and `true !== $flag` instead of emitting redundant LLVM
+  `icmp` instructions or equivalent C fallback comparisons. Loose comparison,
+  PHP truthiness for non-booleans, arrays, objects, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 442 fixture covering inverse boolean-literal
+  strict-identity folding through `phpc run`, `phpc compile --emit-ir`, and
+  system PHP comparison, with a committed IR snapshot proving redundant native
+  boolean literal comparisons are not emitted for the inverse forms.
+- Focused checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone442`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone442`.
+- The full-suite gate is queued as Milestone 443 for the focused native
+  boolean identity batch before adding more native boolean identity slices.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 443: run the full project test gate for the focused native
+  boolean identity batch from Milestones 440 through 442, fix any failures, and
+  document the result.
+
+Next:
+
+- Full-suite gate passed for the focused native boolean identity batch covering
+  Milestones 440 through 442. The serialized gate,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed with 550
+  fixture tests, 0 fixture failures, 293 system PHP comparisons, and 257
+  skipped comparisons.
+- During the gate, updated stale fake LLVM/C assembly backend validators for
+  the dynamic boolean strict-identity fixture, refreshed the Milestone 269
+  dynamic boolean logical-not IR snapshot, and updated the `strict_identity`
+  unit expectation so existing tests now assert the folded boolean-literal
+  identity shape instead of redundant boolean `icmp` instructions.
+- This gate covers boolean double logical-not folding, boolean-literal strict
+  identity reuse, inverse boolean-literal strict identity inversion, and the
+  affected existing comparison/unary/strict-identity expectations.
+
+Next:
+
+- Continued past the native boolean identity batch checkpoint decision into
+  the next narrow native-lowering slice. A checkpoint was not created because
+  `tools/checkpoint.sh` intentionally stages the full dirty tree, and
+  `docs/LOOP_MEMORY.md` still has unrelated pre-existing edits outside this
+  interactive session's active work.
+
+Next:
+
+- Start Milestone 445: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native boolean-literal loose-comparison folding for the currently
+  lowerable dynamic boolean expression subset. Dynamic boolean expression
+  operands compared loosely with boolean literals now fold for `$flag == true`,
+  `true == $flag`, `$flag != false`, and `false != $flag` by reusing the
+  original native boolean expression, while inverse forms such as
+  `$flag == false`, `false == $flag`, `$flag != true`, and `true != $flag` use
+  the native boolean inversion path. This stays limited to already-lowerable
+  boolean operands; PHP truthiness/coercion for non-booleans, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 445 fixture covering boolean-literal loose-comparison
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant C comparisons against `1` or `0`.
+- Updated the existing Milestone 383 boolean comparison result-tracking IR
+  snapshot and unit expectations because boolean loose comparisons against
+  literals now reuse or invert the native boolean expression instead of
+  emitting redundant `icmp ... true` instructions.
+- Focused checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_literal_loose_comparison_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone445`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone445`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 550 fixture tests, 0 fixture failures, 293 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 446: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native boolean-literal ordering-comparison folding for the currently
+  lowerable dynamic boolean expression subset. Dynamic boolean expression
+  operands ordered against boolean literals now fold by reusing the native
+  boolean expression, inverting it, or returning a static boolean for cases
+  such as `$flag > false`, `$flag < true`, `$flag <= true`, and
+  `true >= $flag`. This stays limited to already-lowerable boolean operands;
+  PHP truthiness/coercion for non-booleans, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 446 fixture covering boolean-literal ordering-comparison
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant C ordering comparisons against `1` or `0`.
+- Focused checks passed:
+  `cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_literal_ordering_comparison_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone446`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone446`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 550 fixture tests, 0 fixture failures, 293 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 447: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native boolean-literal ternary folding for the currently lowerable
+  dynamic boolean condition subset. Dynamic ternaries with literal boolean
+  branches now fold `$flag ? true : false` to the original native boolean
+  expression, `$flag ? false : true` to the native boolean inversion path, and
+  same-literal branches such as `$flag ? true : true` or
+  `$flag ? false : false` to static booleans. This stays limited to
+  already-lowerable boolean conditions and literal boolean branch values; PHP
+  truthiness/coercion, lazy branch evaluation for unsupported or side-effecting
+  branches, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 447 fixture covering boolean-literal ternary folding
+  through `phpc run`, `phpc compile --emit-ir`, and system PHP comparison,
+  with a committed IR snapshot proving redundant boolean `select` instructions
+  are not emitted for the literal branch forms.
+- Focused checks passed:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone447`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone447`.
+- The full-suite gate is queued as Milestone 448 for the focused native
+  boolean folding batch covering Milestones 445 through 447 before adding more
+  native boolean folding slices.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 448: run the full project test gate for the focused native
+  boolean folding batch from Milestones 445 through 447, fix any failures, and
+  document the result.
+
+Next:
+
+- Full-suite gate passed for the focused native boolean folding batch covering
+  Milestones 445 through 447. The serialized gate,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, passed with 553
+  fixture tests, 0 fixture failures, 296 system PHP comparisons, and 257
+  skipped comparisons.
+- The first full-gate attempt failed before tests when disk exhaustion caused
+  the linker to terminate with a bus error while building
+  `native_conditional_boundary`. After removing disposable build artifacts and
+  refreshing stale comparison expectations/snapshots exposed by the boolean
+  literal ternary fold, the rerun passed.
+- This gate covers boolean-literal loose comparison folding, boolean-literal
+  ordering comparison folding, boolean-literal ternary folding, and the
+  affected existing comparison result-tracking, reflexive scalar identity, and
+  bounded boolean identity snapshots.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 450: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native identical numeric literal ternary folding for the current
+  lowerable boolean-condition ternary subset. Dynamic ternaries with identical
+  integer literal branches such as `$flag ? 5 : 5` and identical float literal
+  branches such as `$flag ? 2.5 : 2.5` now reuse the literal value in LLVM IR
+  and the C assembly fallback instead of emitting a redundant numeric
+  `select` or C conditional expression. This stays limited to already
+  lowerable boolean conditions and same-type numeric literal branches; PHP
+  truthiness/coercion, lazy branch evaluation for unsupported or side-effecting
+  branches, references/copy-on-write, exact native PHP errors, dynamic
+  mixed-type branch values, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 450 fixture covering identical numeric literal ternary
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant identical numeric literal C conditionals.
+- Focused checks passed:
+  `cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_identical_numeric_literal_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone450`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone450`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 451: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native numeric literal arithmetic identity folding for the current
+  lowerable same-type arithmetic subset. Integer literal identities now fold
+  `5 + 0`, `0 + 6`, `7 - 0`, `8 - 8`, `9 * 1`, `1 * 10`, `11 * 0`, and
+  `0 * 12` by reusing the literal value or folding to zero in LLVM IR and the
+  C assembly fallback. Finite float literal identities now fold
+  `2.5 - 2.5`, `3.5 * 1.0`, and `1.0 * 4.5` by reusing the literal value or
+  folding to `0.0`.
+- This also tightened existing arithmetic snapshots where prior tracked-zero
+  folds were followed by now-foldable literal additive identities, and where
+  identical float literal ternary branches feed later bounded float arithmetic.
+  The affected committed snapshots are Milestones 368, 416, and 428.
+- Added the Milestone 451 fixture covering numeric literal arithmetic identity
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant numeric literal identity operations in generated C.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_numeric_literal_arithmetic_identity_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone451`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone451`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 452: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native integer modulo-by-one folding for the current lowerable integer
+  modulo subset. Tracked integer expression operands and integer literal
+  operands for `$x % 1` now fold to `0` in LLVM IR and the C assembly fallback
+  instead of emitting a redundant `srem` or C `% 1` expression. This stays
+  limited to the existing same-type integer modulo subset with a statically
+  known positive divisor; dynamic, zero, and negative divisors, modulo
+  coercions, negative-divisor/min-int edge behavior, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 452 fixture covering modulo-by-one folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant `% 1`
+  operations in generated C.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_modulo_by_one_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone452`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone452`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 453: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native bounded integer modulo folding when every possible tracked
+  dividend value produces the same remainder for a positive literal divisor.
+  For example, `$flag ? 10 : 13` modulo `3` now folds to the proven remainder
+  `1` in LLVM IR and the C assembly fallback instead of emitting a redundant
+  `srem` or C `% 3` expression. This stays limited to already tracked bounded
+  integer values with a single proven remainder; dynamic divisors, zero and
+  negative divisors, modulo coercions, negative-divisor/min-int edge behavior,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 453 fixture covering bounded integer modulo folding
+  through `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a
+  fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant `% 3` operations in generated C.
+- Focused checks passed:
+  `cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_bounded_integer_modulo_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone453`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone453`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 454: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native integer literal bitwise identity folding for the current
+  lowerable integer bitwise subset. Identical integer literal operands for
+  `&` and `|` now reuse the literal value, identical integer literal operands
+  for `^` fold to `0`, literal `$x & -1`/`-1 & $x`, `$x | 0`/`0 | $x`, and
+  `$x ^ 0`/`0 ^ $x` reuse the literal value, and literal `$x & 0`/`0 & $x`
+  fold to `0` in LLVM IR and the C assembly fallback. This stays limited to
+  already lowerable integer operands; PHP bytewise string bitwise behavior,
+  scalar-to-int coercion, arrays, objects, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering remain unchanged
+  and unsupported where documented.
+- Added the Milestone 454 fixture covering integer literal bitwise identity
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant literal `&`, `|`, and `^` operations in generated C.
+- This also refreshed stale committed bitwise snapshots from Milestones 413
+  and 437 where previous tracked bitwise folds feed now-foldable literal
+  additive identities.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_literal_bitwise_identity_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone454`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone454`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this slice with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 455: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native integer literal shift-by-zero folding for the current lowerable
+  integer shift subset. Integer literal operands for `$x << 0` and `$x >> 0`
+  now reuse the literal value in LLVM IR and the C assembly fallback instead
+  of emitting redundant zero-count shift operations. This preserves the
+  existing boundary for dynamic shift counts, negative or large counts, PHP
+  scalar-to-int coercion, PHP bytewise string bitwise behavior,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering.
+- Added the Milestone 455 fixture covering integer literal shift-by-zero
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant generated `<< 0` and `>> 0` operations.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_literal_shift_by_zero_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone455`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone455`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this batch with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 456: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native single-known integer bitwise-not folding for the current
+  lowerable integer bitwise subset. Unary `~` over a statically known
+  single-result integer now reuses the folded integer result in LLVM IR and the
+  C assembly fallback instead of emitting a redundant `xor`/`~` operation.
+  Multi-value bounded integer operands still emit the native bitwise-not
+  operation and keep their result tracking. PHP bytewise string bitwise
+  behavior, scalar-to-int coercion, arrays, objects, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 456 fixture covering integer bitwise-not folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant `~`
+  operations in generated C.
+- Refreshed stale committed IR snapshots from Milestones 275 and 335 where
+  existing unary `~3` code now folds to `-4`.
+- Focused checks passed:
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_bitwise_emit_asm -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_bitwise_not_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone456`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone456`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this batch with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 457: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native single-known integer unary-minus folding for the current
+  lowerable unary subset. Unary `-` over a statically known single-result
+  integer now reuses the folded integer result in LLVM IR and the C assembly
+  fallback instead of emitting redundant `sub 0, ...`/C unary-minus
+  operations. Overflow-sensitive integer negation still rejects, multi-value
+  bounded integer operands still emit native unary-minus operations, and PHP
+  numeric coercion, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering remain unchanged and unsupported where
+  documented.
+- Added the Milestone 457 fixture covering integer unary-minus folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant unary
+  minus operations in generated C.
+- Refreshed stale committed IR snapshots from Milestones 236, 278, 332, 338,
+  and 454 where existing single-known integer unary-minus expressions now fold
+  to their known negative literals.
+- Focused checks passed:
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_unary_minus -- --test-threads=1`;
+  `cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_integer_shift_emit_asm -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone457`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone457`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this batch with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 458: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added native single-known nonzero finite float unary-minus folding for the
+  current lowerable unary subset. Unary `-` over a statically known
+  single-result nonzero finite float now reuses the folded float result in LLVM
+  IR and the C assembly fallback instead of emitting redundant `fsub 0.0,
+  ...`/C unary-minus operations. Signed zero stays non-folded for now, and
+  overflow/INF/NAN behavior, multi-value bounded operands, PHP numeric
+  coercion, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unchanged and unsupported where
+  documented.
+- Added the Milestone 458 fixture covering float unary-minus folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant float
+  unary-minus operations in generated C.
+- Refreshed the stale committed IR snapshot from Milestone 296 where existing
+  single-known nonzero finite float unary-minus expressions now fold to their
+  known negative literals.
+- Focused checks passed:
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_float_unary_minus -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone458`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone458`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this batch with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 459: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added LLVM IR folding for logical not over single-result statically known
+  native boolean expression operands. The LLVM path now turns known `!$flag`
+  results into static booleans without redundant `xor i1 ..., true`
+  instructions, while ambiguous boolean expressions still emit the existing
+  inversion. The C assembly fallback fixture remains honest by preserving the
+  explicit comparison-shaped logical-not expression there.
+- Added the Milestone 459 fixture covering boolean logical-not folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation for the same source.
+- Focused checks passed:
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_logical_not_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone459`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone459`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this batch with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 460: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Extended the C assembly fallback's tracked boolean result handling for
+  integer strict-identity comparisons. Comparison-shaped operands such as
+  `(1 + 2) === 3` now record their known boolean result in the C fallback, so
+  later logical not over that expression folds to a static boolean instead of
+  preserving a redundant `!` expression. Ambiguous boolean expressions, PHP
+  truthiness coercion, short-circuit side effects, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 460 fixture covering the C fallback boolean logical-not
+  fold through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that rejects
+  redundant generated `!` operations for the folded case.
+- Focused checks passed:
+  `cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `cargo test -p phpc --test native_assembly_cli native_boolean_logical_not_c_fallback_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone460`; and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone460`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the current focused-test policy; the most recent serialized full gate passed
+  before this batch with 553 fixture tests, 0 fixture failures, 296 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Completed the delayed full-suite gate for the native scalar result-tracking
+  batch through Milestone 460. The gate exposed stale expectations in older
+  boolean comparison, conditional, and logical fixtures after the newer known
+  boolean logical-not folding removed redundant `xor`, boolean comparison, and
+  select paths. Refreshed those assertions and committed snapshots so they now
+  verify the simpler generated IR instead of the pre-folding shape.
+- Focused stale-snapshot checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`.
+- Full-suite gate passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`. This covered
+  the Rust test suite, doc tests, `phpc test` with 564 fixture tests passed and
+  0 failed, and `phpc test --compare-php` with 564 fixture tests passed, 0
+  failed, 307 system PHP comparisons, and 257 skipped comparisons.
+- Cleared generated `.codex-yolo/logs/*.log` and Cargo build artifacts during
+  the gate because the filesystem was full; no source files were removed for
+  space recovery.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 461, native finite nonzero float additive identity folding.
+  LLVM IR and the C assembly fallback now reuse tracked finite nonzero float
+  operands for `$x + 0.0`, `0.0 + $x`, and `$x - 0.0` in the current
+  same-type native arithmetic subset. Possible signed-zero identities still
+  emit arithmetic, and non-finite float behavior, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 461 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  nonzero float additive identity operations while preserving a possible
+  signed-zero arithmetic expression.
+- Refreshed the stale Milestone 419 float subtraction snapshot because
+  subtraction-to-zero followed by adding nonzero `1.25` now folds the
+  redundant `0.0 + 1.25` operation to a direct float output.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_float_additive_identity_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone461`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone461`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 462, native float left-zero subtraction folding. LLVM IR and
+  the C assembly fallback now fold `0.0 - $x` to the known negated float
+  literal when `$x` is a single-result statically known nonzero finite float
+  operand in the current same-type native arithmetic subset. Possible
+  signed-zero left-zero subtraction still emits arithmetic, and non-finite
+  float behavior, PHP numeric coercion, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering remain unchanged and
+  unsupported where documented.
+- Added the Milestone 462 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  nonzero left-zero subtraction while preserving a possible signed-zero
+  subtraction expression.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_float_left_zero_subtraction_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone462`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone462`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 463, native positive float multiplication-by-zero folding.
+  LLVM IR and the C assembly fallback now fold `$x * 0.0` and `0.0 * $x` to
+  positive `0.0` when `$x` is a statically known finite positive float operand
+  in the current same-type native arithmetic subset. Negative and
+  signed-zero-sensitive multiplication-by-zero cases still emit arithmetic,
+  and non-finite float behavior, PHP numeric coercion, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported where documented.
+- Added the Milestone 463 fixture covering the positive-zero fold through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  positive float multiplication-by-zero operations. The direct arithmetic
+  boundary test also proves the negative signed-zero-sensitive case stays
+  emitted in LLVM IR.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_positive_float_multiplication_by_zero_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone463`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone463`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 464, native float multiplication-by-negative-one folding.
+  LLVM IR and the C assembly fallback now fold `$x * -1.0` and `-1.0 * $x`
+  to the known negated float literal when `$x` is a single-result statically
+  known nonzero finite float operand in the current same-type native arithmetic
+  subset. Possible signed-zero multiplication by `-1.0` still emits
+  arithmetic, and non-finite float behavior, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported where documented.
+- Added the Milestone 464 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  multiplication-by-negative-one operations. The direct arithmetic boundary
+  test also proves possible signed-zero multiplication by `-1.0` stays emitted
+  in LLVM IR.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_float_multiplication_by_negative_one_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone464`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone464`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 465, native tracked float arithmetic folding. LLVM IR and
+  the C assembly fallback now fold tracked single-result finite nonzero float
+  expression arithmetic for `$x + literal`, `$x - literal`, and
+  `$x * literal` to the known float literal when exactly one operand is a
+  tracked expression in the current same-type native arithmetic subset.
+  Literal-only float arithmetic, tracked-expression plus tracked-expression
+  arithmetic, zero-result arithmetic, signed-zero-sensitive cases, non-finite
+  float behavior, PHP numeric coercion, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering remain unchanged and
+  unsupported or non-folded where documented.
+- Added the Milestone 465 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant tracked
+  float expression arithmetic while proving literal-only and zero-result float
+  arithmetic stays emitted. The direct arithmetic boundary test also proves
+  tracked-expression plus tracked-expression arithmetic remains emitted.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_float_arithmetic_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone465`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone465`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 466, native tracked integer arithmetic folding. LLVM IR and
+  the C assembly fallback now fold tracked single-result integer expression
+  arithmetic with exactly one tracked expression operand and one literal
+  operand for `+`, `-`, and `*` to the known integer literal after checked
+  overflow analysis in the current native arithmetic subset. Literal-only
+  integer arithmetic, tracked-expression plus tracked-expression integer
+  arithmetic, overflow-sensitive arithmetic, PHP numeric coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported or non-folded where
+  documented.
+- Added the Milestone 466 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant tracked
+  integer expression arithmetic while proving literal-only and
+  tracked-expression plus tracked-expression integer arithmetic stays emitted.
+  The direct arithmetic boundary test also proves the same LLVM IR boundaries,
+  and the stale Milestone 233 integer arithmetic snapshot was refreshed where
+  the newly folded multiplication now feeds an emitted literal-only
+  subtraction.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_arithmetic_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone466`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone466`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_tracked_integer_arithmetic_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 467, native tracked integer bitwise folding. LLVM IR and
+  the C assembly fallback now fold tracked single-result integer expression
+  bitwise operations with exactly one tracked expression operand and one
+  literal operand for `&`, `|`, and `^` to the known integer literal in the
+  current native bitwise subset. Literal-only integer bitwise operations,
+  tracked-expression plus tracked-expression integer bitwise operations, PHP
+  bytewise string bitwise behavior, scalar-to-int coercion, references and
+  copy-on-write, exact native PHP errors, and broader native expression
+  lowering remain unchanged and unsupported or non-folded where documented.
+- Added the Milestone 467 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant tracked
+  integer bitwise operations while proving literal-only and tracked-expression
+  plus tracked-expression bitwise operations stay emitted. The direct bitwise
+  boundary test proves the same LLVM IR boundaries. The stale Milestone 275
+  and 335 bitwise IR snapshots were refreshed for the new fold, and the stale
+  Milestone 338 shift result-tracking snapshot was refreshed for the M466
+  arithmetic fold that now applies after a tracked shift.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_bitwise_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_integer_bitwise_emit_asm_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_integer_bitwise_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone467`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone467`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_tracked_integer_bitwise_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 468, native tracked integer shift folding. LLVM IR and the
+  C assembly fallback now fold tracked single-result integer expression shifts
+  with static safe nonzero counts to the known integer literal in the current
+  native shift subset. Literal-only shifts, non-single tracked integer shifts,
+  overflow-sensitive left shifts, dynamic or invalid shift counts, PHP
+  scalar-to-int coercion, string bitwise behavior, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unchanged and unsupported or non-folded where documented.
+- Added the Milestone 468 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant tracked
+  integer shift operations while proving literal-only and non-single tracked
+  integer shifts stay emitted. The direct bitwise boundary test proves the
+  same LLVM IR boundaries. The stale Milestone 278 and 338 shift IR snapshots
+  were refreshed for the new fold.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_shift_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_integer_shift_emit_asm_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_integer_shift_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone468`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone468`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_tracked_integer_shift_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 469, native tracked integer comparison folding. LLVM IR and
+  the C assembly fallback now fold same-type integer loose/ordering
+  comparisons with exactly one tracked single-result integer expression operand
+  and one integer literal operand to a static boolean in the current native
+  comparison subset. Literal-only comparisons still fold, non-single tracked
+  integer comparisons stay emitted, and PHP comparison coercions,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported or non-folded where
+  documented.
+- Added the Milestone 469 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant tracked
+  integer comparisons while proving the non-single tracked comparison stays
+  emitted. The direct comparison boundary tests prove the same LLVM IR
+  boundary. The stale Milestone 377 and 380 comparison result-tracking IR
+  snapshots were refreshed where newer tracked folds remove redundant
+  comparisons.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_tracked_single_result_integer_comparisons -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_tracked_integer_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone469`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone469`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_tracked_integer_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 470, native tracked float comparison folding. LLVM IR and
+  the C assembly fallback now fold same-type finite-float loose/ordering
+  comparisons with exactly one tracked single-result float expression operand
+  and one finite-float literal operand to a static boolean in the current
+  native comparison subset. Literal-only comparisons still fold, non-single
+  tracked float comparisons stay emitted, and non-finite float behavior, PHP
+  comparison coercions, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering remain unchanged and unsupported or
+  non-folded where documented.
+- Added the Milestone 470 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant tracked
+  float comparisons while proving the non-single tracked comparison stays
+  emitted. The direct comparison boundary tests prove the same LLVM IR
+  boundary. The stale Milestone 380 float comparison result-tracking IR
+  snapshot was refreshed where newer tracked folds make the older ambiguous
+  branch statically known.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_tracked_single_result_float_comparisons -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_tracked_float_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_float_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone470`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone470`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_tracked_float_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_float_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 471, native bounded string comparison folding. LLVM IR and
+  the C assembly fallback now fold known ASCII nonnumeric NUL-free string
+  loose/ordering comparisons to a static boolean when every possible safe
+  string outcome matches in the current native comparison subset. Ambiguous
+  bounded string comparisons still emit `strcmp`, and numeric-looking,
+  unknown, non-ASCII, or NUL-containing string comparisons, PHP comparison
+  coercions, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unchanged and unsupported or non-folded
+  where documented.
+- Added the Milestone 471 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant bounded
+  string comparisons while proving the ambiguous bounded comparison stays
+  emitted. The direct comparison boundary tests prove the same LLVM IR
+  boundary. The stale Milestone 386 string comparison result-tracking and
+  Milestone 392 broader ASCII string comparison IR snapshots were refreshed
+  where newer safe string folds remove redundant `strcmp` calls.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_bounded_known_string_comparisons -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_bounded_string_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_bounded_string_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone471`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone471`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_bounded_string_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_bounded_string_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 472, native single-result scalar ternary folding. LLVM IR
+  and the C assembly fallback now fold dynamic integer, finite-float, and
+  boolean ternaries whose possible branch values collapse to a single known
+  result without emitting a redundant select or C conditional expression in
+  the current native ternary subset. Ambiguous same-type ternaries still emit,
+  mixed-type branches remain rejected until native tagged values exist, and
+  PHP truthiness/coercion gaps, branch side-effect ordering,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported or non-folded where
+  documented.
+- Added the Milestone 472 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  single-result scalar ternary branches while proving the ambiguous integer
+  ternary stays emitted. The direct conditional boundary test proves the same
+  LLVM IR boundary. The stale Milestone 281 boolean ternary, Milestone 401
+  identical integer expression ternary, and Milestone 404 identical float
+  expression ternary IR snapshots were refreshed where newer scalar
+  single-result folds remove redundant selects and later arithmetic.
+- Focused checks passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_single_result_scalar_ternaries_without_selects -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_single_result_scalar_ternary_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_result_scalar_ternary_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone472`;
+  and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone472`;
+  after formatting,
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_single_result_scalar_ternary_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_result_scalar_ternary_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 473, native boolean expression comparison folding. LLVM IR
+  and the C assembly fallback now fold same-type boolean expression
+  loose/ordering comparisons to a static boolean when tracked possible boolean
+  operands prove one result in the current native comparison subset. Ambiguous
+  boolean expression comparisons still emit native comparisons, and PHP
+  truthiness/coercion gaps, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering remain unchanged and unsupported or
+  non-folded where documented.
+- Added the Milestone 473 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant known
+  boolean comparisons while proving the ambiguous boolean comparison stays
+  emitted. The direct comparison boundary test proves the same LLVM IR
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_known_boolean_expression_comparisons -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_boolean_expression_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_boolean_expression_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone473`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone473`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-473 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 474, native bounded integer comparison folding. LLVM IR and
+  the C assembly fallback now fold same-type integer loose/ordering
+  comparisons to a static boolean when tracked possible integer operands prove
+  one result in the current native comparison subset. Ambiguous bounded integer
+  comparisons still emit native comparisons, and PHP numeric/coercion gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported or non-folded where
+  documented.
+- Added the Milestone 474 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant bounded
+  integer comparisons while proving the ambiguous bounded integer comparison
+  stays emitted. The direct comparison boundary test proves the same LLVM IR
+  boundary.
+- Updated the Milestone 473 boolean-expression comparison fixture to use
+  bounded finite floats as source boolean expressions, because the new bounded
+  integer comparison fold correctly removes the previous integer source
+  comparisons before the boolean-expression comparison step. The Milestone 473
+  IR and C fallback checks were rerun after that fixture repair.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_bounded_integer_comparisons_when_all_outcomes_match -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_bounded_integer_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_bounded_integer_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone474`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone474`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_known_boolean_expression_comparisons -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_boolean_expression_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_boolean_expression_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone473`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone473`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-474 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 475, native bounded float comparison folding. LLVM IR and
+  the C assembly fallback now fold same-type finite-float loose/ordering
+  comparisons to a static boolean when tracked possible finite-float operands
+  prove one result in the current native comparison subset. Ambiguous bounded
+  float comparisons still emit native comparisons, and non-finite float
+  behavior, PHP numeric/coercion gaps, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering remain unchanged and
+  unsupported or non-folded where documented.
+- Added the Milestone 475 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant bounded
+  float comparisons while proving the ambiguous bounded float comparison stays
+  emitted. The direct comparison boundary test proves the same LLVM IR
+  boundary.
+- Updated the Milestone 473 boolean-expression comparison fixture to use
+  emitted tracked integer strict-identity source expressions, so it remains a
+  stable proof of boolean-expression comparison folding as bounded
+  loose/ordering comparisons continue to fold earlier.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_bounded_float_comparisons_when_all_outcomes_match -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_bounded_float_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_bounded_float_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone475`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone475`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_boolean_expression_comparison_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_boolean_expression_comparison_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone473`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone473`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-475 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 476, native boolean logical known-result folding. LLVM IR
+  and the C assembly fallback now fold native boolean expression `&&`/`and`,
+  `||`/`or`, and `xor` operations to a static boolean when tracked possible
+  boolean operands prove one result in the current native logical subset.
+  Ambiguous boolean expression logical operations still emit native operations,
+  and PHP truthiness, short-circuit side-effect gaps,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unchanged and unsupported or non-folded where
+  documented.
+- Added the Milestone 476 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant known
+  boolean logical operations while proving the ambiguous boolean logical
+  operation stays emitted. The direct logical boundary test proves the same
+  LLVM IR boundary.
+- Updated the older Milestone 272 native boolean logical-operator fixture to
+  use ambiguous boolean expression operands, so it continues to prove native
+  logical operator emission now that known-result boolean operations fold
+  earlier.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary emit_ir_folds_known_boolean_expression_logical_results -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary emit_ir_lowers_boolean_logical_operators -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary native_boolean_logical_known_result_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_boolean_logical_known_result_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_boolean_logical_operator_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone476`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone476`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone272`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone272`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-476 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 477, native tracked-expression integer arithmetic folding.
+  LLVM IR and the C assembly fallback now fold integer `+`, `-`, and `*` to
+  a known integer literal when tracked possible integer operands prove one
+  checked single result, including tracked-expression plus tracked-expression
+  cases. Literal-only integer arithmetic and ambiguous tracked-expression
+  plus tracked-expression arithmetic stay emitted. Overflow-sensitive
+  arithmetic, PHP numeric coercion, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  non-folded where documented.
+- Added the Milestone 477 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  tracked-expression arithmetic while proving ambiguous tracked arithmetic
+  stays emitted. The direct arithmetic boundary test proves the same LLVM IR
+  boundary.
+- Updated the older Milestone 466 tracked integer arithmetic fixture to include
+  both newly folded tracked-expression plus tracked-expression arithmetic and
+  an ambiguous tracked-expression arithmetic case that still emits native
+  addition. Updated the older Milestone 422 and 425 identity snapshots and
+  direct assertions because the new tracked-expression arithmetic fold now
+  correctly reduces their final known sums to literals.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary emit_ir_folds_tracked_expression_integer_arithmetic_when_result_is_single -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary emit_ir_folds_tracked_single_result_integer_arithmetic -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_tracked_expression_integer_arithmetic_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_tracked_integer_arithmetic_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_expression_integer_arithmetic_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_arithmetic_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone477`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone477`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone466`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone466`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone422`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone422`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone425`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone425`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-477 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 478, native tracked-expression integer bitwise folding.
+  LLVM IR and the C assembly fallback now fold integer `&`, `|`, and `^` to
+  a known integer literal when tracked possible integer operands prove one
+  result, including tracked-expression plus tracked-expression cases. Literal-
+  only integer bitwise operations and ambiguous tracked-expression plus
+  tracked-expression bitwise operations stay emitted. PHP bytewise string
+  bitwise behavior, scalar-to-int coercion, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering remain unsupported
+  or non-folded where documented.
+- Added the Milestone 478 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  tracked-expression bitwise operations while proving literal-only and
+  ambiguous tracked bitwise operations stay emitted. The direct bitwise
+  boundary test proves the same LLVM IR boundary.
+- Updated the older Milestone 467 tracked integer bitwise fixture to include
+  both newly folded tracked-expression plus tracked-expression bitwise
+  operations and an ambiguous tracked-expression bitwise case that still emits
+  native `and`. Updated older bitwise/shift identity snapshots and direct
+  assertions because earlier arithmetic result-tracking now correctly reduces
+  their final known sums to literals.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_tracked_expression_integer_bitwise_when_result_is_single -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_tracked_single_result_integer_bitwise -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_tracked_expression_integer_bitwise_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_tracked_integer_bitwise_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_expression_integer_bitwise_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_bitwise_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone478`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone478`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone467`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone467`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-478 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 479, native tracked integer shift count folding. LLVM IR and
+  the C assembly fallback now accept shift counts from tracked integer
+  expressions when they prove one safe count from 0 through 63, and use that
+  proven count for native `<<`/`>>` lowering. Ambiguous tracked shift counts,
+  invalid counts, PHP scalar-to-int coercion, string bitwise behavior,
+  overflow-sensitive shifts, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  non-folded where documented.
+- Added the Milestone 479 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  tracked-count shift expressions while proving a literal-left shift with a
+  tracked count still emits with the proven static count. The direct bitwise
+  boundary tests prove the same LLVM IR success and ambiguous-count rejection
+  boundaries.
+- Updated the older unsupported-shift direct test so it now rejects an
+  ambiguous tracked shift count instead of the newly supported single-result
+  tracked count expression.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_accepts_tracked_single_result_integer_shift_counts -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_rejects_ambiguous_tracked_integer_shift_counts -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_tracked_integer_shift_count_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_integer_shift_count_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone479`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone479`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-479 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 480, native tracked-expression float arithmetic folding.
+  LLVM IR and the C assembly fallback now fold finite nonzero float `+`, `-`,
+  and `*` to a known float literal when tracked possible finite-float operands
+  prove one nonzero result, including tracked-expression plus
+  tracked-expression cases. Literal-only float arithmetic, zero-result
+  arithmetic, ambiguous tracked-expression plus tracked-expression float
+  arithmetic, signed-zero-sensitive behavior, non-finite floats, PHP numeric
+  coercion, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unsupported, emitted, or non-folded where
+  documented.
+- Added the Milestone 480 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant
+  tracked-expression nonzero float arithmetic while proving literal-only,
+  zero-result, and ambiguous tracked float arithmetic stay emitted. The direct
+  arithmetic boundary test proves the same LLVM IR boundary.
+- Updated the older Milestone 434 float multiplicative identity snapshot and
+  direct assertion because the new tracked-expression float arithmetic fold
+  now correctly reduces its final known nonzero sum to a literal.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary emit_ir_folds_tracked_expression_nonzero_float_arithmetic_when_result_is_single -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_tracked_expression_float_arithmetic_folding_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_tracked_expression_float_arithmetic_folding_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone480`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone480`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone434`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone434`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-480 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 481, native single-result string ternary concatenation
+  folding. LLVM IR and the C assembly fallback now fold string concatenation
+  operands that are ternary expressions proving one static string result into
+  the existing generated static string constant path. Ambiguous string ternary
+  concatenation, PHP scalar-to-string conversion, runtime string allocation,
+  arrays, objects, resources, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 481 fixture covering the fold through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that proves redundant
+  single-result string ternaries are removed from generated C. The direct
+  concat boundary tests prove the same LLVM IR success and ambiguous string
+  ternary rejection boundaries.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary emit_ir_lowers_single_result_string_ternary_concatenation -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary emit_ir_rejects_ambiguous_string_ternary_concatenation -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary native_single_result_string_ternary_concat_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_result_string_ternary_concat_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone481`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone481`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-481 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary -- --test-threads=1`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 482, native boolean short ternary lowering. LLVM IR and the
+  C assembly fallback now lower short ternary `?:` for already-lowerable
+  boolean conditions in the current straight-line native subset. Dynamic
+  boolean and static-false forms require a lowerable boolean fallback, while
+  static-true forms fold to `true` without lowering the fallback. Non-boolean
+  truthiness/coercion, non-boolean fallback values when the fallback is needed,
+  null coalescing, arrays, objects, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 482 fixture covering boolean short ternary through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a
+  fake-`cc` `phpc compile --emit-asm` fallback validation. The direct
+  conditional boundary tests prove LLVM IR success and non-boolean short
+  ternary rejection boundaries.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_lowers_boolean_short_ternary_subset -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_rejects_non_boolean_short_ternary_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_boolean_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_boolean_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone482`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone482`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-482 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 483, native static-false short ternary scalar fallback
+  folding. LLVM IR and the C assembly fallback now fold
+  `false ?: fallback` to any already-lowerable scalar fallback in the current
+  straight-line native subset, while `true ?: fallback` still folds to `true`
+  without lowering the fallback. Dynamic short ternary remains boolean-only:
+  dynamic non-boolean truthiness/coercion, dynamic non-boolean fallback values,
+  null coalescing, arrays, objects, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 483 fixture covering static-false scalar short ternary
+  fallbacks through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that rejects redundant branch forms in generated C. The direct conditional
+  boundary tests prove LLVM IR success and keep dynamic non-boolean short
+  ternary rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_lowers_static_false_short_ternary_scalar_fallbacks -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_rejects_non_boolean_short_ternary_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_static_false_short_ternary_scalar_fallback_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_false_short_ternary_scalar_fallback_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone483`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone483`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-483 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 484, native single-known integer short ternary folding.
+  LLVM IR and the C assembly fallback now fold short ternary `?:` when an
+  already-lowerable integer condition has one statically known truthiness
+  result: proven nonzero integer conditions reuse the integer result, and
+  proven zero integer conditions use the fallback. Ambiguous integer
+  truthiness, broader non-boolean truthiness/coercion, null coalescing, arrays,
+  objects, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 484 fixture covering single-known integer short ternary
+  conditions through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves unsupported fallbacks for proven-nonzero integer conditions are
+  not lowered into generated C. The direct conditional boundary tests prove
+  LLVM IR success and keep ambiguous integer short ternary rejection coverage
+  pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_single_known_integer_short_ternary_conditions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_rejects_non_boolean_short_ternary_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_single_known_integer_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_known_integer_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone484`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone484`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-484 cargo fmt --check`;
+  and
+  `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 485, native single-known float short ternary folding. LLVM
+  IR and the C assembly fallback now fold short ternary `?:` when an
+  already-lowerable finite float condition has one statically known truthiness
+  result: proven nonzero finite float conditions reuse the float result, and
+  proven zero float conditions use the fallback. Ambiguous float truthiness,
+  non-finite floats, broader non-boolean truthiness/coercion, null coalescing,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering remain unsupported or rejected where
+  documented.
+- Added the Milestone 485 fixture covering single-known float short ternary
+  conditions through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves unsupported fallbacks for proven-nonzero float conditions are not
+  lowered into generated C. The direct conditional boundary tests prove LLVM
+  IR success and keep ambiguous float short ternary rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_single_known_float_short_ternary_conditions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_rejects_non_boolean_short_ternary_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_single_known_float_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_known_float_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone485`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone485`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-485 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 486, native known-string short ternary folding. LLVM IR and
+  the C assembly fallback now fold short ternary `?:` when an already-lowerable
+  known string condition has one statically known PHP string-truthiness result:
+  known truthy strings reuse the string result, and known falsey `""`/`"0"`
+  strings use the fallback. Ambiguous string truthiness, untracked string
+  expressions, broader non-boolean truthiness/coercion, null coalescing,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering remain unsupported or rejected where
+  documented.
+- Added the Milestone 486 fixture covering known string short ternary
+  truthiness through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves unsupported fallbacks for known-truthy string conditions are not
+  lowered into generated C. The direct conditional boundary tests prove LLVM
+  IR success and keep ambiguous string short ternary rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_known_string_short_ternary_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_rejects_non_boolean_short_ternary_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_known_string_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_known_string_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone486`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone486`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-486 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 487, native known-string logical-not folding. LLVM IR and
+  the C assembly fallback now fold logical not `!` when an already-lowerable
+  known string operand has one statically known PHP string-truthiness result:
+  known falsey `""`/`"0"` strings fold to `true`, and known truthy strings
+  fold to `false`. Ambiguous string truthiness, untracked string expressions,
+  broader truthiness/coercion, arrays, objects, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unsupported or rejected where documented.
+- Added the Milestone 487 fixture covering known string logical-not truthiness
+  through `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a
+  fake-`cc` `phpc compile --emit-asm` fallback validation that proves redundant
+  logical-not operations are not emitted for known string operands. The direct
+  unary boundary tests prove LLVM IR success and keep ambiguous string
+  logical-not rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_folds_known_string_logical_not -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_rejects_unary_forms_before_lowering_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary native_known_string_logical_not_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_known_string_logical_not_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone487`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone487`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-487 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 488, native known-numeric logical-not folding. LLVM IR and
+  the C assembly fallback now fold logical not `!` when an already-lowerable
+  known integer or finite-float operand has one statically known PHP truthiness
+  result: known zero numeric operands fold to `true`, and known nonzero
+  numeric operands fold to `false`. Ambiguous numeric truthiness, non-finite
+  floats, untracked numeric expressions, broader truthiness/coercion, arrays,
+  objects, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 488 fixture covering known numeric logical-not
+  truthiness through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves redundant logical-not operations are not emitted for known
+  numeric operands. The direct unary boundary tests prove LLVM IR success and
+  keep ambiguous numeric logical-not rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_folds_known_numeric_logical_not -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_rejects_unary_forms_before_lowering_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary native_known_numeric_logical_not_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_known_numeric_logical_not_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone488`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone488`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-488 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 489, native known-scalar logical truthiness folding. LLVM IR
+  and the C assembly fallback now fold logical `&&`, `||`, and `xor` when both
+  already-lowerable scalar operands have one statically known PHP truthiness
+  result. Ambiguous scalar truthiness, untracked scalar operands, non-finite
+  floats, null truthiness, short-circuit cases that would need skipped
+  unsupported or side-effecting operands, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 489 fixture covering known scalar logical truthiness
+  through `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a
+  fake-`cc` `phpc compile --emit-asm` fallback validation that proves redundant
+  logical operations and conditional expressions are not emitted for known
+  scalar operands. The direct logical boundary tests prove LLVM IR success and
+  keep ambiguous scalar logical rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary emit_ir_folds_known_scalar_logical_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary emit_ir_rejects_unsupported_logical_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary native_known_scalar_logical_truthiness_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_known_scalar_logical_truthiness_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone489`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone489`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-489 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 490, native null logical-not folding. LLVM IR and the C
+  assembly fallback now fold `!null` to `true` in the current straight-line
+  native subset. Broader null truthiness in logical binary or conditional
+  lowering, non-null ambiguous truthiness, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 490 fixture covering null logical-not through `phpc run`,
+  `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that proves redundant
+  logical-not operations and conditional expressions are not emitted for null
+  operands. The direct unary boundary tests prove LLVM IR success and keep
+  non-null ambiguous logical-not rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_folds_null_logical_not -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_rejects_unary_minus_and_logical_not_with_specific_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary native_null_logical_not_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_null_logical_not_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone490`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone490`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-490 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 491, native null short ternary fallback folding. LLVM IR and
+  the C assembly fallback now fold `null ?: fallback` to the fallback in the
+  current straight-line native subset. Broader null truthiness in full ternary
+  or logical binary lowering, null coalescing, lazy unsupported branch skipping,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering remain unsupported or rejected where
+  documented.
+- Added the Milestone 491 fixture covering null short ternary through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that proves redundant branch
+  forms are not emitted for null short ternary conditions. The direct
+  conditional boundary tests prove LLVM IR success and keep broader null full
+  ternary truthiness rejection pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_null_short_ternary_fallbacks -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone491/native_null_short_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_null_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_null_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone491`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone491`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-491 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 492, native single-known integer full ternary condition
+  folding. LLVM IR and the C assembly fallback now fold full ternary condition
+  selection when an already-lowerable integer condition has one statically known
+  PHP truthiness result: known nonzero integer conditions select the true
+  branch, and known zero integer conditions select the false branch. Ambiguous
+  integer truthiness, unsupported branch skipping, broader PHP
+  truthiness/coercion, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 492 fixture covering single-known integer full ternary
+  conditions through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves redundant branch forms are not emitted for folded integer
+  condition selection. The direct conditional boundary tests prove LLVM IR
+  success and keep ambiguous integer condition and broader null full ternary
+  truthiness rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_single_known_integer_full_ternary_conditions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone492/native_single_known_integer_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_single_known_integer_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_known_integer_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone492`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone492`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-492 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 493, native single-known finite-float full ternary condition
+  folding. LLVM IR and the C assembly fallback now fold full ternary condition
+  selection when an already-lowerable finite-float condition has one statically
+  known PHP truthiness result: known nonzero finite-float conditions select the
+  true branch, and known zero finite-float conditions select the false branch.
+  Ambiguous float truthiness, non-finite floats, unsupported branch skipping,
+  broader PHP truthiness/coercion, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 493 fixture covering single-known finite-float full
+  ternary conditions through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves redundant branch forms are not emitted for folded float condition
+  selection. The direct conditional boundary tests prove LLVM IR success and
+  keep ambiguous float condition rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_single_known_float_full_ternary_conditions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone493/native_single_known_float_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_single_known_float_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_single_known_float_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone493`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone493`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-493 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 494, native known-string full ternary condition folding. LLVM
+  IR and the C assembly fallback now fold full ternary condition selection when
+  an already-lowerable known string condition has one statically known PHP
+  string-truthiness result: known truthy strings select the true branch, and
+  known falsey `""`/`"0"` strings select the false branch. Ambiguous string
+  truthiness, untracked string expressions, unsupported branch skipping,
+  broader PHP truthiness/coercion, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 494 fixture covering known-string full ternary conditions
+  through `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a
+  fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  unselected output branches are not emitted for folded string condition
+  selection. The direct conditional boundary tests prove LLVM IR success and
+  keep ambiguous string condition rejection coverage pinned.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_known_string_full_ternary_conditions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone494/native_known_string_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_known_string_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_known_string_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone494`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone494`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-494 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 495, native null full ternary condition folding. LLVM IR and
+  the C assembly fallback now fold full ternary condition selection when an
+  already-lowerable `null` condition is used: `null ? true_branch :
+  false_branch` lowers to the false branch after both branches lower.
+  Unsupported branch skipping, broader null truthiness in logical binary
+  lowering, null coalescing, arrays, objects, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering remain unsupported
+  or rejected where documented.
+- Added the Milestone 495 fixture covering null full ternary conditions through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that proves unselected output
+  branches and redundant branch forms are not emitted for folded null condition
+  selection. The direct conditional boundary tests prove LLVM IR success and
+  keep unsupported branch lowering pinned as non-lazy.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_null_full_ternary_conditions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone495/native_null_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_null_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_null_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone495`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone495`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-495 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 496, native null logical truthiness folding. LLVM IR and the
+  C assembly fallback now fold logical `&&`, `||`, and `xor` when both operands
+  are already lowerable and any `null` operand contributes statically known
+  falsey PHP truthiness in the current straight-line native subset.
+  Short-circuit cases that would need skipped unsupported or side-effecting
+  operands, null coalescing, arrays, objects, references/copy-on-write, exact
+  native PHP errors, and broader native expression lowering remain unsupported
+  or rejected where documented.
+- Added the Milestone 496 fixture covering null logical truthiness through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that proves redundant logical
+  operations and conditional expressions are not emitted for folded null
+  logical operands. The direct logical boundary tests prove LLVM IR success and
+  keep unsupported right-hand branch lowering pinned as non-short-circuiting.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary emit_ir_folds_null_logical_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone496/native_null_logical_truthiness.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary native_null_logical_truthiness_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_null_logical_truthiness_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone496`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone496`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-496 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 497, native static full ternary selected-branch lowering.
+  LLVM IR and the C assembly fallback now lower only the selected full ternary
+  branch when the condition has a statically known truthiness result in the
+  current straight-line native subset, allowing unsupported unselected branches
+  such as arrays to stay unlowered. Dynamic boolean full ternaries still require
+  both branches to lower before selection, and dynamic branch skipping, dynamic
+  PHP truthiness, ambiguous scalar truthiness, null coalescing, arrays in
+  selected branches, objects, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering remain unsupported or rejected where
+  documented.
+- Added the Milestone 497 fixture covering selected-branch full ternary
+  lowering through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  unselected array branches and redundant branch forms are not emitted. The
+  direct conditional boundary tests prove LLVM IR success and keep dynamic
+  branch lowering pinned as non-lazy.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_lazily_lowers_static_full_ternary_selected_branches -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone497/native_static_ternary_selected_branch.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_static_full_ternary_selected_branch_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_full_ternary_selected_branch_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone497`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone497`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-497 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 498: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 498, native static logical short-circuit folding. LLVM IR and
+  the C assembly fallback now lower statically decisive known-left `&&`/`and`
+  and `||`/`or` cases without lowering the skipped right-hand operand in the
+  current straight-line native subset. This lets expressions such as
+  `false && []`, `true || []`, `0 && []`, `"php" || []`, and `null && []`
+  lower to static boolean results while keeping `xor` right-hand skipping,
+  dynamic short-circuiting, selected/evaluated unsupported right-hand operands,
+  ambiguous scalar truthiness, untracked scalar operands, null coalescing,
+  arrays, objects, references/copy-on-write, exact native PHP errors, and
+  broader native expression lowering unsupported or rejected where documented.
+- Added the Milestone 498 fixture covering static logical short-circuit
+  selected operand skipping through `phpc run`, `phpc compile --emit-ir`,
+  system PHP comparison, and a fake-`cc` `phpc compile --emit-asm` fallback
+  validation that proves skipped array operands and redundant logical/ternary
+  forms are not emitted. The direct logical boundary tests prove LLVM IR
+  success for skipped unsupported RHS cases and keep selected/evaluated RHS
+  rejection pinned for `true && []`, `false || []`, and `false xor []`.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone498/native_static_logical_short_circuit.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary emit_ir_short_circuits_static_logical_selected_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary native_static_logical_short_circuit_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_logical_short_circuit_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone498`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone498`;
+  and `CARGO_TARGET_DIR=/dev/shm/phpc-target-498 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 499: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 499, native integer bitwise OR all-ones folding. LLVM IR and
+  the C assembly fallback now fold tracked integer expression and integer
+  literal `$x | -1` and `-1 | $x` forms to `-1` after both operands lower in
+  the current straight-line native subset. The fold reuses the existing
+  integer-only bitwise boundary and does not skip operand lowering, so PHP
+  scalar-to-int coercion, string bitwise behavior in native lowering, arrays,
+  objects, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 499 fixture covering OR all-ones folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant C
+  bitwise OR output. The direct bitwise boundary test proves LLVM IR success
+  and shows the folded `-1` result feeding existing additive-identity folding.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone499/native_integer_bitwise_or_all_ones.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_tracked_integer_expression_bitwise_or_all_ones -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_integer_bitwise_or_all_ones_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_integer_bitwise_or_all_ones_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone499`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone499`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-499 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 500: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 500, native integer bitwise XOR all-ones folding. LLVM IR and
+  the C assembly fallback now fold single-known integer `$x ^ -1` and
+  `-1 ^ $x` forms to the known bitwise-not result after both operands lower in
+  the current straight-line native subset. Ambiguous integer operands still use
+  the existing emitted/tracked bitwise path, and PHP scalar-to-int coercion,
+  string bitwise behavior in native lowering, arrays, objects,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 500 fixture covering XOR all-ones folding through
+  `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a fake-`cc`
+  `phpc compile --emit-asm` fallback validation that rejects redundant C
+  bitwise XOR output. The direct bitwise boundary test proves LLVM IR success
+  for literal and tracked-expression single-known inputs and shows the folded
+  result feeding existing additive-identity folding.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone500/native_integer_bitwise_xor_all_ones.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_single_known_integer_bitwise_xor_all_ones -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_integer_bitwise_xor_all_ones_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_integer_bitwise_xor_all_ones_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone500`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone500`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-500 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 501: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 501, native untracked integer bitwise identity folding. LLVM
+  IR and the C assembly fallback now fold `& 0`, `& -1`, `| 0`, and `^ 0`
+  identity or annihilator forms after both operands lower even when the other
+  already-lowerable integer operand is intentionally untracked. The new fixture
+  uses an overflow-sensitive left shift that stays emitted and untracked, then
+  proves redundant bitwise identity operations are removed without claiming
+  arithmetic overflow tracking. Arithmetic that would need exact overflow
+  tracking, PHP scalar-to-int coercion, string bitwise behavior in native
+  lowering, arrays, objects, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering remain unsupported or rejected where
+  documented.
+- Added the Milestone 501 fixture covering untracked integer bitwise identity
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves the
+  untracked shift remains present while redundant C bitwise identity operations
+  are not emitted. The direct bitwise boundary test proves the same LLVM IR
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone501/native_untracked_integer_bitwise_identity.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_untracked_integer_expression_bitwise_identities -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_untracked_integer_bitwise_identity_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_integer_bitwise_identity_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone501`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone501`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-501 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 502: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 502, native untracked integer arithmetic identity folding.
+  LLVM IR and the C assembly fallback now fold `+ 0`, `- 0`, `* 1`, and
+  `* 0` identity or annihilator forms after both operands lower even when the
+  other already-lowerable integer operand is intentionally untracked. The new
+  fixture uses an overflow-sensitive left shift that stays emitted and
+  untracked, then proves redundant arithmetic identity operations are removed
+  without claiming exact overflow tracking. Non-identity arithmetic with
+  untracked overflow-sensitive values, PHP scalar coercion, references/copy-on-write,
+  exact native PHP errors, and broader native expression lowering remain
+  unsupported or rejected where documented.
+- Added the Milestone 502 fixture covering untracked integer arithmetic
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves the untracked shift remains present while redundant C arithmetic
+  identity operations are not emitted. The direct arithmetic boundary test
+  proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone502/native_untracked_integer_arithmetic_identity.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary emit_ir_folds_untracked_integer_expression_arithmetic_identities -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_untracked_integer_arithmetic_identity_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_integer_arithmetic_identity_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone502`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone502`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-502 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 503: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 503, native untracked integer shift-by-zero folding. LLVM IR
+  and the C assembly fallback now fold `$x << 0` and `$x >> 0` after both
+  operands lower even when the already-lowerable left integer operand is
+  intentionally untracked. The new fixture uses an overflow-sensitive left
+  shift that stays emitted and untracked, then proves redundant shift-by-zero
+  operations are removed without claiming exact overflow tracking. Nonzero
+  untracked shift/result-tracking cases that would imply exact overflow
+  semantics, PHP scalar coercion, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 503 fixture covering untracked integer shift-by-zero
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  the untracked shift remains present while redundant C shift-by-zero
+  operations are not emitted. The direct bitwise boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone503/native_untracked_integer_shift_by_zero.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_untracked_integer_expression_shift_by_zero -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_untracked_integer_shift_by_zero_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_integer_shift_by_zero_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone503`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone503`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-503 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 504: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 504, native untracked reflexive integer comparison folding.
+  LLVM IR and the C assembly fallback now fold same-expression integer
+  loose/ordering comparisons after both operands lower even when the integer
+  operand is intentionally untracked. `$x == $x`, `$x <= $x`, and `$x >= $x`
+  fold true, while `$x != $x`, `$x < $x`, and `$x > $x` fold false. The new
+  fixture uses an overflow-sensitive left shift that stays emitted and
+  untracked, then proves redundant reflexive integer comparison operations are
+  removed without claiming PHP comparison coercions or exact overflow tracking.
+  PHP comparison coercion gaps, references/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 504 fixture covering untracked reflexive integer
+  comparison folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves the untracked shift remains present while redundant C comparison
+  operations are not emitted. The direct comparison boundary test proves the
+  same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone504/native_untracked_reflexive_integer_comparison.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_untracked_reflexive_integer_comparisons -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_untracked_reflexive_integer_comparison_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_reflexive_integer_comparison_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone504`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone504`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-504 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 505: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 505, native untracked identical integer bitwise folding.
+  LLVM IR and the C assembly fallback now fold identical integer bitwise
+  operands after both operands lower even when the integer value is
+  intentionally untracked. `$x & $x` and `$x | $x` reuse `$x`, while
+  `$x ^ $x` folds to zero. The new fixture uses an overflow-sensitive left
+  shift that stays emitted and untracked, then proves redundant identical
+  bitwise operations are removed without claiming PHP scalar-to-int coercions
+  or string bitwise native lowering. References/copy-on-write, exact native PHP
+  errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 505 fixture covering untracked identical integer bitwise
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  the untracked shift remains present while redundant C bitwise operations are
+  not emitted. The direct bitwise boundary test proves the same LLVM IR
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone505/native_untracked_identical_integer_bitwise.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_untracked_identical_integer_expression_bitwise_operands -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_untracked_identical_integer_bitwise_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_identical_integer_bitwise_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone505`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone505`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-505 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 506: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 506, native untracked identical integer subtraction folding.
+  LLVM IR and the C assembly fallback now fold identical integer subtraction to
+  zero after both operands lower even when the integer value is intentionally
+  untracked. The new fixture uses an overflow-sensitive left shift that stays
+  emitted and untracked, then proves redundant identical subtraction is
+  removed without claiming exact overflow tracking for other arithmetic.
+  Non-identity arithmetic with untracked overflow-sensitive values, PHP scalar
+  coercion, references/copy-on-write, exact native PHP errors, and broader
+  native expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 506 fixture covering untracked identical integer
+  subtraction folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves the untracked shift remains present while redundant C
+  subtraction is not emitted. The direct arithmetic boundary test proves the
+  same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone506/native_untracked_identical_integer_subtraction.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary emit_ir_folds_untracked_identical_integer_expression_subtraction_to_zero -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_untracked_identical_integer_subtraction_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_identical_integer_subtraction_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone506`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone506`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-506 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 507: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 507, native untracked integer modulo-by-one folding. LLVM IR
+  and the C assembly fallback now fold integer modulo by one to zero after
+  both operands lower even when the dividend is intentionally untracked. The
+  new fixture uses an overflow-sensitive left shift that stays emitted and
+  untracked, then proves redundant modulo-by-one output is removed without
+  claiming runtime divisor checks for other modulo cases. Other modulo cases
+  still require a statically known positive divisor; PHP scalar coercion,
+  references/copy-on-write, exact native PHP errors, and broader native
+  expression lowering remain unsupported or rejected where documented.
+- Added the Milestone 507 fixture covering untracked integer modulo-by-one
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  the untracked shift remains present while redundant C modulo-by-one is not
+  emitted. The direct arithmetic boundary test proves the same LLVM IR
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone507/native_untracked_integer_modulo_by_one.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary emit_ir_folds_untracked_integer_modulo_by_one_to_zero -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary native_untracked_integer_modulo_by_one_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_integer_modulo_by_one_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone507`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone507`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-507 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 508: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 508, native untracked identical integer ternary folding.
+  LLVM IR and the C assembly fallback now fold identical integer full-ternary
+  branches after both branches lower even when the integer value is
+  intentionally untracked. The new fixture uses an overflow-sensitive left
+  shift that stays emitted and untracked, then proves the redundant integer
+  `select`/C conditional expression is removed without claiming broader
+  truthiness or mixed-type branch support. Dynamic mixed-type branch rejection,
+  unsupported truthiness/coercion gaps, references/copy-on-write, exact native
+  PHP errors, and broader native expression lowering remain unsupported or
+  rejected where documented.
+- Added the Milestone 508 fixture covering untracked identical integer ternary
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  the untracked shift remains present while redundant C ternary branches are
+  not emitted. The direct conditional boundary test proves the same LLVM IR
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone508/native_untracked_identical_integer_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_untracked_identical_integer_ternary_branches_without_select -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_untracked_identical_integer_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_identical_integer_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone508`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone508`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-508 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 509: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 509, native untracked identical float ternary folding. LLVM
+  IR and the C assembly fallback now fold identical float full-ternary
+  branches after both branches lower even when the float value is
+  intentionally untracked. The new fixture uses a non-finite overflowing float
+  multiplication that stays emitted and untracked, then proves the redundant
+  float `select`/C conditional expression is removed without claiming
+  non-finite result tracking, non-finite truthiness, mixed branch support, or
+  broader float semantics. Dynamic mixed-type branch rejection, unsupported
+  truthiness/coercion gaps, references/copy-on-write, exact native PHP errors,
+  and broader native expression lowering remain unsupported or rejected where
+  documented.
+- Added the Milestone 509 fixture covering untracked identical float ternary
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  the overflowing float multiply remains present while redundant C ternary
+  branches are not emitted. The direct conditional boundary test proves the
+  same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone509/native_untracked_identical_float_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_untracked_identical_float_ternary_branches_without_select -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_untracked_identical_float_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_identical_float_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone509`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone509`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-509 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 510: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 510, native untracked integer double bitwise-not folding.
+  LLVM IR and the C assembly fallback now fold double unary bitwise-not
+  `~~$x` over already-lowerable integer operands to `$x`, including when `$x`
+  is intentionally untracked. The new fixture uses an overflow-sensitive left
+  shift that stays emitted and untracked, then proves the redundant pair of
+  native bitwise-not operations is removed without claiming scalar-to-int
+  coercion, native string bitwise behavior, references/copy-on-write, exact
+  native PHP errors, or broader native expression lowering.
+- Added the Milestone 510 fixture covering untracked integer double
+  bitwise-not folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves the untracked shift remains present while redundant C
+  bitwise-not output is not emitted. The direct bitwise boundary test proves
+  the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone510/native_untracked_integer_double_bitwise_not.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary emit_ir_folds_untracked_integer_double_bitwise_not -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary native_untracked_integer_double_bitwise_not_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_untracked_integer_double_bitwise_not_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone510`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone510`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-510 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 511: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 511, native known scalar double logical-not folding. LLVM IR
+  and the C assembly fallback now fold `!!$x` over already-lowerable known
+  scalar operands through the existing known-truthiness subset for integers,
+  finite floats, strings, and `null`. The new fixture proves static boolean
+  output for truthy and falsey scalar cases without emitting redundant boolean
+  operations or claiming ambiguous truthiness, untracked numeric/string
+  operands, non-finite floats, arrays, objects, references/copy-on-write,
+  exact native PHP errors, or broader native expression lowering.
+- Added the Milestone 511 fixture covering known scalar double logical-not
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  folded static outputs are emitted without redundant C logical-not or
+  conditional output. The direct unary boundary test proves the same LLVM IR
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone511/native_known_scalar_double_logical_not.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary emit_ir_folds_known_scalar_double_logical_not -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary native_known_scalar_double_logical_not_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_known_scalar_double_logical_not_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone511`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone511`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-511 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 512: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 512, native identical boolean expression comparison
+  folding. LLVM IR and the C assembly fallback now fold identical native
+  boolean expression loose/ordering comparisons after both operands lower,
+  including ambiguous boolean expressions: `$flag == $flag`, `$flag <= $flag`,
+  and `$flag >= $flag` fold true, while `$flag != $flag`, `$flag < $flag`,
+  and `$flag > $flag` fold false. The new fixture preserves the source
+  ambiguous boolean expression in LLVM IR, then proves the redundant
+  self-comparisons are removed without claiming other ambiguous boolean
+  comparison folding, PHP comparison coercions, references/copy-on-write, exact
+  native PHP errors, or broader native expression lowering.
+- Added the Milestone 512 fixture covering identical ambiguous boolean
+  expression comparison folding through `phpc run`, `phpc compile --emit-ir`,
+  system PHP comparison, and a fake-`cc` `phpc compile --emit-asm` fallback
+  validation that proves folded static C outputs are emitted without redundant
+  boolean comparisons or C conditionals. The direct comparison boundary test
+  proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone512/native_identical_boolean_expression_comparison.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_identical_ambiguous_boolean_expression_comparisons -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_identical_boolean_expression_comparison_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_boolean_expression_comparison_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone512`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone512`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-512 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 513: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 513, native identical string expression comparison folding.
+  LLVM IR and the C assembly fallback now fold identical native string pointer
+  loose/ordering comparisons after both operands lower, even when the string
+  pointer expression is intentionally untracked because its possible value set
+  exceeds the current small tracker: `$text == $text`, `$text <= $text`, and
+  `$text >= $text` fold true, while `$text != $text`, `$text < $text`, and
+  `$text > $text` fold false. The new fixture preserves the untracked source
+  string expression through LLVM string-pointer selects, then proves the
+  redundant self-comparisons are removed without claiming non-identical
+  unknown string comparisons, numeric-looking/non-ASCII/NUL-containing string
+  ordering, PHP comparison coercions, references/copy-on-write, exact native
+  PHP errors, or broader native expression lowering.
+- Added the Milestone 513 fixture covering identical untracked string
+  expression comparison folding through `phpc run`, `phpc compile --emit-ir`,
+  system PHP comparison, and a fake-`cc` `phpc compile --emit-asm` fallback
+  validation that proves folded static C outputs are emitted without redundant
+  `strcmp`, string comparisons, or C conditionals. The direct comparison
+  boundary test proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone513/native_identical_string_expression_comparison.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary emit_ir_folds_identical_untracked_string_expression_comparisons -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary native_identical_string_expression_comparison_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_string_expression_comparison_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone513`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone513`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-513 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 514: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 514, native empty-string concatenation identity folding.
+  LLVM IR and the C assembly fallback now fold `$text . ""` and `"" . $text`
+  for already-lowerable string operands by reusing `$text`, including
+  untracked string pointer expressions whose possible value set exceeds the
+  current small tracker. The new fixture preserves the untracked source string
+  expression through LLVM string-pointer selects, then proves both concat
+  forms reuse that pointer without claiming non-empty ambiguous string
+  concatenation, PHP scalar-to-string conversion, runtime string allocation,
+  arrays/objects/resources, references/copy-on-write, exact native PHP errors,
+  or broader native expression lowering.
+- Added the Milestone 514 fixture covering empty-string concat identity
+  folding through `phpc run`, `phpc compile --emit-ir`, system PHP comparison,
+  and a fake-`cc` `phpc compile --emit-asm` fallback validation that proves
+  reused string-expression C output is emitted without empty-string output or
+  allocation-style concatenation. The direct concat boundary test proves the
+  same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone514/native_empty_string_concat_identity.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary emit_ir_folds_empty_string_concat_with_untracked_string_expression -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary native_empty_string_concat_identity_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_empty_string_concat_identity_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone514`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone514`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-514 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 515: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added Milestone 515, native identical string short-ternary identity folding.
+  LLVM IR and the C assembly fallback now fold `$text ?: $text` for identical
+  direct string variables by reusing the already-lowered string pointer,
+  including untracked string pointer expressions whose possible value set
+  exceeds the current small tracker. The new fixture preserves the untracked
+  source string expression through LLVM string-pointer selects, then proves the
+  short ternary reuses that pointer without claiming general string
+  truthiness, non-identical untracked string short ternaries, lazy fallback
+  behavior for unsupported or side-effecting expressions, null coalescing,
+  references/copy-on-write, exact native PHP errors, or broader native
+  expression lowering.
+- Added the Milestone 515 fixture covering identical string short-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused string-expression C output is emitted without redundant
+  truthiness lowering. The direct conditional boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone515/native_identical_string_short_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_string_variable_short_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_string_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_string_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone515`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone515`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-515 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Start Milestone 516: pick the next small native scalar result-tracking
+  boundary that can be proved with executable code, focused tests, CLI fixture
+  coverage, documentation, and an appropriately timed full-suite gate.
+
+Next:
+
+- Added a tests/docs and compiler-output lane coordination milestone for
+  parallel subagent work. `docs/LANE_WORKERS.md` now defines the lane worktree
+  setup, lane ownership boundaries, subagent prompt template, focused-test
+  policy, and cross-lane handoff note requirements for parser, IR/lowering,
+  runtime, compiler-output, and tests/docs workers. `docs/OPERATIONS.md` now
+  includes the focused lane test command shape and parallel lane worktree
+  setup so future workers can reduce cargo test wait time without bypassing
+  checkpoint gates.
+- Updated `docs/NEXT_TASKS.md` with a checked tests/docs lane milestone for
+  documenting the lane/subagent worktree protocol. This did not touch
+  `compiler/src/codegen.rs`, runtime implementation, parser implementation, or
+  the active native scalar result-tracking implementation lane.
+- Focused verification passed:
+  `rg -n "Parallel Lane Worktrees|Focused Lane Tests|docs/LANE_WORKERS.md" docs/OPERATIONS.md`;
+  `rg -n "Lane Ownership|Subagent Prompt Template|Focused Test Policy|Handoff Notes" docs/LANE_WORKERS.md`;
+  `rg -n "Tests/Docs Lane: Parallel Worker Operations|lane/subagent worktree protocol" docs/NEXT_TASKS.md`;
+  `grep -n '[[:blank:]]$' docs/LANE_WORKERS.md docs/OPERATIONS.md docs/NEXT_TASKS.md docs/PROGRESS.md`
+  produced no matches;
+  and `git diff --check -- docs/OPERATIONS.md docs/NEXT_TASKS.md docs/PROGRESS.md`.
+- The full-suite gate was not run for this documentation-only slice because no
+  compiler, runtime, parser, fixture, or CLI behavior changed. It still must
+  run before checkpoint batches unless a blocker is recorded.
+- Remaining gaps: this slice documents how to run lane subagents, but does not
+  launch parallel workers, merge worktrees, allocate specific future milestones
+  to workers, or prove behavior for another lane's implementation.
+
+Next:
+
+- Keep Milestone 517 in the IR/lowering lane, or start the next tests/docs or
+  compiler-output verification gap that can be handled without touching active
+  implementation files.
+
+Next:
+
+- Applied the lane-splitting execution policy to `GOAL.MD`. The broad compiler
+  goal now explicitly separates parser, IR/lowering, runtime, compiler-output,
+  and tests/docs lanes, with one active milestone per worker and one worktree
+  per lane when parallel workers are used. The current interactive work stays
+  on the IR/lowering lane.
+- Added Milestone 516, native identical integer short-ternary identity
+  folding. LLVM IR and the C assembly fallback now fold `$value ?: $value` for
+  identical direct integer variables by reusing the already-lowered integer
+  value, including intentionally untracked integer expressions such as
+  overflow-sensitive shift results. The new fixture preserves the untracked
+  source shift in LLVM IR, then proves the short ternary reuses that value
+  without claiming general integer truthiness, non-identical untracked integer
+  short ternaries, lazy fallback behavior for unsupported or side-effecting
+  expressions, null coalescing, references/copy-on-write, exact native PHP
+  errors, or broader native expression lowering.
+- Added the Milestone 516 fixture covering identical integer short-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused integer-expression C output is emitted without redundant
+  truthiness lowering. The direct conditional boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone516/native_identical_integer_short_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_untracked_integer_short_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_integer_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_integer_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone516`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone516`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-516 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 564 fixture tests, 0 fixture failures, 307 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint was not created here because `tools/checkpoint.sh` intentionally
+  stages the full dirty tree, and `docs/LOOP_MEMORY.md` still has unrelated
+  pre-existing edits outside this interactive session's active work.
+
+Next:
+
+- Added Milestone 517, native identical float short-ternary identity folding.
+  LLVM IR and the C assembly fallback now fold `$value ?: $value` for
+  identical direct float variables by reusing the already-lowered float value,
+  including intentionally untracked non-finite float-producing expressions
+  such as overflowing float multiplication. The new fixture preserves the
+  untracked source float multiply in LLVM IR, then proves the short ternary
+  reuses that value without claiming general float truthiness, non-identical
+  untracked float short ternaries, lazy fallback behavior for unsupported or
+  side-effecting expressions, null coalescing, references/copy-on-write, exact
+  native PHP errors, or broader native expression lowering.
+- Added the Milestone 517 fixture covering identical float short-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused float-expression C output is emitted without redundant
+  truthiness lowering. The direct conditional boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone517/native_identical_float_short_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_untracked_float_short_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_float_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_float_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone517`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone517`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-517 cargo fmt --check`;
+  and `git diff --check`.
+- Serialized full-suite gate follow-up started with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  The first two runs exposed stale native-boundary expectations rather than
+  product-code regressions: the older logical operator and logical xor tests
+  still expected constant scalar logical expressions to reject even though the
+  documented native subset now folds known scalar truthiness. Those tests now
+  reject ambiguous ternary-selected scalar truthiness instead, matching the
+  native logical boundary tests. Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test logical_operators -- --test-threads=1`
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test logical_xor -- --test-threads=1`.
+- The next serialized gate run exposed stale fake-backend assertions in
+  `native_assembly_cli`: older validators still expected pre-folding integer,
+  float, boolean-logical, boolean-ternary, and shift IR/C shapes. The fake
+  backend scripts now assert the current generated evidence without weakening
+  unsupported-boundary behavior. Focused compiler-output check passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli -- --test-threads=1`
+  with 195 passed.
+- A later serialized gate run exposed the same stale expectation in the syntax
+  and ternary expression suites: constant scalar ternaries now fold in the
+  supported native subset, so those rejection tests now use an ambiguous
+  ternary-selected scalar condition that still requires unsupported general PHP
+  truthiness. Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`
+  with 29 passed, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test ternary_expression -- --test-threads=1`
+  with 8 passed.
+- The serialized full-suite gate then passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  completed all Rust tests, 626 fixture tests with 0 failures, and 369 system
+  PHP comparisons with 257 skipped comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 571, parser-lane stable parse diagnostics for unsupported
+  array/list destructuring assignment targets. The parser now reports a
+  specific parse error for short destructuring assignment targets such as
+  `[$first] = [1];` and list-construct forms such as `list($first) = [1];`
+  instead of falling through to a generic assignment-target diagnostic or
+  runtime call lookup.
+- Added unsupported syntax fixture coverage for the `phpc run` CLI path and
+  parse-boundary `compile --emit-ir` coverage. Runtime destructuring
+  assignment semantics, keyed destructuring, nested destructuring, skipped
+  slots, by-reference destructuring, spread/unpack interactions, exact PHP
+  warnings/errors, and native lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_array_destructuring_assignments_have_stable_parse_errors -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries emit_ir_rejects_array_destructuring_assignment_at_parse_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.php`, which exited 1 with the expected parse diagnostic;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.php --emit-ir`, which exited 1 with the expected parse diagnostic; and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-571 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+  Scoped `git diff --check` and trailing-whitespace scanning over the
+  Milestone 571 code, fixture, and documentation files also passed.
+- The full-suite gate is deferred under the lane focused-test policy; run it
+  at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this parser slice.
+
+Next:
+
+- Added Milestone 569, native `defined($name)` folding coverage for the
+  current `SORT_REGULAR` built-in constant. The static native constant answer
+  table now treats direct `defined("SORT_REGULAR")` and tracked string-name
+  `defined($name)` forms as true, matching the runtime-supported built-in
+  constant set. This remains static folding only: actual native constant-value
+  lowering, `define(...)`, `constant(...)`, runtime-defined constants,
+  namespace-aware lookup, dynamic calls, arrays, objects, exact native PHP
+  errors, and broader native constant-table lowering remain rejected.
+- Added the Milestone 569 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized C fallback
+  `--emit-asm` CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary emit_ir_folds_defined_for_sort_regular_after_runtime_constant_support -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary emit_ir_rejects_dynamic_defined_calls_until_native_runtime_lookup_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary native_defined_sort_regular -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary native_defined -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_sort_regular_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone569`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone569`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-569 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+  Scoped `git diff --check` over the tracked Milestone 569 code and docs files
+  passed, and trailing-whitespace scanning over the same files plus the new
+  fixture directory found no matches.
+- The full-suite gate is deferred under the lane focused-test policy; run it
+  at the next checkpoint batch or before any checkpoint commit. A checkpoint
+  has not been created because this shared worktree contains broad
+  pre-existing edits outside this IR/lowering slice.
+
+Next:
+
+- Added Milestone 567, runtime `array_unique($array, SORT_REGULAR)` support
+  for `phpc run` over the current scalar value subset. The new path accepts the
+  exact uppercase built-in `SORT_REGULAR` constant, `constant("SORT_REGULAR")`,
+  `defined("SORT_REGULAR")`, and dynamic string-valued `array_unique` calls.
+- The supported `SORT_REGULAR` path keeps the first entry under the
+  interpreter's current loose scalar equality rules while preserving kept
+  integer/string keys and insertion order. The existing default and
+  `SORT_STRING` paths remain string-form deduplication. Sort flags other than
+  `SORT_REGULAR` or `SORT_STRING`, non-array first arguments, non-scalar array
+  values, references/copy-on-write, exact native PHP warning/`TypeError`
+  objects, exact array/object `SORT_REGULAR` comparisons, and native lowering
+  remain unsupported.
+- Added the Milestone 567 fixture with `phpc run` expected output, system PHP
+  comparison, and direct `compile --emit-ir` rejection coverage proving the
+  slice still hits the explicit native array-lowering boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_unique -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_unique -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone567`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone567`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone567/array_unique_sort_regular.php --emit-ir >/tmp/phpc-runtime-567-emit-ir.out 2>/tmp/phpc-runtime-567-emit-ir.err; status=$?; cat /tmp/phpc-runtime-567-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-567-emit-ir.err'`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-567 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+  Scoped `git diff --check` over the Milestone 567 code, fixture, and docs
+  files passed, and trailing-whitespace scanning over the same non-stdout file
+  set found no matches.
+- Full `tools/run-tests.sh` is deferred under the lane focused-test policy; run
+  it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this lane was explicitly told not
+  to commit, and `tools/checkpoint.sh` intentionally stages the full dirty
+  tree.
+
+Next:
+
+- Added Milestone 518, native identical boolean short-ternary identity
+  folding. LLVM IR and the C assembly fallback now fold `$flag ?: $flag` for
+  identical direct boolean variables by reusing the already-lowered boolean
+  expression instead of emitting a redundant boolean select. The new fixture
+  preserves the source boolean comparison in LLVM IR, then proves the short
+  ternary reuses that value without claiming new non-identical boolean
+  fallback behavior, general PHP truthiness, lazy fallback behavior for
+  unsupported or side-effecting expressions, null coalescing,
+  references/copy-on-write, exact native PHP errors, or broader native
+  expression lowering.
+- Added the Milestone 518 fixture covering identical boolean short-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused boolean-expression C output is emitted without redundant
+  short-ternary conditional lowering. The direct conditional boundary test
+  proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone518/native_identical_boolean_short_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_boolean_variable_short_ternary_without_redundant_select -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_boolean_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_boolean_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone518`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone518`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-518 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate has not been rerun yet for this narrow slice under the
+  focused-test policy; run the serialized full gate at the next checkpoint
+  batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 519, native identical direct-variable full-ternary identity
+  folding. LLVM IR and the C assembly fallback now fold `$value ? $value :
+  $value` when the condition and both branches are the same direct variable
+  whose current value is already lowerable, starting with an intentionally
+  untracked integer expression. The new fixture preserves the untracked source
+  shift in LLVM IR, then proves the full ternary reuses that value without
+  claiming general integer truthiness, non-identical untracked integer full
+  ternaries, lazy branch behavior for unsupported or side-effecting
+  expressions, null coalescing, references/copy-on-write, exact native PHP
+  errors, or broader native expression lowering.
+- Added the Milestone 519 fixture covering identical integer full-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused integer-expression C output is emitted without redundant
+  truthiness lowering. The direct conditional boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone519/native_identical_integer_full_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_integer_variable_full_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_integer_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_integer_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone519`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone519`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-519 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate has not been rerun yet for this narrow slice under the
+  focused-test policy; run the serialized full gate at the next checkpoint
+  batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 520, native identical direct-variable full-ternary identity
+  coverage for non-finite float-producing expressions. The M519 implementation
+  already folds `$value ? $value : $value` when the condition and both branches
+  are the same direct variable whose current value is already lowerable; this
+  slice proves that boundary for an intentionally untracked overflowing float
+  multiplication. The new fixture preserves the untracked source float
+  multiply in LLVM IR, then proves the full ternary reuses that value without
+  claiming general float truthiness, non-identical untracked float full
+  ternaries, lazy branch behavior for unsupported or side-effecting
+  expressions, null coalescing, references/copy-on-write, exact native PHP
+  errors, or broader native expression lowering.
+- Added the Milestone 520 fixture covering identical float full-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused float-expression C output is emitted without redundant
+  truthiness lowering. The direct conditional boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone520/native_identical_float_full_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_float_variable_full_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_float_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_float_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone520`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone520`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-520 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate has not been rerun yet for this narrow slice under the
+  focused-test policy; run the serialized full gate at the next checkpoint
+  batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 521, native identical direct-variable full-ternary identity
+  coverage for untracked string pointer expressions. The M519 implementation
+  already folds `$value ? $value : $value` when the condition and both branches
+  are the same direct variable whose current value is already lowerable; this
+  slice proves that boundary for a string pointer expression whose possible
+  value set exceeds the current small tracker. The new fixture preserves the
+  untracked source string expression through LLVM string-pointer selects, then
+  proves the full ternary reuses that pointer without claiming general string
+  truthiness, non-identical untracked string full ternaries, lazy branch
+  behavior for unsupported or side-effecting expressions, null coalescing,
+  references/copy-on-write, exact native PHP errors, or broader native
+  expression lowering.
+- Added the Milestone 521 fixture covering identical string full-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused string-expression C output is emitted without redundant
+  truthiness lowering. The direct conditional boundary test proves the same
+  LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone521/native_identical_string_full_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_string_variable_full_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_string_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_string_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone521`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone521`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-521 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate has not been rerun yet for this narrow slice under the
+  focused-test policy; run the serialized full gate at the next checkpoint
+  batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 522, native identical direct-variable full-ternary identity
+  coverage for boolean expression operands. The M519 implementation already
+  folds `$value ? $value : $value` when the condition and both branches are the
+  same direct variable whose current value is already lowerable; this slice
+  proves that boundary for `$flag ? $flag : $flag` by preserving the source
+  boolean comparison in LLVM IR and reusing it without a redundant boolean
+  select. This does not claim new non-identical boolean branch behavior,
+  general PHP truthiness, lazy branch behavior for unsupported or side-effecting
+  expressions, null coalescing, references/copy-on-write, exact native PHP
+  errors, or broader native expression lowering.
+- Added the Milestone 522 fixture covering identical boolean full-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves reused boolean-expression C output is emitted without redundant
+  full-ternary conditional lowering. The direct conditional boundary test
+  proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone522/native_identical_boolean_full_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_boolean_variable_full_ternary_without_redundant_select -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_boolean_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_boolean_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone522`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone522`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-522 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate has not been rerun yet for this narrow slice under the
+  focused-test policy; run the serialized full gate at the next checkpoint
+  batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 523, native identical direct-variable full-ternary identity
+  coverage for null values. The M519 implementation already folds `$value ?
+  $value : $value` when the condition and both branches are the same direct
+  variable whose current value is already lowerable; this slice proves that
+  boundary for a null direct variable by preserving only the surrounding
+  output in LLVM IR and C fallback output, without claiming broader null
+  truthiness, non-identical null branch behavior, lazy branch behavior for
+  unsupported or side-effecting expressions, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, or broader native
+  expression lowering.
+- Added the Milestone 523 fixture covering identical null full-ternary
+  identity folding through `phpc run`, `phpc compile --emit-ir`, system PHP
+  comparison, and a fake-`cc` `phpc compile --emit-asm` fallback validation
+  that proves the null ternary does not emit redundant branch output. The
+  direct conditional boundary test proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone523/native_identical_null_full_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_identical_null_variable_full_ternary_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_identical_null_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_identical_null_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone523`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone523`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-523 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  this slice with 626 fixture tests, 0 fixture failures, 369 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 524, native direct null-variable short-ternary fallback
+  coverage. The existing short-ternary implementation already uses the
+  fallback for `null ?: fallback`; this slice proves the direct-variable form
+  `$value ?: $value` when `$value` is `null`, preserving only the surrounding
+  output in LLVM IR and C fallback output. This does not claim broader null
+  truthiness in logical binaries or null coalescing, non-null direct-variable
+  behavior beyond the documented boolean/integer/float/string slices, lazy
+  fallback behavior for unsupported or side-effecting expressions, arrays,
+  objects, references/copy-on-write, exact native PHP errors, or broader
+  native expression lowering.
+- Added the Milestone 524 fixture covering direct null short-ternary fallback
+  through `phpc run`, `phpc compile --emit-ir`, system PHP comparison, and a
+  fake-`cc` `phpc compile --emit-asm` fallback validation that proves the
+  short ternary does not emit redundant branch output. The direct conditional
+  boundary test proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone524/native_direct_null_short_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_direct_null_variable_short_ternary_fallback -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_direct_null_short_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_null_short_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone524`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone524`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-524 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow slice under
+  the focused-test policy; the most recent serialized full gate passed before
+  the previous slice with 626 fixture tests, 0 fixture failures, 369 system PHP
+  comparisons, and 257 skipped comparisons. Run the serialized full gate at
+  the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 525, native conditional boundary CLI rejection snapshot
+  coverage for the legacy Milestone 168 mixed conditional fixture. As native
+  ternary support has grown, this fixture now lowers the selected full and
+  short ternary expressions and rejects at the still-unsupported null
+  coalescing expression. The committed `phpc compile --emit-ir` snapshot now
+  pins the current diagnostic line and message, proving the boundary remains
+  an explicit codegen rejection rather than an untested stale artifact. This
+  does not claim native null coalescing, null-aware lookup, broader PHP
+  truthiness, dynamic lazy branch behavior, arrays, objects,
+  references/copy-on-write, exact native PHP errors, or broader native
+  expression lowering.
+- Added a `native_conditional_boundary` integration test that executes the
+  Milestone 168 fixture through `phpc compile --emit-ir` and compares the
+  rendered CLI failure output to the committed snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-525 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_conditional_boundary_emit_ir_rejection_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-525 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone168/native_conditional_boundary.php --emit-ir`
+  failed as expected with the committed codegen diagnostic at line 5;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-525 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone168`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-525 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone168`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-525 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-525 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow tests/docs
+  slice under the focused-test policy; the most recent serialized full gate
+  passed before the previous slices with 626 fixture tests, 0 fixture failures,
+  369 system PHP comparisons, and 257 skipped comparisons. Run the serialized
+  full gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Ran the serialized post-batch full-suite gate after Milestones 523-525:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 628 fixture tests, 0
+  fixture failures, 371 system PHP comparisons, and 257 skipped comparisons.
+  This validates the conditional fixture and CLI snapshot batch without
+  broadening the documented unsupported native conditional, null coalescing,
+  truthiness, array/object, reference/copy-on-write, or exact native error
+  boundaries.
+- A checkpoint still has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree contains broad
+  pre-existing edits outside this batch.
+
+Next:
+
+- Added Milestone 526, native direct null-variable full-ternary false-branch
+  coverage. The existing full-ternary lowering already treats `null` as
+  falsey when truthiness is statically known; this slice proves the direct
+  variable form `$value ? fail() : "fallback"` when `$value` is `null`, lowers
+  only the selected fallback branch, and keeps unsupported true-branch calls
+  out of LLVM IR and C fallback output. This does not claim broader dynamic
+  branch skipping, dynamic PHP truthiness, null coalescing, arrays, objects,
+  references/copy-on-write, exact native PHP errors, or broader native
+  expression lowering.
+- Added the Milestone 526 fixture covering `phpc run`, `phpc compile
+  --emit-ir`, system PHP comparison, and a fake-`cc` `phpc compile --emit-asm`
+  fallback validation that proves the direct null full ternary does not emit a
+  redundant branch form or the unselected `fail()` call. The direct
+  conditional boundary test proves the same LLVM IR boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone526/native_direct_null_full_ternary.php --emit-ir`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary emit_ir_folds_direct_null_variable_full_ternary_false_branch_without_truthiness -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary native_direct_null_full_ternary_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526-asm CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_null_full_ternary_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone526`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone526`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-526 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow IR/lowering
+  slice under the focused-test policy; the most recent serialized full gate
+  passed after Milestones 523-525 with 628 fixture tests, 0 fixture failures,
+  371 system PHP comparisons, and 257 skipped comparisons. Run the serialized
+  full gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 527, parser-lane PHP attribute lex-boundary coverage.
+  The lexer now rejects `#[...]` attribute syntax with a stable lex diagnostic
+  instead of treating it as a `#` line comment, while preserving ordinary
+  `#` comments including `# [` with whitespace before the bracket. This does
+  not claim executable attributes, attribute payload parsing, reflection
+  metadata, target validation, repeated attributes, namespace-aware attribute
+  names, or native lowering.
+- Added an unsupported dynamic feature fixture and CLI snapshot for the
+  attribute lex diagnostic.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-527 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features php_attributes_are_rejected_with_stable_lex_error -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-527 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features hash_comment_with_space_before_bracket_remains_a_comment -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-527 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-527 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-527 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-527 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow parser-lane
+  slice under the focused-test policy; the most recent serialized full gate
+  passed after Milestones 523-525 with 628 fixture tests, 0 fixture failures,
+  371 system PHP comparisons, and 257 skipped comparisons. Run the serialized
+  full gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Ran the serialized post-batch full-suite gate after Milestones 526-527:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 630 fixture tests, 0
+  fixture failures, 372 system PHP comparisons, and 258 skipped comparisons.
+  This validates the direct-null full ternary and attribute lex-boundary batch
+  without broadening the documented unsupported native conditional, dynamic
+  PHP truthiness, null coalescing, executable attributes, reflection metadata,
+  array/object, reference/copy-on-write, or exact native error boundaries.
+- A checkpoint still has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree contains broad
+  pre-existing edits outside this batch.
+
+Next:
+
+- Added Milestone 528, parser/runtime switch semicolon separator coverage.
+  The parser now accepts `case expr;` and `default;` inside brace-form
+  `switch` bodies and reuses the existing switch AST/interpreter path, so
+  fallthrough, `default`, `break;`, and loose scalar matching behave the same
+  as colon-separated labels. This does not claim alternate
+  `switch (...): ... endswitch;` syntax, expression-form `switch`,
+  `continue;` behavior inside switch, arrays/objects/resources as switch
+  values, exact PHP warning behavior, or native lowering.
+- Updated the Milestone 10 switch fixture and CLI snapshot with semicolon
+  `case`/`default` labels, and replaced the stale semicolon parse-error
+  expectation with execution coverage.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-528 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test switch switch_accepts_semicolon_case_and_default_separators -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-528 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test switch -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-528 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_switch_forms_are_rejected_with_stable_parse_error -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-528 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_expansion_cli -- --test-threads=1`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-528 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone10`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-528 cargo fmt --check`;
+  and `git diff --check`.
+- The full-suite gate was not rerun immediately for this narrow parser/runtime
+  slice under the focused-test policy; the most recent serialized full gate
+  passed after Milestones 526-527 with 630 fixture tests, 0 fixture failures,
+  372 system PHP comparisons, and 258 skipped comparisons. Run the serialized
+  full gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 529, runtime type-introspection builtin coverage. `phpc run`
+  now supports `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
+  `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, and
+  `is_scalar` over the current boxed value model, including string-valued
+  dynamic calls. `gettype` returns PHP legacy names for the current supported
+  values (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, and
+  `object`), and the predicates inspect current value categories without
+  coercion. This does not claim `is_numeric`, `is_callable`, `is_iterable`,
+  `is_countable`, `is_real`, resource-aware checks, extension value types,
+  references/copy-on-write behavior, exact warning behavior, or native
+  lowering.
+- Added the Milestone 529 fixture and CLI snapshot covering direct and dynamic
+  type-introspection calls, plus system PHP comparison. Added unit coverage for
+  PHP legacy `gettype` names, predicate aliases, dynamic calls, and native
+  `--emit-ir` rejection through the existing function-call codegen boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-529 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-529 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-529 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone529`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-529 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone529`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-529 cargo fmt --check`;
+  and `git diff --check`.
+- Ran the serialized full-suite gate after the Milestones 528-529 batch with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 631 fixture tests, 0
+  fixture failures, 373 system PHP comparisons, and 258 skipped comparisons.
+  This validates the switch semicolon separator and runtime type-introspection
+  builtin batch without broadening the documented unsupported alternate switch
+  syntax, expression-form switch, native switch lowering, `continue;` inside
+  switch, resource-aware type checks, extension value types, references,
+  copy-on-write behavior, exact warning behavior, or native function-call
+  lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 530, runtime `is_numeric` builtin coverage. `phpc run` now
+  supports `is_numeric($value)` over the current boxed value model, returning
+  true for integers, floats, and well-formed numeric strings through the same
+  numeric-string recognizer used by scalar arithmetic. It returns false for
+  `null`, booleans, non-numeric strings, arrays, and current minimal object
+  values. String-valued dynamic calls use the same builtin path. This does not
+  claim `is_callable`, `is_iterable`, `is_countable`, `is_real`,
+  resource-aware checks, extension value types, references/copy-on-write
+  behavior, exact warning behavior, or native lowering.
+- Added the Milestone 530 fixture and CLI snapshot covering direct and dynamic
+  `is_numeric` calls, plus system PHP comparison. Added unit coverage for the
+  runtime numeric predicate and native `--emit-ir` rejection through the
+  existing function-call codegen boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-530 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime is_numeric -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-530 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test numeric_type_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-530 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test numeric_type_builtin_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-530 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone530`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-530 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone530`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-530 cargo fmt --check`.
+- The full-suite gate was not rerun immediately for this narrow runtime slice
+  under the focused-test policy; the most recent serialized full gate passed
+  after Milestones 528-529 with 631 fixture tests, 0 fixture failures, 373
+  system PHP comparisons, and 258 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 531, parser support for optional trailing commas in call
+  argument lists. Direct positional calls, callable builtins, and
+  string-valued dynamic calls now accept a comma after the final real
+  argument and normalize to the same argument vector. Empty argument slots
+  such as `fn(,)`, named arguments, variadic unpacking, reference arguments,
+  array-callables, method calls, constructor execution, and native function
+  call lowering remain unsupported or rejected through their existing
+  boundaries.
+- Added the Milestone 531 fixture and CLI snapshot covering user-function,
+  builtin, and dynamic string-valued calls with trailing commas, plus system
+  PHP comparison. Added parser/runtime tests for accepted direct and dynamic
+  calls, parse-error coverage for `fn(,)`, and native `--emit-ir` rejection
+  coverage through the existing function-call codegen boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test functions_and_scopes -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features dynamic_function_calls_accept_optional_trailing_commas -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test call_trailing_commas_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_function_call_boundary emit_ir_rejects_direct_builtin_user_and_dynamic_calls_with_specific_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone531`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone531`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-531 cargo fmt --check`.
+- Ran the serialized full-suite gate after the Milestones 530-531 batch with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 633 fixture tests, 0
+  fixture failures, 375 system PHP comparisons, and 258 skipped comparisons.
+  This validates the `is_numeric` and call trailing-comma batch without
+  broadening the documented unsupported callable dispatch, named arguments,
+  unpacking, reference arguments, array-callables, method calls, constructor
+  execution, resource-aware checks, extension value types,
+  references/copy-on-write, exact warning behavior, or native function-call
+  lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 532, runtime `is_countable` builtin coverage. `phpc run` now
+  supports `is_countable($value)` over the current boxed value model,
+  returning true for arrays and false for `null`, booleans, integers, floats,
+  strings, and current minimal object values. String-valued dynamic calls use
+  the same builtin path. This does not claim `Countable` object/interface
+  semantics, resources or extension values, `is_callable`, `is_iterable`,
+  `is_real`, references/copy-on-write behavior, exact warning behavior, or
   native lowering.
+- Added the Milestone 532 fixture and CLI snapshot covering direct and dynamic
+  `is_countable` calls, plus system PHP comparison. Added unit coverage for
+  the runtime countable predicate and native `--emit-ir` rejection through the
+  existing function-call codegen boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-532 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime is_countable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-532 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test countable_type_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-532 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test countable_type_builtin_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-532 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone532`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-532 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone532`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-532 cargo fmt --check`.
+- The full-suite gate was not rerun immediately for this narrow runtime slice
+  under the focused-test policy; the most recent serialized full gate passed
+  after Milestones 530-531 with 633 fixture tests, 0 fixture failures, 375
+  system PHP comparisons, and 258 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 533, native static folding for direct scalar/null
+  type-introspection calls. `phpc compile --emit-ir` and the `cc -S`
+  assembly fallback now fold direct `gettype`, `is_null`, `is_bool`,
+  `is_int`/`is_integer`/`is_long`, `is_float`/`is_double`, `is_string`,
+  `is_array`, and `is_scalar` calls when the single argument is already in the
+  straight-line native scalar/null subset. This is static folding only, not
+  runtime callable dispatch. Dynamic calls, wrong arity, array/object
+  operands, `is_numeric`, `is_countable`, general builtin dispatch, runtime
+  call lookup, stack frames, type diagnostics, references/copy-on-write,
+  exact native warning/error behavior, linking/execution, and broader native
+  lowering remain unsupported.
+- Added the Milestone 533 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-533 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-533 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-533 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_type_introspection_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-533 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone533`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-533 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone533`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-533 cargo fmt --check`.
+- Ran the serialized full-suite gate after the Milestones 532-533 batch:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 635 fixture tests, 0
+  fixture failures, 377 system PHP comparisons, and 258 skipped comparisons.
+  This validates the `is_countable` runtime slice and native scalar/null
+  type-introspection folding slice without broadening the documented unsupported
+  `Countable` object/interface semantics, resources or extension values,
+  dynamic native calls, wrong native arity handling beyond rejection, array or
+  object operand native lowering, `is_numeric`/`is_countable` native folding,
+  general builtin dispatch, runtime lookup, references/copy-on-write, exact
+  native warning/error behavior, linking/execution, or broader native lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 534, parser support for optional trailing commas in
+  declaration parameter lists. User-function declarations and class-method
+  metadata declarations now accept a comma after the final real parameter and
+  normalize to the same parameter vector. This does not change runtime
+  parameter binding semantics. Empty parameter slots such as `function f(,)`,
+  required parameters after default parameters, variadic parameters, reference
+  parameters/returns, parameter and return type declarations, promoted or
+  attribute-bearing parameters, anonymous functions, closures, and native
+  function declaration lowering remain unsupported or rejected through their
+  existing boundaries.
+- Added the Milestone 534 fixture and CLI snapshot covering required
+  parameters, default parameters, and class-method metadata declarations with
+  trailing parameter commas, plus system PHP comparison. Added parser/runtime
+  tests for accepted declarations, parse-error coverage for `function f(,)`,
+  and native `--emit-ir` rejection coverage through the existing
+  function-declaration codegen boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-534 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test functions_and_scopes -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-534 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_function_declaration_boundary emit_ir_rejects_function_declarations_with_trailing_parameter_commas -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-534 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test parameter_trailing_commas_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-534 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone534`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-534 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone534`.
+- The serialized full-suite gate was run after the Milestones 534-535 batch;
+  see the Milestone 535 entry for the exact command and counts.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 535, runtime `is_iterable` builtin coverage. `phpc run` now
+  supports `is_iterable($value)` over the current boxed value model, returning
+  true for arrays and false for `null`, booleans, integers, floats, strings,
+  and current minimal object values. String-valued dynamic calls use the same
+  builtin path. This does not claim `Traversable`, `Iterator`, or
+  `IteratorAggregate` object semantics, generator/yield support, object
+  `foreach`, resources or extension values, `is_callable`, environment-specific
+  legacy aliases such as `is_real`, references/copy-on-write behavior, exact
+  warning behavior, or native lowering.
+- Added the Milestone 535 fixture and CLI snapshot covering direct and dynamic
+  `is_iterable` calls, plus system PHP comparison. Added unit coverage for
+  the runtime iterable predicate and native `--emit-ir` rejection through the
+  existing function-call codegen boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-535 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime is_iterable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-535 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test iterable_type_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-535 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test iterable_type_builtin_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-535 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone535`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-535 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone535`.
+- Ran the serialized full-suite gate after the Milestones 534-535 batch:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 637 fixture tests, 0
+  fixture failures, 379 system PHP comparisons, and 258 skipped comparisons.
+  This validates the parameter trailing-comma parser slice and `is_iterable`
+  runtime slice without broadening the documented unsupported empty parameter
+  slots, variadic/reference/typed/promoted/attribute-bearing parameters,
+  `Traversable`/generator object semantics, object `foreach`, resources or
+  extension values, native function declaration lowering, native
+  `is_iterable` folding, runtime-backed callable dispatch, references/copy-on-write,
+  exact native warning/error behavior, linking/execution, or broader native
+  lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 536, native static folding for direct scalar/null and proven
+  string-valued `is_numeric` calls. `phpc compile --emit-ir` and the `cc -S`
+  assembly fallback now fold direct `is_numeric` when the single argument is
+  already in the straight-line native subset: integers and floats fold true,
+  `null` and booleans fold false, and literal/tracked strings fold only when
+  the current numeric-string grammar proves a static result. This is static
+  folding only, not runtime callable dispatch. Dynamic calls, wrong arity,
+  arrays, objects, `is_countable`, `is_iterable`, general builtin dispatch,
+  runtime call lookup, stack frames, references/copy-on-write, exact native
+  warning/error behavior, linking/execution, and broader native lowering
+  remain unsupported.
+- Added the Milestone 536 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-536 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test numeric_type_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-536 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_scalar_is_numeric_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-536 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_is_numeric_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-536 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone536`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-536 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone536`.
+- The serialized full-suite gate is queued after the next related native
+  type-introspection slice; see the following milestone entry for the
+  Milestones 536-537 batch gate result.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 537, native static folding for direct scalar/null/string
+  `is_countable` and `is_iterable` calls. `phpc compile --emit-ir` and the
+  `cc -S` assembly fallback now fold direct `is_countable` and `is_iterable`
+  to false when the single argument is already in the straight-line native
+  scalar/null/string subset. This is static folding only, not runtime callable
+  dispatch, and it does not claim native array, `Traversable`, generator, or
+  object iteration/countability semantics. Array operands, object operands,
+  dynamic calls, wrong arity, general builtin dispatch, runtime call lookup,
+  stack frames, references/copy-on-write, exact native warning/error behavior,
+  linking/execution, and broader native lowering remain unsupported or rejected
+  through their existing boundaries.
+- Added the Milestone 537 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-537 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test countable_type_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-537 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test iterable_type_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-537 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_scalar_countable_iterable_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-537 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_countable_iterable_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-537 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone537`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-537 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone537`.
+- Ran the serialized full-suite gate after the Milestones 536-537 native
+  type-introspection batch:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 639 fixture tests, 0
+  fixture failures, 381 system PHP comparisons, and 258 skipped comparisons.
+  This validates the native `is_numeric` folding slice and the native
+  scalar/null/string `is_countable`/`is_iterable` false-folding slice without
+  broadening the documented unsupported dynamic calls, wrong arity, array or
+  object operand lowering, native array/object countability or iterability,
+  `Traversable`/generator semantics, general callable builtin dispatch,
+  runtime lookup, stack frames, references/copy-on-write, exact native
+  warning/error behavior, linking/execution, or broader native lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 538, native static folding for direct scalar/null/string
+  `is_object` and `get_debug_type` calls. `phpc compile --emit-ir` and the
+  `cc -S` assembly fallback now fold direct `is_object` to false when the
+  single argument is already in the straight-line native scalar/null/string
+  subset, and fold direct `get_debug_type` for those same operands to the
+  current runtime type-name strings (`null`, `bool`, `int`, `float`, and
+  `string`). This is static folding only, not runtime callable dispatch or
+  native object metadata access. Array operands, object operands, dynamic
+  calls, wrong arity, class declarations, object instantiation, public
+  property access, broader object metadata builtins, class metadata access,
+  object layout/handles, method dispatch, references/copy-on-write, exact
+  native warning/error behavior, linking/execution, and broader native
+  lowering remain unsupported or rejected through their existing boundaries.
+- Added the Milestone 538 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model emit_ir_folds_scalar_is_object_and_get_debug_type_calls -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model emit_ir_rejects_array_is_object_and_get_debug_type_until_native_array_lowering_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary emit_ir_rejects_object_metadata_builtins_before_lowering_arguments -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_scalar_object_debug_type_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_object_debug_type_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone538`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone538`.
+  After the routing change for `is_object`/`get_debug_type`, broader affected
+  object checks also passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-538 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`.
+- Ran the serialized full-suite gate after the Milestones 538-541 native
+  object-introspection batch:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 643 fixture tests, 0
+  fixture failures, 385 system PHP comparisons, and 258 skipped comparisons.
+  This validates the native scalar/null/string `is_object`/`get_debug_type`
+  folding slice, the direct metadata-exists false-folding slice, the
+  string/string `property_exists`/`method_exists` false-folding slice, and the
+  string/string `is_a`/`is_subclass_of` false-folding slice without broadening
+  the documented unsupported dynamic calls, wrong arity, array or object
+  operand lowering, native class/member tables, native inheritance, autoloading,
+  general callable builtin dispatch, runtime lookup, stack frames,
+  references/copy-on-write, exact native warning/error behavior,
+  linking/execution, or broader native lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick the next lane-scoped Milestone 539 task and keep focused tests local to
+  that slice until the next serialized full-suite gate.
+
+Next:
+
+- Added Milestone 539, native static folding for direct `class_exists`,
+  `interface_exists`, `trait_exists`, and `enum_exists` calls with
+  already-lowerable string names and optional already-lowerable boolean
+  autoload flags. `phpc compile --emit-ir` and the `cc -S` assembly fallback
+  now fold those calls to false in the current native subset because native
+  lowering still rejects class/interface/trait/enum declarations and has no
+  autoload or native class table. This is static folding only, not runtime
+  callable dispatch or native metadata lookup. Array operands, object
+  operands, non-string names, non-bool autoload flags, dynamic calls, wrong
+  arity, broader object metadata builtins, class declarations, object
+  instantiation, public property access, object layout/handles, method
+  dispatch, references/copy-on-write, exact native warning/error behavior,
+  linking/execution, and broader native lowering remain unsupported or
+  rejected through their existing boundaries.
+- Added the Milestone 539 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-539 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-539b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-539 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_static_metadata_exists_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-539 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_metadata_exists_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-539 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone539`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-539 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone539`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- Ran the serialized full-suite gate after the Milestones 538-541 native
+  object-introspection batch:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 643 fixture tests, 0
+  fixture failures, 385 system PHP comparisons, and 258 skipped comparisons.
+  This validates the native scalar/null/string `is_object`/`get_debug_type`
+  folding slice, the direct metadata-exists false-folding slice, the
+  string/string `property_exists`/`method_exists` false-folding slice, and the
+  string/string `is_a`/`is_subclass_of` false-folding slice without broadening
+  the documented unsupported dynamic calls, wrong arity, array or object
+  operand lowering, native class/member tables, native inheritance,
+  autoloading, general callable builtin dispatch, runtime lookup, stack frames,
+  references/copy-on-write, exact native warning/error behavior,
+  linking/execution, or broader native lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick the next lane-scoped Milestone 540 task and keep focused tests local to
+  that slice until the next serialized full-suite gate.
+
+Next:
+
+- Added Milestone 540, native static folding for direct `property_exists` and
+  `method_exists` calls with already-lowerable string class names and
+  already-lowerable string member names. `phpc compile --emit-ir` and the
+  `cc -S` assembly fallback now fold those calls to false in the current
+  native subset because native lowering still rejects class declarations and
+  has no native class/member metadata table. This is static folding only, not
+  runtime callable dispatch or native metadata lookup. Array operands, object
+  operands, non-string arguments, dynamic calls, wrong arity, native
+  class/member tables, autoloading, class declarations, object instantiation,
+  public property access, object layout/handles, method dispatch,
+  references/copy-on-write, exact native warning/error behavior,
+  linking/execution, and broader native lowering remain unsupported or
+  rejected through their existing boundaries.
+- Added the Milestone 540 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-540 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-540b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-540c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_static_member_metadata_exists_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-540d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_member_metadata_exists_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-540 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone540`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-540e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone540`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- The full-suite gate was not rerun immediately for this narrow IR/lowering
+  slice under the focused-test policy; the most recent serialized full gate
+  passed after Milestones 536-537 with 639 fixture tests, 0 fixture failures,
+  381 system PHP comparisons, and 258 skipped comparisons. Run the serialized
+  full gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick the next lane-scoped Milestone 541 task and keep focused tests local to
+  that slice until the next serialized full-suite gate.
+
+Next:
+
+- Added Milestone 541, native static folding for direct `is_a` and
+  `is_subclass_of` calls with already-lowerable string object/class names,
+  already-lowerable string target class names, and optional already-lowerable
+  boolean `allow_string` flags. `phpc compile --emit-ir` and the `cc -S`
+  assembly fallback now fold those calls to false in the current native subset
+  because native lowering still rejects class declarations and has no native
+  class table or inheritance metadata. This is static folding only, not
+  runtime callable dispatch or native relationship lookup. Array operands,
+  object operands, non-string arguments, non-bool `allow_string` flags,
+  dynamic calls, wrong arity, native class tables, inheritance, autoloading,
+  class declarations, object instantiation, public property access, object
+  layout/handles, method dispatch, references/copy-on-write, exact native
+  warning/error behavior, linking/execution, and broader native lowering
+  remain unsupported or rejected through their existing boundaries.
+- Added the Milestone 541 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized `cc -S`
+  fallback assembly CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-541 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-541b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-541c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_static_relationship_metadata_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-541d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_relationship_metadata_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-541 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone541`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-541e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone541`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- Ran the serialized full-suite gate after the Milestones 538-541 native
+  object-introspection batch:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 643 fixture tests, 0
+  fixture failures, 385 system PHP comparisons, and 258 skipped comparisons.
+  This validates the native scalar/null/string `is_object`/`get_debug_type`
+  folding slice, the direct metadata-exists false-folding slice, the
+  string/string `property_exists`/`method_exists` false-folding slice, and the
+  string/string `is_a`/`is_subclass_of` false-folding slice without broadening
+  the documented unsupported dynamic calls, wrong arity, array or object
+  operand lowering, native class/member tables, native inheritance,
+  autoloading, general callable builtin dispatch, runtime lookup, stack frames,
+  references/copy-on-write, exact native warning/error behavior,
+  linking/execution, or broader native lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick the next lane-scoped Milestone 542 task and keep focused tests local to
+  that slice until the next serialized full-suite gate.
+
+Next:
+
+- Added Milestone 542, `is_callable($value)` for the current one-argument
+  runtime string function-name subset. `phpc run` now returns true when a
+  string resolves case-insensitively to a current user function or documented
+  callable builtin, and false for missing names or non-string values. The
+  builtin is also available through string-valued dynamic calls. This does not
+  implement the optional `syntax_only` flag, callable-name output parameter,
+  array/object callables, method callables, first-class callable syntax,
+  namespace/autoload-aware resolution, exact native `TypeError` behavior, or
+  native lowering.
+- Added the Milestone 542 fixture with `phpc run` expected output, committed
+  CLI snapshot, and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-542 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-542 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test callable_type_builtin_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-542 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone542`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-542b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone542`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- The full-suite gate was not rerun immediately for this narrow runtime slice
+  under the focused-test policy; the most recent serialized full gate passed
+  after Milestones 538-541 with 643 fixture tests, 0 fixture failures, 385
+  system PHP comparisons, and 258 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick the next lane-scoped Milestone 543 task and keep focused tests local to
+  that slice until the next serialized full-suite gate.
+
+Next:
+
+- Added Milestone 543, extending `is_callable` with the optional boolean
+  `syntax_only` flag for the current runtime string function-name subset.
+  `phpc run` now treats `is_callable($value, true)` as a syntax-only check for
+  string values, returning true without requiring the function name to resolve,
+  while `is_callable($value, false)` uses the current user-function and
+  callable-builtin lookup path. Scalar non-string values return false. This
+  does not implement callable-name output, array/object callables, method
+  callables, first-class callable syntax, namespace/autoload-aware resolution,
+  exact native `TypeError` behavior, or native lowering.
+- Added the Milestone 543 fixture with `phpc run` expected output, committed
+  CLI snapshot, and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-543 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-543 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test callable_syntax_only_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-543 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone543`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-543b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone543`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- The full-suite gate was not rerun immediately for this narrow runtime slice
+  under the focused-test policy; the most recent serialized full gate passed
+  after Milestones 538-541 with 643 fixture tests, 0 fixture failures, 385
+  system PHP comparisons, and 258 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 544, `function_exists($name)` for the current runtime string
+  function-name subset. `phpc run` now returns true when a string resolves
+  case-insensitively to a current user function or documented callable builtin,
+  and false for missing names. The builtin is also available through
+  string-valued dynamic calls. This does not implement non-string name
+  coercion, namespace/autoload-aware lookup, extension-loaded functions beyond
+  documented builtins, exact native `TypeError`/deprecation behavior, or
+  native lowering.
+- Added the Milestone 544 fixture with `phpc run` expected output, committed
+  CLI snapshot, and system PHP comparison.
+- Tightened the lane focused-test policy in `docs/OPERATIONS.md` and
+  `docs/LANE_WORKERS.md`: narrow lane work should start with the smallest
+  executable proof and escalate from named tests to affected test files,
+  fixture directories, and finally `tools/run-tests.sh` before checkpoint
+  batches.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-544 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-544 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-544 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test function_exists_builtin_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-544 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone544`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-544b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone544`.
+- The full-suite gate has not yet been rerun for this narrow runtime slice
+  under the focused-test policy; the most recent serialized full gate passed
+  after Milestones 538-541 with 643 fixture tests, 0 fixture failures, 385
+  system PHP comparisons, and 258 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 545, an explicit parser boundary for unsupported generator
+  `yield` and `yield from` syntax. The parser now rejects statement-position
+  `yield`, uppercase `YIELD from`, and expression-position `echo yield ...`
+  with the stable parse diagnostic `unsupported yield expression: generators
+  and generator object execution are not implemented`. This does not implement
+  generator functions, generator objects, key/value yields, by-reference
+  yields, `yield from` delegation, `send`/`throw`/`return` generator semantics,
+  or native lowering.
+- Added an unsupported syntax fixture with `phpc run` expected stderr, exit
+  code, `.phpc-only` marker, and committed CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-545 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries yield -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-545 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-545 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-545 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_yield.php`
+  exited 1 with the expected stable parse diagnostic;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-545 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/unsupported_syntax_features/unsupported_yield.php --emit-ir`
+  exited 1 with the expected stable parse diagnostic; and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-545 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`.
+- The full-suite gate has not yet been rerun for this narrow parser slice
+  under the focused-test policy; the most recent serialized full gate passed
+  after Milestones 538-541 with 643 fixture tests, 0 fixture failures, 385
+  system PHP comparisons, and 258 skipped comparisons. Run the serialized full
+  gate at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 546, native direct-variable `isset($name)` folding for the
+  current straight-line static-variable map. `phpc compile --emit-ir` and the
+  `--emit-asm` C fallback now fold direct `isset($name)` to false for missing
+  or statically `null` variables and true for statically assigned non-null
+  lowerable values. This does not implement array offset operands, object
+  property operands, complex operands, multiple operands, unset/mutation
+  interactions, references/copy-on-write behavior, exact native error
+  behavior, linking/execution, or broader native symbol-table storage.
+- Added the Milestone 546 fixture with `phpc run` expected output, committed
+  `--emit-ir` CLI snapshot, and normalized `cc -S` fallback assembly CLI
+  snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-546 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_isset_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-546 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone546`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-546b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone546`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-546 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_variable_isset -- --test-threads=1`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- Reran the serialized full-suite gate for the Milestones 542-546 batch with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 648 fixture tests, 0
+  fixture failures, 389 system PHP comparisons, and 259 skipped comparisons.
+  This validates the runtime `is_callable`/`function_exists` slices, the
+  parser `yield` boundary, and the native direct-variable `isset($name)`
+  folding slice without broadening the documented unsupported dynamic callable
+  forms, generator execution, array/object/complex `isset` lowering,
+  references/copy-on-write, exact native warning/error behavior,
+  linking/execution, or broader native lowering.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 547, native direct `function_exists($name)` folding for
+  already-lowerable string names with a uniform known result in the documented
+  builtin table. `phpc compile --emit-ir` and the `--emit-asm` C fallback now
+  fold documented callable builtin names such as `strlen` and
+  `function_exists` to true, and missing names to false. This does not
+  implement user-defined native function tables, dynamic calls,
+  namespace/autoload-aware lookup, extension-loaded functions beyond the
+  documented builtin table, wrong arity, non-string names, exact native
+  `TypeError`/deprecation behavior, runtime-backed callable dispatch, stack
+  frames, references/copy-on-write behavior, linking/execution, or broader
+  native lowering.
+- Added the Milestone 547 fixture with `phpc run` expected output, committed
+  `--emit-ir` CLI snapshot, normalized `cc -S` fallback assembly CLI snapshot,
+  and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins emit_ir_folds_direct_function_exists_string_names -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_direct_function_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_function_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone547`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-547 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone547`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- A serialized full-suite gate later passed after the Milestones 547-549
+  IR/lowering batch with 651 fixture tests, 0 fixture failures, 392 system PHP
+  comparisons, and 259 skipped comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 548, native direct `is_callable($value)` and
+  `is_callable($value, $syntax_only)` folding for already-lowerable string
+  values and already-lowerable boolean syntax-only flags. `phpc compile
+  --emit-ir` and the `--emit-asm` C fallback now fold documented callable
+  builtin names such as `strlen` to true, missing names to false, and string
+  values with a true syntax-only flag to true without lookup. This does not
+  implement callable-name output, array/object/method callables, dynamic
+  calls, user-defined native function tables, namespace/autoload-aware lookup,
+  extension-loaded functions beyond the documented builtin table, wrong arity,
+  non-string values, non-bool syntax-only flags, exact native
+  `TypeError`/deprecation behavior, runtime-backed callable dispatch, stack
+  frames, references/copy-on-write behavior, linking/execution, or broader
+  native lowering.
+- Added the Milestone 548 fixture with `phpc run` expected output, committed
+  `--emit-ir` CLI snapshot, normalized `cc -S` fallback assembly CLI snapshot,
+  and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-548 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins emit_ir_folds_direct_is_callable_string_names -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-548 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-548 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_direct_is_callable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-548 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_is_callable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-548 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone548`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-548 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone548`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- A serialized full-suite gate later passed after the Milestones 547-549
+  IR/lowering batch with 651 fixture tests, 0 fixture failures, 392 system PHP
+  comparisons, and 259 skipped comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 549, native `is_callable(...)` false folding for
+  already-lowerable non-string scalar/null values. `phpc compile --emit-ir`
+  and the `--emit-asm` C fallback now fold `null`, booleans, integers, and
+  floats to false for direct `is_callable` calls, including forms with known
+  boolean syntax-only flags. This does not implement callable-name output,
+  array/object/method callables, dynamic calls, user-defined native function
+  tables, namespace/autoload-aware lookup, extension-loaded functions beyond
+  the documented builtin table, wrong arity, non-bool syntax-only flags, exact
+  native `TypeError`/deprecation behavior, runtime-backed callable dispatch,
+  stack frames, references/copy-on-write behavior, linking/execution, or
+  broader native lowering.
+- Added the Milestone 549 fixture with `phpc run` expected output, committed
+  `--emit-ir` CLI snapshot, normalized `cc -S` fallback assembly CLI snapshot,
+  and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-549 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins emit_ir_folds_direct_is_callable_non_string_scalars_to_false -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-549 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-549 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_scalar_is_callable_false -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-549 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_is_callable_false -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-549 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone549`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-549 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone549`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- A serialized full-suite gate passed after the Milestones 547-549 IR/lowering
+  batch with 651 fixture tests, 0 fixture failures, 392 system PHP comparisons,
+  and 259 skipped comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 550, a parser-lane boundary for unsupported `goto`
+  statements and labels. The parser now rejects `goto target;`, uppercase
+  `GOTO target;`, statement labels such as `target:`, and expression-position
+  `goto` with a stable parse diagnostic. This does not implement executable
+  jumps, label registration, forward/backward jump resolution, cross-scope jump
+  validation, `finally` interaction, AST/runtime nodes, native control-flow
+  lowering, or linking/execution.
+- Added the unsupported syntax fixture `unsupported_goto` with `phpc run`
+  expected stderr/exit output, committed CLI snapshot coverage, and
+  `.phpc-only` comparison skip.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-550-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_goto -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-550-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries goto -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-550-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-550-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-550-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`.
+  The full `syntax_boundaries` integration test file also passed with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-550-parser CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 547-549 with 651 fixture
+  tests, 0 fixture failures, 392 system PHP comparisons, and 259 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 551, runtime syntax-only array callable shape checks for
+  `is_callable($value, true)`. The interpreter now returns true for current
+  two-element array callable syntax shapes keyed `0` and `1` when the first
+  value is a string class name or current object and the second value is a
+  string method name. It returns false for malformed array shapes and keeps
+  object-only values false. This shape check does not resolve or invoke
+  classes or methods. Normal array callable resolution with omitted or false
+  syntax-only flags still rejects with a stable unsupported-call diagnostic,
+  and dynamic invocation, callable-name output, visibility-sensitive method
+  callability, `__invoke`, static callable strings, namespace/autoload
+  behavior, exact native `TypeError` behavior, and native lowering remain
+  unsupported.
+- Added the Milestone 551 fixture with `phpc run` expected output, committed
+  CLI snapshot coverage, and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-551 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins is_callable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-551 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-551 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test callable_syntax_only_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-551 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone551`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-551b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone551`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- Reran the serialized full-suite gate after the Milestones 550-551 parser and
+  runtime batch with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 653 fixture tests, 0
+  fixture failures, 393 system PHP comparisons, and 260 skipped comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 552, compiler-output selected-`clang` coverage for the
+  already-implemented native `is_callable(...)` false-folding slice. A
+  deterministic fake `clang` now validates that `phpc compile --emit-asm`
+  selects `clang`, sends LLVM IR through stdin, includes the expected
+  folded-false string output markers and `main`, and does not leave an
+  unlowered `is_callable` call in the emitted IR. This is test-only coverage;
+  it does not change production lowering, callable dispatch, runtime-backed
+  native execution, linking/execution, stack frames, references/copy-on-write,
+  exact native error behavior, or broader native lowering.
+- Added the Milestone 552 fixture with `phpc run` expected output, committed
+  selected-`clang` `--emit-asm` CLI summary snapshot, and system PHP
+  comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-552 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_is_callable_false_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-552 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_is_callable_false -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-552 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone552`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-552b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone552`.
+  `cargo fmt --check` and `git diff --check` also passed after rustfmt.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 550-551 with 653 fixture
+  tests, 0 fixture failures, 393 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 553, runtime `is_callable([$receiver, $method])` resolution
+  for the current declared method metadata subset. Normal-mode array callables
+  now return true for current two-element shapes keyed `0` and `1` when an
+  object receiver names a public declared method, or when a class-string
+  receiver names a public static declared method. They return false for
+  non-static class-string instance methods, non-public methods, missing
+  classes, missing methods, malformed array shapes, non-string method values,
+  and non-string/non-object receivers. This does not implement array callable
+  invocation, inheritance, trait/interface method lookup, private/protected
+  caller-context method callability, `__call`, `__invoke`, namespace/autoload
+  behavior, exact native `TypeError` behavior, or native lowering.
+- Added the Milestone 553 fixture with `phpc run` expected output, committed
+  CLI snapshot coverage, and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-553 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins is_callable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-553 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-553b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-553c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone553`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-553d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone553`.
+  `cargo fmt --check` and `git diff --check` also passed.
+- Reran the serialized full-suite gate after the Milestones 552-553
+  compiler-output/runtime batch with
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`.
+  It passed with all Rust checks included by the gate, 655 fixture tests, 0
+  fixture failures, 395 system PHP comparisons, and 260 skipped comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 554, a parser-lane boundary for unsupported PHP
+  heredoc/nowdoc multiline string syntax. The lexer now rejects `<<<` forms
+  with a stable lex diagnostic before multiline string tokenization,
+  interpolation, indentation stripping, exact label parsing, runtime string
+  construction, or native string lowering exists.
+- Added the unsupported syntax fixture `unsupported_heredoc` with `phpc run`
+  expected stderr/exit output, committed CLI snapshot coverage, and
+  `.phpc-only` comparison skip.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-554 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries heredoc -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-554b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-554c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-554 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-554d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`.
+  `cargo fmt --check` and scoped `git diff --check` also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Use the parser, IR/lowering, runtime, compiler-output, and tests/docs lane
+  subagent recommendations to pick Milestone 555 as a narrow worker-owned
+  slice, with focused tests first and the serialized full-suite gate reserved
+  for the next batch boundary.
+
+Next:
+
+- Added Milestone 555, a tests/docs-lane unsupported syntax boundary closure
+  checklist in `docs/LANE_WORKERS.md`, with `yield`, `goto`, and
+  heredoc/nowdoc as concrete examples. The checklist records the expected
+  lex/parse/codegen boundary classification, unit coverage, unsupported syntax
+  fixture files, support documentation updates, progress updates, focused
+  commands, and named unsupported edge cases. `docs/OPERATIONS.md` now points
+  unsupported-syntax handoffs at that checklist.
+- This is documentation and verification guidance only; it does not change
+  compiler, runtime, codegen, fixture, or CLI behavior.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-tests-docs-555 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries heredoc -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-tests-docs-555 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries goto -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-tests-docs-555 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries yield -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-tests-docs-555 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-tests-docs-555 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-tests-docs-555 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  `rg -n "heredoc|nowdoc|goto|yield|unsupported syntax|focused" docs README.md tests/fixtures/unsupported_syntax_features compiler/tests`;
+  scoped `git diff --check`; and a trailing-whitespace scan over the touched
+  docs, including the currently untracked `docs/LANE_WORKERS.md`.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick up Milestone 556 in the IR/lowering lane or hand it to a separate lane
+  worktree: native direct-variable `empty($name)` folding for the narrow
+  straight-line scalar/null lowering subset.
+
+Next:
+
+- Added Milestone 556, native direct-variable `empty($name)` folding for the
+  straight-line scalar/null lowering subset. `phpc compile --emit-ir` and the
+  `cc -S` assembly fallback now fold missing variables and statically falsey
+  lowerable scalar/null values (`null`, `false`, `0`, `0.0`, `""`, and `"0"`)
+  to true, and statically truthy lowerable scalar values to false.
+- Added a specific native `empty` codegen rejection for array offset operands,
+  object property operands, complex operands, arrays, unset/mutation
+  interactions, ambiguous truthiness, references/copy-on-write, and exact
+  native error behavior. This does not broaden parser/runtime behavior, array
+  or object native lowering, general builtin dispatch, linked native
+  execution, references/copy-on-write, or exact native PHP error behavior.
+- Added the Milestone 556 fixture with `phpc run` expected output, committed
+  `--emit-ir` CLI snapshot coverage, `cc -S` fallback assembly summary
+  coverage, and system PHP comparison.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-556 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_empty_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-556 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_variable_empty -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-556 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone556`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-556b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone556`.
+  `cargo fmt --check` and scoped `git diff --check` also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Pick up Milestone 557 in the runtime lane or hand it to a separate lane
+  worktree: `array_change_key_case($array, $case = CASE_LOWER)` for the
+  current ordered array model.
+
+Next:
+
+- Added Milestone 557, runtime `array_change_key_case($array, $case =
+  CASE_LOWER)` for the current ordered array model. The runtime preserves
+  integer keys, lowercases or uppercases ASCII string keys for `CASE_LOWER`
+  (`0`) and `CASE_UPPER` (`1`), overwrites duplicate converted keys with later
+  source values without moving the first converted-key position, clones values
+  into a new array, and leaves the source array unchanged.
+- Added exact uppercase built-in constants `CASE_LOWER` and `CASE_UPPER` to
+  the existing interpreter constant table, so bare reads, `constant(...)`,
+  `defined(...)`, dynamic constant calls, default parameter constants, and
+  top-level `const` references use the same current constant path.
+- Added interpreter dispatch and dynamic string-call support for
+  `array_change_key_case`. Non-array first arguments, non-int case flags, and
+  unsupported integer case flags fail with stable project diagnostics. This
+  does not implement Unicode/locale-aware casing, PHP's broader nonzero-int
+  flag behavior, scalar flag coercions, references/copy-on-write, exact native
+  warning/`TypeError` behavior, resources, or native lowering.
+- Added the Milestone 557 fixture with `phpc run` expected output, committed
+  CLI snapshot coverage, and system PHP comparison. Added runtime-error
+  fixtures for non-array first arguments, non-int case flags, and unsupported
+  integer case flags.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_change_key_case -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_change_key_case -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_change_key_case_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone557`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone557`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test runtime_error_cli -- --test-threads=1`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-557f CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`.
+  `cargo fmt --check` and scoped `git diff --check` also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 558, compiler-output selected-`clang` coverage for existing
+  native direct `function_exists($name)` folding. The deterministic fake
+  `clang` now validates that `phpc compile --emit-asm` passes folded LLVM IR
+  through stdin for documented true and false function-existence results, and
+  rejects any unlowered `function_exists` marker in the selected backend input.
+- Added the Milestone 558 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` `--emit-asm` CLI summary
+  snapshot. This does not change production lowering behavior or broaden
+  runtime lookup, namespace/import/autoload behavior, dynamic string-call
+  dispatch, user-function lookup in native output, linked native execution, or
+  exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-558 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_function_exists_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-558 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_function_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-558b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone558`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-558c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone558`.
+  `cargo fmt --check` and scoped `git diff --check` also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 559, compiler-output selected-`clang` coverage for existing
+  native direct-variable `empty($name)` folding. The deterministic fake
+  `clang` now validates that `phpc compile --emit-asm` passes folded LLVM IR
+  through stdin for the documented missing/null/false/zero/empty-string
+  true cases and truthy scalar false cases, and rejects any unlowered `empty`
+  marker in the selected backend input.
+- Added the Milestone 559 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` `--emit-asm` CLI summary
+  snapshot. This does not change production lowering behavior or broaden
+  symbol-table semantics, unset interactions, array/object operand support,
+  ambiguous truthiness, references/copy-on-write, linked native execution, or
+  exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-559a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_variable_empty_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-559b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_variable_empty -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-559c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone559`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-559d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone559`.
+  `cargo fmt --check`, scoped `git diff --check`, and trailing-whitespace
+  fixture scanning also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 560, tests/docs lane queue refresh after the post-559
+  compiler-output slice. `docs/NEXT_TASKS.md` now marks Milestone 560 complete
+  and assigns Milestones 561-564 as the next independent parser, IR/lowering,
+  runtime, and compiler-output candidates.
+- Updated `docs/LANE_WORKERS.md` so the current queue no longer points the
+  compiler-output lane at completed Milestone 559. The next compiler-output
+  candidate is Milestone 564, selected-`clang` assembly snapshot coverage for
+  existing native direct-variable `isset($name)` folding.
+- Focused docs checks passed: scoped `git diff --check`, trailing-whitespace
+  fixture scanning for Milestone 559, and direct grep/inspection of the
+  post-559 queue wording. No compiler/runtime behavior changed in this
+  docs-only slice.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 564, compiler-output selected-`clang` coverage for existing
+  native direct-variable `isset($name)` folding. The deterministic fake
+  `clang` now validates that `phpc compile --emit-asm` passes folded LLVM IR
+  through stdin for the documented assigned/non-null true cases and
+  missing/null false cases, and rejects any unlowered `isset` marker in the
+  selected backend input.
+- Added the Milestone 564 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` `--emit-asm` CLI summary
+  snapshot. This does not change production lowering behavior or broaden
+  symbol-table semantics, multiple-operand support, array/object operand
+  support, unset interactions, references/copy-on-write, linked native
+  execution, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-564a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_variable_isset_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-564b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_direct_variable_isset -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-564c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone564`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-564d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone564`.
+  `cargo fmt --check`, scoped `git diff --check`, and trailing-whitespace
+  fixture scanning also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 562, native direct `strlen($value)` folding for
+  already-lowerable known string operands. `phpc compile --emit-ir` and the
+  `--emit-asm` C fallback now fold direct one-argument `strlen` calls for
+  string literals, static string variables, and tracked string expressions
+  whose possible values have one uniform byte length.
+- Kept non-string `strlen` operands, wrong arity, dynamic string-valued calls,
+  user functions, runtime call lookup, arrays, objects, resources,
+  references/copy-on-write, linked native execution, exact PHP string coercion
+  diagnostics, and exact native PHP errors outside this native slice.
+- Added the Milestone 562 fixture with `phpc run` expected output, committed
+  `--emit-ir` output, `cc -S` fallback assembly summary coverage, and system
+  PHP comparison. Updated the older native function-call boundary fixture so
+  it still proves direct user-function calls reject now that direct `strlen`
+  no longer owns that boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-562a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-562b2 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_strlen -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-562c2 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone562`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-562d2 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone562`.
+  `cargo fmt --check`, scoped `git diff --check`, and trailing-whitespace
+  fixture scanning also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 563, runtime `array_unique($array, SORT_STRING)` support for
+  `phpc run` over the current scalar value subset. The interpreter now accepts
+  an explicit integer `2` sort flag and the exact uppercase built-in
+  `SORT_STRING` constant through bare constant reads, `constant("SORT_STRING")`,
+  `defined("SORT_STRING")`, and dynamic string-valued `array_unique` calls.
+- The supported `SORT_STRING` path reuses the existing ordered-array
+  string-form deduplication behavior: first occurrences are kept, integer and
+  string keys and insertion order are preserved, duplicate entries do not
+  affect later append behavior, and the source array is not mutated.
+- Sort flags other than `SORT_STRING`, non-array first arguments, non-scalar
+  value comparisons, object/resource values, references/copy-on-write, exact
+  PHP warning/`TypeError` objects, sort modes other than `SORT_STRING`, and
+  native array lowering remain unsupported with stable diagnostics.
+- Added the Milestone 563 fixture with `phpc run` expected output and system
+  PHP comparison. Updated the runtime-error sort-flag fixture to keep `0` as a
+  still-unsupported flag and to report that flags other than `SORT_STRING` are
+  unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-563a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_unique -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-563b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_unique -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-563c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone563`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-563d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone563`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-563e2 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-563f CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone563/array_unique_sort_string.php --emit-ir`, which failed with the expected native array-lowering rejection before backend invocation.
+  `cargo fmt --check`, scoped `git diff --check`, and trailing-whitespace
+  scanning for non-stdout fixture files also passed.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Continue the independent lane batch with Milestone 561 alternate switch
+  syntax, Milestone 565 selected-`clang` coverage for existing native direct
+  `is_numeric($value)` folding, Milestone 566 IR/lowering selection, or
+  Milestone 567 runtime refinement selection.
+
+Next:
+
+- Added Milestone 565, compiler-output selected-`clang` `--emit-asm` coverage
+  for existing native direct `is_numeric($value)` folding. The deterministic
+  fake `clang` now validates that `phpc compile --emit-asm` passes folded LLVM
+  IR through stdin for the documented scalar/null/string fixture, including
+  six folded true string outputs and six folded false string outputs, and
+  rejects any unlowered `is_numeric` marker in the selected backend input.
+- Added the Milestone 565 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` assembly CLI summary snapshot.
+  This does not change production lowering behavior or broaden runtime lookup,
+  string coercion, arrays, objects, dynamic calls, linked native execution, or
+  exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-565a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_is_numeric_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-565b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_is_numeric -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-565c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone565`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-565d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone565`.
+  `rustfmt --check compiler/tests/native_assembly_cli.rs`, scoped
+  `git diff --check`, and trailing-whitespace scanning for the Milestone 565
+  fixture/docs/test files also passed.
+- Workspace-level `cargo fmt --check` was not clean because pre-existing
+  formatting drift remains in unrelated dirty files
+  `compiler/tests/milestone1.rs`, `compiler/tests/syntax_boundaries.rs`, and
+  `runtime/src/lib.rs`; this compiler-output slice verified the changed Rust
+  file directly with `rustfmt --check`.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 561, parser-lane alternate
+  `switch (...): ... endswitch;` support. The parser now accepts alternate
+  switch bodies, case-insensitively accepts `ENDSWITCH`, keeps both `:` and
+  `;` case/default separators, and lowers the parsed form into the existing
+  switch AST/interpreter path.
+- Added stable parser diagnostics for malformed alternate switch bodies:
+  statements before a `case`/`default` label, missing `endswitch`, and missing
+  the required semicolon after `endswitch`. Expression-form `switch`,
+  arrays/objects/resources as switch values or case values, `continue;` inside
+  switch, loop-depth control arguments, references/copy-on-write side effects,
+  and native switch lowering remain unsupported or rejected by their existing
+  boundaries.
+- Added the Milestone 561 fixture with `phpc run` expected output, system PHP
+  comparison, and `compile --emit-ir` CLI rejection coverage proving alternate
+  switch still hits the explicit native control-flow lowering rejection.
+  Updated the unsupported-switch fixture so it now covers expression-form
+  `switch`, since alternate switch syntax is no longer an unsupported parser
+  boundary.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test switch alternate_switch_reuses_statement_switch_execution -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries malformed_alternate_switch_forms_have_stable_parse_errors -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test switch -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_switch_forms_are_rejected_with_stable_parse_error -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test milestone1 emit_ir_rejects_alternate_switch_until_native_switch_lowering_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone561`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone561`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/milestone561/alternate_switch.php`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-561 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone561/alternate_switch.php --emit-ir`, which exited 1 with the expected native switch-lowering rejection; and
+  `rustfmt --check compiler/src/parser.rs compiler/tests/switch.rs compiler/tests/syntax_boundaries.rs compiler/tests/milestone1.rs`;
+  scoped `git diff --check`; and scoped trailing-whitespace scanning.
+- Workspace-level `cargo fmt --check` is still blocked by pre-existing
+  unrelated formatting drift in `runtime/src/lib.rs`; the parser-lane Rust
+  files touched by this milestone pass direct `rustfmt --check`.
+- The full-suite gate is deferred under the lane focused-test policy; the most
+  recent serialized full gate passed after Milestones 552-553 with 655 fixture
+  tests, 0 fixture failures, 395 system PHP comparisons, and 260 skipped
+  comparisons.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 566, native `defined($name)` folding for direct supported
+  string names. `phpc compile --emit-ir` and the C fallback `--emit-asm` path
+  now fold exact built-in constant names `CASE_LOWER`, `CASE_UPPER`,
+  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, and `SORT_STRING` to true,
+  and supported missing unqualified names to false. This is static folding
+  only: `define(...)`, `constant(...)`, bare constants, top-level `const`
+  declarations, runtime-defined constants, namespace-aware lookup, unsupported
+  names, arrays, objects, dynamic calls, exact native PHP errors, and broader
+  native constant-table lowering remain rejected.
+- Added the Milestone 566 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized C fallback
+  assembly CLI snapshot. Updated the native global-constant boundary snapshot
+  to reflect the narrower unsupported message after direct `defined(...)`
+  folding.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary emit_ir_folds_defined_for_static_builtin_and_missing_names -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary native_defined -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features emit_ir_rejects_unsupported_defined_names_until_native_constant_tables_exist -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone566`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-566 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone566`.
+  `rustfmt --check compiler/src/codegen.rs compiler/tests/native_global_constant_boundary.rs compiler/tests/native_assembly_cli.rs compiler/tests/dynamic_features.rs` also passed.
+  Scoped `git diff --check` over the Milestone 566 code, fixture, and docs
+  files passed, and trailing-whitespace scanning over the new fixture files
+  and touched code/docs files found no matches.
+- Workspace-level `cargo fmt --check` was not clean because pre-existing
+  formatting drift remains in unrelated dirty files
+  `compiler/tests/milestone1.rs`, `compiler/tests/syntax_boundaries.rs`, and
+  `runtime/src/lib.rs`.
+- The full-suite gate is deferred under the lane focused-test policy; run it
+  at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 570, runtime `array_unique($array, SORT_NUMERIC)` support for
+  `phpc run` over the current scalar numeric-coercion subset. The supported
+  numeric mode keeps the first entry for each numeric comparison value,
+  preserves original integer/string keys and insertion order for kept entries,
+  does not mutate the source array, and is available through direct calls,
+  string-valued dynamic calls, bare `SORT_NUMERIC`, `constant("SORT_NUMERIC")`,
+  and `defined("SORT_NUMERIC")`.
+- Updated the unsupported sort-flag diagnostic to name the supported
+  `SORT_REGULAR`, `SORT_NUMERIC`, and `SORT_STRING` modes. Sort flags outside
+  those modes, non-numeric strings in numeric mode, arrays, objects, resources,
+  references/copy-on-write, PHP warning recovery for unsupported numeric-mode
+  values, exact native PHP `TypeError` objects, and native array lowering
+  remain unsupported.
+- Added the Milestone 570 fixture with `phpc run` expected output and system
+  PHP comparison. A direct `compile --emit-ir` check on the same fixture exits
+  1 with the existing native array-lowering rejection before backend
+  invocation.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_unique -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_unique -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone570`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone570`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone570/array_unique_sort_numeric.php --emit-ir`, which exited 1 with the expected native array-lowering rejection; and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-570 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this runtime worker was not asked
+  to checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 561, 565, 566, and 567. `cargo fmt --check` is now
+  clean after formatting the integrated Rust changes, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 670 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 670 fixture
+  tests passed with 0 failures, 406 system PHP comparisons, and 264 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worktree contains
+  broad pre-existing edits outside a single checkpoint-sized slice.
+
+Next:
+
+- Added Milestone 573, native `defined($name)` folding for the current
+  `SORT_NUMERIC` built-in constant. The static native constant answer table
+  now treats direct `defined("SORT_NUMERIC")` and tracked string-name
+  `defined($mode)` calls as true when the name is known, while supported
+  missing unqualified names still fold false.
+- This is static IR/lowering only: native constant-value lowering,
+  runtime-defined constants, `define(...)`, `constant(...)`, bare constants,
+  top-level `const` declarations, namespace-aware lookup, arrays, objects,
+  dynamic calls, exact native PHP errors, and broader native constant-table
+  lowering remain rejected.
+- Added the Milestone 573 fixture with `phpc run` expected output, system PHP
+  comparison, committed `--emit-ir` CLI snapshot, and normalized C fallback
+  `--emit-asm` CLI snapshot.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary emit_ir_folds_defined_for_sort_numeric_after_runtime_constant_support -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary native_defined_sort_numeric_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_sort_numeric_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary emit_ir_rejects_dynamic_defined_calls_until_native_runtime_lookup_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary emit_ir_rejects_constant_table_builtins_before_lowering_arguments -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone573`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone573`.
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-573 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 rustfmt --check compiler/src/codegen.rs compiler/tests/native_global_constant_boundary.rs compiler/tests/native_assembly_cli.rs`,
+  scoped `git diff --check`, and trailing-whitespace scanning over the
+  Milestone 573 code, docs, and fixtures also passed.
+- The full-suite gate is deferred under the lane focused-test policy; run it
+  at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this IR/lowering worker was not
+  asked to checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Added Milestone 572, compiler-output selected-`clang` `--emit-asm` coverage
+  for existing native `defined($name)` folding over the `SORT_REGULAR` static
+  built-in constant slice. The deterministic fake `clang` validates that
+  `phpc compile --emit-asm` passes folded LLVM IR through stdin for the
+  documented true/true/false `SORT_REGULAR` fixture and rejects unlowered
+  `defined` or `SORT_REGULAR` markers in the selected backend input.
+- Added the Milestone 572 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` assembly CLI summary snapshot.
+  This does not change production lowering behavior or broaden native constant
+  values, runtime-defined constant lookup, dynamic calls, arrays, objects,
+  linked native execution, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-572a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_sort_regular_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-572b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-572c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone572`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-572d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone572`.
+  `cargo fmt`, `cargo fmt --check`, scoped `git diff --check`, and
+  trailing-whitespace scanning over the Milestone 572 code, docs, and fixtures
+  also passed.
+- The full-suite gate is deferred under the lane focused-test policy; run it
+  at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Added Milestone 568, compiler-output selected-`clang` `--emit-asm` coverage
+  for existing native direct `strlen($value)` folding. The deterministic fake
+  `clang` now validates that `phpc compile --emit-asm` passes folded LLVM IR
+  through stdin for the known-string length fixture, including the folded
+  integer outputs `3`, `6`, and `4`, and rejects any unlowered `strlen` marker
+  in the selected backend input.
+- Added the Milestone 568 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` assembly CLI summary snapshot.
+  This does not change production lowering behavior or broaden string
+  coercion, arrays, objects, dynamic calls, runtime lookup, linked native
+  execution, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-568a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_strlen_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-568b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_strlen -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-568c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone568`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-568d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone568`.
+  `cargo fmt`, `cargo fmt --check`, scoped `git diff --check`, and
+  trailing-whitespace scanning over the Milestone 568 code, docs, and fixtures
+  also passed.
+- The full-suite gate is deferred under the lane focused-test policy; run it
+  at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because `tools/checkpoint.sh`
+  intentionally stages the full dirty tree, and this worktree still contains
+  broad pre-existing edits outside this slice.
+
+Next:
+
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 568, 569, 570, and 571. `cargo fmt --check` and
+  `git diff --check` were clean before the gate, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 674 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 674 fixture
+  tests passed with 0 failures, 409 system PHP comparisons, and 265 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worktree contains
+  broad pre-existing edits outside a single checkpoint-sized slice.
+
+Next:
+
+- Added Milestone 574, runtime `array_change_key_case($array, $case)` support
+  for PHP's integer case-flag behavior in the current ordered array model:
+  integer `0`/`CASE_LOWER` lowercases ASCII string keys, and any nonzero
+  integer, including `CASE_UPPER`, uppercases ASCII string keys.
+- The supported slice preserves integer keys, duplicate converted-key
+  overwrite behavior, insertion order, cloned values, source-array immutability,
+  and string-valued dynamic calls to `array_change_key_case`.
+- Removed the obsolete runtime-error fixture for integer case flag `2`.
+  Non-array first arguments, non-int case flags, Unicode/locale-aware casing,
+  scalar flag coercions, references/copy-on-write, exact native
+  warning/`TypeError` behavior, resource keys, and native lowering remain
+  unsupported.
+- Added the Milestone 574 fixture with `phpc run` expected output and system
+  PHP comparison. A direct `compile --emit-ir` check on the same fixture exits
+  1 with the existing native array-lowering rejection before backend
+  invocation.
+- Focused checks passed after correcting the new fixture stdout snapshot:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_change_key_case array_change_key_case_treats_nonzero_int_case_flags_as_uppercase -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_change_key_case -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_change_key_case -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_change_key_case_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone574`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone574`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/milestone574/array_change_key_case_nonzero_flags.php`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone574/array_change_key_case_nonzero_flags.php --emit-ir >/tmp/phpc-runtime-574-emit-ir.out 2>/tmp/phpc-runtime-574-emit-ir.err; status=$?; cat /tmp/phpc-runtime-574-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-574-emit-ir.err'`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-574 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+  Scoped `git diff --check` over the runtime-lane code, docs, and fixtures
+  passed, and the trailing-whitespace scan over the touched runtime-lane files
+  found no matches.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this runtime worker was not asked
+  to checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 572, 573, and 574. `cargo fmt --check` and
+  `git diff --check` were clean before the gate, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 676 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 676 fixture
+  tests passed with 0 failures, 412 system PHP comparisons, and 264 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worktree contains
+  broad pre-existing edits outside a single checkpoint-sized slice.
+
+Next:
+
+- Added Milestone 575, compiler-output selected-`clang` `--emit-asm` coverage
+  for existing native `defined("SORT_NUMERIC")` folding. The deterministic
+  fake `clang` validates that folded LLVM IR is passed through stdin for the
+  documented true/true/false `SORT_NUMERIC` fixture and rejects unlowered
+  `defined` or `SORT_NUMERIC` markers in the selected backend input.
+- Added the Milestone 575 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` assembly CLI summary snapshot.
+  This does not change production lowering behavior or broaden native constant
+  values, runtime-defined constant lookup, dynamic calls, arrays, objects,
+  linked native execution, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-575a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_sort_numeric_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-575b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone575`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-575c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone575`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-575fmt CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  scoped `git diff --check` over the Milestone 575 code, docs, and fixtures;
+  and trailing-whitespace scanning over the touched Milestone 575 files.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Added Milestone 584, runtime `array_fill_keys($keys, $value)` support for
+  null, boolean, and integral finite float key-value coercions through
+  `phpc run`. Null and false key values now map to the empty string key, true
+  maps through the string `"1"` key normalization path, integral finite float
+  key values become integer result keys, duplicate coerced keys keep the
+  existing overwrite-without-moving behavior, string-valued dynamic calls use
+  the same path, and existing integer/string key-value behavior is preserved.
+- Added the Milestone 584 fixture with committed `phpc run` output and system
+  PHP comparison coverage. Added a stable project runtime-error fixture for
+  lossy float key values and updated the existing unsupported key-value
+  diagnostic to use an array key value now that booleans are supported.
+- Lossy finite floats, non-finite floats, array/object/resource/reference key
+  values, PHP warning/stringification recovery for unsupported key values,
+  exact native warning/`TypeError` objects, references/copy-on-write, object
+  handle identity preservation for object fill values, and native lowering
+  remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_fill_keys -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_fill_keys -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone584`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone584`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584f CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  and `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-584g CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone584/array_fill_keys_scalar_keys.php --emit-ir`
+  returns the expected native array-lowering rejection.
+
+Next:
+
+- Refreshed the split-lane planning queue after the 583/584 batch so each lane
+  has one active unchecked slot: compiler-output Milestone 585, runtime
+  Milestone 586, parser Milestone 587, IR/lowering Milestone 588, and
+  tests/docs Milestone 589.
+- Updated `GOAL.MD`, `docs/LANE_WORKERS.md`, and `docs/NEXT_TASKS.md` to make
+  focused tests the default during a narrow lane slice and reserve the
+  serialized `tools/run-tests.sh` gate for checkpoint or integration batches
+  unless a blocker is documented.
+- Full integration gate passed:
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`, including Rust
+  tests, `phpc test` with 689 fixtures passed and 0 failed, and
+  `phpc test --compare-php` with 422 compared and 267 skipped.
+
+Next:
+
+- Added Milestone 585, compiler-output selected-`clang` `--emit-asm` coverage
+  for the already-implemented native static metadata-exists false-folding
+  slice. The deterministic fake `clang` validates the generated LLVM IR on
+  stdin, requiring the folded five-zero output strings and rejecting unlowered
+  `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`, and source
+  name markers before emitting normalized assembly.
+- Added the Milestone 585 fixture with committed `phpc run` expected output and
+  a normalized selected-`clang` `--emit-asm` CLI summary.
+- This does not add native class metadata, autoloading, object execution,
+  dynamic calls, runtime-backed metadata lookup, linked native execution, or
+  exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-585a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_static_metadata_exists_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-585b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone585`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-585c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone585`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and scoped
+  `git diff --check` over the Milestone 585 code, docs, and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 588, IR/lowering native callable lookup refinement for
+  `array_change_key_case`. Native direct `function_exists($name)` and
+  `is_callable($value[, false])` folding now includes the documented callable
+  `array_change_key_case` builtin when the name is already lowerable as a
+  string, including tracked string variables and case-insensitive names.
+- Added a Milestone 588 native fixture with committed `phpc run` output,
+  `--emit-ir` snapshot coverage, and `cc -S` fallback `--emit-asm` summary
+  coverage. Direct `array_change_key_case(...)` native execution remains
+  rejected by the existing array-lowering boundary.
+- This does not add native array builtin execution, runtime call lookup,
+  callback dispatch, dynamic string-call lowering, linked native execution, or
+  exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-588 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins emit_ir_includes_array_change_key_case_in_native_callable_lookup_table -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-588 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_array_change_key_case_callable_lookup_emit_ir -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-588 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_array_change_key_case_callable_lookup_emit_asm_cc_fallback -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-588 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone588`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-588 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone588`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-588 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_change_key_case emit_ir_rejects_array_change_key_case -- --test-threads=1`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and scoped
+  `git diff --check` over the Milestone 588 code, docs, and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused IR/lowering lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 587, parser-lane unsupported exponentiation syntax
+  diagnostics. The lexer now recognizes `**` as a distinct token so expression
+  exponentiation and compound exponentiation assignment `**=` both fail with
+  the stable parse diagnostic `unsupported exponentiation operator: ** and **=
+  are not implemented` instead of falling through to generic `*` parse errors.
+- Added unit coverage for expression-position `**`, statement-position `**=`,
+  expression-position `**=`, and `phpc compile --emit-ir` parse rejection.
+  Added an unsupported-syntax fixture and CLI snapshot for `phpc run`.
+- This does not add AST exponentiation operators, runtime arithmetic, numeric
+  coercion semantics for exponentiation, compound exponentiation assignment
+  execution, native lowering, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-587 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries exponentiation -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-587 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-587 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-587 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  and `CARGO_TARGET_DIR=/dev/shm/phpc-target-587 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/unsupported_syntax_features/unsupported_exponentiation.php`
+  exits 1 with the committed parse diagnostic.
+- Full `tools/run-tests.sh` is deferred under the focused parser lane policy;
+  run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 586, runtime `array_column($rows, $column_key)` support for
+  `phpc run`. The supported slice accepts exactly two arguments: an array of
+  rows and an int, string, or null column key. Array rows use current
+  int/string key normalization, public object rows use exact public property
+  names for string keys, missing columns and scalar rows are skipped, null
+  values are preserved, and extracted values are reindexed from integer key
+  zero. `array_column($rows, null)` returns row values reindexed in insertion
+  order, and string-valued dynamic calls use the same implementation.
+- Added focused runtime/integration coverage plus a Milestone 586 fixture with
+  committed `phpc run` output, CLI snapshot, and system PHP comparison.
+  Native direct callable lookup folding now recognizes `array_column` for
+  `function_exists`/`is_callable`, while direct native execution of
+  `array_column(...)` remains rejected by the array-lowering boundary.
+- This does not add the third `$index_key` argument, non-array first-argument
+  coercions, column keys outside int/string/null, magic `__get`, `ArrayAccess`,
+  exact visibility-context behavior for non-public properties,
+  references/copy-on-write, resource behavior, exact native `TypeError` or
+  warning behavior, or native array builtin execution.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-586 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_column -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-586 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_column_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-586 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone586`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-586 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone586`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-586 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/milestone586/array_column_basic.php`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and scoped
+  `git diff --check` over the Milestone 586 code, docs, and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused runtime lane policy;
+  run it at the next checkpoint or integration batch.
+
+Next:
+
+- Closed Milestone 589, tests/docs split-lane queue refresh. The active
+  planning docs now carry forward the focused lane-test policy and keep one
+  current slot per lane: compiler-output Milestone 590, IR/lowering Milestone
+  591, parser Milestone 592, runtime Milestone 593, and tests/docs Milestone
+  594 for the next queue refresh after the current implementation batch.
+- Updated `GOAL.MD`, `docs/NEXT_TASKS.md`, and `docs/LANE_WORKERS.md` to mark
+  the post-583/584 tests/docs refresh complete and to point the tests/docs lane
+  at Milestone 594. This was a documentation/planning-only slice; no runtime,
+  parser, or native behavior changed.
+- Verification for this docs-only slice: scoped `git diff --check` over
+  `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, and
+  `docs/PROGRESS.md`. Full `tools/run-tests.sh` remains deferred to the next
+  checkpoint or integration batch because this slice only changes planning
+  docs.
+
+Next:
+
+- Added Milestone 590, compiler-output selected-`clang` `--emit-asm`
+  empty-stdout precedence coverage. The deterministic fake `clang` exits
+  successfully but emits no assembly, while `llc` and `cc` are also present in
+  `PATH`; the CLI snapshot pins the stable `clang emitted empty assembly
+  output` diagnostic and proves the selected backend does not silently fall
+  back after an empty successful selected-`clang` result.
+- Added the Milestone 590 fixture with committed `phpc run` expected output
+  and a normalized failing selected-`clang` `--emit-asm` CLI snapshot. This
+  does not add new native lowering, linked native execution, backend-specific
+  assembly validation, or fallback recovery semantics.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-590 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_empty_stdout_selected_clang_does_not_fallback_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-590 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone590`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-590 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone590`;
+  `rustfmt --edition 2021 --check compiler/tests/native_assembly_cli.rs`;
+  and scoped `git diff --check` over the Milestone 590 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 591, IR/lowering native callable lookup coverage for
+  `array_column`. Native direct `function_exists($name)` and
+  `is_callable($value[, false])` folding now has exact `--emit-ir` snapshot
+  coverage and deterministic `cc -S` fallback `--emit-asm` summary coverage
+  for the documented callable builtin name. Direct `array_column(...)` native
+  execution remains rejected by the existing array/function-call lowering
+  boundaries.
+- Added the Milestone 591 native fixture with committed `phpc run` output,
+  `--emit-ir` snapshot coverage, and `cc -S` fallback `--emit-asm` summary
+  coverage. This does not add native array extraction, object-row handling,
+  runtime call lookup, callback dispatch, linked native execution, or exact
+  native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-591 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_array_column_callable_lookup_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-591 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_array_column_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-591 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone591`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-591 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone591`;
+  and scoped `git diff --check` over the Milestone 591 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused IR/lowering lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 592, parser-lane unsupported first-class callable syntax
+  diagnostics. A call argument list containing `...` immediately followed by
+  `)` now fails with the stable parse diagnostic `unsupported first-class
+  callable syntax: Closure creation with ... is not implemented` for direct
+  names such as `strlen(...)` and dynamic callables such as `$callback(...)`,
+  instead of falling through to the variadic argument-unpacking diagnostic.
+- Added parser coverage, `phpc compile --emit-ir` parse-boundary coverage, and
+  an unsupported-syntax fixture with committed `phpc run` CLI snapshot. Existing
+  variadic argument-unpacking rejection coverage remains separate.
+- This does not add Closure creation, first-class method/static callable
+  forms, callable object semantics, callable invocation changes, native
+  lowering, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-592 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries first_class_callable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-592 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-592 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-592 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-592 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  direct `phpc run` and `phpc compile --emit-ir` checks on the
+  `unsupported_first_class_callable` fixture; a regression check for
+  `functions_and_scopes variadic_argument_unpacking`; `rustfmt --edition 2021 --check`
+  over the touched Rust files; and scoped `git diff --check` over the
+  Milestone 592 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused parser lane policy;
+  run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 593, runtime
+  `array_column($rows, $column_key, $index_key)` support for `phpc run`.
+  The supported third-argument slice accepts int, string, or null index keys
+  over array rows and current public object rows. Int/string row index values
+  become result keys, missing index fields append using the current array
+  append cursor, duplicate index keys overwrite the existing result value
+  without moving that key's insertion position, and string-valued dynamic calls
+  use the same path.
+- Added Milestone 593 fixtures with committed `phpc run` output and system PHP
+  comparison coverage for array rows and public object rows. Native
+  `--emit-ir` and `--emit-asm` still reject through the existing array-lowering
+  boundary.
+- Remaining unsupported `array_column` gaps include non-array first-argument
+  coercions, column or index keys outside int/string/null, index values outside
+  int/string, magic `__get`, `ArrayAccess`, exact visibility-context behavior
+  for non-public properties, references/copy-on-write, resource behavior, exact
+  native `TypeError`/warning behavior, and native lowering.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_column -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_column -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_column_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone593`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone593`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- run tests/fixtures/milestone593/array_column_index_key_arrays.php`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-593 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone593/array_column_index_key_arrays.php --emit-ir`
+  returns the expected native array-lowering rejection; the corresponding
+  `--emit-asm` command also returns the same pre-backend array-lowering
+  rejection; `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and
+  scoped `git diff --check` over the Milestone 593 code, docs, and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused runtime lane policy;
+  run it at the next checkpoint or integration batch.
+
+Next:
+
+- Closed Milestone 594, tests/docs split-lane queue refresh after the 590-593
+  implementation batch. The active planning docs now point to the next open
+  slots: compiler-output Milestone 595, IR/lowering Milestone 596, parser
+  Milestone 597, runtime Milestone 598, and tests/docs Milestone 599.
+- Updated `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, and
+  `docs/PROGRESS.md` to align the queue, support matrix, and focused/full-gate
+  policy after the completed 590-593 batch.
+- Verification for this docs refresh: scoped `git diff --check` over the
+  shared docs plus Milestone 590-593 code/fixtures. Full `tools/run-tests.sh`
+  was then run as the serialized post-batch gate:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-590-594 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, with Rust tests successful, `phpc test` reporting 698 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reporting 698 fixture
+  tests passed with 0 failures, 429 system PHP comparisons, and 269 skipped
+  comparisons.
+
+Next:
+
+- Added Milestone 595, compiler-output selected-`clang` `--emit-asm`
+  whitespace-only stdout precedence coverage. The deterministic fake `clang`
+  exits successfully but emits only whitespace, while `llc` and `cc` are also
+  available in `PATH`; the CLI snapshot pins the stable
+  `clang emitted whitespace-only assembly output` diagnostic and proves the
+  selected backend does not silently fall back after an invalid successful
+  selected-`clang` artifact.
+- Added the Milestone 595 fixture with committed `phpc run` expected output
+  and a normalized failing selected-`clang` `--emit-asm` CLI snapshot. This
+  does not add native lowering, linked native execution, runtime-backed output
+  conversion, or fallback recovery after a selected backend produces an
+  invalid successful artifact.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-595 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_whitespace_stdout_selected_clang_does_not_fallback_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-595 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone595`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-595 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone595`;
+  `rustfmt --edition 2021 --check compiler/tests/native_assembly_cli.rs`;
+  and scoped `git diff --check` over the Milestone 595 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 596, IR/lowering native callable lookup coverage for
+  `array_count_values`. Native direct `function_exists($name)` and
+  `is_callable($value[, false])` folding now has exact `--emit-ir` snapshot
+  coverage and deterministic `cc -S` fallback `--emit-asm` summary coverage
+  for the documented callable builtin name. Direct
+  `array_count_values(...)` native execution remains rejected by the existing
+  array/function-call lowering boundaries.
+- Added the Milestone 596 native fixture with committed `phpc run` output,
+  `--emit-ir` snapshot coverage, and `cc -S` fallback `--emit-asm` summary
+  coverage. This does not add native array counting, runtime call lookup,
+  linked native execution, references/copy-on-write, or exact native PHP
+  diagnostics.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-596 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_array_count_values_callable_lookup_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-596 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_array_count_values_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-596 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone596`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-596 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone596`;
+  `rustfmt --edition 2021 --check compiler/tests/native_type_introspection_boundary.rs compiler/tests/native_assembly_cli.rs`;
+  and scoped `git diff --check` over the Milestone 596 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused IR/lowering lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 597, parser-lane unsupported magic class-name instantiation
+  diagnostics. `new self()`, `new parent()`, `new static()`, and case variants
+  now fail with the stable parse diagnostic `unsupported magic class name:
+  self, parent, and static class name resolution is not implemented`.
+- Added parser coverage, `phpc compile --emit-ir` parse-boundary coverage, and
+  an unsupported-syntax fixture with committed `phpc run` CLI snapshot. This
+  does not add class context tracking, parent-class resolution, late static
+  binding, constructor semantics, inheritance, autoloading, native lowering, or
+  exact native PHP error objects.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-597 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_magic_class_name_instantiation_has_stable_parse_errors -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-597 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries emit_ir_rejects_magic_class_name_instantiation_at_parse_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-597 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-597 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-597 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  direct `phpc run` and `phpc compile --emit-ir` checks on the
+  `unsupported_magic_class_name_new` fixture; `rustfmt --edition 2021 --check`
+  over the touched Rust files; and scoped `git diff --check` over the
+  Milestone 597 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused parser lane policy;
+  run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 598, runtime `get_mangled_object_vars($object)` refinement.
+  `phpc run` now returns public, protected, and private instance slots in
+  declaration order using PHP-style mangled keys while still omitting static
+  properties. Public keys are emitted as declared names, protected keys as
+  `\0*\0name`, and private keys as `\0ClassName\0name`.
+- Added runtime/compiler coverage plus a Milestone 598 fixture with committed
+  `phpc run` output and system PHP comparison. Native `--emit-ir` continues to
+  reject through the existing object/class lowering boundary.
+- Remaining unsupported gaps include dynamic properties, property defaults,
+  inheritance/trait/interface properties, visibility-context behavior,
+  references/copy-on-write, exact native ordering and `TypeError` behavior,
+  and native object lowering. Non-public slots currently exist but remain
+  initialized to `null` because executable non-public property access is still
+  unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime object_properties_expose_php_mangled_names_for_visibility -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test milestone598_get_mangled_object_vars -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model get_mangled_object_vars_lists_current_mangled_instance_property_values -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone598`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone598`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-598 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- compile tests/fixtures/milestone598/get_mangled_object_vars_visibility.php --emit-ir`
+  returns the expected native object/class-lowering rejection;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`; and scoped
+  `git diff --check` over the Milestone 598 code and fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused runtime lane policy;
+  run it at the next checkpoint or integration batch.
+
+Next:
+
+- Closed Milestone 599, tests/docs split-lane queue refresh after the 595-598
+  implementation batch. The active planning docs now point to the next open
+  slots: compiler-output Milestone 600, IR/lowering Milestone 601, parser
+  Milestone 602, runtime Milestone 603, and tests/docs Milestone 604.
+- Updated `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, and
+  `docs/PROGRESS.md` to align the queue, support matrix, and focused/full-gate
+  policy after the completed 595-598 batch.
+- Verification for this docs refresh: scoped `git diff --check` over the
+  shared docs plus Milestone 595-598 code/fixtures. The serialized
+  post-batch full gate
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-595-599 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, with Rust tests successful, `phpc test` reporting 702 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reporting 702 fixture
+  tests passed with 0 failures, 432 system PHP comparisons, and 270 skipped
+  comparisons.
+
+Next:
+
+- Added Milestone 600, compiler-output selected-`clang` `--emit-asm`
+  whitespace-only stdout-with-stderr precedence coverage. The deterministic
+  fake `clang` exits successfully, writes stderr diagnostics, and emits only
+  whitespace on stdout while `llc` and `cc` are also available in `PATH`; the
+  CLI snapshot pins the stable `clang emitted whitespace-only assembly output`
+  diagnostic, proves successful-backend stderr is not surfaced for invalid
+  stdout artifacts, and proves fallback recovery is not attempted after the
+  selected backend returns invalid successful output.
+- Added the Milestone 600 fixture with committed `phpc run` expected output
+  and a normalized failing selected-`clang` `--emit-asm` CLI snapshot. This
+  does not add native lowering, linked native execution, runtime-backed output
+  conversion, or fallback recovery after a selected backend produces an
+  invalid successful artifact.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-600 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_whitespace_stdout_stderr_selected_clang_does_not_fallback_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-600 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone600`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-600 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone600`;
+  `rustfmt --edition 2021 --check compiler/tests/native_assembly_cli.rs`;
+  and scoped `git diff --check` over the Milestone 600 code, docs, and
+  fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 601, IR/lowering native callable lookup coverage for
+  `array_sum`. Native direct `function_exists($name)` and
+  `is_callable($value[, false])` folding now has exact `--emit-ir` snapshot
+  coverage and deterministic `cc -S` fallback `--emit-asm` summary coverage
+  for the documented callable builtin name. Direct `array_sum(...)` native
+  execution remains rejected by the existing array/function-call lowering
+  boundaries.
+- Added the Milestone 601 native fixture with committed `phpc run` output,
+  `--emit-ir` snapshot coverage, and `cc -S` fallback `--emit-asm` summary
+  coverage. This does not add native array summation, runtime call lookup,
+  linked native execution, references/copy-on-write, PHP warning recovery for
+  unsupported values, or exact native PHP diagnostics.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-601 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_array_sum_callable_lookup_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-601 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_array_sum_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-601 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_sum emit_ir_rejects_array_sum_until_native_call_lowering_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-601 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone601`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-601 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone601`;
+  `rustfmt --edition 2021 --check compiler/tests/native_type_introspection_boundary.rs compiler/tests/native_assembly_cli.rs`;
+  and scoped `git diff --check` over the Milestone 601 code, docs, and
+  fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused IR/lowering lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Closed Milestone 602, parser lane coverage for the documented unsupported
+  anonymous class expression boundary. `new class {}` and `new class() {}`
+  remain rejected at parse time with the stable diagnostic `unsupported
+  anonymous class: anonymous classes are not implemented`; this does not widen
+  runtime object execution, constructor execution, inheritance, anonymous class
+  metadata, or native lowering.
+- Added syntax-boundary parser coverage, an `emit-ir` parse-boundary assertion,
+  and an unsupported-syntax CLI fixture for `phpc run`.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-602 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_anonymous_class_expression_has_stable_parse_errors -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-602 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries emit_ir_rejects_anonymous_class_expression_at_parse_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-602 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-602 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  reported 34 fixture tests passed with 0 failures;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-602 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`
+  reported 34 fixture tests passed with 0 failures, 0 system PHP comparisons,
+  and 34 skipped comparisons; direct `phpc run` and direct
+  `phpc compile --emit-ir` for
+  `tests/fixtures/unsupported_syntax_features/unsupported_anonymous_class.php`
+  returned the expected parse-boundary diagnostic.
+- Full `tools/run-tests.sh` remains deferred to the next serialized
+  integration gate.
+
+Next:
+
+- Added Milestone 582, runtime `array_combine($keys, $values)` support for
+  integral finite float key-value coercions through `phpc run`. Integral finite
+  float key values now become integer result keys, duplicate coerced keys keep
+  the existing overwrite-without-moving behavior, string-valued dynamic calls
+  use the same path, and existing null/bool/int/string key-value behavior is
+  preserved.
+- Added the Milestone 582 fixture with committed `phpc run` output and system
+  PHP comparison coverage. Added a stable project runtime-error fixture for
+  lossy float key values and updated the existing unsupported array key-value
+  diagnostic to name the now-supported integral finite float slice.
+- Lossy finite floats, non-finite floats, array/object/resource/reference key
+  values, PHP warning/stringification recovery for unsupported float values,
+  exact native `ValueError`/`TypeError` objects, references/copy-on-write,
+  object handle identity preservation for object values, and native lowering
+  remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_combine -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_combine -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone582`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone582`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582f CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582g CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone582/array_combine_integral_float_keys.php --emit-ir >/tmp/phpc-runtime-582-emit-ir.out 2>/tmp/phpc-runtime-582-emit-ir.err; status=$?; cat /tmp/phpc-runtime-582-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-582-emit-ir.err'`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  and scoped `git diff --check` over the Milestone 582 runtime code, docs,
+  and fixtures.
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 581 and 582. `cargo fmt --check` and
+  `git diff --check` were clean before the gate, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 686 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 686 fixture
+  tests passed with 0 failures, 420 system PHP comparisons, and 266 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worker was not
+  asked to checkpoint.
+
+Next:
+
+- Added Milestone 608, runtime `array_filter` boolean mode-flag support through
+  `phpc run`. `array_filter($array, $callback, false)` now uses the existing
+  value-only callback mode, `array_filter($array, $callback, true)` uses the
+  existing value/key callback mode, and null-callback forms accept the same
+  boolean mode flags while continuing to use falsey-value filtering. String-
+  valued dynamic calls use the same mode coercion path.
+- Added the Milestone 608 fixture with committed `phpc run` output and system
+  PHP comparison coverage. Native lowering remains explicitly rejected by the
+  existing function-declaration/function-call codegen boundary; no native
+  compile support was added or claimed.
+- Remaining unsupported `array_filter` gaps include array/object callables,
+  closures, first-class callables, method calls, integer mode flags outside
+  `0`, `1`, and `2`, non-int/non-bool mode coercions such as string `"0"`,
+  references/copy-on-write, object handle identity preservation, resource
+  values, exact native `TypeError` objects, and native lowering.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_filter array_filter_accepts_boolean_mode_flags -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_filter -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_filtering_builtins_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone608`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone608`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone608/array_filter_bool_mode_flags.php --emit-ir >/tmp/phpc-runtime-608-emit-ir.out 2>/tmp/phpc-runtime-608-emit-ir.err; status=$?; cat /tmp/phpc-runtime-608-emit-ir.err; test $status -eq 1; rg -q "function declarations" /tmp/phpc-runtime-608-emit-ir.err'`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-608 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next serialized integration/checkpoint batch.
+- No checkpoint or commit was created.
+
+Next:
+
+- Added Milestone 606, IR/lowering native callable lookup folding coverage for
+  `array_product`. Native direct `function_exists($name)` and
+  `is_callable($name, false)` now have exact `--emit-ir` and normalized
+  `cc -S` fallback `--emit-asm` snapshots for literal, tracked variable,
+  uppercase, and missing-name cases for the documented callable builtin name.
+  Direct `array_product(...)` native execution remains rejected by the existing
+  native array/function-call lowering boundary before backend output.
+- Added the Milestone 606 fixture with committed `phpc run` expected output
+  and system PHP comparison. This does not add native array storage,
+  runtime-backed callable dispatch, linked native execution, references,
+  copy-on-write, PHP warning recovery, or exact native PHP error objects.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-606 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary native_array_product_callable_lookup_emit_ir_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-606 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_array_product_callable_lookup_emit_asm_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-606 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_product emit_ir_rejects_array_product_until_native_call_lowering_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-606 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone606`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-606 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone606`;
+  direct `phpc compile --emit-ir` folded-output validation for the Milestone
+  606 fixture; direct `phpc compile --emit-ir` rejection validation for
+  `array_product([2, 3])`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-ir-606 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+- Full `tools/run-tests.sh` is deferred under the focused IR/lowering-lane
+  policy; run it at the next checkpoint or serialized integration batch.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Closed Milestone 607, parser lane coverage for the documented unsupported
+  clone expression boundary. `clone $object` remains rejected at parse time
+  with the stable diagnostic `unsupported clone expression: object handle
+  copying and __clone dispatch are not implemented`; this does not widen
+  runtime object handle copying, `__clone` dispatch, method execution,
+  references/copy-on-write, or native lowering.
+- Added syntax-boundary parser coverage, an `emit-ir` parse-boundary assertion,
+  and an unsupported-syntax CLI fixture for `phpc run`.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-607 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries unsupported_clone_expression_has_stable_parse_errors -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-607 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test syntax_boundaries emit_ir_rejects_clone_expression_at_parse_boundary -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-607 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-607 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`
+  reported 35 fixture tests passed with 0 failures;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-607 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_syntax_features`;
+  reported 35 fixture tests passed with 0 failures, 0 system PHP comparisons,
+  and 35 skipped comparisons; direct `phpc run` and direct
+  `phpc compile --emit-ir` for
+  `tests/fixtures/unsupported_syntax_features/unsupported_clone.php`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-parser-607 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  and scoped `git diff --check` over the Milestone 607 parser test, docs, and
+  fixture files.
+- Full `tools/run-tests.sh` is deferred under the focused parser-lane policy;
+  run it at the next checkpoint or serialized integration batch.
+
+Next:
+
+- Added Milestone 605, compiler-output selected-`llc` `--emit-asm`
+  whitespace-only stdout-with-stderr precedence coverage. The deterministic
+  fake `llc` exits successfully, writes stderr diagnostics, and emits only
+  whitespace on stdout while the `cc -S` fallback is also available and
+  `clang` is unavailable; the CLI snapshot pins the stable
+  `llc emitted whitespace-only assembly output` diagnostic, proves
+  successful-backend stderr is not surfaced for invalid stdout artifacts, and
+  proves `cc` fallback recovery is not attempted after selected `llc` returns
+  invalid successful output.
+- Added the Milestone 605 fixture with committed `phpc run` expected output
+  and a normalized failing selected-`llc` `--emit-asm` CLI snapshot. This does
+  not add native lowering, linked native execution, runtime-backed output
+  conversion, or fallback recovery after a selected backend produces an
+  invalid successful artifact.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-605 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_whitespace_stdout_stderr_selected_llc_does_not_cc_fallback_cli_snapshot_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-605 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone605`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-output-605 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone605`;
+  `rustfmt --edition 2021 --check compiler/tests/native_assembly_cli.rs`;
+  and scoped `git diff --check` over the Milestone 605 code, docs, and
+  fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or integration batch.
+
+Next:
+
+- Added Milestone 603, runtime `array_column($rows, $column_key, $index_key)`
+  result-index refinement for `phpc run`. Result index values now accept
+  null, booleans, and integral finite floats in addition to existing integer
+  and string values: null becomes the empty string key, booleans become integer
+  `0`/`1`, integral finite floats become integer keys, duplicate coerced keys
+  overwrite without moving the key position, and missing index fields still
+  append through the current ordered-array append cursor.
+- Added runtime/compiler coverage plus a Milestone 603 fixture with committed
+  `phpc run` output and system PHP comparison. Native `--emit-ir` continues to
+  reject the fixture through the existing native array-lowering boundary.
+- Remaining unsupported `array_column` gaps include non-array first-argument
+  coercions, column or index keys outside int/string/null, lossy or non-finite
+  float index values, array/object/resource index values, magic `__get`,
+  `ArrayAccess`, exact visibility-context behavior for non-public properties,
+  references/copy-on-write, exact native `TypeError`/warning behavior, resource
+  values, and native lowering.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_column -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_column -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_column_cli -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone603`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone603`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone603/array_column_scalar_index_values.php --emit-ir >/tmp/phpc-runtime-603-emit-ir.out 2>/tmp/phpc-runtime-603-emit-ir.err; status=$?; cat /tmp/phpc-runtime-603-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-603-emit-ir.err'`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-603 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  and scoped `git diff --check` over the Milestone 603 runtime code, docs, and
+  fixtures.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next checkpoint or serialized integration batch.
+
+Next:
+
+- Closed Milestone 604, tests/docs split-lane queue refresh after the 600-603
+  implementation batch. The active planning docs now point to the next open
+  slots: compiler-output Milestone 605, IR/lowering Milestone 606, parser
+  Milestone 607, runtime Milestone 608, and tests/docs Milestone 609.
+- Updated `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, and
+  `docs/PROGRESS.md` to align the queue and focused/full-gate policy after the
+  completed 600-603 batch. The support docs were already updated narrowly by
+  the implementation lanes where public behavior changed.
+- Verification for this docs refresh: scoped `git diff --check` over the
+  shared docs plus Milestone 600-603 code/fixtures. The serialized
+  post-batch full gate
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-600-604 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, with Rust tests successful, `phpc test` reporting 706 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reporting 706 fixture
+  tests passed with 0 failures, 435 system PHP comparisons, and 271 skipped
+  comparisons.
+
+Next:
+
+- Closed Milestone 609, tests/docs split-lane queue refresh after the 605-608
+  implementation batch. The active planning docs now point to the next open
+  slots: compiler-output Milestone 610, IR/lowering Milestone 611, parser
+  Milestone 612, runtime Milestone 613, and tests/docs Milestone 614.
+- Updated `GOAL.MD`, `docs/NEXT_TASKS.md`, `docs/LANE_WORKERS.md`, and
+  `docs/PROGRESS.md` to align the queue and focused/full-gate policy after the
+  completed 605-608 batch. The support docs were already updated narrowly by
+  the implementation lanes where public behavior changed.
+- Verification for this docs refresh: scoped `git diff --check` over the
+  shared docs plus Milestone 605-608 code/fixtures. The serialized
+  post-batch full gate
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-full-605-609 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  passed, with Rust tests successful, `phpc test` reporting 710 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reporting 710 fixture
+  tests passed with 0 failures, 438 system PHP comparisons, and 272 skipped
+  comparisons.
+
+Next:
+
+- Added Milestone 583, compiler-output selected-`clang` `--emit-asm` coverage
+  for the existing native scalar/null `is_object($value)` false-folding and
+  `get_debug_type($value)` folding slice. The deterministic fake `clang`
+  validates that the folded LLVM IR is passed through stdin for the documented
+  scalar/null fixture and rejects unlowered `is_object` or `get_debug_type`
+  markers in the selected backend input.
+- Added the Milestone 583 fixture with `phpc run` expected output and a
+  normalized selected-`clang` assembly CLI summary snapshot. This does not
+  change production lowering behavior or broaden native object lowering,
+  object handles, runtime-backed type checks, linked native execution, or exact
+  native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-583a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_object_debug_type_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-583b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone583`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-583c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone583`.
+  After rustfmt adjusted the new Rust test/helper, the selected-`clang` test
+  was rerun and passed with the same `phpc-target-583a` command; `cargo
+  fmt --check` and scoped `git diff --check` over the Milestone 583 code,
+  docs, and fixtures passed.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+- Added Milestone 580, runtime `array_combine($keys, $values)` support for
+  null and boolean key-value coercions through `phpc run`. Null and `false`
+  key values now map to the empty string key, `true` maps through the string
+  `"1"` key normalization path, duplicate coerced keys keep the first slot and
+  take the later value, and string-valued dynamic calls use the same path.
+- Added the Milestone 580 fixture with committed `phpc run` output and system
+  PHP comparison coverage. Updated the unsupported-key runtime-error fixture
+  to use an array key value now that boolean key values are supported.
+- Float key-value coercions, array/object/resource/reference key values,
+  PHP warning recovery, exact native `ValueError`/`TypeError` objects,
+  references/copy-on-write, object handle identity preservation for object
+  values, and native lowering remain unsupported.
+- Focused checks passed after local audit of the runtime worker artifacts:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_combine -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_combine -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone580`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone580`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580f CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  and scoped `git diff --check` over the Milestone 580 code, docs, and
+  fixtures.
+
+Next:
+
+- Audited and verified Milestone 576, runtime `array_key_exists($key, $array)`
+  support for the next small key-coercion slice: `null` keys check the
+  empty-string key, and boolean keys check integer keys `0` and `1`, while
+  existing integer/string key behavior and string-valued dynamic calls continue
+  to use the same path.
+- The runtime-error fixture for unsupported `array_key_exists` keys now uses
+  an array key because booleans are supported. Floats, arrays, objects,
+  resources, references/copy-on-write, PHP float warning/deprecation behavior,
+  exact native `TypeError` objects, and native array lowering remain
+  unsupported.
+- The Milestone 576 fixture has `phpc run` expected output and system PHP
+  comparison. A direct `compile --emit-ir` check on the same fixture exits 1
+  with the existing native array-lowering rejection before backend invocation.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_key_exists_keys_accept_current_null_and_bool_coercions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_key_exists array_key_exists_accepts_null_and_bool_key_coercions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_key_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone576`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone576`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone576/array_key_exists_null_bool_keys.php --emit-ir >/tmp/phpc-runtime-576-emit-ir.out 2>/tmp/phpc-runtime-576-emit-ir.err; status=$?; cat /tmp/phpc-runtime-576-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-576-emit-ir.err'`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-576 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+  Scoped `git diff --check` over the Milestone 576 runtime code, docs, and
+  fixtures passed, and the trailing-whitespace scan over the touched
+  Milestone 576 files found no matches.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 575 and 576. `cargo fmt --check` and
+  `git diff --check` were clean before the gate, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 678 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 678 fixture
+  tests passed with 0 failures, 414 system PHP comparisons, and 264 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worktree contains
+  broad pre-existing edits outside a single checkpoint-sized slice.
+
+Next:
+
+- Added Milestone 577, compiler-output selected-`clang` `--emit-asm` coverage
+  for existing native `defined("SORT_STRING")` folding. The deterministic fake
+  `clang` validates that folded LLVM IR is passed through stdin for the
+  documented true/true/false `SORT_STRING` fixture and rejects unlowered
+  `defined` or `SORT_STRING` markers in the selected backend input.
+- Added the Milestone 577 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` assembly CLI summary snapshot.
+  This does not change production lowering behavior or broaden native constant
+  values, runtime-defined constant lookup, dynamic calls, arrays, objects,
+  linked native execution, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-577a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_sort_string_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-577b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone577`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-577c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone577`.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Audited and verified Milestone 578, runtime
+  `array_key_exists($key, $array)` support for no-warning integral finite
+  float key coercions. Integral finite floats now check the matching integer
+  key, while lossy or non-finite floats remain rejected with a stable runtime
+  diagnostic.
+- Added the Milestone 578 fixture with `phpc run` expected output and system
+  PHP comparison, plus a runtime-error fixture for lossy float keys. A direct
+  `compile --emit-ir` check on the same fixture exits 1 with the existing
+  native array-lowering rejection before backend invocation.
+- Floats that would lose data, non-finite floats, arrays, objects, resources,
+  references/copy-on-write, exact PHP warning/deprecation behavior, exact
+  native `TypeError` objects, and native array lowering remain unsupported.
+- Focused checks passed after fixing the new runtime-error stderr snapshot
+  newline:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_key_exists_keys_accept_current_null_and_bool_coercions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_key_exists array_key_exists_accepts_integral_float_key_coercions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_key_exists array_key_exists_rejects_lossy_float_key_coercions -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_key_exists -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone578`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone578`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone578/array_key_exists_integral_float_keys.php --emit-ir >/tmp/phpc-runtime-578-emit-ir.out 2>/tmp/phpc-runtime-578-emit-ir.err; status=$?; cat /tmp/phpc-runtime-578-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-578-emit-ir.err'`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-578 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`.
+  Scoped `git diff --check` over the Milestone 578 runtime code, docs, and
+  fixtures passed, and the trailing-whitespace scan over the touched
+  Milestone 578 files found no matches.
+- Full `tools/run-tests.sh` is deferred under the focused runtime-lane policy;
+  run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 577 and 578. `cargo fmt --check` and scoped
+  `git diff --check` were clean before the gate, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 681 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 681 fixture
+  tests passed with 0 failures, 416 system PHP comparisons, and 265 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worktree contains
+  broad pre-existing edits outside a single checkpoint-sized slice.
+
+Next:
+
+- Added Milestone 579, compiler-output selected-`clang` `--emit-asm` coverage
+  for the existing broader native `defined($name)` built-in constant answer
+  table. The deterministic fake `clang` validates that folded LLVM IR is
+  passed through stdin for the documented `CASE_*`, `ARRAY_FILTER_*`,
+  `SORT_STRING`, tracked string-name, and missing-name fixture and rejects
+  unlowered `defined` or built-in constant markers in the selected backend
+  input.
+- Added the Milestone 579 fixture with `phpc run` expected output, system PHP
+  comparison, and a normalized selected-`clang` assembly CLI summary snapshot.
+  This does not change production lowering behavior or broaden native constant
+  values, runtime-defined constant lookup, dynamic calls, arrays, objects,
+  linked native execution, or exact native PHP errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-579a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_defined_constants_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-579b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone579`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-579c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone579`.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 579 and 580. `cargo fmt --check` and
+  `git diff --check` were clean before the gate. The first full-gate attempt
+  exposed three unrelated runtime unit-test assertions accidentally edited
+  during local audit; those expected counts were restored, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-580a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib -- --test-threads=1`
+  passed with 87 tests.
+- The rerun
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 683 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 683 fixture
+  tests passed with 0 failures, 418 system PHP comparisons, and 265 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worker was not
+  asked to checkpoint.
+
+Next:
+
+- Added Milestone 581, compiler-output selected-`clang` `--emit-asm` coverage
+  for the existing native scalar/null `is_countable($value)` and
+  `is_iterable($value)` false-folding slice. The deterministic fake `clang`
+  validates that the all-false folded LLVM IR is passed through stdin, includes
+  `printf` and `main`, preserves the newline between the two output groups, and
+  rejects unlowered `is_countable` or `is_iterable` markers in the selected
+  backend input.
+- Added the Milestone 581 fixture with `phpc run` expected output and a
+  normalized selected-`clang` assembly CLI summary snapshot. This does not
+  change production lowering behavior or broaden native array/object lowering,
+  runtime-backed type checks, linked native execution, or exact native PHP
+  errors.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-581a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_countable_iterable_emit_asm_selected_clang -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-581b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone581`;
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-581c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone581`.
+  After rustfmt adjusted the new Rust test/helper, the selected-`clang` test
+  was rerun and passed with the same `phpc-target-581a` command; `cargo
+  fmt --check` and scoped `git diff --check` over the Milestone 581 code,
+  docs, and fixtures passed.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint batch or before any checkpoint commit.
+- A checkpoint has not been created because this worker was not asked to
+  checkpoint and `tools/checkpoint.sh` stages the full dirty tree.
+
+Next:
+
+- Added Milestone 582, runtime `array_combine($keys, $values)` support for
+  integral finite float key-value coercions through `phpc run`. Integral finite
+  float key values now become integer result keys, duplicate coerced keys keep
+  the existing overwrite-without-moving behavior, string-valued dynamic calls
+  use the same path, and existing null/bool/int/string key-value behavior is
+  preserved.
+- Added the Milestone 582 fixture with committed `phpc run` output and system
+  PHP comparison coverage. Added a stable project runtime-error fixture for
+  lossy float key values and updated the existing unsupported array key-value
+  diagnostic to name the now-supported integral finite float slice.
+- Lossy finite floats, non-finite floats, array/object/resource/reference key
+  values, PHP warning/stringification recovery for unsupported float values,
+  exact native `ValueError`/`TypeError` objects, references/copy-on-write,
+  object handle identity preservation for object values, and native lowering
+  remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582a CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_combine -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582b CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_combine -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582c CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone582`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582d CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone582`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582f CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/runtime_errors`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-runtime-582g CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -p phpc -- compile tests/fixtures/milestone582/array_combine_integral_float_keys.php --emit-ir >/tmp/phpc-runtime-582-emit-ir.out 2>/tmp/phpc-runtime-582-emit-ir.err; status=$?; cat /tmp/phpc-runtime-582-emit-ir.err; test $status -eq 1; rg -q "LLVM array lowering rejects arrays" /tmp/phpc-runtime-582-emit-ir.err'`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  and scoped `git diff --check` over the Milestone 582 runtime code, docs,
+  and fixtures.
+- Ran the serialized post-batch full gate after the integrated split-lane
+  batch covering Milestones 581 and 582. `cargo fmt --check` and
+  `git diff --check` were clean before the gate, and
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh` passed:
+  `cargo test` completed successfully, `phpc test` reported 686 fixture tests
+  passed with 0 failures, and `phpc test --compare-php` reported 686 fixture
+  tests passed with 0 failures, 420 system PHP comparisons, and 266 skipped
+  comparisons.
+- This closes the deferred full-suite gate for the current integrated
+  split-lane batch. A checkpoint was still not created because
+  `tools/checkpoint.sh` stages the full dirty tree and this worker was not
+  asked to checkpoint.

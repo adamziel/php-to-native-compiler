@@ -121,18 +121,20 @@
   assignment, and direct static-variable increment/decrement
 - `do ... while` loops with a block or single-statement body and a
   post-condition expression
-- `switch ($value) { case ...: ... default: ... }` statements over the current
-  scalar loose-comparison subset, including `case`, `default`, fallthrough, and
-  `break;` to exit the switch
+- `switch ($value) { case ...: ... default: ... }` and alternate
+  `switch ($value): case ...: ... default: ... endswitch;` statements over the
+  current scalar loose-comparison subset, including `case`, `default`, `:` or
+  `;` case/default separators, fallthrough, and `break;` to exit the switch
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)` over
   ordered arrays
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop
-- function declarations
-- positional function calls
+- function declarations with optional trailing commas in parameter lists
+- positional function calls with optional trailing commas in argument lists
 - dynamic function calls through string-valued expressions that resolve to the
-  documented callable builtin subset or user-defined functions
+  documented callable builtin subset or user-defined functions, with optional
+  trailing commas in argument lists
 - trailing default parameter values for user functions over the documented
   constant-expression subset, including bare references to previously defined
   unqualified constants and the current built-in global constant slice when an
@@ -151,8 +153,10 @@
   name: `$object->name` and `$object->name = ...`
 - `isset($object->name)` for direct public instance property operands on direct
   object variables
-- exact uppercase built-in global constants `ARRAY_FILTER_USE_KEY` and
-  `ARRAY_FILTER_USE_BOTH`, which evaluate to integers `2` and `1`
+- exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
+  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
+  `SORT_NUMERIC`, and `SORT_STRING`, which evaluate to integers `0`, `1`,
+  `2`, `1`, `0`, `1`, and `2`
 - runtime-defined constants through `define($name, $value)` and
   `constant($name)` over the current unqualified string-name and scalar/array
   value subset; `defined($name)` reports whether a supported unqualified name
@@ -165,7 +169,8 @@
   subset: `null`, booleans, integers, floats, strings, short and long arrays
   with supported keys, unary expressions, binary expressions over those values,
   and bare references to previously defined unqualified constants or the
-  current built-in `ARRAY_FILTER_*` constants
+  current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
+  `SORT_NUMERIC`, and `SORT_STRING` constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -208,14 +213,48 @@
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
-  `array_flip`, `array_fill_keys`, `array_count_values`, `array_sum`,
+  `array_flip`, `array_change_key_case`, `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `get_class`, `is_object`, `get_debug_type`,
+  `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
+  `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
+  `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
+  `function_exists`, `get_class`, `is_object`,
+  `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
   `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`,
   `spl_object_id`, `spl_object_hash`, `var_dump`, and `print_r`;
+  `gettype` returns PHP legacy type names for the current value model
+  (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, and `object`);
+  `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
+  `is_float`/`is_double`, `is_string`, `is_array`, and `is_scalar` inspect
+  the current boxed value variant without coercion. `is_numeric` returns true
+  for integers, floats, and well-formed numeric strings using the same current
+  numeric-string subset as scalar arithmetic. `is_countable` and `is_iterable`
+  return true for arrays and false for the current scalar/null/object values.
+  `is_callable($value)` supports the current string function-name subset: it
+  returns true for names that resolve to current user functions or documented
+  callable builtins, and false for missing names or non-string values.
+  `is_callable($value, $syntax_only)` accepts boolean syntax-only flags; for
+  string values, `true` reports callable syntax without resolving the name,
+  while `false` uses the current function lookup path. Scalar non-string
+  values return false. Syntax-only array callable checks accept only the
+  current two-element `[class-or-object, method]` shape with integer keys `0`
+  and `1`, where the first value is a string class name or current object and
+  the second value is a string method name; this shape check does not resolve
+  classes or methods. Normal array callable resolution checks the same
+  two-element shape against current declared method metadata: object receivers
+  are true for public declared methods, and class-string receivers are true for
+  public static declared methods. Array callable dynamic invocation,
+  callable-name output, object `__invoke` callables, private/protected
+  caller-context method callability, first-class callable syntax,
+  namespace/autoload behavior, exact native `TypeError` behavior, native
+  lowering, and the environment-specific legacy `is_real` alias are not
+  implemented.
+  `function_exists($name)` checks string names against the current runtime
+  function table, including current user functions and documented callable
+  builtins, and rejects non-string names in the current subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -271,7 +310,8 @@
   `array_pad` lengths, oversized `array_pad` padding requests, non-array
   `array_merge` operands, non-array `array_replace` operands including
   variadic replacement operands, non-array `array_combine` operands,
-  `array_combine` length mismatches, unsupported non-int/string
+  `array_combine` length mismatches, unsupported lossy or non-finite float
+  `array_combine` key values, unsupported non-null/bool/int/string/float
   `array_combine` key values, non-array `array_intersect_key` operands,
   non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, non-array variadic `array_diff_key` operands,
@@ -284,7 +324,8 @@
   `array_unique` value comparisons, unsupported `array_unique` sort flags,
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
-  non-int/string `array_fill_keys` key values, non-array
+  lossy or non-finite float `array_fill_keys` key values, unsupported
+  non-null/bool/int/string/float `array_fill_keys` key values, non-array
   `array_count_values` operands,
   unsupported non-int/string
   `array_count_values` values, non-array `array_sum` operands, unsupported
@@ -323,7 +364,8 @@
   parameters, variadic argument unpacking, reference parameters/returns,
   reference expressions, parameter type declarations, return type declarations,
   static local variable declarations inside functions, anonymous functions,
-  arrow functions, named arguments, and `declare(strict_types=1)`
+  arrow functions, named arguments, first-class callable syntax such as
+  `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
   `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
 - explicit parse diagnostics for unsupported include/require syntax:
@@ -333,11 +375,15 @@
   declaration syntax
 - explicit parse diagnostics for unsupported namespace-qualified function and
   class names such as `App\fn()` and `new App\Box()`
+- explicit parse diagnostics for unsupported magic class names in `new`
+  expressions such as `new self()`, `new parent()`, and `new static()`
 - explicit parse diagnostics for unsupported nested, namespace-aware, or
   dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_VERSION`
 - explicit parse diagnostics for unsupported array spread/reference elements
+- explicit parse diagnostics for unsupported array/list destructuring
+  assignment targets such as `[$name] = $array` and `list($name) = $array`
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable and direct array-offset statement subset
 - explicit parse diagnostics for unsupported `unset($object->property)` before
@@ -350,12 +396,17 @@
 - explicit parse diagnostics for unsupported alternate `if`/`elseif`/`else`
   colon/`endif` syntax
 - explicit parse diagnostics for unsupported expression-position `switch` and
-  alternate colon/`endswitch` syntax
+  malformed alternate colon/`endswitch` switch bodies
 - explicit parse diagnostics for unsupported `break`/`continue` loop-depth
   arguments
 - explicit parse diagnostics for unsupported exception syntax: `throw`,
   `try`, `catch`, and `finally`
+- explicit parse diagnostics for unsupported generator `yield` and
+  `yield from` expressions
 - explicit parse diagnostics for unsupported PHP 8 `match` expressions
+- explicit parse diagnostics for unsupported `goto` statements and labels
+- explicit parse diagnostics for unsupported exponentiation syntax: `**` and
+  `**=`
 - explicit parse diagnostics for unsupported unparenthesized nested ternary
   expressions
 - explicit parse diagnostics for unsupported assignment-expression forms
@@ -383,6 +434,9 @@
   names, static property access, static method calls, and class constant access
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
+- explicit lex diagnostics for unsupported PHP attribute syntax beginning with
+  `#[...]`; ordinary `#` comments, including `# [` with whitespace before the
+  bracket, remain comments
 
 ## Partially Supported
 
@@ -454,7 +508,8 @@
   initialized object values, and structured duplicate class/member diagnostics.
   `phpc run` registers top-level class declarations into this metadata table.
   The accepted member subset records properties without defaults and methods
-  whose parameters/bodies use the existing function parser subset. `new
+  whose parameters/bodies use the existing function parser subset, including
+  optional trailing commas after the final real parameter. `new
   ClassName()` looks up declared classes case-insensitively, initializes
   instance properties to `null`, skips static properties, treats object values
   as truthy, and lets direct `isset($object_variable)` return true. Undefined
@@ -522,10 +577,13 @@
   undefined target variables, and non-object target variables, and uses a
   stable unsupported-property diagnostic for non-public properties.
   `get_mangled_object_vars($object)` accepts current object values and returns
-  the same public instance property slice in declaration order. Protected and
-  private property-name mangling, dynamic properties, and visibility-context
-  behavior are not represented yet. It is available through string-valued
-  dynamic function calls.
+  public, protected, and private instance slots in declaration order. Public
+  property keys are emitted as the declared name, protected property keys are
+  emitted as `\0*\0name`, and private property keys are emitted as
+  `\0ClassName\0name`; static properties are omitted. Dynamic properties,
+  property defaults, inheritance/trait/interface properties, and
+  visibility-context behavior are not represented yet. It is available through
+  string-valued dynamic function calls.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity against the current declared class metadata using
   case-insensitive class-name lookup. `is_a($object_or_class, $class_name,
@@ -592,10 +650,14 @@
   for missing keys, undefined array variables, non-array target variables, and
   existing slots whose values use the current falsey rules (`null`, `false`,
   zero, empty string, string `"0"`, and empty arrays). `array_key_exists($key,
-  $array)` checks existing integer/string keyed slots without filtering out
-  `null` values and is also available through string-valued dynamic function
-  calls. `array_key_first($array)` returns the first inserted integer or string
-  key as an `int` or `string`, and `array_key_last($array)` returns the last
+  $array)` checks existing slots without filtering out `null` values for
+  integer/string keys, plus `null` keys coerced to the empty-string key,
+  boolean keys coerced to integer `0`/`1`, and integral finite float keys
+  coerced to integers. Lossy and non-finite float key coercions remain
+  unsupported. It is also available through
+  string-valued dynamic function calls. `array_key_first($array)` returns the
+  first inserted integer or string key as an `int` or `string`, and
+  `array_key_last($array)` returns the last
   inserted integer or string key. Both return `null` for an empty array and are
   available through string-valued dynamic function calls. `array_is_list($array)`
   returns true for empty arrays and arrays whose entries are ordered with exact
@@ -654,11 +716,14 @@
   string-valued dynamic function calls.
   `array_combine($keys, $values)` accepts two arrays
   with the same number of entries, reads key values and value values in
-  insertion-order lockstep, uses integer key values directly as result keys,
-  normalizes string key values through the current PHP-style decimal string key
-  rules, stores cloned values from the second array, and overwrites duplicate
-  result keys with later pairs without moving the first result-key position.
-  It is also available through string-valued dynamic function calls.
+  insertion-order lockstep, maps null and false key values to the empty string
+  key, maps true key values through the string `"1"` key normalization path,
+  uses integer and integral finite float key values directly as integer result
+  keys, normalizes string key values through the current PHP-style decimal
+  string key rules, stores cloned values from the second array, and overwrites
+  duplicate result keys with later pairs
+  without moving the first result-key position. It is also available through
+  string-valued dynamic function calls.
   `array_intersect_key($array, ...$arrays)` accepts two or more arrays, returns
   entries from the first array whose integer/string keys are present in every
   subsequent array, preserves the first array's keys, values, and insertion
@@ -679,22 +744,26 @@
   array, preserves the first array's keys, values, insertion order, and
   append-index behavior, and is also available through string-valued dynamic
   function calls.
-  `array_unique($array)` compares current scalar values through their PHP
-  string forms, keeps the first entry for each string form, preserves kept
-  integer/string keys and insertion order, uses kept integer keys for later
-  append behavior, and is also available through string-valued dynamic
-  function calls.
+  `array_unique($array)` and `array_unique($array, SORT_STRING)` compare
+  current scalar values through their PHP string forms,
+  `array_unique($array, SORT_REGULAR)` compares current scalar values through
+  the same loose scalar comparison rules used by the interpreter, and
+  `array_unique($array, SORT_NUMERIC)` compares values through the current
+  scalar numeric-coercion subset. All supported modes keep the first matching
+  entry, preserve kept integer/string keys and insertion order, use kept
+  integer keys for later append behavior, and are also available through
+  string-valued dynamic function calls.
   `array_flip($array)` accepts arrays, converts
   integer and string array values into result keys using the current array-key
   normalization rules, writes each original integer/string key as the result
   value, overwrites duplicate flipped keys with later values without moving the
   first flipped-key slot, and is available through string-valued dynamic
   function calls. `array_fill_keys($keys, $value)` accepts an array of
-  integer/string key values, creates a new ordered array using those values as
-  normalized result keys, stores the supplied value in each result slot, and
-  overwrites duplicate result keys with later entries without moving the first
-  key position. It is also available through string-valued dynamic function
-  calls. `array_count_values($array)` accepts arrays whose values are integers
+  null/boolean/integer/string/integral-finite-float key values, creates a new
+  ordered array using those values as normalized result keys, stores the
+  supplied value in each result slot, and overwrites duplicate result keys with
+  later entries without moving the first key position. It is also available
+  through string-valued dynamic function calls. `array_count_values($array)` accepts arrays whose values are integers
   or strings, counts values in insertion order using the current array-key
   normalization rules for string values, stores integer counts as result
   values, and is available through string-valued dynamic function calls.
@@ -716,23 +785,25 @@
   supplied initial value for empty arrays when present, and are available
   through string-valued dynamic calls to `array_reduce`.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
-  and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`, or
-  `2` accept arrays only, remove values that are falsey under the current
-  PHP-shaped truthiness rules, preserve the original integer/string keys and
-  insertion order of kept entries, and are available through string-valued
-  dynamic function calls.
+  and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`,
+  or `2` or boolean mode flags accept arrays only, remove values that are
+  falsey under the current PHP-shaped truthiness rules, preserve the original
+  integer/string keys and insertion order of kept entries, and are available
+  through string-valued dynamic function calls.
   `array_filter($array, $callback)` accepts callbacks that evaluate to string
   function names resolving to current user functions or callable builtins,
   invokes the callback once per value in insertion order with the value as the
   only argument, preserves keys whose callback result is truthy, accepts
-  explicit integer mode flag `0` for the same value-only callback path, and is
-  also available through string-valued dynamic calls to `array_filter`.
+  explicit integer mode flag `0` and boolean mode flag `false` for the same
+  value-only callback path, and is also available through string-valued dynamic
+  calls to `array_filter`.
   `array_filter($array, $callback, 2)` invokes the same string-valued callback
   subset once per entry with the current integer or string key as the only
   argument, preserving keys whose callback result is truthy.
-  `array_filter($array, $callback, 1)` invokes that callback subset once per
-  entry with the value and then the current integer or string key as
-  arguments, preserving keys whose callback result is truthy.
+  `array_filter($array, $callback, 1)` and `array_filter($array, $callback,
+  true)` invoke that callback subset once per entry with the value and then the
+  current integer or string key as arguments, preserving keys whose callback
+  result is truthy.
   `array_map(null, $array)` returns an identity copy of one input array while
   preserving integer/string keys and insertion order. `array_map(null,
   $array, ...)` with two or more input arrays returns a reindexed array of
@@ -773,7 +844,8 @@
   values,
   `array_filter` in the current no-callback, null-callback, value-only
   string-callback, key-only string-callback, and value/key string-callback
-  forms, including explicit integer mode flags `0`, `1`, and `2`,
+  forms, including explicit integer mode flags `0`, `1`, and `2` plus boolean
+  mode flags `false` and `true`,
   `array_map` in the current one-array null-callback identity form, variadic
   null-callback zip form, and one-array and variadic string-callback forms,
   `in_array`, `array_search`, both current `foreach` array forms, direct
@@ -813,14 +885,15 @@
   warning-and-break behavior. Loop-depth arguments such as `break 2;` and
   `continue 2;` are rejected with stable parse diagnostics. Exception syntax
   is rejected separately at parse time, and native lowering is not implemented.
-- Switch: statement-form brace `switch` executes in `phpc run` over the current
-  scalar loose-comparison subset. The switch expression is evaluated once, case
+- Switch: statement-form brace `switch` and alternate
+  `switch (...): ... endswitch;` execute in `phpc run` over the current scalar
+  loose-comparison subset. The switch expression is evaluated once, case
   expressions are evaluated in source order until the first loose `==` match,
   `default` is used only when no case matches, and execution falls through
   later labels until a `break;`, `return`, or the end of the switch body.
-  Arrays, objects, resources, alternate colon/`endswitch` syntax, semicolon
-  case separators, `continue;` inside switch, and native lowering are not
-  implemented.
+  Both `:` and `;` are accepted as `case`/`default` separators. Arrays,
+  objects, resources, expression-form switch, malformed alternate switch
+  bodies, `continue;` inside switch, and native lowering are not implemented.
 - Runtime errors: diagnostics have stable messages and source locations, but
   they are not PHP `Throwable` objects and there is no warning/notice recovery
   mode yet. Representative runtime errors are covered by committed `phpc run`
@@ -845,8 +918,10 @@
   operands, non-int `array_pad` lengths, oversized `array_pad` padding
   requests, non-array `array_merge` operands, non-array `array_replace`
   operands including variadic replacement operands, non-array
-  `array_combine` operands, `array_combine` length mismatches, unsupported non-int/string
-  `array_combine` key values, non-array `array_intersect_key` operands,
+  `array_combine` operands, `array_combine` length mismatches, unsupported
+  lossy or non-finite float `array_combine` key values, unsupported
+  non-null/bool/int/string/float `array_combine` key values, non-array
+  `array_intersect_key` operands,
   non-array variadic `array_intersect_key` operands, non-array
   `array_diff_key` operands, non-array variadic `array_diff_key` operands,
   non-array `array_diff` operands, non-array variadic `array_diff` operands,
@@ -858,7 +933,8 @@
   `array_unique` value comparisons, unsupported `array_unique` sort flags,
   non-array `array_flip` operands, unsupported non-int/string
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
-  non-int/string `array_fill_keys` key values, non-array
+  lossy or non-finite float `array_fill_keys` key values, unsupported
+  non-null/bool/int/string/float `array_fill_keys` key values, non-array
   `array_count_values` operands,
   unsupported non-int/string
   `array_count_values` values, non-array `array_sum` operands, unsupported
@@ -882,6 +958,8 @@
   flags, non-string `trait_exists` names, non-bool `trait_exists` autoload
   flags, non-string `enum_exists` names, non-bool `enum_exists` autoload
   flags,
+  non-bool `is_callable` syntax-only flags,
+  non-string `function_exists` names,
   non-string `is_a` class names, non-bool `is_a` allow_string flags,
   non-object/non-string `is_subclass_of` first arguments, non-string
   `is_subclass_of` class names, non-bool `is_subclass_of` allow_string flags,
@@ -902,60 +980,449 @@
 - Native codegen: LLVM IR/assembly supports only straight-line echo/assignment
   for the current statically lowerable scalar subset: literal `null`,
   booleans, integers, floats, and strings; direct static-variable assignments
-  from those values; direct reads of previously assigned static variables; and
-  `echo`/`print`. Native echo conversion is limited to this static scalar path:
-  `null` and `false` emit nothing, `true` emits `1`, integers use `%lld`,
-  floats use `%g`, and strings are emitted through generated static string
-  constants. Native binary arithmetic operators `+`, `-`, `*`, `/`, and `%`
-  are rejected before operand lowering with a specific codegen diagnostic until
-  generated code has PHP numeric coercion, dynamic division/modulo zero checks,
-  modulo coercions, references/copy-on-write behavior, and exact native error
-  objects. Native reads of variables that were not statically assigned earlier
-  in the same straight-line lowerer are rejected with a specific codegen
-  diagnostic until generated code has native symbol-table storage,
+  from those values; later direct static-variable assignments that overwrite
+  earlier lowerable scalar values in the same straight-line lowering pass;
+  direct reads of previously assigned static variables; direct `isset($name)`
+  checks over the current static-variable map; and `echo`/`print`.
+  Native echo conversion is limited to this static scalar path: `null` and
+  `false` emit nothing, `true` emits `1`, integers use `%lld`, floats use
+  `%g`, and strings are emitted through generated static string constants.
+  Native binary arithmetic currently lowers `+`, `-`, and `*` when both
+  operands are already same-type lowerable floats, or when both operands are
+  lowerable integers and the integer result is statically proven not to
+  overflow, in the same straight-line subset. Finite same-type float `+`, `-`,
+  and `*` results remain bounded and tracked for later strict-identity
+  folding when every possible result is proven. It lowers integer `%` only
+  when the divisor is a statically known positive integer in that subset, and
+  statically known modulo results remain tracked for later checked integer
+  arithmetic. Tracked integer expression operands and integer literal operands
+  for `$x % 1` fold to zero, and bounded tracked integer expression operands
+  whose possible values all produce the same remainder for a positive literal
+  divisor fold to that remainder. Integer modulo by one also folds after both
+  operands lower when the dividend is intentionally untracked, such as an
+  overflow-sensitive shift result; other modulo cases still require a
+  statically known positive divisor and keep the documented runtime-check
+  boundary. Identical tracked integer expression operands and identical
+  integer literal operands for `-` fold to zero without a redundant native
+  subtraction, and identical tracked finite float expression operands and
+  identical finite float literals for `-` fold to `0.0` without a redundant
+  native subtraction. Identical integer subtraction also folds after both
+  operands lower when the value is intentionally untracked, such as
+  overflow-sensitive shift results; other non-identity arithmetic with such
+  values still rejects because exact overflow tracking is unavailable. Tracked integer expression operands and integer literal
+  operands for `$x + 0`, `0 + $x`, and `$x - 0` reuse the existing value, and
+  tracked integer expression operands and integer literal operands for
+  `$x * 1` and `1 * $x` also reuse the existing value. Tracked integer
+  expression operands and integer literal operands for `$x * 0` and `0 * $x`
+  fold to zero. The `+ 0`, `- 0`, `* 1`, and `* 0` identity or annihilator
+  forms also fold after both operands lower when the other integer operand is
+  intentionally untracked, such as overflow-sensitive shift results;
+  non-identity arithmetic with such values still rejects because exact
+  overflow tracking is unavailable. Tracked finite float expression operands
+  and finite float literals for nonzero `$x + 0.0`, `0.0 + $x`, and `$x - 0.0`, and for
+  `$x * 1.0` and `1.0 * $x`, reuse the existing expression. Single-result
+  statically known nonzero finite `0.0 - $x` folds to the known negated float
+  literal. Tracked finite positive float expression operands and finite
+  positive float literals for `$x * 0.0` and `0.0 * $x` fold to positive
+  `0.0`. Single-result statically known nonzero finite `$x * -1.0` and
+  `-1.0 * $x` fold to the known negated float literal. Possible signed zero,
+  negative, and non-finite float identity/subtraction or multiplication-by-zero
+  cases, and signed-zero-sensitive multiplication by `-1.0`, stay emitted or
+  rejected rather than being folded.
+  Mixed int/float arithmetic, PHP numeric coercions, `/`, dynamic or non-positive modulo divisors,
+  division/modulo zero checks, modulo coercions, negative-divisor and min-int
+  modulo edge cases, modulo results
+  that are not statically known enough for later checked arithmetic, integer
+  overflow promotion, float overflow/INF/NAN result tracking, references/copy-on-write
+  behavior, and exact native error objects remain unsupported. Mixed int/float
+  `+`, `-`, and `*` operands are rejected with a
+  mixed-numeric-specific diagnostic until generated code has PHP numeric
+  promotion and exact result typing. Boolean, null, and string operands in
+  `+`, `-`, and `*` are rejected with a scalar-coercion-specific diagnostic
+  until generated code has PHP numeric coercion and string numeric parsing.
+  Overflow-sensitive or not-statically-proven integer `+`, `-`, and `*` cases
+  are rejected with an integer-overflow-specific diagnostic until generated
+  code has PHP integer overflow promotion and runtime checks. Native `/` is
+  rejected with a division-specific codegen diagnostic until generated code has
+  PHP division semantics, runtime zero checks, and no misleading integer
+  truncation. Dynamic, zero, or non-positive
+  integer modulo divisors are rejected with a modulo-specific codegen
+  diagnostic until native runtime checks exist; the remaining arithmetic gaps
+  are rejected with a specific
+  codegen diagnostic. Native reads of variables that were not statically
+  assigned earlier in the same straight-line lowerer are rejected with a
+  specific codegen diagnostic until generated code has native symbol-table storage,
   undefined-variable diagnostics, references/copy-on-write behavior, and exact
-  native error objects. Native string concatenation `.` is rejected before
-  operand lowering with a specific codegen diagnostic until generated code has
-  PHP string conversion, dynamic allocation, references/copy-on-write behavior,
-  and exact native error objects. Native comparison operators
-  `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`, and `>=` are rejected before
-  operand lowering with a specific codegen diagnostic until generated code has
-  PHP comparison coercions and non-scalar comparison diagnostics. Native
-  unary minus and logical not are rejected before operand lowering with a
-  specific codegen diagnostic until generated code has PHP numeric coercion,
-  truthiness conversion, references/copy-on-write side-effect behavior, and
-  exact native error objects. Native
-  logical operators `&&`, `||`, `and`, `xor`, and `or` are rejected before
-  operand lowering with a specific codegen diagnostic until generated code has
-  PHP truthiness conversion, short-circuit side-effect ordering, and broader
-  array/object truthiness coverage. Native bitwise and shift operators `&`,
-  `|`, `^`, `~`, `<<`, and `>>` are rejected before operand lowering with a
-  specific codegen diagnostic until generated code has PHP bytewise string
-  behavior, scalar-to-int coercion, negative/large shift diagnostics, and exact
-  native error objects. Native ternary and null coalescing expressions are
-  rejected before branch or operand lowering with a specific codegen diagnostic
-  until generated code has PHP truthiness conversion, null-aware variable,
-  array-offset, and object-property lookup, branch side-effect ordering, and
-  exact native error objects. Native direct and dynamic function calls are
-  rejected before argument or callee lowering with a specific codegen
-  diagnostic until generated code has runtime call lookup, stack-frame layout,
-  arity/type diagnostics, callable builtin dispatch outside
-  `define()`/`constant()`/`defined()`, dynamic string-call dispatch, and exact
-  native error objects. Native user-function declarations
+  native error objects. Native string concatenation `.` currently lowers when
+  both operands are already lowerable strings in the same straight-line subset,
+  including ternary operands that prove one static string result; the result is
+  folded into a generated static string constant. Empty-string concatenation
+  identity also folds for already-lowerable string operands, including
+  untracked string pointer expressions: `$text . ""` and `"" . $text` reuse
+  `$text` without runtime string allocation. PHP scalar-to-string conversion
+  for concatenation, non-empty ambiguous string expressions, arrays, objects,
+  resources, runtime string allocation, references/copy-on-write behavior, and
+  exact native error objects remain unsupported and are rejected with a
+  specific codegen diagnostic. Native comparison lowering currently accepts
+  same-type `null`, boolean, integer, finite float, known ASCII nonnumeric
+  NUL-free string loose/ordering comparisons, and identical string-pointer
+  self-comparisons for `==`, `!=`, `<`, `<=`, `>`, and `>=`, and strict
+  identity `===`/`!==` for already lowerable `null`, integers, booleans,
+  floats, and strings in the same straight-line subset.
+  Static same-type scalar
+  identity folds at compile time, bounded integer, float, string, and boolean
+  identity fold when all possible `===`/`!==` outcomes are proven identical.
+  Identical lowerable dynamic scalar operands fold for integers, booleans,
+  already-lowerable string pointers, and finite tracked floats, so `$x === $x`
+  and `$x !== $x` avoid runtime comparisons in those safe scalar cases.
+  Identical lowerable integer operands also fold for loose/ordering
+  comparisons, including intentionally untracked integer expressions such as
+  overflow-sensitive shift results: `$x == $x`, `$x <= $x`, and `$x >= $x`
+  fold true, while `$x != $x`, `$x < $x`, and `$x > $x` fold false.
+  Dynamic boolean expression operands compared with boolean literals fold for
+  `$flag === true`, `true === $flag`, `$flag !== false`, and `false !== $flag`
+  by reusing the original native boolean expression, and inverse forms such as
+  `$flag === false`, `false === $flag`, `$flag !== true`, and `true !== $flag`
+  use the native boolean inversion path.
+  Dynamic boolean expression operands compared loosely with boolean literals
+  fold for `$flag == true`, `true == $flag`, `$flag != false`, and
+  `false != $flag` by reusing the native boolean expression, while inverse
+  forms such as `$flag == false`, `false == $flag`, `$flag != true`, and
+  `true != $flag` use the native boolean inversion path.
+  Dynamic boolean expression operands ordered against boolean literals also
+  fold within boolean semantics, reusing the expression, inverting it, or
+  folding to a static boolean for cases such as `$flag > false`,
+  `$flag < true`, `$flag <= true`, and `true >= $flag`.
+  Same-type integer and finite-float loose/ordering comparisons whose tracked
+  possible operands prove one result fold to a static boolean. Literal-only
+  comparisons still fold, while ambiguous tracked finite-float comparisons
+  stay emitted as native comparisons.
+  Boolean expression comparisons whose tracked possible operands prove one
+  loose/ordering result also fold to that static boolean without emitting a
+  redundant native boolean comparison. Identical native boolean expression
+  operands also fold for loose/ordering comparisons, including ambiguous
+  boolean expressions: `$flag == $flag`, `$flag <= $flag`, and `$flag >=
+  $flag` fold true, while `$flag != $flag`, `$flag < $flag`, and `$flag >
+  $flag` fold false. Other ambiguous boolean expression comparisons stay
+  emitted. Identical native string pointer operands also fold for
+  loose/ordering comparisons, including untracked string pointer expressions
+  whose possible value set exceeds the current small tracker: `$text ==
+  $text`, `$text <= $text`, and `$text >= $text` fold true, while `$text !=
+  $text`, `$text < $text`, and `$text > $text` fold false. Non-identical
+  unknown string comparisons stay rejected.
+  Statically known integer strict-identity comparison results remain tracked
+  for later boolean scalar lowering even when the comparison itself stays
+  emitted as `icmp`. Same-type ambiguous dynamic integer, boolean, float, and
+  already-lowerable string pointer identity lower through native comparisons
+  and PHP-shaped boolean echo output, and already lowerable mixed scalar
+  operands with different PHP scalar types fold without emitting runtime
+  comparison calls. Ambiguous dynamic string identity uses `strcmp` for string
+  pointers produced by the current native string ternary subset. Known ASCII
+  nonnumeric string loose/ordering comparisons fold to a static boolean when
+  every possible safe string outcome matches; ambiguous safe string
+  loose/ordering comparisons lower through `strcmp`. Statically known boolean,
+  integer, and finite-float loose/ordering comparison results remain tracked
+  for later boolean scalar lowering even when the comparison itself stays
+  emitted as `icmp`/`fcmp`; ambiguous bounded boolean, finite-float, or string
+  loose/ordering comparison results remain dynamic and untracked.
+  Ambiguous bounded integer, float, string, or boolean identity, broader
+  value-correlation proofs across related expressions such as `$x` and `!$x`,
+  numeric-looking, non-identical unknown, non-ASCII, or NUL-containing string loose/ordering comparisons,
+  mixed null or other mixed-type comparisons, untracked or
+  non-finite float comparisons, dynamic null identity beyond static/type-only folds, PHP
+  truthiness conversion for loose logical operands, array/object comparisons,
+  non-lowerable float sources, dynamic string allocation beyond the static
+  straight-line subset, PHP comparison coercions, and non-scalar comparison
+  diagnostics remain unsupported and are rejected with a specific
+  codegen diagnostic.
+  Native unary lowering currently accepts unary minus on already lowerable
+  integers or floats and logical not on already lowerable booleans or native
+  boolean expression results, on `null`, or on known integers, finite floats,
+  and strings whose possible values all have the same PHP truthiness, in the same
+  straight-line subset.
+  Dynamic boolean double logical-not expressions such as `!!$flag` reuse the
+  original native boolean expression instead of emitting redundant inversions.
+  Double logical-not over known scalar operands such as integers, finite floats,
+  strings, and `null` folds through the same known-truthiness subset without
+  emitting boolean operations.
+  Native lowering folds logical not over single-result statically known native
+  boolean expression operands to the known boolean result in LLVM IR and in the
+  C assembly fallback when the C boolean expression has a tracked result.
+  Known numeric logical-not folds to a static boolean for zero and nonzero
+  known integer/finite-float operands when all possible values have the same
+  truthiness. Known string logical-not folds to a static boolean for `""`,
+  `"0"`, and known-truthy string operands when all possible string values have
+  the same truthiness. Null logical-not folds to `true` without claiming
+  broader null truthiness beyond the documented logical binary folding subset.
+  Integer
+  unary-minus results remain statically tracked for later checked integer
+  arithmetic when all bounded possible negation results are proven not to
+  overflow; single-result statically known integer operands fold to the known
+  negated result without a redundant native unary-minus operation. Finite
+  float unary-minus results remain tracked for later
+  strict-identity folding when every possible negation result is proven;
+  single-result statically known nonzero finite float operands fold to the
+  known negated result without a redundant native unary-minus operation.
+  Boolean, string, null, array, and object unary-minus operands, PHP numeric
+  coercion, ambiguous numeric or string logical-not truthiness, untracked
+  numeric/string logical-not expressions, non-finite float logical-not
+  truthiness, null truthiness outside logical-not, other truthiness
+  conversion, unary integer overflow behavior, float overflow/INF/NAN result tracking,
+  references/copy-on-write side-effect behavior, and exact native error objects
+  remain unsupported and are rejected with a specific codegen diagnostic.
+  Native logical operators `&&`, `||`, `and`, `xor`, and `or` lower only when
+  both operands are already lowerable booleans or native boolean expression
+  results, or when both already-lowerable scalar operands have one statically
+  known PHP truthiness result, in the same straight-line subset. Static boolean
+  pairs fold at compile time, and static boolean identity and annihilator edges
+  such as `true || $flag`, `false && $flag`, `$flag && true`, and `$flag xor
+  false` preserve the proven boolean result for later scalar lowering.
+  Identical native boolean expression operands for `&&`/`and` and `||`/`or`
+  reuse the existing expression without a redundant native boolean operation,
+  and identical native boolean expression operands for `xor` fold to `false`.
+  Native boolean expression operations whose tracked possible operands prove
+  one result fold to that static boolean without a redundant native boolean
+  operation. Known scalar logical operands whose null, integer, finite-float, or
+  string truthiness is unambiguous fold to a static boolean result without
+  emitting a native boolean operation. Statically decisive known-left
+  `&&`/`and` and `||`/`or` short-circuit cases such as `false && rhs` and
+  `true || rhs` lower without lowering the skipped right-hand operand. Other
+  dynamic boolean expressions lower to native boolean operations with PHP-shaped
+  boolean echo output. Cases that require general PHP truthiness conversion,
+  dynamic short-circuiting, `xor` right-hand skipping, selected/evaluated
+  unsupported right-hand operands, ambiguous scalar truthiness, untracked scalar
+  logical operands, non-finite float truthiness, null coalescing, arrays,
+  objects,
+  references/copy-on-write behavior, exact native error objects,
+  linking/execution, or broader native lowering are rejected with a
+  specific codegen diagnostic. Native bitwise lowering accepts binary `&`,
+  `|`, and `^`, plus unary `~`, only when operands are already lowerable
+  integers in the same straight-line subset. Bounded statically known integer
+  bitwise and unary bitwise-not results remain tracked for later checked
+  integer arithmetic. Single-result statically known integer operands for
+  unary `~` fold to the known bitwise-not result without a redundant native
+  bitwise-not operation. Double unary bitwise-not `~~$x` over an
+  already-lowerable integer operand reuses `$x`, including intentionally
+  untracked integer expressions such as overflow-sensitive shift results.
+  Identical tracked integer expression operands and
+  identical integer literal operands for `&` and `|` reuse the existing value,
+  and identical tracked integer expression operands and identical integer
+  literal operands for `^` fold to zero. Identical integer operands also fold
+  after both operands lower when the value is intentionally untracked, such as
+  overflow-sensitive shift results: `$x & $x` and `$x | $x` reuse `$x`, while
+  `$x ^ $x` folds to zero. Tracked integer expression operands
+  and integer literal operands for `$x & -1` and `-1 & $x`, and for
+  `$x | 0`, `0 | $x`, `$x ^ 0`, and `0 ^ $x`, reuse the existing value.
+  Tracked integer expression operands and integer literal operands for
+  `$x & 0` and `0 & $x` fold to zero. Tracked integer expression operands and
+  integer literal operands for `$x | -1` and `-1 | $x` fold to `-1` after both
+  operands lower. Single-known integer operands for `$x ^ -1` and `-1 ^ $x`
+  fold to the known bitwise-not result. The `& 0`, `& -1`, `| 0`, and `^ 0`
+  identity or annihilator forms also fold after both operands lower when the
+  other integer operand is intentionally untracked, such as overflow-sensitive
+  shift results. Tracked single-result integer expression
+  bitwise operations with exactly one tracked expression operand and one
+  literal operand for `&`, `|`, and `^` fold to the known integer literal,
+  while literal-only integer bitwise operations and tracked-expression plus
+  tracked-expression bitwise operations stay emitted. Native shift lowering accepts `<<`
+  and `>>` only for already lowerable integer left operands with statically
+  known shift counts from 0 through 63; right shifts use arithmetic shift for
+  signed integer results. Tracked integer expression operands and integer
+  literal operands for `$x << 0` and `$x >> 0` reuse the existing value.
+  Those shift-by-zero identities also fold after both operands lower when the
+  left integer operand is intentionally untracked, such as an overflow-sensitive
+  shift result. Tracked single-result integer expression shifts with static safe
+  nonzero counts fold to the known integer literal, while literal-only shifts
+  and non-single tracked integer shifts stay emitted.
+  Bounded statically known safe shift results remain tracked for later checked
+  integer arithmetic; overflow-sensitive left-shift result sets
+  remain unknown so later arithmetic rejects them instead of implying PHP
+  overflow semantics. Dynamic shift counts, negative or large counts, PHP
+  bytewise string bitwise behavior, scalar-to-int coercion for non-integer
+  operands, arrays, objects,
+  references/copy-on-write behavior, exact native error objects,
+  linking/execution, and broader native lowering are rejected with a specific
+  codegen diagnostic. Native ternary lowering
+  accepts full ternary `condition ? if_true : if_false` only when the condition
+  is already a lowerable boolean or native boolean expression and both branch
+  values are already lowerable integers, booleans, floats, strings, or both
+  branches are `null` in the same straight-line subset, or when the condition
+  is a statically known boolean and both branch values are already lowerable
+  scalar values, or when the condition and both branches are the same direct
+  variable whose current value is already lowerable. Dynamic mixed-type branch values are rejected until native
+  tagged values exist. Dynamic non-null ternaries emit LLVM `select` or the
+  corresponding C conditional expression, identical static string branches fold
+  to that string without a pointer select, identical boolean expression
+  branches fold to the reused expression without a redundant boolean select,
+  identical tracked integer expression branches and identical integer literal
+  branches fold to the reused value without a redundant integer select, and
+  identical integer branches also fold after both branches lower when the
+  integer value is intentionally untracked, such as an overflow-sensitive shift
+  result. Identical tracked float expression branches and identical float literal
+  branches fold to the reused value without a redundant float select, and
+  identical float branches also fold after both branches lower when the value
+  is intentionally untracked, such as a non-finite overflowing float
+  multiplication. Identical direct-variable full ternaries such as `$value ?
+  $value : $value` reuse the direct variable value without proving truthiness
+  when all three operands are the same already-lowerable direct variable,
+  including untracked integer, non-finite float-producing, and string pointer
+  expressions, boolean expressions, and null values.
+  dynamic boolean literal branches fold without a boolean select for
+  `$flag ? true : false`, `$flag ? false : true`, `$flag ? true : true`, and
+  `$flag ? false : false`, dynamic `null`/`null` ternaries fold to `null`, and
+  static boolean ternaries fold to the selected branch value. Dynamic integer,
+  finite-float, and boolean ternaries whose possible branch values collapse to
+  a single known result fold to that scalar without a redundant select;
+  ambiguous same-type ternaries stay emitted. Full ternary conditions with null
+  or with single-known integer, finite-float, or known-string truthiness fold to
+  the selected already-lowerable branch without lowering the unselected branch;
+  null selects the false branch. Dynamic boolean full ternaries still require
+  both branches to lower before selection. Ambiguous integer, float, or string
+  conditions, untracked string conditions, non-finite float result tracking,
+  and non-finite float conditions remain rejected, and dynamic branch skipping
+  for unsupported or side-effecting branches remains unsupported. Dynamic integer ternaries and later
+  checked integer arithmetic track up to four statically known possible
+  values; combinations with more possible results remain unsupported. Native
+  short ternary `?:` accepts lowerable boolean conditions in the same
+  straight-line subset; dynamic boolean forms require a lowerable boolean
+  fallback, static-false forms return any already-lowerable scalar fallback,
+  and static-true forms fold to `true` without lowering the fallback.
+  Single-known integer conditions also fold through integer truthiness: proven
+  nonzero integer conditions reuse the integer result, and proven zero integer
+  conditions use the fallback. Single-known finite float conditions fold
+  through float truthiness the same way, with proven nonzero finite floats
+  reusing the float result and proven zero floats using the fallback. Known
+  string conditions fold through PHP string truthiness when all possible
+  values have the same truthiness: non-empty strings except `"0"` reuse the
+  string result, while `""` and `"0"` use the fallback. Identical direct
+  boolean-, integer-, float-, and string-variable short ternaries such as
+  `$flag ?: $flag`, `$value ?: $value`, and `$text ?: $text` also reuse
+  already-lowerable expressions without proving broader truthiness, including
+  boolean expressions, untracked integer expressions, untracked non-finite
+  float-producing expressions, and untracked string pointer expressions. Null short ternaries use the fallback for `null ?:
+  fallback`, including direct null-variable fallback forms such as
+  `$value ?: $value`; broader null truthiness in logical binaries or null coalescing
+  remains unsupported. Cases
+  that require general PHP truthiness, lazy branch evaluation to skip
+  unsupported or side-effecting branches, ambiguous string truthiness,
+  non-identical untracked integer, float, or string expressions, non-finite float truthiness, other non-boolean
+  truthiness, null coalescing `??`, null-aware variable/array-offset/object lookup, arrays, objects,
+  references/copy-on-write behavior, exact native error objects,
+  linking/execution, or broader native lowering are rejected with a specific
+  codegen diagnostic. Native lowering statically folds direct `gettype`,
+  `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
+  `is_float`/`is_double`, `is_string`, `is_array`, `is_scalar`, and
+  `is_numeric` calls only when their single argument is already in the
+  straight-line native scalar/null subset. Native `is_numeric` also folds
+  literal and tracked string values only when the current numeric-string
+  grammar proves the result statically. Selected-`clang` assembly snapshots
+  validate that the deterministic folded LLVM IR for these existing
+  `is_numeric`, `is_countable`, `is_iterable`, `is_object`, and
+  `get_debug_type` slices is handed to the chosen backend through stdin
+  without widening production lowering behavior.
+  Direct `is_countable` and `is_iterable` and `is_object` calls fold to
+  `false` for already-lowerable
+  scalar/null/string operands only, and direct scalar/null/string
+  `get_debug_type` calls fold to the current runtime type-name strings.
+  Direct `class_exists`, `interface_exists`, `trait_exists`, and
+  `enum_exists` calls with already-lowerable string names and optional
+  already-lowerable boolean autoload flags fold to `false` in native output
+  because native lowering still rejects class/interface/trait/enum
+  declarations and has no autoload or native class table.
+  Direct `property_exists` and `method_exists` calls with already-lowerable
+  string class names and already-lowerable string member names also fold to
+  `false` for the same no-native-class-table boundary.
+  Direct `is_a` and `is_subclass_of` calls with already-lowerable string
+  object/class names, already-lowerable string target class names, and optional
+  already-lowerable boolean `allow_string` flags fold to `false` without
+  claiming inheritance or native class-table support.
+  Direct `is_callable($value)` calls fold in native output when `$value` is an
+  already-lowerable string value with a uniform known lookup result in the
+  current documented builtin table, or when `$value` is an already-lowerable
+  non-string scalar/null value, which folds to `false`. Direct
+  `is_callable($value, $syntax_only)` calls also fold when `$value` is an
+  already-lowerable string or non-string scalar/null value and `$syntax_only`
+  is an already-lowerable boolean: true syntax-only flags return true for
+  string values without name lookup, non-string scalar/null values return
+  false, and false flags use the same documented builtin lookup as the
+  one-argument form.
+  Direct `function_exists($name)` calls fold in native output when `$name` is
+  an already-lowerable string value with a uniform known answer in the current
+  documented builtin table: documented callable builtins, including
+  `array_change_key_case`, `array_column`, `array_count_values`, and
+  `array_sum` and `array_product`, fold to `true`, and missing names fold to
+  `false`.
+  Direct calls to array builtins such as `array_change_key_case(...)`,
+  `array_column(...)`, `array_sum(...)`, and `array_product(...)` still reject
+  under the native array-lowering boundary. A selected-`clang` assembly snapshot also
+  validates that the deterministic folded LLVM IR for this existing slice is
+  handed to the chosen backend through stdin without widening production
+  lowering behavior.
+  Direct `strlen($value)` calls fold in native output when `$value` is an
+  already-lowerable known string operand, including tracked string expressions
+  whose possible values have one uniform byte length. A selected-`clang`
+  assembly snapshot validates that the deterministic folded LLVM IR for this
+  existing slice is handed to the chosen backend through stdin without
+  widening production lowering behavior.
+  Direct `defined($name)` calls fold in native output when `$name` is an
+  already-lowerable known string operand whose possible values are supported
+  unqualified constant names with a uniform answer against the current exact
+  built-in constant table. Exact `CASE_LOWER`, `CASE_UPPER`,
+  `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
+  `SORT_NUMERIC`, and `SORT_STRING` names fold to true; other supported
+  unqualified names fold to false. The Milestone 569 and 573 snapshots cover
+  the `SORT_REGULAR` and `SORT_NUMERIC` additions without broadening native
+  constant values, runtime-defined constant lookup, dynamic calls, arrays,
+  objects, or exact native PHP error behavior. A
+  selected-`clang` assembly snapshot validates that the deterministic folded
+  LLVM IR for the `SORT_REGULAR`, `SORT_NUMERIC`, and `SORT_STRING` slices is
+  handed to the chosen backend through stdin without widening production
+  lowering behavior. A broader selected-`clang` snapshot validates the same
+  stdin handoff for the current exact `CASE_*`, `ARRAY_FILTER_*`, and
+  `SORT_STRING` built-in constant answer table.
+  Direct `isset($name)` over direct variables folds from the current
+  straight-line static-variable map: missing or statically `null` variables
+  fold to false, and statically assigned non-null lowerable values fold to
+  true. A selected-`clang` assembly snapshot validates that the deterministic
+  folded LLVM IR for this existing slice is handed to the chosen backend
+  through stdin without widening production lowering behavior.
+  Direct `empty($name)` over direct variables folds from the same map: missing
+  variables and statically falsey lowerable scalar/null values (`null`,
+  `false`, `0`, `0.0`, `""`, and `"0"`) fold to true, and statically truthy
+  lowerable scalar values fold to false. A selected-`clang` assembly snapshot
+  validates that the deterministic folded LLVM IR for this existing slice is
+  handed to the chosen backend through stdin without widening production
+  lowering behavior.
+  Array/object operands remain rejected until native array/object lowering
+  exists. Dynamic calls, wrong arity, non-string `function_exists` names,
+  non-string `strlen` operands and exact string-coercion diagnostics,
+  non-bool `is_callable` syntax-only flags, callable-name output parameters,
+  array/object/method callables,
+  user-defined functions in native output, namespace/import/autoload-aware
+  lookup, extension-loaded functions outside the documented builtin table,
+  general callable builtin dispatch, runtime call lookup, stack-frame layout,
+  arity/type diagnostics, unsupported `defined(...)` names, dynamic
+  string-call dispatch, and exact native error objects remain unsupported.
+  Native user-function declarations
   and return statements are rejected before function-body lowering with a
   specific codegen diagnostic until generated code has function symbol tables,
   stack-frame layout, default parameter binding, recursion guards,
   return-value flow, and exact native error behavior.
-  Native built-in constants, runtime-defined constants, bare constant reads,
-  top-level `const` declarations, and `define()`/`constant()`/`defined()` are
-  rejected before operand or argument lowering with a specific codegen
-  diagnostic until generated code has native constant tables, source-order
-  definitions, namespace-aware lookup, and exact native error objects.
-  Native class declarations, object instantiation, public property reads/writes,
-  and object metadata builtins are rejected before body, operand, or argument
+  Native built-in constant values, runtime-defined constants, bare constant
+  reads, top-level `const` declarations, `define()`/`constant()`, and
+  unsupported `defined(...)` forms are rejected before operand or argument
   lowering with a specific codegen diagnostic until generated code has native
-  object layout, handles, visibility, method dispatch, class metadata access,
-  and exact native error objects.
+  constant tables, source-order definitions, namespace-aware lookup, and
+  exact native error objects.
+  Native class declarations, object instantiation, public property reads/writes,
+  and object metadata builtins beyond scalar/null/string `is_object`,
+  scalar/null/string `get_debug_type`, and direct string-name metadata-exists
+  false folding, including string/string `property_exists` and
+  `method_exists`, and string/string relationship false folding for `is_a` and
+  `is_subclass_of`, are rejected before body, operand, or argument lowering
+  with a specific codegen diagnostic until generated code has native object
+  layout, handles, visibility, method dispatch, class metadata tables,
+  inheritance, autoload interaction, and exact native error objects.
   Native arrays, array literals, array indexing, array assignment, `foreach`
   array iteration, array offset unset, and array builtin function calls are
   rejected before body, operand, argument, or callback lowering with a specific
@@ -1034,7 +1501,14 @@
   snapshot exposes deterministic fake `clang` that exits successfully with
   whitespace-only stdout and stderr diagnostics, proving stdout validation
   wins and successful-backend stderr is not surfaced on invalid successful
-  output. Additional whitespace-with-stderr fallback snapshots expose
+  output. A selected backend whitespace-with-stderr precedence snapshot exposes
+  the same invalid successful `clang` output while `llc` and `cc` are also
+  available, proving fallback recovery is not attempted after invalid selected
+  backend output. An `llc` whitespace-with-stderr precedence snapshot exposes
+  invalid successful `llc` output while the `cc -S` fallback is also
+  available and `clang` is unavailable, proving fallback recovery is not
+  attempted after invalid selected `llc` output. Additional
+  whitespace-with-stderr fallback snapshots expose
   deterministic fake `llc` and `cc` tools with the same invalid
   successful-output behavior, proving stdout validation wins and successful
   backend stderr is not surfaced after fallback selection too.
@@ -1125,7 +1599,8 @@
   backend-specific assembly text, PHP zvals, native symbol-table storage,
   references/copy-on-write, exact native error objects, and broader native
   lowering remain unsupported.
-- Function calls: user-defined positional calls are supported in `phpc run`.
+- Function calls: user-defined positional calls are supported in `phpc run`,
+  including optional trailing commas in argument lists.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves to a user-defined function or to
   one of the documented callable builtins: `strlen`, `count`,
@@ -1136,7 +1611,11 @@
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, `get_class`, `is_object`, `get_debug_type`,
+  `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
+  `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
+  `function_exists`, `get_class`,
+  `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`,
@@ -1146,15 +1625,17 @@
   The `define`, `constant`, and `defined` names resolve through the documented
   runtime constant path. Unresolved names fail with a stable undefined-function
   runtime error, and non-string callees fail with a stable unsupported-call
-  runtime error. Required parameters and trailing default
-  parameter values are supported. Defaults may
-  use the current constant-expression subset: `null`, booleans, integers,
+  runtime error. Required parameters, optional trailing commas after the final
+  real parameter, and trailing default parameter values are supported.
+  Defaults may use the current constant-expression subset: `null`, booleans, integers,
   floats, strings, short and long arrays with supported keys, unary
   expressions, binary expressions over those values, and bare references to
   unqualified constants that are defined in the current runtime constant table
   before the omitted argument is bound. The exact uppercase built-in
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants are also
-  accepted in default expressions. Omitted arguments bind to their defaults;
+  accepted in default expressions. String-valued dynamic calls accept the same
+  optional trailing comma syntax after the final positional argument. Omitted
+  arguments bind to their defaults;
   missing constant references fail with a stable undefined-constant runtime
   diagnostic; calls outside the supported required-to-total arity range
   fail with a stable arity diagnostic. Each user-function call gets a fresh
@@ -1171,13 +1652,16 @@
   implemented. Native lowering for user-function declarations and returns is
   explicitly rejected until function symbol tables, stack-frame layout, default
   parameter binding, recursion guards, return-value flow, and exact native
-  error behavior exist. Non-constant defaults such as variables, calls, dynamic calls,
-  and indexed reads are rejected by the parser. Required parameters after default
-  parameters are also rejected instead of modeling PHP's deprecation and
-  implicit-required behavior. Variadic parameters and argument unpacking,
+  error behavior exist. Non-constant defaults such as variables, calls,
+  dynamic calls, and indexed reads are rejected by the parser. Required
+  parameters after default parameters are also rejected instead of modeling
+  PHP's deprecation and implicit-required behavior. Empty parameter slots such
+  as `function f(,)` remain rejected. Variadic parameters and argument unpacking,
   reference parameters/returns, reference expressions, anonymous functions,
-  arrow functions, named arguments, and `declare(strict_types=1)` are rejected
-  with stable parse diagnostics. Parameter type declarations and return type
+  arrow functions, named arguments, first-class callable syntax such as
+  `strlen(...)` and `$callback(...)`, empty call arguments, and
+  `declare(strict_types=1)` are rejected with stable parse diagnostics.
+  Parameter type declarations and return type
   declarations also fail with stable parse diagnostics before any type
   enforcement can run. Static local variable declarations inside functions
   also fail with a stable parse diagnostic before function-local static storage
@@ -1215,8 +1699,12 @@
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `get_class`,
-  `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
+  `array_filter`, `array_map`, `in_array`, `array_search`, `gettype`,
+  `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
+  `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
+  `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
+  `get_class`, `is_object`, `get_debug_type`,
+  `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
@@ -1228,6 +1716,45 @@
   unsupported object-handle identity boundary described below.
   `spl_object_hash` is recognized only as the explicit unsupported
   object-handle hash boundary described below.
+  `gettype($value)` returns PHP legacy type names for the current boxed value
+  model, and `is_null`, `is_bool`, `is_int`/`is_integer`/`is_long`,
+  `is_float`/`is_double`, `is_string`, `is_array`, and `is_scalar` report the
+  current value category without coercion. `is_numeric` returns true for
+  integers, floats, and well-formed numeric strings using the same current
+  numeric-string subset as scalar arithmetic. `is_countable` and `is_iterable`
+  return true for arrays and false for the current scalar/null/object values.
+  `is_callable($value)` supports the current string function-name subset: it
+  returns true for names that resolve to current user functions or documented
+  callable builtins, and false for missing names or non-string values.
+  `is_callable($value, $syntax_only)` accepts boolean syntax-only flags; for
+  string values, `true` reports callable syntax without resolving the name,
+  while `false` uses the current function lookup path. Syntax-only array
+  callable checks accept only the current two-element `[class-or-object,
+  method]` shape with integer keys `0` and `1`, where the first value is a
+  string class name or current object and the second value is a string method
+  name; this shape check does not resolve classes or methods. Normal array
+  callable resolution checks the same two-element shape against current
+  declared method metadata: object receivers are true for public declared
+  methods, and class-string receivers are true for public static declared
+  methods. Scalar non-string values return false. Native lowering folds only direct calls whose value
+  argument is an already-lowerable string or non-string scalar/null value and
+  whose optional syntax-only flag is an already-lowerable boolean; true
+  syntax-only flags return true for string values, non-string scalar/null
+  values return false, while false or omitted flags use the documented native
+  builtin lookup table for strings. Additional callable forms, the
+  callable-name output parameter,
+  environment-specific legacy aliases such as `is_real`,
+  extension/resource-aware type checks, `Countable`
+  object/interface semantics, and `Traversable`/generator object semantics are
+  not implemented.
+  `function_exists($name)` checks string names against the current runtime
+  function table, including current user functions and documented callable
+  builtins. Native lowering folds only direct calls whose name argument is an
+  already-lowerable string with a uniform known result in the documented
+  builtin table; native user-defined function tables, dynamic calls,
+  namespace/autoload-aware lookup, extension-loaded functions beyond documented
+  builtins, non-string name coercion, and exact native
+  `TypeError`/deprecation behavior are not implemented.
   `get_class($object)` returns the declared class name for current minimal
   object values and rejects non-object arguments. `is_object($value)` returns
   true only for current minimal object values and false for scalars and arrays.
@@ -1258,8 +1785,9 @@
   public declared property names with `null` values for declared string class
   names. `get_object_vars($object)` returns public instance property names
   with their current values for current object values.
-  `get_mangled_object_vars($object)` currently returns that same public
-  instance property slice for current object values. `empty($object->name)`
+  `get_mangled_object_vars($object)` returns public, protected, and private
+  instance slots with PHP-style mangled keys for current object values.
+  `empty($object->name)`
   checks falsey public slots and treats missing properties, undefined target
   variables, and non-object target variables as empty in the current
   direct-object-variable subset.
@@ -1292,11 +1820,15 @@
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
   `array_key_exists($key, $array)` accepts integer
-  and string keys over the current ordered array value model, returns true for
-  existing keys even when the stored value is `null`, returns false for missing
-  keys, rejects non-array second arguments, and rejects unsupported key values
-  such as booleans, `null`, floats, objects, and future resources instead of
-  applying PHP's full key coercions. `array_key_first($array)` and
+  and string keys over the current ordered array value model, plus `null`
+  keys as the empty-string key, boolean keys as integer `0`/`1`, and integral
+  finite float keys as integers. It returns
+  true for existing keys even when the stored value is `null`, returns false
+  for missing keys, rejects non-array second arguments, and rejects unsupported
+  key values such as lossy or non-finite floats, arrays, objects, and future
+  resources instead of applying PHP's full key coercions and
+  warning/deprecation behavior.
+  `array_key_first($array)` and
   `array_key_last($array)` accept arrays only, return the first or last
   inserted integer or string key as an `int` or `string`, return `null` for
   empty arrays, and are also available through string-valued dynamic function
@@ -1387,22 +1919,25 @@
   appended in replacement insertion order, integer keys are preserved rather
   than reindexed, and later append behavior follows the highest non-negative
   integer key seen in the result. It is also available through string-valued
-  dynamic function calls. Non-array operands, including variadic replacement
-  operands, fail with stable diagnostics. References, copy-on-write
-  containers, object handle identity preservation for object values, resource
-  values, exact native `TypeError` objects, and native lowering are not
-  implemented.
+  dynamic function calls. Non-array operands and length mismatches fail with
+  stable diagnostics. References, copy-on-write containers, object handle
+  identity preservation for object values, resource values, exact native
+  `TypeError`/`ValueError` objects, and native lowering are not implemented.
   `array_combine($keys, $values)` accepts two array operands with equal entry
   counts, reads both arrays in insertion order, converts integer and string
   values from the first array into result keys using the current key
-  normalization rules, and stores cloned values from the second array.
-  Duplicate result keys are overwritten by later pairs without moving the first
-  result-key position. Empty key/value arrays return an empty array. Non-array
-  operands, length mismatches, and unsupported key values fail with stable
-  project diagnostics. Bool, null, float, array, object, future resource, and
-  reference key-value coercions, exact native `ValueError`/`TypeError` objects,
-  references, copy-on-write containers, object handle identity preservation for
-  object values, resource values, and native lowering are not implemented.
+  normalization rules, maps null and false key values to the empty string key,
+  maps true key values through the string `"1"` key normalization path,
+  converts integral finite float key values into integer result keys, and
+  stores cloned values from the second array. Duplicate result keys are
+  overwritten by later pairs without moving the first result-key position.
+  Empty key/value arrays return an empty array. Non-array operands, length
+  mismatches, and unsupported key values fail with stable project diagnostics.
+  Lossy finite floats, non-finite floats, array, object, future resource, and
+  reference key-value coercions, exact native `ValueError`/`TypeError`
+  objects, references, copy-on-write containers, object handle identity
+  preservation for object values, resource values, and native lowering are not
+  implemented.
   `array_combine` is also available through string-valued dynamic function
   calls.
   `array_intersect_key($array, ...$arrays)` accepts two or more array operands,
@@ -1452,18 +1987,31 @@
   warning-and-string-conversion behavior for non-scalar values, and native
   lowering are not implemented. `array_intersect` is also available through
   string-valued dynamic function calls.
-  `array_unique($array)` accepts one array operand, compares current scalar
-  values by their PHP string forms, and returns a new ordered array containing
-  the first entry for each distinct string form. Kept entries preserve their
-  original integer/string keys and insertion order, dropped duplicate entries
-  do not affect later append behavior, and the source array is not mutated.
-  Non-array operands, non-scalar values such as arrays or objects, and the
-  optional sort-flags argument fail with stable project diagnostics.
+  `array_unique($array)` accepts one array operand,
+  `array_unique($array, SORT_STRING)` accepts the same array operand with the
+  current exact uppercase built-in `SORT_STRING` constant or integer value
+  `2`, `array_unique($array, SORT_REGULAR)` accepts the current exact
+  uppercase built-in `SORT_REGULAR` constant or integer value `0`, and
+  `array_unique($array, SORT_NUMERIC)` accepts the current exact uppercase
+  built-in `SORT_NUMERIC` constant or integer value `1`. The default and
+  `SORT_STRING` forms compare current scalar values by their PHP string forms;
+  the `SORT_REGULAR` form compares current scalar values with the
+  interpreter's current loose scalar equality rules; and the `SORT_NUMERIC`
+  form compares values after the same current scalar numeric coercion used by
+  `array_sum` and `array_product`. All supported forms return a new ordered
+  array containing the first entry for each distinct comparison value. Kept
+  entries preserve their original integer/string keys and insertion order,
+  dropped duplicate entries do not affect later append behavior, and the
+  source array is not mutated. Non-array operands, non-scalar/non-numeric
+  values such as arrays, objects, or non-numeric strings in numeric mode, and
+  sort flags outside the supported set fail with stable project diagnostics.
   References, copy-on-write containers, object/resource values, exact native
   `TypeError` objects, PHP warning-and-string-conversion behavior for arrays
-  and objects, sort modes other than the current default string-form behavior,
-  and native lowering are not implemented. `array_unique` is also available
-  through string-valued dynamic function calls.
+  and objects, sort modes other than `SORT_REGULAR`/`SORT_NUMERIC`/
+  `SORT_STRING`, exact native array/object `SORT_REGULAR` comparisons, PHP
+  warning recovery for non-numeric values in numeric mode, and native lowering
+  are not implemented. `array_unique` is also available through string-valued
+  dynamic function calls.
   `array_flip($array)` accepts arrays only, uses integer values directly as
   result keys, normalizes string values through the current PHP-style decimal
   string key rules, and writes each original integer/string key as the result
@@ -1474,14 +2022,49 @@
   References, copy-on-write containers, exact native warning/`TypeError`
   behavior, and native lowering are not implemented. `array_flip` is also
   available through string-valued dynamic function calls.
+  `array_change_key_case($array)` and
+  `array_change_key_case($array, CASE_LOWER)` return a new ordered array with
+  ASCII string keys lowercased and integer keys preserved.
+  `array_change_key_case($array, CASE_UPPER)` and
+  `array_change_key_case($array, $case)` with any nonzero integer case flag
+  uppercase ASCII string keys.
+  Duplicate converted keys are overwritten by later source entries without
+  moving the first converted-key position, the source array is not mutated, and
+  the builtin is available through string-valued dynamic function calls.
+  Case flags must be integers in the current subset; integer `0` lowercases
+  and any nonzero integer uppercases. Non-int case values still fail with a
+  stable project diagnostic. Unicode/locale-aware casing, scalar flag
+  coercions, references/copy-on-write, exact native warning/`TypeError`
+  behavior, and native lowering are not implemented.
+  `array_column($rows, $column_key)` accepts an array first argument and an
+  int, string, or null column key. Array rows use the current int/string key
+  normalization rules, public object rows use exact public property names for
+  string column keys, missing columns are skipped, null values are preserved,
+  scalar rows are skipped, and extracted values are reindexed from integer key
+  zero. A null column key returns each row value reindexed in insertion order.
+  `array_column($rows, $column_key, $index_key)` accepts an int, string, or
+  null index key and uses null, boolean, integer, string, or integral finite
+  float row values as result keys. Missing index fields append using the
+  current array append cursor, duplicate result keys overwrite the previous
+  value without moving that key's insertion position, and null index keys keep
+  the reindexed behavior. The builtin is also available through string-valued
+  dynamic function calls.
+  Non-array first arguments, column or index keys other than int/string/null,
+  lossy or non-finite float index values, array/object/resource index values,
+  magic `__get`, `ArrayAccess`, exact visibility-context behavior for
+  non-public properties,
+  references/copy-on-write, exact native `TypeError`/warning behavior,
+  resource values, and native lowering are not implemented.
   `array_fill_keys($keys, $value)` accepts arrays only for the first argument,
-  uses integer key values directly as result keys, normalizes string key values
-  through the current PHP-style decimal string key rules, and stores the
-  supplied value in every result slot using the current cloned `Value` model.
-  Duplicate result keys are overwritten by later key entries without moving the
-  first result-key position. Unsupported key values such as `null`, booleans,
-  floats, arrays, objects, and future resources fail with a stable project
-  diagnostic instead of PHP's warning-and-skip behavior. References,
+  maps null and false key values to the empty string key, maps true key values
+  through the string `"1"` key normalization path, uses integer and integral
+  finite float key values directly as integer result keys, normalizes string
+  key values through the current PHP-style decimal string key rules, and
+  stores the supplied value in every result slot using the current cloned
+  `Value` model. Duplicate result keys are overwritten by later key entries
+  without moving the first result-key position. Lossy finite floats,
+  non-finite floats, arrays, objects, and future resources fail with a stable
+  project diagnostic instead of PHP's warning-and-skip behavior. References,
   copy-on-write containers, object handle identity for object fill values,
   exact native warning/`TypeError` behavior, and native lowering are not
   implemented. `array_fill_keys` is also available through string-valued
@@ -1537,8 +2120,9 @@
   object handle identity preservation, resource values, and native lowering
   are not implemented.
   `array_filter($array)` without a callback, `array_filter($array, null)`,
-  and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`, or
-  `2` accept arrays only, remove `null`, `false`, zero integers and floats,
+  and `array_filter($array, null, $mode)` with integer mode flags `0`, `1`,
+  or `2` or boolean mode flags accept arrays only, remove `null`, `false`,
+  zero integers and floats,
   empty strings, string `"0"`, and empty arrays using the current
   `Value::is_truthy` rules, preserve the original integer/string keys and
   insertion order of kept entries, and are available through string-valued
@@ -1547,15 +2131,16 @@
   to string function names resolving to current user functions or callable
   builtins, invokes the callback with the value only, keeps entries whose
   callback result is truthy, preserves original keys and insertion order,
-  accepts explicit integer mode flag `0` for the same value-only callback path,
-  and is available when `array_filter` itself is called through a string-valued
-  dynamic function name. `array_filter($array, $callback, 2)` invokes that
-  same string-valued callback subset with each entry's current integer or
-  string key as the only argument and preserves original keys for entries
-  whose callback result is truthy. `array_filter($array, $callback, 1)`
-  invokes the same string-valued callback subset with the value and then the
-  current integer or string key as arguments, preserving original keys for
-  entries whose callback result is truthy. Non-string non-null callback values
+  accepts explicit integer mode flag `0` and boolean mode flag `false` for the
+  same value-only callback path, and is available when `array_filter` itself is
+  called through a string-valued dynamic function name. `array_filter($array,
+  $callback, 2)` invokes that same string-valued callback subset with each
+  entry's current integer or string key as the only argument and preserves
+  original keys for entries whose callback result is truthy. `array_filter($array,
+  $callback, 1)` and `array_filter($array, $callback, true)` invoke the same
+  string-valued callback subset with the value and then the current integer or
+  string key as arguments, preserving original keys for entries whose callback
+  result is truthy. Non-string non-null callback values
   fail with a stable diagnostic, and unresolved callback names fail with the
   current undefined-function diagnostic. Exact uppercase
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants may be used as
@@ -1567,15 +2152,17 @@
   `null`, booleans, integers, floats, strings, and arrays containing only
   supported constant values. `constant($name)` and bare reads of
   runtime-defined unqualified constants return a cloned value from the
-  runtime-defined table or from the exact built-in `ARRAY_FILTER_*` slice.
+  runtime-defined table or from the exact built-in `ARRAY_FILTER_*` and
+  `SORT_*` slice.
   `defined($name)` returns true for supported unqualified names present in that
   current table and false for supported unqualified names that are missing.
   Top-level single and grouped `const NAME = value;` declarations accept
   unqualified names and the current constant-expression subset (`null`,
   booleans, integers, floats, strings, arrays, unary expressions, and binary
   expressions over those values, plus bare references to previously defined
-  unqualified constants and the current exact built-in `ARRAY_FILTER_*`
-  constants). Grouped declarations execute left to right, so references to
+  unqualified constants and the current exact built-in `ARRAY_FILTER_*` and
+  `SORT_*` constants). Grouped declarations execute left to right, so
+  references to
   earlier declarators in the same group work and duplicate diagnostics point to
   the later duplicate declarator in the current group. Duplicate definitions,
   redefinition of the built-in constants, forward or otherwise undefined const
@@ -1588,11 +2175,12 @@
   case-insensitive legacy constants, namespace-qualified constants, extension
   constants, nested declarations, dynamic declaration values, class constants
   through
-  `constant(...)`/`defined(...)`, references/copy-on-write behavior, and native
-  lowering are not implemented.
+  `constant(...)`/unsupported `defined(...)` forms,
+  references/copy-on-write behavior, and broader native lowering are not
+  implemented.
   Array/object callables, closures, first-class callables, method calls,
-  integer mode flags outside `0`, `1`, and `2`, non-int mode coercions such as
-  `false`, references,
+  integer mode flags outside `0`, `1`, and `2`, non-int/non-bool mode
+  coercions such as string `"0"`, references,
   copy-on-write containers, exact native `TypeError` objects, object handle
   identity preservation, resource values, and native lowering are not
   implemented.
@@ -1668,15 +2256,17 @@
   oversized `array_pad` native `ValueError` objects, exact native
   `ValueError`/`TypeError` objects, `array_merge` reference/copy-on-write
   behavior, `array_replace` reference/copy-on-write behavior,
-  `array_combine` key coercions beyond integer/string values,
-  `array_combine` object/resource key values, `array_intersect_key` and
+  `array_combine` lossy or non-finite float key-value coercions,
+  `array_combine` array/object/resource key values, `array_intersect_key` and
   `array_diff_key` exact native `TypeError` objects and
   reference/copy-on-write behavior, `array_diff` and `array_intersect`
-  non-scalar value comparison behavior, `array_unique` sort flags,
-  `array_unique` non-scalar value comparison behavior, exact native
+  non-scalar value comparison behavior, `array_unique` sort flags outside
+  `SORT_REGULAR`/`SORT_NUMERIC`/`SORT_STRING`, `array_unique` non-scalar
+  value comparison
+  behavior, exact native
   `TypeError` objects, and native lowering, `array_flip`
   warning-and-skip behavior
-  for unsupported source values, and `array_fill_keys` warning-and-skip
+  for unsupported source values, and `array_fill_keys` warning/stringification
   behavior for unsupported key values, `array_count_values` warning-and-skip
   behavior for unsupported values, `array_sum` PHP warning recovery for
   unsupported values, `array_product` PHP warning recovery for unsupported
@@ -1726,29 +2316,72 @@
   characters, such as `"10 apples"`, are rejected instead of warning and
   continuing with the leading number. PHP's warning/notice recovery mode,
   locale-sensitive numeric parsing, and exact integer-overflow promotion rules
-  are not implemented. Native arithmetic does not lower binary arithmetic
-  operators yet, including well-formed numeric strings, scalar coercions, and
-  modulo coercions that `phpc run` can execute.
+  are not implemented. Native arithmetic lowers same-type integer or same-type
+  float operands for `+`, `-`, and `*`, plus integer `%` when the divisor is a
+  statically known positive integer. Integer modulo by one also folds after
+  both operands lower when the dividend is intentionally untracked, such as an
+  overflow-sensitive shift result; other modulo cases still require a
+  statically known positive divisor and keep the documented runtime-check
+  boundary. Identical tracked integer expression
+  operands and identical integer literal operands for `-` fold to zero without
+  a redundant native subtraction; identical tracked finite float expression
+  operands and identical finite float literals for `-` fold to `0.0` without a
+  redundant native subtraction; identical integer subtraction also folds after
+  both operands lower when the value is intentionally untracked, such as
+  overflow-sensitive shift results, while other non-identity arithmetic with
+  such values still rejects because exact overflow tracking is unavailable;
+  tracked integer expression operands and integer
+  literal operands for `$x + 0`, `0 + $x`, `$x - 0`, `$x * 1`, and `1 * $x`
+  reuse the existing value; tracked integer expression operands and integer
+  literal operands for `$x * 0` and `0 * $x` fold to zero; integer identity or
+  annihilator forms `+ 0`, `- 0`, `* 1`, and `* 0` also fold after both
+  operands lower when the other integer operand is intentionally untracked,
+  such as overflow-sensitive shift results, while non-identity arithmetic with
+  such values still rejects because exact overflow tracking is unavailable;
+  tracked finite float expression operands and finite float literals for nonzero
+  `$x + 0.0`, `0.0 + $x`, `$x - 0.0`, `$x * 1.0`, and `1.0 * $x` reuse the
+  existing expression; single-result statically known nonzero finite
+  `0.0 - $x` folds to the known negated float literal, while signed-zero and
+  non-finite float identity/subtraction cases stay emitted or rejected;
+  tracked finite positive float expression operands and finite positive float
+  literals for `$x * 0.0` and `0.0 * $x` fold to positive `0.0`, while
+  negative and signed-zero-sensitive multiplication-by-zero cases stay emitted;
+  single-result statically known nonzero finite `$x * -1.0` and `-1.0 * $x`
+  fold to the known negated float literal, while signed-zero-sensitive
+  multiplication by `-1.0` stays emitted;
+  well-formed numeric strings, scalar
+  coercions, mixed int/float arithmetic, `/`, dynamic or non-positive modulo
+  divisors, division/modulo zero checks, modulo coercions, and PHP overflow
+  behavior that `phpc run` can execute remain unsupported.
 - Scalar comparison gaps: strict identity is implemented only for the current
   scalar values. Strict identity for arrays, objects, resources, references,
-  object handle identity, and native lowering is not implemented. LLVM
-  IR/assembly emission rejects all comparison operators explicitly instead of
-  lowering partial PHP comparison semantics. Array/object strict identity
-  operands fail with stable unsupported-comparison runtime diagnostics. Float
-  identity currently follows Rust/PHP-style `f64` equality for representable
-  literals and does not claim broader `NAN`/`INF` precision edge-case
-  coverage.
-- Array gaps: array spread elements and array reference elements are rejected
-  with stable parse diagnostics. `unset(...)` forms outside direct variables
-  and direct array-offset operands, comma-separated `for` header expression
-  lists, expression-form `do ... while`, expression-form `switch`, and
-  alternate switch syntax are rejected with stable parse diagnostics; object
-  property removal, append-offset unset, and nested/complex unset operands are
-  not implemented.
+  and object handle identity is not implemented. LLVM IR/assembly emission
+  lowers only documented same-type `null`, boolean, integer, finite-float,
+  known ASCII nonnumeric NUL-free string loose/ordering comparisons, identical
+  string-pointer self-comparisons, and the documented strict-identity scalar
+  subset; other loose, ordering, untracked/non-finite float, non-identical
+  unknown string, numeric-looking string, NUL-containing string, or mixed-type
+  comparisons are rejected instead of lowering partial PHP comparison
+  semantics.
+  Array/object strict identity operands fail with stable unsupported-comparison
+  runtime diagnostics. Float identity currently follows Rust/PHP-style `f64`
+  equality for representable literals and does not claim broader `NAN`/`INF`
+  precision edge-case coverage.
+- Array gaps: array spread elements, array reference elements, and
+  `list(...)`/`[...]` destructuring assignment targets are rejected with
+  stable parse diagnostics. `unset(...)` forms outside direct variables and
+  direct array-offset operands, comma-separated `for` header expression lists,
+  expression-form `do ... while`, expression-form `switch`, malformed
+  alternate switch bodies, and exponentiation syntax `**`/`**=` are rejected
+  with stable parse diagnostics; object property removal, append-offset unset,
+  and nested/complex unset operands are not implemented.
   Nested indexed writes, complex assignment lvalues, nested/complex
-  `isset(...)` and `empty(...)` array offset operands, `$array[]` as a read
-  expression, string offset access, by-reference `foreach`, object iteration,
-  destructuring loop targets, references, copy-on-write containers, and
+  `isset(...)` and `empty(...)` array offset operands, native
+  `isset($array[$key])` lowering, `$array[]` as a read expression, string
+  offset access, by-reference `foreach`, object iteration, destructuring loop
+  targets, array destructuring assignments with keyed, nested, reference,
+  skipped-slot, or by-value unpacking semantics, references, copy-on-write
+  containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full
   mutation/aliasing behavior while the iterated array is modified. Array keys
@@ -1760,7 +2393,8 @@
   auto-index behavior is not claimed beyond the current non-negative allocator.
   Native array lowering is not implemented; `phpc compile --emit-ir` and
   `--emit-asm` reject array literals, offset reads/writes, `foreach`, array
-  offset `unset`, and array builtins before claiming any generated array
+  offset `unset`, array offset `isset`, and array builtins before claiming any
+  generated array
   storage, key normalization, callback dispatch, references, copy-on-write, or
   exact native error behavior.
 
@@ -1857,8 +2491,8 @@
   limited to brace blocks or single-statement bodies
 - expression-form `do ... while`; `do ... while` is only supported as a
   statement
-- expression-form `switch`, alternate colon/`endswitch` switch syntax,
-  semicolon case separators, and `continue;` behavior inside switch
+- expression-form `switch`, malformed alternate colon/`endswitch` switch
+  bodies, and `continue;` behavior inside switch
 - `break`/`continue` loop-depth arguments such as `break 2;` and `continue 2;`;
   only statement-form `break;` for the innermost active `while`, supported
   `for`, supported `do ... while`, supported array `foreach`, or supported
@@ -1875,6 +2509,13 @@
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation
   order, exact native error objects, and native lowering are not implemented.
+- `goto` statements and labels currently fail with a stable parse diagnostic
+  before jump-target resolution, cross-scope jump validation, `finally`
+  interaction, or native lowering exists.
+- heredoc/nowdoc string syntax currently fails with a stable lex diagnostic
+  before multiline string tokenization, interpolation, indentation stripping,
+  exact label parsing, runtime string construction, or native string lowering
+  exists.
 - Full ternary conditional expressions `$condition ? $if_true : $if_false`
   execute over the current expression/value subset with truthiness-based
   condition selection and lazy branch evaluation. Short ternary expressions
@@ -1969,33 +2610,258 @@
   unparenthesized chained coalescing, precedence interactions beyond the
   current single-operator expression slice, references/copy-on-write, exact
   native error objects, and native lowering are not implemented.
-- Native lowering for ternary and null coalescing expressions is not
-  implemented. LLVM IR/assembly emission rejects those expression forms before
-  lowering branch operands, so generated code does not imply partial PHP
-  truthiness, null-aware lookup, side-effect ordering, references/copy-on-write
-  behavior, or exact native error objects.
-- Native lowering for unary minus and logical not is not implemented. LLVM
-  IR/assembly emission rejects those expression forms before lowering operands,
-  so generated code does not imply partial PHP numeric coercion, truthiness
-  conversion, references/copy-on-write behavior, or exact native error objects.
-- Native lowering for binary arithmetic operators is not implemented. LLVM
-  IR/assembly emission rejects `+`, `-`, `*`, `/`, and `%` before lowering
-  operands, so generated code does not imply partial PHP numeric coercion,
-  dynamic division/modulo zero checks, modulo coercions,
+- Native lowering for conditional expressions is intentionally partial. LLVM
+  IR/assembly emission lowers full ternary expressions only when the condition
+  is already a lowerable boolean or native boolean expression and both branch
+  values are already lowerable integers, booleans, floats, strings, or both
+  branches are `null` in the same straight-line subset, or when the condition
+  is a statically known boolean and both branch values are already lowerable
+  scalar values, or when the condition and both branches are the same direct
+  variable whose current value is already lowerable. Dynamic mixed-type branch values are rejected until native
+  tagged values exist. It emits `select` or a C conditional expression for
+  dynamic non-null boolean conditions, folds identical static string branches
+  to that string without a pointer select, folds identical tracked numeric
+  expression branches and identical numeric literal branches without a numeric
+  select, folds identical integer branches after both branches lower even
+  when the integer value is intentionally untracked, such as an
+  overflow-sensitive shift result, folds identical direct-variable full
+  ternaries such as `$value ? $value : $value` without proving truthiness when
+  all three operands are the same already-lowerable direct variable, including
+  untracked integer, non-finite float-producing, and string pointer
+  expressions, boolean expressions, and null values, and folds identical float branches after
+  both branches lower even when the value is intentionally untracked, such as
+  a non-finite overflowing float multiplication. It folds boolean literal branches such as `$flag ? true : false` and
+  `$flag ? false : true` without a boolean select, folds dynamic
+  `null`/`null` ternaries to `null`, folds static boolean conditions to the selected branch
+  value, folds dynamic integer, finite-float, and boolean ternaries whose
+  possible branch values collapse to a single known result without a redundant
+  select, folds full ternary conditions with null or single-known integer,
+  finite-float, or known-string truthiness to the selected already-lowerable
+  branch without lowering the unselected branch, including direct
+  null-variable conditions that select the false branch without lowering
+  unsupported true-branch calls, and lowers
+  short ternary `?:` for lowerable boolean conditions when
+  dynamic boolean forms have lowerable boolean fallbacks. Static-false short
+  ternaries return any already-lowerable scalar fallback, and static-true short
+  ternaries fold to `true` without lowering the fallback. Single-known integer
+  conditions also fold through integer truthiness, reusing proven nonzero
+  integer results and using the fallback for proven zero integer results.
+  Single-known finite float conditions fold through float truthiness the same
+  way, reusing proven nonzero finite float results and using the fallback for
+  proven zero float results. Known string conditions fold through PHP string
+  truthiness when all possible values have the same truthiness, reusing
+  truthy string results and using the fallback for `""`/`"0"` string results.
+  Identical direct boolean-, integer-, float-, and string-variable short
+  ternaries such as `$flag ?: $flag`, `$value ?: $value`, and `$text ?: $text`
+  also reuse already-lowerable expressions without proving broader truthiness,
+  including boolean expressions, untracked integer expressions, untracked
+  non-finite float-producing expressions, and untracked string pointer
+  expressions. Null short ternaries
+  use the fallback for `null ?: fallback`, including direct null-variable
+  fallback forms such as `$value ?: $value`. It rejects
+  broader null truthiness in logical binaries or null coalescing, plus general
+  PHP truthiness, lazy branch evaluation for
+  unsupported or side-effecting branches, ambiguous string truthiness,
+  non-identical untracked integer, float, or string expressions, non-finite float truthiness, other non-boolean
+  truthiness, arrays, objects, references/copy-on-write behavior, and exact
+  native error objects.
+- Native lowering for unary operators is intentionally partial. LLVM
+  IR/assembly emission lowers unary minus only for operands that are already
+  lowerable integers or floats and logical not only for operands that are
+  already lowerable booleans or native boolean expression results, `null`, or
+  known integers, finite floats, and strings whose possible values all have the
+  same PHP truthiness, in the same straight-line subset. Dynamic boolean double
+  logical-not expressions such as `!!$flag` reuse the original native boolean
+  expression instead of emitting redundant inversions. Double logical-not over
+  known scalar operands such as integers, finite floats, strings, and `null`
+  folds through the same known-truthiness subset without emitting boolean
+  operations. Native lowering folds
+  logical not over single-result statically known native boolean expression
+  operands to the known boolean result in LLVM IR and in the C assembly
+  fallback when the C boolean expression has a tracked result. Known numeric
+  logical-not folds to a static boolean for zero and nonzero known
+  integer/finite-float operands when all possible values have the same
+  truthiness. Known string logical-not folds to a static boolean for `""`,
+  `"0"`, and known-truthy string operands when all possible string values have
+  the same truthiness. Null logical-not folds to `true` without claiming
+  broader null truthiness beyond the documented logical binary folding subset. Integer unary-minus
+  results remain statically tracked
+  for later checked integer arithmetic when all bounded possible negation
+  results are proven not to overflow; single-result statically known integer
+  operands fold to the known negated result without a redundant native
+  unary-minus operation. Finite float unary-minus results remain tracked for
+  later strict-identity folding when every possible negation result is proven;
+  single-result statically known nonzero finite float operands fold to the
+  known negated result without a redundant native unary-minus operation. It
+  rejects boolean, string, null, array, and object
+  unary-minus operands, so generated code does not imply PHP
+  numeric coercion. It rejects ambiguous numeric or string logical-not
+  truthiness, untracked numeric/string logical-not expressions, non-finite
+  float logical-not truthiness, null truthiness outside logical-not, other
+  truthiness conversion, unary integer overflow behavior,
   references/copy-on-write behavior, or exact native error objects.
-- Native lowering for string concatenation is not implemented. LLVM
-  IR/assembly emission rejects `.` before lowering operands, so generated code
-  does not imply partial PHP string conversion, dynamic allocation,
-  references/copy-on-write behavior, or exact native error objects.
+- Native lowering for comparison operators is intentionally partial. LLVM
+  IR/assembly emission lowers same-type `null`, boolean, integer,
+  finite-float, known ASCII nonnumeric NUL-free string loose/ordering
+  comparisons, and identical string-pointer self-comparisons for `==`, `!=`,
+  `<`, `<=`, `>`, and `>=`, plus strict identity `===` and `!==` when both
+  operands are already lowerable `null`, integers, booleans, floats, or
+  strings in the same straight-line subset.
+  Static
+  same-type scalar identity
+  folds at compile time, bounded integer, float, string, and boolean identity
+  fold when all possible `===`/`!==` outcomes are proven identical. Identical
+  lowerable dynamic scalar operands fold for integers, booleans,
+  already-lowerable string pointers, and finite tracked floats, so `$x === $x`
+  and `$x !== $x` avoid runtime comparisons in those safe scalar cases.
+  Identical lowerable integer operands also fold for loose/ordering
+  comparisons, including intentionally untracked integer expressions such as
+  overflow-sensitive shift results: `$x == $x`, `$x <= $x`, and `$x >= $x`
+  fold true, while `$x != $x`, `$x < $x`, and `$x > $x` fold false.
+  Dynamic boolean expression operands compared with boolean literals fold for
+  `$flag === true`, `true === $flag`, `$flag !== false`, and `false !== $flag`
+  by reusing the original native boolean expression, and inverse forms such as
+  `$flag === false`, `false === $flag`, `$flag !== true`, and `true !== $flag`
+  use the native boolean inversion path.
+  Dynamic boolean expression operands compared loosely with boolean literals
+  fold for `$flag == true`, `true == $flag`, `$flag != false`, and
+  `false != $flag` by reusing the native boolean expression, while inverse
+  forms such as `$flag == false`, `false == $flag`, `$flag != true`, and
+  `true != $flag` use the native boolean inversion path.
+  Dynamic boolean expression operands ordered against boolean literals also
+  fold within boolean semantics, reusing the expression, inverting it, or
+  folding to a static boolean for cases such as `$flag > false`,
+  `$flag < true`, `$flag <= true`, and `true >= $flag`.
+  Same-type integer and finite-float loose/ordering comparisons whose tracked
+  possible operands prove one result fold to a static boolean. Literal-only
+  comparisons still fold, while ambiguous tracked finite-float comparisons
+  stay emitted as native comparisons.
+  Boolean expression comparisons whose tracked possible operands prove one
+  loose/ordering result also fold to that static boolean without emitting a
+  redundant native boolean comparison. Identical native boolean expression
+  operands also fold for loose/ordering comparisons, including ambiguous
+  boolean expressions: `$flag == $flag`, `$flag <= $flag`, and `$flag >=
+  $flag` fold true, while `$flag != $flag`, `$flag < $flag`, and `$flag >
+  $flag` fold false. Other ambiguous boolean expression comparisons stay
+  emitted. Identical native string pointer operands also fold for
+  loose/ordering comparisons, including untracked string pointer expressions
+  whose possible value set exceeds the current small tracker: `$text ==
+  $text`, `$text <= $text`, and `$text >= $text` fold true, while `$text !=
+  $text`, `$text < $text`, and `$text > $text` fold false. Non-identical
+  unknown string comparisons stay rejected.
+  Statically known integer strict-identity comparison results remain tracked
+  for later boolean scalar lowering even when the comparison itself stays
+  emitted as `icmp`. Same-type ambiguous dynamic integer, boolean, float, and
+  already-lowerable string pointer identity lower through native comparisons
+  and PHP-shaped boolean echo output, and already lowerable mixed scalar
+  operands with different PHP scalar types fold without runtime comparison
+  calls. Ambiguous dynamic string identity uses `strcmp` for string pointers
+  produced by the current native string ternary subset. Known ASCII nonnumeric
+  string loose/ordering comparisons fold to a static boolean when every
+  possible safe string outcome matches; ambiguous safe string loose/ordering
+  comparisons lower through `strcmp`. Statically known boolean, integer, and
+  finite-float loose/ordering comparison results remain tracked for later
+  boolean scalar lowering even when the comparison itself stays emitted as
+  `icmp`/`fcmp`; ambiguous bounded boolean, finite-float, or string
+  loose/ordering comparison results remain dynamic and untracked.
+  It rejects ambiguous bounded integer, float, string, or boolean identity, broader
+  value-correlation proofs across related expressions such as `$x` and `!$x`,
+  numeric-looking, non-identical unknown, non-ASCII, or NUL-containing string loose/ordering comparisons,
+  mixed null or other mixed-type comparisons, untracked or
+  non-finite float comparisons, dynamic null identity beyond static/type-only folds, PHP truthiness
+  conversion for loose logical operands, arrays, objects,
+  non-lowerable float sources, and dynamic string allocation beyond the static
+  straight-line subset, so generated code does not imply PHP comparison
+  coercions, non-scalar comparison behavior, references/copy-on-write behavior,
+  or exact native error objects.
+- Native lowering for binary arithmetic operators is intentionally partial.
+  LLVM IR/assembly emission lowers only `+`, `-`, and `*` for operands that
+  are already same-type lowerable floats or same-type lowerable integers whose
+  result is statically proven not to overflow in the same straight-line subset,
+  plus integer `%` when the divisor is a statically known positive integer.
+  Statically known modulo results remain tracked for later checked integer
+  arithmetic, and tracked integer expression operands or integer literal
+  operands for `$x % 1` fold to zero. Bounded tracked integer expression
+  operands whose possible values all produce the same remainder for a positive
+  literal divisor fold to that remainder. Tracked integer expression
+  arithmetic for `+`, `-`, and `*` folds to the known integer literal after
+  checked overflow analysis when tracked possible integer operands prove one
+  result, while literal-only integer arithmetic and ambiguous
+  tracked-expression plus tracked-expression integer arithmetic stay emitted.
+  Tracked finite nonzero float
+  expression operands and finite nonzero float literals for `$x + 0.0`,
+  `0.0 + $x`, and `$x - 0.0` reuse the existing expression, while possible
+  signed-zero float identities stay emitted. Single-result statically known
+  nonzero finite `0.0 - $x` folds to the known negated float literal, while
+  possible signed-zero left-zero subtraction stays emitted. Tracked finite
+  positive float expression operands and finite positive float literals for
+  `$x * 0.0` and `0.0 * $x` fold to positive `0.0`, while negative and
+  signed-zero-sensitive multiplication-by-zero cases stay emitted.
+  Single-result statically known nonzero finite `$x * -1.0` and `-1.0 * $x`
+  fold to the known negated float literal, while signed-zero-sensitive
+  multiplication by `-1.0` stays emitted. Tracked finite nonzero float
+  expression arithmetic for `+`, `-`, and `*` folds to the known float literal
+  when tracked possible finite-float operands prove one nonzero result, while
+  literal-only float arithmetic and zero-result arithmetic stay emitted. It
+  rejects mixed int/float arithmetic, strings, booleans, nulls,
+  arrays, objects, `/`, overflow-sensitive or not-statically-proven integer
+  arithmetic, dynamic or non-positive modulo divisors, modulo results that are
+  not statically known enough for later checked arithmetic, and modulo cases
+  that need PHP coercion or runtime checks, so generated code does not imply
+  PHP numeric coercion, dynamic division/modulo zero checks, modulo coercions,
+  negative-divisor/min-int modulo edge behavior, integer overflow promotion,
+  references/copy-on-write behavior, or exact native error objects. Mixed
+  int/float `+`, `-`, and `*` operands use a
+  mixed-numeric-specific codegen diagnostic until generated code has PHP
+  numeric promotion and exact result typing. Boolean, null, and string operands
+  in `+`, `-`, and `*` use a scalar-coercion-specific codegen diagnostic until
+  generated code has PHP numeric coercion and string numeric parsing.
+  Overflow-sensitive or not-statically-proven integer `+`, `-`, and `*` cases
+  use an integer-overflow-specific codegen diagnostic until generated code has
+  PHP integer overflow promotion and runtime checks. Native `/` uses a
+  division-specific codegen diagnostic until generated code has PHP division
+  semantics, runtime zero checks, and no misleading integer truncation.
+  Dynamic, zero, or non-positive integer modulo
+  divisors use a modulo-specific codegen diagnostic until native runtime checks
+  exist.
+- Native lowering for string concatenation is intentionally partial. LLVM
+  IR/assembly emission lowers `.` only when both operands are already
+  lowerable strings in the same straight-line subset, including ternary
+  operands that prove one static string result, folding the result into a
+  generated static string constant. Empty-string concatenation identity also
+  folds for already-lowerable string operands, including untracked string
+  pointer expressions: `$text . ""` and `"" . $text` reuse `$text` without
+  runtime string allocation. It rejects scalar-to-string conversion, non-empty
+  ambiguous string expressions, arrays, objects, resources, runtime string
+  allocation, references/copy-on-write behavior, and exact native error objects.
 - Logical operators are limited to `&&`, `||`, `and`, `xor`, and `or` over the
-  current truthiness rules. `&&`, `||`, `and`, and `or` short-circuit, `xor`
-  evaluates both operands, all return booleans, and fixture coverage exercises
-  symbolic precedence plus word-operator precedence around direct assignment
-  expressions. Operator-overloaded extension values, references/copy-on-write
-  side effects, exact native error objects, and native lowering are not
-  implemented. LLVM IR/assembly emission rejects logical operators before
-  operand lowering so generated code does not imply partial PHP truthiness or
-  short-circuit semantics.
+  current interpreter truthiness rules. `&&`, `||`, `and`, and `or`
+  short-circuit, `xor` evaluates both operands, all return booleans, and
+  fixture coverage exercises symbolic precedence plus word-operator precedence
+  around direct assignment expressions. Native LLVM IR/assembly lowering
+  accepts operands that are already lowerable booleans or native boolean
+  expression results, plus already-lowerable scalar operands whose possible
+  values all have one known PHP truthiness result, in the same straight-line
+  subset. Static boolean pairs fold, and static boolean identity and
+  annihilator edges preserve proven boolean results for later scalar lowering
+  without claiming broader short-circuit support. Identical native boolean
+  expression operands for `&&`/`and` and `||`/`or` reuse the existing
+  expression without a redundant native boolean operation, and identical native
+  boolean expression operands for `xor` fold to `false`. Native boolean
+  expression operations whose tracked possible operands prove one result fold
+  to that static boolean without a redundant native boolean operation. Known
+  scalar logical operands whose null, integer, finite-float, or string truthiness is
+  unambiguous fold to a static boolean result without emitting a native boolean
+  operation. Statically decisive known-left `&&`/`and` and `||`/`or`
+  short-circuit cases such as `false && rhs` and `true || rhs` lower without
+  lowering the skipped right-hand operand. Other dynamic boolean expressions
+  lower to native boolean operations with PHP-shaped boolean echo output. Native
+  lowering still rejects general PHP truthiness conversion, dynamic
+  short-circuiting, `xor` right-hand skipping, selected/evaluated unsupported
+  right-hand operands, ambiguous scalar truthiness, untracked scalar logical
+  operands, non-finite float truthiness, null coalescing, arrays, objects,
+  references/copy-on-write side effects, exact native error objects,
+  linking/execution, and broader native lowering.
 - Bitwise operators are limited to `&`, `|`, `^`, unary `~`, and shift
   operators `<<`/`>>` over the current integer/string subset. Mixed binary
   operands and shift operands use the current
@@ -2012,13 +2878,59 @@
   `TypeError` object, arrays/objects are rejected for binary bitwise and shift
   operators, append-offset/nested bitwise compound-assignment targets, PHP
   warning/deprecation recovery for float-to-int precision loss,
-  references/copy-on-write side effects, and native lowering are not
-  implemented. LLVM IR/assembly emission rejects bitwise and shift operators
-  before operand lowering so generated code does not imply partial PHP
-  bytewise string, scalar-to-int coercion, or shift-count semantics.
+  references/copy-on-write side effects, exact native error objects, and broad
+  native lowering are not implemented. LLVM IR/assembly emission lowers only
+  the already-lowerable integer subset for binary `&`, `|`, `^`, unary `~`,
+  and shifts with statically known counts from 0 through 63. Bounded
+  statically known integer bitwise and unary bitwise-not results remain tracked
+  for later checked integer arithmetic. Single-result statically known integer
+  operands for unary `~` fold to the known bitwise-not result without a
+  redundant native bitwise-not operation. Double unary bitwise-not `~~$x` over
+  an already-lowerable integer operand reuses `$x`, including intentionally
+  untracked integer expressions such as overflow-sensitive shift results.
+  Identical tracked integer expression
+  operands and identical integer literal operands for `&` and `|` reuse the
+  existing value, and identical tracked integer expression operands and
+  identical integer literal operands for `^` fold to zero. Identical integer
+  operands also fold after both operands lower when the value is intentionally
+  untracked, such as overflow-sensitive shift results: `$x & $x` and `$x | $x`
+  reuse `$x`, while `$x ^ $x` folds to zero. Tracked integer
+  expression operands and integer literal operands for `$x & -1` and
+  `-1 & $x`, and for `$x | 0`, `0 | $x`, `$x ^ 0`, and `0 ^ $x`, reuse the
+  existing value. Tracked integer expression operands and integer literal
+  operands for `$x & 0` and `0 & $x` fold to zero. Tracked integer expression
+  operands and integer literal operands for `$x | -1` and `-1 | $x` fold to
+  `-1` after both operands lower. Single-known integer operands for `$x ^ -1`
+  and `-1 ^ $x` fold to the known bitwise-not result. The `& 0`, `& -1`,
+  `| 0`, and `^ 0` identity or annihilator forms also fold after both operands
+  lower when the other integer operand is intentionally untracked, such as
+  overflow-sensitive shift results. Tracked integer expression
+  bitwise operations for `&`, `|`, and `^` fold to the known integer literal
+  when tracked possible integer operands prove one result, while literal-only
+  integer bitwise operations and ambiguous tracked-expression plus
+  tracked-expression bitwise operations stay emitted.
+  Bounded statically known
+  safe shift results remain tracked for later checked integer arithmetic, and
+  tracked integer expression operands and integer literal operands for
+  `$x << 0` and `$x >> 0` reuse the existing value. Those shift-by-zero
+  identities also fold after both operands lower when the left integer operand
+  is intentionally untracked, such as an overflow-sensitive shift result.
+  Tracked single-result integer expression shifts with literal counts or
+  tracked integer expression counts that prove one safe count fold to the known
+  integer literal, while literal-only shifts and non-single tracked integer
+  shifts stay emitted, and overflow-sensitive left-shift result sets remain
+  unknown. It rejects
+  ambiguous dynamic shift counts, negative or large counts, string bitwise operands,
+  scalar-to-int coercion for non-integer operands, arrays, and
+  objects so generated code does not imply partial PHP bytewise string,
+  coercion, overflow, or complete shift-count semantics.
 - dynamic callables outside the string function-name subset, including array
   callables, object/method callables, first-class callable syntax,
   `call_user_func`, and namespace/autoload-aware callable resolution
+- `array_key_exists` lossy or non-finite float key coercion and PHP
+  warning/deprecation behavior, array/object/resource/reference keys, exact
+  native `TypeError` objects, reference/copy-on-write behavior, and native
+  lowering
 - `array_key_first`/`array_key_last`/`array_is_list` exact native `TypeError`
   objects, reference/copy-on-write container behavior, and native lowering
 - `array_keys` filtering over array, object, resource, or reference search
@@ -2047,10 +2959,11 @@
 - `array_replace` reference/copy-on-write behavior, object handle identity
   preservation for object values, resource values, exact native `TypeError`
   objects, and native lowering
-- `array_combine` key-value coercions beyond integers and strings, length
-  mismatch native `ValueError` objects, non-array native `TypeError` objects,
-  reference/copy-on-write behavior, object handle identity preservation for
-  object values, resource values, and native lowering
+- `array_combine` lossy or non-finite float, array, object, resource, and
+  reference key-value coercions, length mismatch native `ValueError` objects,
+  non-array native `TypeError` objects, reference/copy-on-write behavior, object handle
+  identity preservation for object values, resource values, and native
+  lowering
 - `array_intersect_key` exact native `TypeError` objects,
   reference/copy-on-write behavior, object handle identity preservation for
   object values, resource values, and native lowering
@@ -2063,17 +2976,29 @@
 - `array_intersect` non-scalar value comparisons, exact native `TypeError`
   objects, PHP warning-and-string-conversion behavior for arrays and objects,
   reference/copy-on-write behavior, object/resource values, and native lowering
-- `array_unique` sort flags, non-scalar value comparisons, exact native
-  `TypeError` objects, PHP warning-and-string-conversion behavior for arrays
-  and objects, reference/copy-on-write behavior, object/resource values, and
-  native lowering
+- `array_unique` sort flags outside `SORT_REGULAR`/`SORT_NUMERIC`/
+  `SORT_STRING`, non-scalar value comparisons, numeric-mode PHP warning
+  recovery for non-numeric values, exact native `TypeError` objects, PHP
+  warning-and-string-conversion behavior for arrays and objects,
+  reference/copy-on-write behavior, object/resource values, and native
+  lowering
 - `array_flip` warning-and-skip behavior for unsupported source values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering
-- `array_fill_keys` warning-and-skip behavior for unsupported key values,
-  reference/copy-on-write behavior, object handle identity for object fill
-  values, exact native warning/`TypeError` objects, resource values, and native
-  lowering
+- `array_change_key_case` Unicode/locale-aware casing, non-int case coercions,
+  reference/copy-on-write behavior, exact native warning/`TypeError` objects,
+  resource keys, and native lowering
+- `array_column` first-argument coercions outside arrays, column or index keys
+  outside int/string/null, lossy or non-finite float index values,
+  array/object/resource index values, magic `__get`, `ArrayAccess`, exact
+  visibility-context behavior for non-public properties,
+  reference/copy-on-write behavior, exact native `TypeError`/warning objects,
+  resource values, and native lowering
+- `array_fill_keys` lossy or non-finite float stringification,
+  warning-and-skip behavior for unsupported key values, array/object/resource
+  key values, reference/copy-on-write behavior, object handle identity for
+  object fill values, exact native warning/`TypeError` objects, resource
+  values, and native lowering
 - `array_count_values` warning-and-skip behavior for unsupported values,
   reference/copy-on-write behavior, exact native warning/`TypeError` objects,
   resource values, and native lowering
@@ -2089,7 +3014,7 @@
   native lowering
 - `array_filter` callbacks outside `null` and string-valued
   user-function/callable-builtin names, integer mode flags outside `0`, `1`,
-  and `2`, non-int mode coercions such as `false`,
+  and `2`, non-int/non-bool mode coercions such as string `"0"`,
   reference/copy-on-write behavior, object handle identity
   preservation, resource values, exact native `TypeError` objects, and native
   lowering
@@ -2098,8 +3023,8 @@
   resource values, exact native `TypeError` objects, and native lowering
 - `method_exists` method dispatch, inheritance, traits, interfaces,
   aliases/imports, namespace-aware names, autoloading, visibility behavior
-  beyond metadata reporting, exact native `TypeError` objects, and native
-  lowering
+  beyond metadata reporting, exact native `TypeError` objects, object operands,
+  and native lowering beyond direct string/string false folding
 - `get_class_methods` inheritance, traits, interfaces, aliases/imports,
   namespace-aware names, autoloading, non-public/context-sensitive visibility
   listing, exact native ordering and `TypeError` behavior, and native lowering
@@ -2111,10 +3036,14 @@
   properties, inheritance, traits, interfaces, aliases/imports,
   namespace-aware names, references/copy-on-write, exact native ordering and
   `TypeError` behavior, and native lowering
-- `get_mangled_object_vars` protected/private property-name mangling, dynamic
-  properties, non-public visibility context, inheritance, traits, interfaces,
-  aliases/imports, namespace-aware names, references/copy-on-write, exact
-  native ordering and `TypeError` behavior, and native lowering
+- `get_mangled_object_vars` dynamic properties, property defaults,
+  inheritance, traits, interfaces, aliases/imports, namespace-aware names,
+  non-public/context-sensitive visibility behavior, references/copy-on-write,
+  exact native ordering and `TypeError` behavior, and native lowering
+- `property_exists` native true results, native declared property tables,
+  object operands, built-in/internal/extension classes, autoloading,
+  namespaces/import aliases, exact native `TypeError` behavior, and native
+  lowering beyond direct string/string false folding
 - `empty($object->name)` dynamic property names, non-public visibility
   context, complex lvalues, magic `__isset`/`__get` behavior,
   references/copy-on-write, exact native error behavior, and native lowering
@@ -2124,10 +3053,11 @@
   behavior, and native lowering
 - `is_a` inheritance, interfaces, traits, aliases/imports, namespace-aware
   names, autoloading, exact native `TypeError` behavior, object handle
-  identity beyond current class ids, and native lowering
+  identity beyond current class ids, object operands, and native lowering
+  beyond direct string/string false folding
 - `is_subclass_of` inheritance, interfaces, traits, aliases/imports,
-  namespace-aware names, autoloading, exact native `TypeError` behavior, and
-  native lowering
+  namespace-aware names, autoloading, exact native `TypeError` behavior, object
+  operands, and native lowering beyond direct string/string false folding
 - `get_parent_class` inheritance lookup, interfaces, aliases/imports,
   namespace-aware names, autoloading, default `$this` behavior, exact native
   `TypeError` behavior, and native lowering
@@ -2141,15 +3071,19 @@
   handle reuse after destruction, clone semantics, destructors,
   references/copy-on-write behavior, exact native `TypeError` behavior, and
   native lowering
+- `class_exists` native true results, native declared class tables,
+  built-in/internal/extension class entries, autoloading, namespaces/import
+  aliases, exact native `TypeError` behavior, and native lowering beyond
+  direct string-name false folding
 - `interface_exists` declared interface metadata, built-in/internal interface
   entries, autoloading, namespaces/import aliases, exact native `TypeError`
-  behavior, and native lowering
+  behavior, and native lowering beyond direct string-name false folding
 - `trait_exists` declared trait metadata, built-in/internal trait entries,
   autoloading, namespaces/import aliases, exact native `TypeError` behavior,
-  and native lowering
+  and native lowering beyond direct string-name false folding
 - `enum_exists` declared enum metadata, built-in/internal enum entries,
   autoloading, namespaces/import aliases, exact native `TypeError` behavior,
-  and native lowering
+  and native lowering beyond direct string-name false folding
 - `get_declared_interfaces` declared interface metadata, built-in/internal
   interface entries, autoloading, namespaces/import aliases, exact native
   ordering, and native lowering
@@ -2159,8 +3093,10 @@
 - named arguments
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
-  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, and runtime-defined
-  unqualified constants in the current name/value subset; unsupported
+  `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
+  `SORT_NUMERIC`, `SORT_STRING`, and runtime-defined unqualified constants in
+  the current name/value subset;
+  unsupported
   `define(...)` names or values, case-insensitive legacy constants, extension
   constants, namespace-qualified constants, nested `const` declarations,
   dynamic declaration values, `constant()`/`defined()` lookup
@@ -2175,8 +3111,22 @@
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current parse boundary
 - traits/interfaces/enums
-- generators
-- attributes
+- generator functions, generator objects, `yield`, `yield from`, key/value
+  yields, by-reference yields, `send`/`throw`/`return` generator semantics,
+  and native lowering
+- executable attribute declarations and reflection metadata beyond the current
+  lex boundary
+- `is_callable` callable-name output parameter, array/object callable dynamic
+  invocation, object `__invoke` callables, private/protected caller-context
+  method callability, inherited/trait/interface method lookup, first-class
+  callable syntax, namespace/autoload-aware resolution, exact native
+  `TypeError` behavior, and native lowering beyond direct known string
+  builtin/missing-name folding with optional known boolean syntax-only flags
+  and direct non-string scalar/null false folding
+- `function_exists` non-string name coercion, namespace/autoload-aware lookup,
+  extension-loaded functions beyond documented builtins, exact native
+  `TypeError`/deprecation behavior, and native lowering beyond direct known
+  string builtin/missing-name folding
 - PHP standard library beyond documented builtins
 - `empty(...)` operands outside direct variables, direct array offsets, and
   direct public object-property operands, including nested offsets, dynamic

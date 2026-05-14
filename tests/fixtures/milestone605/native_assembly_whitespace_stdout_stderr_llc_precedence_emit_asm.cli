@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+codegen error at tests/fixtures/milestone605/native_assembly_whitespace_stdout_stderr_llc_precedence.php:0:0: llc emitted whitespace-only assembly output
+--- stderr end ---

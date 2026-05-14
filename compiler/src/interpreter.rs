@@ -3,9 +3,9 @@ use std::path::Path;
 use std::rc::Rc;
 
 use php_runtime::{
-    ArityExpectation, ArrayKey, Comparison, ObjectProperty, PhpArray, PhpClassTable,
-    PhpMethodMetadata, PhpObject, PhpPropertyMetadata, RuntimeError, RuntimeResult, Value,
-    Visibility,
+    ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, Comparison, ObjectProperty, PhpArray,
+    PhpClassTable, PhpMethodMetadata, PhpObject, PhpPropertyMetadata, RuntimeError, RuntimeResult,
+    Value, Visibility,
 };
 
 use crate::ast::{
@@ -1803,8 +1803,8 @@ impl Interpreter {
             }
             "array_key_exists" => {
                 expect_arity(name, &args, 2, span)?;
-                let key =
-                    ArrayKey::from_value(&args[0]).map_err(|error| runtime_error(span, error))?;
+                let key = ArrayKey::from_array_key_exists_value(&args[0])
+                    .map_err(|error| runtime_error(span, error))?;
                 match &args[1] {
                     Value::Array(array) => Ok(Value::Bool(array.contains_key(key))),
                     other => Err(runtime_error(
@@ -1904,6 +1904,83 @@ impl Interpreter {
                     RuntimeError::arity_mismatch(
                         "array_keys()",
                         ArityExpectation::Between { min: 1, max: 3 },
+                        args.len(),
+                    ),
+                )),
+            },
+            "array_change_key_case" => match args.as_slice() {
+                [Value::Array(array)] => {
+                    Ok(Value::Array(array.keys_with_ascii_case(ArrayKeyCase::Lower)))
+                }
+                [Value::Array(array), Value::Int(case)] => {
+                    Ok(Value::Array(array.keys_with_ascii_case(
+                        ArrayKeyCase::from_flag(*case),
+                    )))
+                }
+                [Value::Array(_), other] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_change_key_case()",
+                        format!(
+                            "case flag must be int in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                [other] | [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_change_key_case()",
+                        format!("argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_change_key_case()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
+            "array_column" => match args.as_slice() {
+                [Value::Array(array), column_key] => {
+                    let column_key = ArrayColumnKey::from_value(column_key)
+                        .map_err(|error| runtime_error(span, error))?;
+                    array
+                        .column_values(column_key, None)
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error))
+                }
+                [Value::Array(array), column_key, index_key] => {
+                    let column_key = ArrayColumnKey::from_value(column_key)
+                        .map_err(|error| runtime_error(span, error))?;
+                    let index_key = ArrayColumnKey::index_from_value(index_key)
+                        .map_err(|error| runtime_error(span, error))?;
+                    array
+                        .column_values(column_key, index_key)
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error))
+                }
+                [other, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_column()",
+                        format!("first argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                [other, _, _] => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "array_column()",
+                        format!("first argument must be array, got {}", other.type_name()),
+                    ),
+                )),
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "array_column()",
+                        ArityExpectation::Between { min: 2, max: 3 },
                         args.len(),
                     ),
                 )),
@@ -2415,11 +2492,23 @@ impl Interpreter {
                     .unique_values_by_string()
                     .map(Value::Array)
                     .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), Value::Int(0)] => array
+                    .unique_values_regular()
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), Value::Int(1)] => array
+                    .unique_values_by_numeric()
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
+                [Value::Array(array), Value::Int(2)] => array
+                    .unique_values_by_string()
+                    .map(Value::Array)
+                    .map_err(|error| runtime_error(span, error)),
                 [Value::Array(_), _] => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "array_unique()",
-                        "sort flags are not supported in the current subset",
+                        "sort flags other than SORT_REGULAR, SORT_NUMERIC, or SORT_STRING are not supported in the current subset",
                     ),
                 )),
                 [other] | [other, _] => Err(runtime_error(
@@ -2591,6 +2680,103 @@ impl Interpreter {
                     ),
                 )),
             },
+            "gettype" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::String(args[0].gettype_name().to_string()))
+            }
+            "is_null" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::Null)))
+            }
+            "is_bool" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::Bool(_))))
+            }
+            "is_int" | "is_integer" | "is_long" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::Int(_))))
+            }
+            "is_float" | "is_double" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::Float(_))))
+            }
+            "is_string" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::String(_))))
+            }
+            "is_array" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(matches!(&args[0], Value::Array(_))))
+            }
+            "is_scalar" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(args[0].is_scalar()))
+            }
+            "is_numeric" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(args[0].is_numeric()))
+            }
+            "is_countable" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(args[0].is_countable()))
+            }
+            "is_iterable" => {
+                expect_arity(name, &args, 1, span)?;
+                Ok(Value::Bool(args[0].is_iterable()))
+            }
+            "is_callable" => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "is_callable()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                if let Some(other) = args.get(1).filter(|value| !matches!(value, Value::Bool(_))) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "is_callable()",
+                            format!(
+                                "syntax_only argument must be bool in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+
+                let syntax_only = matches!(args.get(1), Some(Value::Bool(true)));
+                match &args[0] {
+                    Value::String(name) if syntax_only => Ok(Value::Bool(true)),
+                    Value::String(name) => Ok(Value::Bool(self.lookup_function(name).is_some())),
+                    Value::Array(array) if syntax_only => {
+                        Ok(Value::Bool(is_array_callable_syntax_shape(array)))
+                    }
+                    Value::Array(array) => {
+                        Ok(Value::Bool(is_array_callable_resolved(&self.classes, array)))
+                    }
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+            "function_exists" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(name) => Ok(Value::Bool(self.lookup_function(name).is_some())),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "function_exists()",
+                            format!(
+                                "function name argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "get_class" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -3013,12 +3199,10 @@ impl Interpreter {
                 [Value::Object(object)] => {
                     let mut properties = PhpArray::new();
                     for property in object.properties() {
-                        if property.visibility() == Visibility::Public {
-                            properties.insert(
-                                ArrayKey::from(property.name()),
-                                property.value().clone(),
-                            );
-                        }
+                        properties.insert(
+                            ArrayKey::String(property.mangled_name(object.class_name())),
+                            property.value().clone(),
+                        );
                     }
                     Ok(Value::Array(properties))
                 }
@@ -3338,6 +3522,8 @@ impl Interpreter {
 
     fn array_filter_mode(mode: &Value, span: Span) -> CompileResult<ArrayFilterMode> {
         match mode {
+            Value::Bool(false) => Ok(ArrayFilterMode::Value),
+            Value::Bool(true) => Ok(ArrayFilterMode::Both),
             Value::Int(0) => Ok(ArrayFilterMode::Value),
             Value::Int(1) => Ok(ArrayFilterMode::Both),
             Value::Int(2) => Ok(ArrayFilterMode::Key),
@@ -3355,7 +3541,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "array_filter()",
                     format!(
-                        "mode flag must be integer 0, 1, or 2 in the current subset, got {}",
+                        "mode flag must be integer 0, 1, 2, or bool in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
@@ -3872,6 +4058,48 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn is_array_callable_syntax_shape(array: &PhpArray) -> bool {
+    array_callable_parts(array).is_some()
+}
+
+fn is_array_callable_resolved(classes: &PhpClassTable, array: &PhpArray) -> bool {
+    let Some((target, method_name)) = array_callable_parts(array) else {
+        return false;
+    };
+
+    match target {
+        Value::Object(object) => classes
+            .get(object.class_id())
+            .and_then(|class| class.method(method_name))
+            .is_some_and(|method| method.visibility() == Visibility::Public),
+        Value::String(class_name) => classes
+            .lookup_class(class_name)
+            .and_then(|class| class.method(method_name))
+            .is_some_and(|method| method.visibility() == Visibility::Public && method.is_static()),
+        _ => false,
+    }
+}
+
+fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
+    let entries = array.entries();
+    if entries.len() != 2 {
+        return None;
+    }
+
+    if !matches!(entries[0].key, ArrayKey::Int(0)) || !matches!(entries[1].key, ArrayKey::Int(1)) {
+        return None;
+    }
+
+    let Value::String(method_name) = &entries[1].value else {
+        return None;
+    };
+
+    match &entries[0].value {
+        Value::String(_) | Value::Object(_) => Some((&entries[0].value, method_name)),
+        _ => None,
+    }
+}
+
 impl From<RuntimeError> for Diagnostic {
     fn from(value: RuntimeError) -> Self {
         Diagnostic::new(Phase::Runtime, 0, 0, value.message())
@@ -3892,6 +4120,8 @@ fn is_builtin(name: &str) -> bool {
             | "array_key_last"
             | "array_is_list"
             | "array_keys"
+            | "array_change_key_case"
+            | "array_column"
             | "array_reverse"
             | "array_slice"
             | "array_chunk"
@@ -3914,6 +4144,22 @@ fn is_builtin(name: &str) -> bool {
             | "array_map"
             | "in_array"
             | "array_search"
+            | "gettype"
+            | "is_null"
+            | "is_bool"
+            | "is_int"
+            | "is_integer"
+            | "is_long"
+            | "is_float"
+            | "is_double"
+            | "is_string"
+            | "is_array"
+            | "is_scalar"
+            | "is_numeric"
+            | "is_countable"
+            | "is_iterable"
+            | "is_callable"
+            | "function_exists"
             | "get_class"
             | "is_object"
             | "get_debug_type"
@@ -3943,8 +4189,13 @@ fn is_builtin(name: &str) -> bool {
 
 fn builtin_global_constant_value(name: &str) -> Option<i64> {
     match name {
+        "CASE_LOWER" => Some(0),
+        "CASE_UPPER" => Some(1),
         "ARRAY_FILTER_USE_BOTH" => Some(1),
         "ARRAY_FILTER_USE_KEY" => Some(2),
+        "SORT_REGULAR" => Some(0),
+        "SORT_NUMERIC" => Some(1),
+        "SORT_STRING" => Some(2),
         _ => None,
     }
 }

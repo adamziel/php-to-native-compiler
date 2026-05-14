@@ -9,6 +9,12 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn lex_error(source: &str) -> php_compiler::error::Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Lex);
+    error
+}
+
 #[test]
 fn long_array_literals_execute_as_short_array_aliases() {
     let execution = run_source(
@@ -34,6 +40,35 @@ echo $upper[1], "\n";
         "5\nfirst|two updated|zero two|Ada|three\nb\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unsupported_heredoc_nowdoc_syntax_has_stable_lex_errors() {
+    let cases = [
+        ("<?php\n$text = <<<TXT\nhello\nTXT;\n", 2, 9),
+        ("<?php\n$text = <<<'TXT'\nhello\nTXT;\n", 2, 9),
+    ];
+
+    for (source, line, column) in cases {
+        let error = lex_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_heredoc_nowdoc_syntax_at_lex_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$text = <<<TXT\nhello\nTXT;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Lex);
+    assert_eq!(
+        error.message,
+        "unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented"
+    );
 }
 
 #[test]
@@ -74,6 +109,48 @@ $items = [...$values];
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
     }
+}
+
+#[test]
+fn unsupported_array_destructuring_assignments_have_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n[$first] = [1];\n",
+            2,
+            10,
+            "unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments",
+        ),
+        (
+            "<?php\nlist($first) = [1];\n",
+            2,
+            1,
+            "unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments",
+        ),
+        (
+            "<?php\necho list($first);\n",
+            2,
+            6,
+            "unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_array_destructuring_assignment_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n[$first] = [1];\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported array destructuring assignment: list(...) and [...] destructuring targets are not implemented; use direct variable, array offset, append offset, or object property assignments"
+    );
 }
 
 #[test]
@@ -197,6 +274,48 @@ fn emit_ir_rejects_exception_syntax_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_yield_syntax_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nyield $value;\n",
+            2,
+            1,
+            "unsupported yield expression: generators and generator object execution are not implemented",
+        ),
+        (
+            "<?php\nYIELD from [1, 2];\n",
+            2,
+            1,
+            "unsupported yield expression: generators and generator object execution are not implemented",
+        ),
+        (
+            "<?php\necho yield 1;\n",
+            2,
+            6,
+            "unsupported yield expression: generators and generator object execution are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_yield_syntax_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\nyield from [1, 2];\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported yield expression: generators and generator object execution are not implemented"
+    );
+}
+
+#[test]
 fn unsupported_match_expression_has_stable_parse_errors() {
     let cases = [
         (
@@ -237,6 +356,247 @@ fn emit_ir_rejects_match_expression_at_parse_boundary() {
 }
 
 #[test]
+fn unsupported_exponentiation_syntax_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\necho 2 ** 3;\n",
+            2,
+            8,
+            "unsupported exponentiation operator: ** and **= are not implemented",
+        ),
+        (
+            "<?php\n$value = 2;\n$value **= 3;\n",
+            3,
+            8,
+            "unsupported exponentiation operator: ** and **= are not implemented",
+        ),
+        (
+            "<?php\n$value = 2;\necho ($value **= 3);\n",
+            3,
+            14,
+            "unsupported exponentiation operator: ** and **= are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_exponentiation_syntax_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\necho 2 ** 3;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported exponentiation operator: ** and **= are not implemented"
+    );
+}
+
+#[test]
+fn unsupported_first_class_callable_syntax_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$callback = strlen(...);\n",
+            2,
+            20,
+            "unsupported first-class callable syntax: Closure creation with ... is not implemented",
+        ),
+        (
+            "<?php\n$callback = 'strlen';\necho $callback(...);\n",
+            3,
+            16,
+            "unsupported first-class callable syntax: Closure creation with ... is not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$callback = strlen(...);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+    );
+}
+
+#[test]
+fn unsupported_magic_class_name_instantiation_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\necho new self();\n",
+            2,
+            10,
+            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
+        ),
+        (
+            "<?php\necho new parent();\n",
+            2,
+            10,
+            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
+        ),
+        (
+            "<?php\necho new static();\n",
+            2,
+            10,
+            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
+        ),
+        (
+            "<?php\necho new SELF();\n",
+            2,
+            10,
+            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_magic_class_name_instantiation_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\necho new self();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported magic class name: self, parent, and static class name resolution is not implemented"
+    );
+}
+
+#[test]
+fn unsupported_anonymous_class_expression_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$box = new class {};\n",
+            2,
+            12,
+            "unsupported anonymous class: anonymous classes are not implemented",
+        ),
+        (
+            "<?php\n$box = new class() {};\n",
+            2,
+            12,
+            "unsupported anonymous class: anonymous classes are not implemented",
+        ),
+        (
+            "<?php\necho new class {};\n",
+            2,
+            10,
+            "unsupported anonymous class: anonymous classes are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_anonymous_class_expression_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$box = new class {};\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported anonymous class: anonymous classes are not implemented"
+    );
+}
+
+#[test]
+fn unsupported_clone_expression_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\n$copy = clone $object;\n",
+            2,
+            9,
+            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+        ),
+        (
+            "<?php\necho clone $object;\n",
+            2,
+            6,
+            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+        ),
+        (
+            "<?php\nCLONE $object;\n",
+            2,
+            1,
+            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_clone_expression_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\n$copy = clone $object;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported clone expression: object handle copying and __clone dispatch are not implemented"
+    );
+}
+
+#[test]
+fn unsupported_goto_syntax_has_stable_parse_errors() {
+    let cases = [
+        ("<?php\ngoto done;\ndone:\necho 'done';\n", 2, 1),
+        ("<?php\nGOTO done;\n", 2, 1),
+        ("<?php\ndone:\necho 'done';\n", 2, 1),
+        ("<?php\necho goto done;\n", 2, 6),
+    ];
+
+    for (source, line, column) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(
+            error.message,
+            "unsupported goto: goto statements and labels are not implemented"
+        );
+    }
+}
+
+#[test]
+fn emit_ir_rejects_goto_syntax_at_parse_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\ngoto done;\ndone:\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported goto: goto statements and labels are not implemented"
+    );
+}
+
+#[test]
 fn unparenthesized_nested_ternary_has_stable_parse_error() {
     let cases = [
         (
@@ -257,13 +617,15 @@ fn unparenthesized_nested_ternary_has_stable_parse_error() {
 
 #[test]
 fn emit_ir_rejects_ternary_expression_after_parse() {
-    let error =
-        php_compiler::emit_ir_source("<?php\n$result = $condition ? 'yes' : 'no';\n").unwrap_err();
+    let error = php_compiler::emit_ir_source(
+        "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$maybe = $flag ? 0 : 5;\necho $maybe ? 1 : 2;\n",
+    )
+    .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
+        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
     );
 }
 
@@ -301,7 +663,7 @@ fn emit_ir_rejects_null_coalescing_expression_at_codegen_boundary() {
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "LLVM conditional lowering rejects ternary and null coalescing expressions until native PHP truthiness, null-aware lookup, and branch side-effect ordering exist; phpc run handles current conditional expression behavior"
+        "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior"
     );
 }
 
@@ -595,43 +957,60 @@ echo DO echo "tick"; WHILE (false);
 
 #[test]
 fn unsupported_switch_forms_are_rejected_with_stable_parse_error() {
+    let cases = [(
+        r#"<?php
+echo switch ($value) {
+    default:
+        echo "fallback";
+};
+"#,
+        2,
+        6,
+        "unsupported switch: switch is only supported as a statement in the current subset",
+    )];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn malformed_alternate_switch_forms_have_stable_parse_errors() {
     let cases = [
+        (
+            r#"<?php
+$value = 2;
+switch ($value):
+    echo "body";
+endswitch;
+"#,
+            4,
+            5,
+            "expected 'case', 'default', or 'endswitch' in alternate switch body",
+        ),
         (
             r#"<?php
 $value = 2;
 switch ($value):
     case 1:
         echo "one";
-        break;
-    default:
-        echo "other";
-endswitch;
 "#,
-            3,
-            16,
-            "unsupported switch: alternate colon/endswitch syntax is not implemented; use brace switch blocks",
-        ),
-        (
-            r#"<?php
-switch (1) {
-    case 1;
-        echo "one";
-}
-"#,
-            3,
-            11,
-            "expected ':' after switch case",
-        ),
-        (
-            r#"<?php
-echo switch ($value) {
-    default:
-        echo "fallback";
-};
-"#,
-            2,
             6,
-            "unsupported switch: switch is only supported as a statement in the current subset",
+            1,
+            "expected 'endswitch' after alternate switch body",
+        ),
+        (
+            r#"<?php
+$value = 2;
+switch ($value):
+endswitch
+"#,
+            5,
+            1,
+            "expected ';' after endswitch",
         ),
     ];
 
