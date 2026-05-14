@@ -17313,3 +17313,31 @@ injects this file into every prompt. Each Codex pass should update it with:
   then checkpoint with
   `tools/checkpoint.sh "objects: add object static method dispatch"` if the
   full gate passes.
+
+## Loop Event 2026-05-15T03:05:00Z
+
+- Checkpoint before this task: `b9089f7 objects: add object static method
+  dispatch`, pushed to `origin/master`.
+- Task attempted: Milestone 676, dynamic class-string static method dispatch
+  through `$className::method(...)`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone676/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model dynamic_static_method_receivers_execute_class_strings -- --test-threads=1`,
+  `cargo test -p phpc --test object_model object_static_method_calls_report_current_boundaries -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone676`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone676`
+  passed. `cargo fmt --check` reported formatting drift, then `cargo fmt`
+  was applied.
+- Remaining semantic gaps: object receiver static properties/constants,
+  non-static dynamic static dispatch, broader class constant semantics, typed
+  static property metadata/enforcement, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, native lowering, and
+  WordPress include/namespace/bootstrap gaps remain explicit.
+- Next concrete task: rerun formatting/diff checks and full object-model
+  focused checks, then checkpoint with
+  `tools/checkpoint.sh "objects: add dynamic static method receivers"` if the
+  full gate passes.

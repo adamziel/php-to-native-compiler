@@ -249,11 +249,11 @@ do not remove static storage. Named static method expressions such as
 `ClassName::method(...)` execute for declared or inherited visible static
 methods under the current positional/default-parameter subset, without `$this`,
 and with the declaring class as the active class context.
-`$object::method(...)` evaluates the receiver object, resolves a visible static
-method from that object's class, executes without `$this`, and uses the
-receiver object's class as the called-class context. `self::method(...)` and
-`parent::method(...)` also execute resolved visible static methods while
-running inside active class context.
+`$object::method(...)` and `$className::method(...)` evaluate the receiver
+object or class-name string, resolve a visible static method from that receiver
+class, execute without `$this`, and use the receiver class as the called-class
+context. `self::method(...)` and `parent::method(...)` also execute resolved
+visible static methods while running inside active class context.
 `ClassName::class` returns the syntactic class string, and `self::class` /
 `parent::class` resolve only while executing with active class context.
 Class constants are accepted as `const NAME = value;` or
@@ -272,18 +272,18 @@ private method called from a same-class method context, or a protected method
 called from a same-class/child method context. The receiver is evaluated first,
 arguments are evaluated left to right after metadata checks, and the method
 body runs with `$this` bound to the receiver object handle. Named
-`ClassName::method(...)`, `$object::method(...)`, `self::method(...)`, and
-`parent::method(...)` calls execute visible static methods without binding
-`$this`. Missing methods,
+`ClassName::method(...)`, `$object::method(...)`, `$className::method(...)`,
+`self::method(...)`, and `parent::method(...)` calls execute visible static
+methods without binding `$this`. Missing methods,
 non-object receivers, private methods outside same-class method context,
 protected methods outside same-class/child context, non-static methods through
-object static receivers, non-static `self::`/`parent::` calls without current
+dynamic static receivers, non-static `self::`/`parent::` calls without current
 `$this`, and `$this` outside instance or static method execution report stable
 runtime diagnostics.
 
 Native lowering rejects class declarations, object instantiation, object
 property reads/writes, class-name constants, class constants, parent method
-calls, object static method calls, and instance method calls until metadata,
+calls, dynamic static method calls, and instance method calls until metadata,
 object allocation, property slots, object handles, method dispatch, and
 diagnostics have explicit lowering support.
 Native lowering also rejects `method_exists` through the current function-call

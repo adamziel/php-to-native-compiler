@@ -6171,12 +6171,23 @@ handled.
 
 ## Milestone 676: Object Static Continuation
 
+- [x] Runtime/object lane: implement dynamic class-string static method
+  receivers. `$className::method(...)` now accepts declared class-name strings,
+  resolves visible static methods through that class, executes without `$this`,
+  and preserves the receiver class as called-class context. Kept object
+  receiver static properties/constants, non-static dynamic static dispatch,
+  broader class constant semantics, typed static property metadata, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
+
+## Milestone 677: Object Static / WordPress Bridge Continuation
+
 - [ ] Runtime/object lane: choose the next static/member or WordPress bridge
-  slice: dynamic class-string static method receivers, broader class constant
-  semantics, typed static property metadata design, narrow require/bootstrap
-  execution, or a documented blocker. Keep trait composition, magic methods,
-  references/copy-on-write, exact native error objects, and native lowering
-  explicit.
+  slice: object receiver static property/constant boundaries, broader class
+  constant semantics, typed static property metadata design, narrow
+  require/bootstrap execution, namespace/import resolution, or a documented
+  blocker. Keep trait composition, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering explicit.
 
 ## Latest Checkpoint
 

@@ -588,6 +588,20 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone675`, and
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone675`
   passed.
+- Added Milestone 676, dynamic class-string static method dispatch.
+  `$className::method(...)` now accepts a string-valued receiver naming a
+  declared class, resolves a visible static method from that class, executes
+  without `$this`, and preserves the receiver class as called-class context for
+  `static::` and `get_called_class()`. Undefined classes/methods, non-object
+  and non-string receivers, non-static method targets, object receiver static
+  properties/constants, traits, magic methods, references/copy-on-write, exact
+  native error objects, and native lowering remain explicit. Focused
+  verification so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model dynamic_static_method_receivers_execute_class_strings -- --test-threads=1`,
+  `cargo test -p phpc --test object_model object_static_method_calls_report_current_boundaries -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone676`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone676`
+  passed.
 
 Next:
 
@@ -599,10 +613,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 676 should take the next object/static or WordPress bridge slice:
-  dynamic class-string static method receivers, broader class constant
+- Milestone 677 should take the next object/static or WordPress bridge slice:
+  object receiver static property/constant boundaries, broader class constant
   semantics, typed static property metadata, narrow require/bootstrap
-  execution, or a documented blocker.
+  execution, namespace/import resolution, or a documented blocker.
 
 ## 2026-05-12
 

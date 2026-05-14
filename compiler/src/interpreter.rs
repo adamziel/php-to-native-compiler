@@ -2299,15 +2299,19 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let target_value = self.evaluate(target, caller_scope)?;
-        let object = match target_value {
-            Value::Object(object) => object,
+        let receiver_class_id = match target_value {
+            Value::Object(object) => object.class_id(),
+            Value::String(class_name) => self
+                .classes
+                .lookup_class_id(&class_name)
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&class_name)))?,
             other => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         format!("{method_name}()"),
                         format!(
-                            "object static method receiver must be object, got {}",
+                            "dynamic static method receiver must be object or class string, got {}",
                             other.type_name()
                         ),
                     ),
@@ -2317,15 +2321,15 @@ impl Interpreter {
 
         let receiver_class = self
             .classes
-            .get(object.class_id())
-            .expect("object class id should resolve to class metadata");
+            .get(receiver_class_id)
+            .expect("receiver class id should resolve to class metadata");
         let Some((
             declaring_class_id,
             declaring_class_name,
             resolved_method_name,
             visibility,
             is_static,
-        )) = self.resolve_instance_method(object.class_id(), method_name)
+        )) = self.resolve_instance_method(receiver_class_id, method_name)
         else {
             return Err(runtime_error(
                 span,
@@ -2349,7 +2353,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     format!("{declaring_class_name}::{method_name}()"),
-                    "non-static method dispatch through object static receivers is not implemented",
+                    "non-static method dispatch through dynamic static receivers is not implemented",
                 ),
             ));
         }
@@ -2376,7 +2380,7 @@ impl Interpreter {
             values,
             None,
             Some(declaring_class_id),
-            Some(object.class_id()),
+            Some(receiver_class_id),
         )
     }
 

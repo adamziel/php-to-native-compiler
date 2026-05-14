@@ -1761,17 +1761,71 @@ echo $vault->reveal(new Vault());
 }
 
 #[test]
+fn dynamic_static_method_receivers_execute_class_strings() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public static function name() {
+        return "base:" . static::class . ":" . get_called_class();
+    }
+}
+
+class Child extends Base {
+    public static function name() {
+        return "child:" . static::class . ":" . get_called_class();
+    }
+
+    public static function parentName() {
+        $class = Base::class;
+        return $class::name();
+    }
+}
+
+$base = "Base";
+$child = "Child";
+echo $base::name(), "\n";
+echo $child::name(), "\n";
+echo Child::parentName();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:Base:Base\nchild:Child:Child\nbase:Base:Base"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn object_static_method_calls_report_current_boundaries() {
     let non_object = runtime_error(
         r#"<?php
-$class = "Box";
-$class::make();
+$value = 12;
+$value::make();
 "#,
     );
     assert_eq!(
         non_object.message,
-        "unsupported call make(): object static method receiver must be object, got string"
+        "unsupported call make(): dynamic static method receiver must be object or class string, got int"
     );
+
+    let undefined_class = runtime_error(
+        r#"<?php
+$class = "Missing";
+$class::make();
+"#,
+    );
+    assert_eq!(undefined_class.message, "undefined class Missing");
+
+    let missing_method = runtime_error(
+        r#"<?php
+class Box {}
+$class = "Box";
+$class::make();
+"#,
+    );
+    assert_eq!(missing_method.message, "undefined function Box::make()");
 
     let non_static_method = runtime_error(
         r#"<?php
@@ -1784,7 +1838,7 @@ $box::make();
     );
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through object static receivers is not implemented"
+        "unsupported call Box::make(): non-static method dispatch through dynamic static receivers is not implemented"
     );
 
     let private_method = runtime_error(

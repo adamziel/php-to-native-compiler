@@ -1038,12 +1038,13 @@ dynamic method/property names, broader `parent::`/`self::`/`static::`,
 typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
 Named static method syntax through `ClassName::method(...)`,
-`$object::method(...)`, `self::method(...)`, `parent::method(...)`, and
-`static::method(...)` executes declared or inherited visible static methods in
-the interpreter without binding `$this`. Object static receivers use the
-receiver object's class as the called-class context; `static::method(...)`
-resolves through the active called class and forwards that called-class context
-into nested calls.
+`$object::method(...)`, `$className::method(...)`, `self::method(...)`,
+`parent::method(...)`, and `static::method(...)` executes declared or inherited
+visible static methods in the interpreter without binding `$this`. Dynamic
+receivers through `$object::method(...)` and `$className::method(...)` use the
+receiver class as the called-class context; `static::method(...)` resolves
+through the active called class and forwards that called-class context into
+nested calls.
 `ClassName::class` returns the source-spelled class string, `self::class` and
 `parent::class` resolve from the active declaring class context, and
 `static::class` resolves from the active called-class context in current
