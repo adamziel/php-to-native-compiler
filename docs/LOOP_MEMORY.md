@@ -17510,3 +17510,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Next concrete task: run `git diff --check`, then checkpoint with
   `tools/checkpoint.sh "dynamic: allow top-level global"` if the full gate
   passes.
+
+## Loop Event 2026-05-15T01:05:00Z
+
+- Checkpoint before this task: `b08cc8b dynamic: allow top-level global`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 683, normalized WordPress bootstrap-shim inventory
+  probe.
+- Files changed so far: `tools/wordpress-inventory.sh`,
+  `compiler/tests/wordpress_inventory_cli.rs`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `tests/fixtures/compat/wordpress/source-pin.md`,
+  `docs/COMPATIBILITY.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: direct `wp-settings.php` still lacks bootstrap
+  constants by design; the bootstrap shim now reaches unsupported parameter
+  type declarations in `wp-includes/compat-utf8.php`. Type enforcement,
+  nullable/union/intersection types, class/interface type resolution,
+  function-scope `global`, `$GLOBALS` reference binding, superglobal semantics,
+  include-path/autoload behavior, source mapping, exact native errors, and
+  native lowering remain explicit.
+- Next concrete task: run focused checks and `git diff --check`, then
+  checkpoint with `tools/checkpoint.sh "compat: add wordpress bootstrap shim probe"`
+  if the full gate passes.

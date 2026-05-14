@@ -17,10 +17,12 @@ Committed inventory snapshots must use normalized output so local paths and
 `PHPC_BIN` locations do not affect the fixture. The normalized form replaces:
 
 - the WordPress checkout path with `<wordpress-root>`;
-- the compiler executable path with `<phpc>`.
+- the compiler executable path with `<phpc>`;
+- the temporary bootstrap shim path with `<bootstrap-shim>`.
 
 Do not commit WordPress core source into this repository until a separate size,
 license, update, and checksum policy is accepted. The committed synthetic
-inventory fixture proves the output format and current direct-`wp-settings.php`
-bootstrap blocker; external WordPress source runs remain an operator-supplied
-compatibility measurement.
+inventory fixture proves the output format, keeps the direct `wp-settings.php`
+probe visible, and adds a bootstrap-shim probe for the next compiler/runtime
+blocker after `ABSPATH` is defined. External WordPress source runs remain an
+operator-supplied compatibility measurement.

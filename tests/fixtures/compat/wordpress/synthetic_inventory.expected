@@ -15,8 +15,14 @@ syntax_surface_files:
   closures: 1
   arrow_functions: 1
 
-bootstrap_probe:
+direct_settings_probe:
   command: <phpc> run <wordpress-root>/wp-settings.php
   exit: 1
   stdout_bytes: 0
-  first_stderr_line: runtime error at <wordpress-root>/wp-settings.php:2:9: undefined constant ABSPATH
+  first_stderr_line: runtime error at <wordpress-root>/wp-settings.php:3:9: undefined constant ABSPATH
+
+bootstrap_shim_probe:
+  command: <phpc> run <bootstrap-shim>
+  exit: 1
+  stdout_bytes: 0
+  first_stderr_line: parse error at <bootstrap-shim>:2:1: unsupported namespace declaration: namespace-aware name resolution is not implemented

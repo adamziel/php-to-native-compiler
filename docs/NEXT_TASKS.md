@@ -6243,17 +6243,25 @@ handled.
 
 ## Milestone 683: WordPress Bootstrap Probe Continuation
 
-- [ ] Tests/docs/compatibility lane: make the WordPress inventory probe honest
-  about entrypoint assumptions by adding a normalized bootstrap-shim probe or
-  otherwise recording that direct `wp-settings.php` execution requires
-  pre-defined `ABSPATH`. Keep WordPress core unvendored, preserve normalized
-  output, and use the shim result to choose the next real compiler/runtime
-  blocker.
+- [x] Tests/docs/compatibility lane: make the WordPress inventory probe honest
+  about entrypoint assumptions by adding a normalized bootstrap-shim probe while
+  keeping the direct `wp-settings.php` probe visible. WordPress core remains
+  unvendored, normalized output now hides the temporary shim path, and the real
+  WordPress 6.9.4 shim result reaches
+  `wp-includes/compat-utf8.php:47:25`, unsupported parameter type declarations.
+
+## Milestone 684: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound parameter type
+  declarations enough to parse WordPress's early `compat-utf8.php` helper
+  signatures while keeping type enforcement, nullable/union/intersection types,
+  class/interface type resolution, by-reference interactions, exact
+  `TypeError` behavior, and native lowering explicit unless proved by tests.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 682 work, the latest committed checkpoint is
-  `64830b9 dynamic: add narrow include_once`, covering Milestone 681.
+- Before the current Milestone 683 work, the latest committed checkpoint is
+  `b08cc8b dynamic: allow top-level global`, covering Milestone 682.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

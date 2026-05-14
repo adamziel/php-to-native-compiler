@@ -713,6 +713,17 @@ Implemented:
   `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`, and
   `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 683, a normalized WordPress bootstrap-shim inventory probe.
+  The inventory keeps the direct `wp-settings.php` probe visible, adds a
+  temporary shim that defines `ABSPATH` before requiring `wp-settings.php`,
+  normalizes the shim path as `<bootstrap-shim>`, and updates the synthetic
+  inventory snapshot without vendoring WordPress core. Against the real
+  WordPress 6.9.4 checkout, the direct probe reaches `wp-settings.php:34:9`
+  undefined `ABSPATH`, while the shim probe reaches
+  `wp-includes/compat-utf8.php:47:25`, unsupported parameter type declarations.
+  Focused verification so far: `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  and `tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -721,11 +732,11 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 683 should make the WordPress inventory probe honest about
-  entrypoint assumptions by adding a normalized bootstrap-shim probe or
-  otherwise recording that direct `wp-settings.php` execution requires
-  pre-defined `ABSPATH`, then use the shim result to choose the next real
-  compiler/runtime blocker.
+- Milestone 684 should implement or explicitly bound parameter type
+  declarations enough to parse WordPress's early `compat-utf8.php` helper
+  signatures while keeping type enforcement, nullable/union/intersection types,
+  class/interface type resolution, exact `TypeError` behavior, and native
+  lowering explicit.
 
 ## 2026-05-12
 

@@ -72,25 +72,50 @@ printf '\n'
 
 tmp_stdout=$(mktemp)
 tmp_stderr=$(mktemp)
-trap 'rm -f "$tmp_stdout" "$tmp_stderr"' EXIT
+tmp_shim=$(mktemp)
+trap 'rm -f "$tmp_stdout" "$tmp_stderr" "$tmp_shim"' EXIT
 
-set +e
-# shellcheck disable=SC2086
-$phpc_bin run "$wp_root/wp-settings.php" >"$tmp_stdout" 2>"$tmp_stderr"
-status=$?
-set -e
+run_probe() {
+  probe_name=$1
+  command_path=$2
+  display_path=$3
 
-printf 'bootstrap_probe:\n'
-printf '  command: %s run %s/wp-settings.php\n' "$display_phpc_bin" "$display_root"
-printf '  exit: %s\n' "$status"
-printf '  stdout_bytes: %s\n' "$(wc -c <"$tmp_stdout" | tr -d ' ')"
-printf '  first_stderr_line: '
-if [ -s "$tmp_stderr" ]; then
-  first_stderr_line=$(sed -n '1p' "$tmp_stderr")
-  if [ "$normalize" -eq 1 ]; then
-    first_stderr_line=$(printf '%s\n' "$first_stderr_line" | sed "s#$wp_root#<wordpress-root>#g")
+  set +e
+  # shellcheck disable=SC2086
+  $phpc_bin run "$command_path" >"$tmp_stdout" 2>"$tmp_stderr"
+  status=$?
+  set -e
+
+  printf '%s:\n' "$probe_name"
+  printf '  command: %s run %s\n' "$display_phpc_bin" "$display_path"
+  printf '  exit: %s\n' "$status"
+  printf '  stdout_bytes: %s\n' "$(wc -c <"$tmp_stdout" | tr -d ' ')"
+  printf '  first_stderr_line: '
+  if [ -s "$tmp_stderr" ]; then
+    first_stderr_line=$(sed -n '1p' "$tmp_stderr")
+    if [ "$normalize" -eq 1 ]; then
+      first_stderr_line=$(printf '%s\n' "$first_stderr_line" |
+        sed "s#$wp_root#<wordpress-root>#g" |
+        sed "s#$tmp_shim#<bootstrap-shim>#g")
+    fi
+    printf '%s\n' "$first_stderr_line"
+  else
+    printf '<none>\n'
   fi
-  printf '%s\n' "$first_stderr_line"
+}
+
+escaped_wp_root=$(printf '%s/' "$wp_root" | sed "s#//*#/#g; s#'#\\\\'#g")
+cat >"$tmp_shim" <<EOF
+<?php
+define('ABSPATH', '$escaped_wp_root');
+require ABSPATH . 'wp-settings.php';
+EOF
+
+run_probe "direct_settings_probe" "$wp_root/wp-settings.php" "$display_root/wp-settings.php"
+printf '\n'
+if [ "$normalize" -eq 1 ]; then
+  display_shim="<bootstrap-shim>"
 else
-  printf '<none>\n'
+  display_shim="$tmp_shim"
 fi
+run_probe "bootstrap_shim_probe" "$tmp_shim" "$display_shim"
