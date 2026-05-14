@@ -93,9 +93,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   and a bootstrap-shim probe, which defines `ABSPATH` before loading
   `wp-settings.php`. Against real WordPress 6.9.4, the previous
   `goto invalid_utf8;` blocker in `wp-includes/compat-utf8.php` is covered by
-  the bounded Milestone 686 `goto`/label runtime slice. The shim probe now
-  reaches `wp-includes/compat-utf8.php:441:30`, where `(string)` cast
-  expressions are not yet parsed.
+  the bounded Milestone 686 `goto`/label runtime slice, and the previous
+  `(string)` cast blocker in that file is covered by the bounded Milestone 687
+  cast slice. The shim probe now reaches function-local `static` storage in the
+  next compatibility include, corresponding to `wp-includes/compat.php:42`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

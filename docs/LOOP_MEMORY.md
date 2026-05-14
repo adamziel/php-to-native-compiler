@@ -17629,3 +17629,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   fixture gates, then checkpoint with
   `tools/checkpoint.sh "control: add bounded goto labels"` if the full gate
   passes.
+
+## Loop Event 2026-05-14T00:30:00Z
+
+- Checkpoint before this task: `f8f6e1d control: add bounded goto labels`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 687, bounded `(string)` cast parsing and
+  interpreter execution for WordPress's `compat-utf8.php` conversion paths.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/scalar_casts.rs`, `compiler/tests/native_unary_boundary.rs`,
+  `tests/fixtures/milestone687/*`,
+  `tests/fixtures/milestone177/native_unary_boundary_emit_ir.cli`,
+  `README.md`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test scalar_casts`,
+  `cargo test -p phpc --test native_unary_boundary emit_ir_rejects_unary_forms_before_lowering_operands`,
+  `cargo run -p phpc -- test tests/fixtures/milestone687`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone687`, and
+  `PHPC_BIN=/tmp/phpc-target-687/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
+- Remaining semantic gaps: array-to-string warning recovery, object
+  `__toString()` and cast error behavior, resources, non-string casts, exact
+  PHP diagnostics, function-local `static` storage, invoking
+  typed/reference-parameter functions, reference binding, string offsets,
+  WordPress bootstrap environment, exact native errors, and native lowering
+  remain explicit.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, the focused
+  fixture gates, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded string casts"` if the full gate
+  passes.

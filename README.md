@@ -85,8 +85,8 @@ incorrect native code.
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
   coalescing forms
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
-  operators, shifts, ternaries, and increments/decrements over documented value
-  boundaries
+  operators, shifts, `(string)` casts over scalar/null values, ternaries, and
+  increments/decrements over documented value boundaries
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, defaults, returns, dynamic
   string-valued calls, and recursion guarded by a fixed depth limit;
@@ -132,7 +132,8 @@ The runtime still names unsupported zones explicitly. Examples include
 references, copy-on-write, namespaces/imports, include/require breadth beyond
 the current narrow local `require`/`require_once`/`include`/`include_once`
 statement slice, eval,
-generators, closures, type declaration enforcement, interfaces, traits, enums,
+generators, closures, type declaration enforcement, cast behavior outside the
+current `(string)` scalar/null slice, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
@@ -162,9 +163,10 @@ The current native path is focused on straight-line scalar lowering:
   selected constant-existence checks
 
 Native lowering rejects arrays, objects, user functions, include/require,
-broad control flow, mutation forms that require symbol-table effects, dynamic
-calls, runtime constant tables, PHP-wide coercions, references, copy-on-write,
-linking, and execution until those semantics exist in generated code.
+broad control flow, scalar casts, mutation forms that require symbol-table
+effects, dynamic calls, runtime constant tables, PHP-wide coercions,
+references, copy-on-write, linking, and execution until those semantics exist
+in generated code.
 
 ### Tests And Fixtures
 

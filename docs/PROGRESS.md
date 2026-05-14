@@ -771,6 +771,22 @@ Implemented:
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone686`, and
   `PHPC_BIN=/tmp/phpc-target-686/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
   passed.
+- Added Milestone 687, bounded `(string)` cast expression execution for the
+  current interpreter scalar/null runtime. `phpc run` now accepts `(string)`
+  casts over `null`, booleans, integers, floats, and strings, including the
+  casts used by WordPress's `_wp_utf8_encode_fallback()` and
+  `_wp_iso_8859_1_to_utf8()` paths. Array-to-string warning recovery, object
+  `__toString()` and cast error behavior, resources, all non-string cast forms,
+  exact PHP diagnostics, and native lowering remain explicit. The real
+  WordPress 6.9.4 bootstrap-shim inventory now reaches function-local `static`
+  storage in the next compatibility include, corresponding to
+  `wp-includes/compat.php:42`. Focused verification so far:
+  `cargo check -p phpc`, `cargo test -p phpc --test scalar_casts`,
+  `cargo test -p phpc --test native_unary_boundary emit_ir_rejects_unary_forms_before_lowering_operands`,
+  `cargo run -p phpc -- test tests/fixtures/milestone687`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone687`, and
+  `PHPC_BIN=/tmp/phpc-target-687/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`
+  passed.
 
 Next:
 
@@ -779,9 +795,10 @@ Next:
   generated LLVM, a linker command prototype that rejects executable mode
   clearly, or a documented blocker if the current LLVM text backend cannot model
   C ABI helper calls safely.
-- Milestone 687 should implement or explicitly bound scalar cast expressions,
-  starting with `(string)` in WordPress's `_wp_utf8_encode_fallback()` path,
-  while keeping exact PHP casting/coercion edge cases and native lowering
+- Milestone 688 should implement or explicitly bound function-local `static`
+  variable declarations enough for WordPress's `_wp_can_use_pcre_u()` path,
+  while keeping persistent function-local storage, initialization ordering,
+  references, included-file behavior, exact PHP diagnostics, and native lowering
   explicit unless proven.
 
 ## 2026-05-12

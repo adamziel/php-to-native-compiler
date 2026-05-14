@@ -11,7 +11,7 @@ use php_runtime::{
 };
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassConstantDecl, ClassDecl, ClassMember,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl,
     IncrementDecrementOp, IncrementDecrementPosition, Program, Span, Stmt, SwitchCase, UnaryOp,
     UnsetTarget,
@@ -1135,6 +1135,10 @@ impl Interpreter {
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
+            }
+            Expr::Cast { kind, expr, span } => {
+                let value = self.evaluate(expr, scope)?;
+                self.apply_cast(*kind, value, *span)
             }
             Expr::Ternary {
                 condition,
@@ -6392,6 +6396,32 @@ impl Interpreter {
         };
 
         result.map_err(|error| runtime_error(span, error))
+    }
+
+    fn apply_cast(&self, kind: CastKind, value: Value, span: Span) -> CompileResult<Value> {
+        match kind {
+            CastKind::String => match value {
+                Value::Null
+                | Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_) => Ok(Value::String(value.echo_string())),
+                Value::Array(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(string)",
+                        "array-to-string cast warning behavior is not implemented",
+                    ),
+                )),
+                Value::Object(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(string)",
+                        "object __toString() and cast error behavior are not implemented",
+                    ),
+                )),
+            },
+        }
     }
 }
 

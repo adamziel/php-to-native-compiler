@@ -6282,15 +6282,26 @@ handled.
 
 ## Milestone 687: WordPress Bridge Continuation
 
-- [ ] Parser/runtime lane: implement or explicitly bound scalar cast
-  expressions, starting with `(string)` in WordPress's
-  `_wp_utf8_encode_fallback()` path, with tests, CLI coverage, docs, and named
-  unsupported PHP casting/coercion and native-lowering edges.
+- [x] Parser/runtime lane: implement bounded `(string)` cast expressions for
+  WordPress's `_wp_utf8_encode_fallback()` and `_wp_iso_8859_1_to_utf8()` paths,
+  with tests, CLI coverage, docs, and named unsupported edges for
+  array-to-string warning recovery, object `__toString()` and cast error
+  behavior, resources, non-string casts, exact PHP diagnostics, and native
+  lowering.
+
+## Milestone 688: WordPress Bridge Continuation
+
+- [ ] Parser/runtime lane: implement or explicitly bound function-local
+  `static` variable declarations enough for WordPress's `_wp_can_use_pcre_u()`
+  path, with tests, CLI coverage, docs, and named unsupported edges for
+  persistent function-local storage semantics, initialization ordering,
+  references, included-file behavior, exact PHP diagnostics, and native
+  lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 686 work, the latest committed checkpoint is
-  `44c558f lexer: add hexadecimal integer literals`, covering Milestone 685.
+- Before the current Milestone 687 work, the latest committed checkpoint is
+  `f8f6e1d control: add bounded goto labels`, covering Milestone 686.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

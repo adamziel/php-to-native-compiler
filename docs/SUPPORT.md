@@ -1037,6 +1037,12 @@
   and well-formed numeric strings with optional sign, decimal point, exponent,
   and surrounding ASCII whitespace. Non-numeric strings fail with a stable
   runtime error. Truthiness is implemented for current scalar values.
+- Cast expressions: `(string)` is implemented for the current scalar/null value
+  model. It converts `null` and `false` to `""`, `true` to `"1"`, integers to
+  decimal strings, floats through the current PHP-style float formatter, and
+  strings unchanged. Array-to-string warning recovery, object `__toString()`
+  and cast error behavior, resources, all non-string cast forms, exact PHP
+  diagnostics, and native lowering remain unsupported.
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and
@@ -2752,6 +2758,9 @@
   `switch`, `goto` labels, `break`, and `continue`; generated code currently
   rejects those forms before lowering conditions, bodies, cases, jumps, or
   loop-control flow
+- native lowering for cast expressions; generated code currently rejects casts
+  before implying PHP scalar conversion, diagnostics, allocation behavior,
+  references/copy-on-write, or exact native error behavior
 - exception execution; `throw`, throw expressions, `try` blocks, `catch`
   clauses, and `finally` blocks currently fail with stable parse diagnostics
   before `Throwable`, `Exception`, custom exception classes, stack unwinding,

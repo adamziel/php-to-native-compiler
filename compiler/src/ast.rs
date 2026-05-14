@@ -495,6 +495,11 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    Cast {
+        kind: CastKind,
+        expr: Box<Expr>,
+        span: Span,
+    },
     Ternary {
         condition: Box<Expr>,
         if_true: Box<Expr>,
@@ -571,6 +576,7 @@ impl Expr {
             | Expr::New { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
+            | Expr::Cast { span, .. }
             | Expr::Ternary { span, .. }
             | Expr::ShortTernary { span, .. }
             | Expr::Assign { span, .. }
@@ -586,6 +592,11 @@ pub enum UnaryOp {
     Negate,
     Not,
     BitwiseNot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastKind {
+    String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,8 +1,8 @@
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl,
-    ClassPropertyDecl, ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr, ForAction,
-    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program, Span,
-    Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
+    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, CompoundAssignOp, ConstDeclarator, Expr,
+    ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
+    Program, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -2265,6 +2265,18 @@ impl Parser {
 
     fn parse_unary(&mut self) -> CompileResult<Expr> {
         let operator_span = self.peek().span;
+        if let Some(cast) = self.current_cast_kind()? {
+            let span = self.advance().span;
+            self.advance();
+            self.consume_keyword(TokenKind::RParen, "expected ')' after cast type")?;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Cast {
+                kind: cast,
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
         if let Some(op) = self.match_increment_decrement_operator() {
             let expr = self.parse_postfix()?;
             if matches!(expr, Expr::IncrementDecrement { .. }) {
@@ -2325,6 +2337,28 @@ impl Parser {
         }
 
         self.parse_postfix()
+    }
+
+    fn current_cast_kind(&self) -> CompileResult<Option<CastKind>> {
+        if !matches!(self.peek().kind, TokenKind::LParen) {
+            return Ok(None);
+        }
+        let TokenKind::Identifier(name) = &self.peek_next().kind else {
+            return Ok(None);
+        };
+        if !matches!(self.peek_n(2).kind, TokenKind::RParen) {
+            return Ok(None);
+        }
+
+        match name.to_ascii_lowercase().as_str() {
+            "string" => Ok(Some(CastKind::String)),
+            "int" | "integer" | "bool" | "boolean" | "float" | "double" | "real" | "array"
+            | "object" | "unset" | "binary" => Err(self.error_at(
+                self.peek().span,
+                "unsupported cast expression: only (string) casts are implemented",
+            )),
+            _ => Ok(None),
+        }
     }
 
     fn parse_postfix(&mut self) -> CompileResult<Expr> {
@@ -3061,6 +3095,7 @@ impl Parser {
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
             Expr::Variable(_, _)
+            | Expr::Cast { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
@@ -3130,6 +3165,7 @@ impl Parser {
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
             Expr::Variable(_, _)
+            | Expr::Cast { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
@@ -3231,7 +3267,9 @@ impl Parser {
                 Self::expr_contains_assignment(condition)
                     || Self::expr_contains_assignment(if_false)
             }
-            Expr::Unary { expr, .. } => Self::expr_contains_assignment(expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
+                Self::expr_contains_assignment(expr)
+            }
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -3339,7 +3377,9 @@ impl Parser {
                 Self::expr_contains_unsupported_assignment_rhs(condition)
                     || Self::expr_contains_unsupported_assignment_rhs(if_false)
             }
-            Expr::Unary { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(expr)
+            }
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -3418,7 +3458,9 @@ impl Parser {
                 ..
             } => Self::find_append_index_span(condition)
                 .or_else(|| Self::find_append_index_span(if_false)),
-            Expr::Unary { expr, .. } => Self::find_append_index_span(expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
+                Self::find_append_index_span(expr)
+            }
             Expr::Assign { expr, .. }
             | Expr::CompoundAssign { expr, .. }
             | Expr::NullCoalesceAssign { expr, .. } => Self::find_append_index_span(expr),
@@ -3592,8 +3634,12 @@ impl Parser {
     }
 
     fn peek_next(&self) -> &Token {
+        self.peek_n(1)
+    }
+
+    fn peek_n(&self, offset: usize) -> &Token {
         self.tokens
-            .get(self.current + 1)
+            .get(self.current + offset)
             .unwrap_or_else(|| self.peek())
     }
 

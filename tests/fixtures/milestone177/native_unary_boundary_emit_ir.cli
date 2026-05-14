@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-codegen error at tests/fixtures/milestone177/native_unary_boundary.php:4:6: LLVM unary lowering rejects unsupported unary operators or operands until native PHP numeric coercion, truthiness conversion, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior
+codegen error at tests/fixtures/milestone177/native_unary_boundary.php:4:6: LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior
 --- stderr end ---

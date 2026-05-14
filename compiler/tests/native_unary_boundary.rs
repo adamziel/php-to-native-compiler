@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators or operands until native PHP numeric coercion, truthiness conversion, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
+const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 
 #[test]
 fn phpc_run_still_handles_current_unary_subset() {
@@ -43,6 +43,7 @@ fn emit_ir_rejects_unary_minus_and_logical_not_with_specific_boundary() {
 fn emit_ir_rejects_unary_forms_before_lowering_operands() {
     for source in [
         "<?php\necho -\"5\";\n",
+        "<?php\necho (string) 5;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0.0 : 2.5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? \"\" : \"php\";\necho !$value;\n",

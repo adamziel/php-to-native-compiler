@@ -32,8 +32,8 @@ const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset ope
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 const ASSEMBLY_EMPTY_REJECTION: &str = "assembly empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
-const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators or operands until native PHP numeric coercion, truthiness conversion, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
-const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unsupported unary operators or operands until native PHP numeric coercion, truthiness conversion, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary behavior";
+const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
+const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 const ASSEMBLY_ARITHMETIC_REJECTION: &str = "assembly arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 const LLVM_MIXED_NUMERIC_ARITHMETIC_REJECTION: &str = "LLVM mixed numeric arithmetic lowering rejects int/float operands until native PHP numeric promotion, result typing, overflow/INF/NAN behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current mixed numeric arithmetic behavior";
@@ -508,6 +508,7 @@ impl LlvmGenerator {
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
+            Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
             Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
             | Expr::NullCoalesceAssign { span, .. }
@@ -3226,6 +3227,7 @@ impl CGenerator {
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
+            Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION)),
             Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
             | Expr::NullCoalesceAssign { span, .. }
