@@ -227,6 +227,23 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/milestone655`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone655`,
   and `git diff --check` passed.
+- Added Milestone 656, inherited non-public property slots with declaring-class
+  ownership. Child objects now materialize inherited public/protected/private
+  instance property slots, each object slot records its declaring class id/name,
+  and parent-declared methods can read/write parent private/protected slots on
+  child objects through the current same-declaring-class method context.
+  `get_mangled_object_vars`, `print_r`, and `var_dump` use the declaring class
+  name for private slot keys. Child-method access to parent-declared protected
+  properties, property override compatibility, static properties, class
+  constants, traits, magic methods, references/copy-on-write, exact native
+  error objects, and native lowering remain explicit. Focused verification:
+  `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p php_runtime object_`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_errors non_public_property_access_has_stable_runtime_error -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone656`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone656`,
+  and `git diff --check` passed.
 
 Next:
 
@@ -238,10 +255,10 @@ Next:
 - Milestone 639 should run normalized inventory against an operator-supplied
   WordPress 6.9.4 checkout and review whether a real external-source snapshot is
   stable enough to commit.
-- Milestone 651 should take the next static receiver or object visibility
-  slice: static method diagnostics through `self::`/`parent::`, a `static::`
-  parse refinement, private constructor same-class construction surface, or a
-  documented blocker for static storage and late static binding.
+- Milestone 657 should take the next object visibility slice: child-context
+  protected property access for parent-declared protected slots, property
+  override compatibility/conflict diagnostics, or a documented blocker if
+  protected visibility needs broader class relationship metadata.
 
 ## 2026-05-12
 

@@ -54,7 +54,7 @@
   expr`, `$object->property -= expr`, `$object->property *= expr`,
   `$object->property /= expr`, `$object->property %= expr`, and
   `$object->property .= expr` over existing declared public property slots and
-  exact-class private/protected property slots in active same-class method
+  private/protected property slots owned by the active declaring-class method
   context, plus bitwise/shift compound forms
   `$object->property &= expr`, `$object->property |= expr`,
   `$object->property ^= expr`, `$object->property <<= expr`, and
@@ -71,8 +71,8 @@
   position, expression position, and C-style `for` initializer/increment
   slots: `++$object->property`, `$object->property++`,
   `--$object->property`, and `$object->property--` for existing declared
-  public property slots and exact-class private/protected property slots in
-  active same-class method context whose current values are integers or
+  public property slots and private/protected property slots owned by the
+  active declaring-class method context whose current values are integers or
   floats. In expressions, pre forms return the updated value and post forms
   return the previous value.
 - direct static-variable pre/post increment and decrement in statement
@@ -158,9 +158,10 @@
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`. Plain reads and direct writes for
-  exact-class private/protected property slots are also supported while
-  executing a method on the same class; same-class methods may read/write
-  those slots on `$this` or another object of that exact class.
+  private/protected property slots owned by the active declaring class are also
+  supported while executing a method on that declaring class, including
+  inherited parent-declared slots on child objects. Child-method access to
+  parent-declared protected properties remains unsupported.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared
@@ -187,8 +188,8 @@
   left-to-right, and executes the resolved method body with the declaring class
   as the active method context.
 - `isset($object->name)` for direct public instance property operands on direct
-  object variables, plus exact-class private/protected property operands while
-  executing a method on the same class
+  object variables, plus private/protected property operands owned by the
+  active declaring-class method context
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
   `SORT_NUMERIC`, and `SORT_STRING`, which evaluate to integers `0`, `1`,
@@ -226,8 +227,9 @@
   the current value model
 - null coalescing `??` for direct static variables, direct array-variable
   offset operands, direct object-variable public-property operands, and
-  exact-class private/protected object-property operands in active same-class
-  method context over the current value model; undefined variables, missing
+  private/protected object-property operands owned by the active
+  declaring-class method context over the current value model; undefined
+  variables, missing
   array keys, missing supported object properties, non-array/non-object
   targets, null variables, null array values, and null supported object
   property values evaluate the fallback, while falsey non-null values such as
@@ -235,8 +237,8 @@
 - null coalescing assignment `$name ??= expr`, `$array[$key] ??= expr`, and
   `$object->property ??= expr` for direct static variables, direct
   array-variable offset operands, direct object-variable public-property
-  operands, and exact-class private/protected object-property operands in
-  active same-class method context, in statement position and parenthesized
+  operands, and private/protected object-property operands owned by the active
+  declaring-class method context, in statement position and parenthesized
   expression position; undefined and `null` variables, undefined/null arrays,
   missing array keys, null array values, and null supported object property
   values evaluate and store the right-hand expression, while existing
@@ -315,8 +317,8 @@
   declared string class names, `get_object_vars` returns public exact and
   inherited instance property names with their current values in
   parent-to-child slot order for current object values, `get_mangled_object_vars`
-  currently returns the exact-class non-public instance property slice plus
-  public inherited slots for current object values,
+  returns inherited and exact-class public/protected/private instance slots
+  with PHP-style mangled keys for current object values,
   `is_a` checks
   exact class identity and single-parent ancestor relationships over current
   object values or string class names when `allow_string` is true,
@@ -640,10 +642,11 @@
   `get_mangled_object_vars($object)` accepts current object values and returns
   public, protected, and private instance slots in declaration order. Public
   property keys are emitted as the declared name, protected property keys are
-  emitted as `\0*\0name`, and private property keys are emitted as
-  `\0ClassName\0name`; static properties are omitted. Dynamic properties,
-  property defaults, inheritance/trait/interface properties, and
-  visibility-context behavior are not represented yet. It is available through
+  emitted as `\0*\0name`, and private property keys are emitted with the
+  declaring class name as `\0ClassName\0name`; static properties are omitted.
+  Dynamic properties, property defaults, trait/interface properties, and
+  non-public visibility-context behavior beyond the current declaring-class
+  method context are not represented yet. It is available through
   string-valued dynamic function calls.
   `is_a($object_or_class, $class_name)` accepts current object values and
   checks exact class identity or a single-parent ancestor relationship against
@@ -691,8 +694,8 @@
   dispatch supports static method names, inherited method lookup, and scoped
   `$this` binding. Dynamic method names, dynamic property names, non-public
   property/constructor visibility context, static storage, class constants,
-  shallow/deep clone property copying, `__clone`, non-public inherited
-  property slots, property override compatibility, broader
+  shallow/deep clone property copying, `__clone`, child-context protected
+  property access, property override compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class
   names, built-in/internal/extension class entries for `get_declared_classes`,
@@ -2319,17 +2322,19 @@
   function calls. `isset` supports direct variable
   operands, direct array offset operands such as `isset($array[$key])`,
   and direct public object-property operands such as `isset($object->name)`.
-  In active same-class method context, direct exact-class private/protected
-  object-property operands are also supported. `isset` can safely check undefined
+  In active declaring-class method context, direct private/protected
+  object-property operands owned by that declaring class are also supported.
+  `isset` can safely check undefined
   variables, missing/null array slots, undefined array variables, non-array
   array targets, and undefined object-property targets. Nested array offsets,
   append offset operands, dynamic property names, non-public property operands
-  outside same-class method context, complex lvalues, and general expression
+  outside declaring-class method context, complex lvalues, and general expression
   operands remain unsupported. `empty`
   supports one direct variable operand, one direct array offset operand such
   as `empty($array[$key])`, or one direct public object-property operand such
-  as `empty($object->name)`. In active same-class method context, direct
-  exact-class private/protected object-property operands are also supported;
+  as `empty($object->name)`. In active declaring-class method context, direct
+  private/protected object-property operands owned by that declaring class are
+  also supported;
   undefined variables, missing array keys,
   undefined array targets, non-array array targets, missing object properties,
   undefined object targets, and non-object property targets are treated as
@@ -2383,7 +2388,7 @@
 - Object/class gaps: nested and conditional class declarations, constructor
   behavior beyond public/inherited public instance `__construct` and explicit
   parent calls,
-  non-public inherited property slots, property override compatibility,
+  child-context protected property access, property override compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
   interface declarations, `implements` clauses, interface constants,
   interface method signatures, interface inheritance, namespace-aware
@@ -2400,9 +2405,10 @@
   multi-property declarations, class constant declarations, constants, static
   property storage, late static binding, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties,
-  dynamic property names, dynamic method names, protected visibility outside
-  same-class/child method contexts, non-public property access outside
-  same-class method context, inherited non-public property slots, broader
+  dynamic property names, dynamic method names, protected method visibility outside
+  same-class/child method contexts, non-public property access outside the
+  current declaring-class method context, child-context protected property
+  access, broader
   constructor visibility context, static member
   execution through `::`, `::class` class-name constant resolution, property assignment
   targets other than a direct variable, dynamic properties created outside
@@ -3153,13 +3159,14 @@
   non-public/context-sensitive visibility listing, exact native ordering and
   `TypeError` behavior, and native lowering
 - `get_object_vars` dynamic properties, visibility context for non-public
-  properties, inheritance, traits, interfaces, aliases/imports,
+  properties, traits, interfaces, aliases/imports,
   namespace-aware names, references/copy-on-write, exact native ordering and
   `TypeError` behavior, and native lowering
-- `get_mangled_object_vars` dynamic properties, property defaults,
-  inheritance, traits, interfaces, aliases/imports, namespace-aware names,
-  non-public/context-sensitive visibility behavior, references/copy-on-write,
-  exact native ordering and `TypeError` behavior, and native lowering
+- `get_mangled_object_vars` dynamic properties, property defaults, traits,
+  interfaces, aliases/imports, namespace-aware names,
+  non-public/context-sensitive visibility behavior beyond the current
+  declaring-class slot ownership, references/copy-on-write, exact native
+  ordering and `TypeError` behavior, and native lowering
 - `property_exists` native true results, native declared property tables,
   object operands, built-in/internal/extension classes, autoloading,
   namespaces/import aliases, exact native `TypeError` behavior, and native

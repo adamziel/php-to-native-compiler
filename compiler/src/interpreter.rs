@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
-    PhpArray, PhpClassTable, PhpMethodMetadata, PhpObject, PhpPropertyMetadata, RuntimeError,
-    RuntimeResult, Value, Visibility,
+    PhpArray, PhpClassTable, PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer,
+    PhpPropertyMetadata, RuntimeError, RuntimeResult, Value, Visibility,
 };
 
 use crate::ast::{
@@ -783,10 +783,10 @@ impl Interpreter {
             .checked_add(1)
             .expect("object id counter fits in i64");
 
-        let inherited_public_properties = self.inherited_public_instance_properties(class_id);
-        let object = PhpObject::from_class_with_inherited_public_properties_with_id(
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let object = PhpObject::from_class_with_inherited_properties_with_id(
             class,
-            &inherited_public_properties,
+            &inherited_properties,
             object_id,
         );
         let Some((
@@ -860,7 +860,10 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
-    fn inherited_public_instance_properties(&self, class_id: ClassId) -> Vec<PhpPropertyMetadata> {
+    fn inherited_instance_properties(
+        &self,
+        class_id: ClassId,
+    ) -> Vec<PhpObjectPropertyInitializer> {
         let mut ancestors = Vec::new();
         let mut current = self
             .classes
@@ -883,15 +886,17 @@ impl Interpreter {
                 .classes
                 .get(ancestor_id)
                 .expect("ancestor class id should resolve to metadata");
-            properties.extend(
-                ancestor
-                    .properties()
-                    .iter()
-                    .filter(|property| {
-                        !property.is_static() && property.visibility() == Visibility::Public
-                    })
-                    .cloned(),
-            );
+            properties.extend(ancestor.properties().iter().filter_map(|property| {
+                if property.is_static() {
+                    return None;
+                }
+
+                Some(PhpObjectPropertyInitializer::new(
+                    ancestor.id(),
+                    ancestor.name().to_string(),
+                    property.clone(),
+                ))
+            }));
         }
         properties
     }
@@ -3789,7 +3794,7 @@ impl Interpreter {
                     let mut properties = PhpArray::new();
                     for property in object.properties() {
                         properties.insert(
-                            ArrayKey::String(property.mangled_name(object.class_name())),
+                            ArrayKey::String(property.mangled_name()),
                             property.value().clone(),
                         );
                     }
@@ -5013,7 +5018,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
             for property in value.properties() {
                 output.push_str(&format!(
                     "{padding}  [{}]=>\n",
-                    format_var_dump_object_property(value.class_name(), &property)
+                    format_var_dump_object_property(&property)
                 ));
                 output.push_str(&format_var_dump_with_indent(property.value(), indent + 1));
             }
@@ -5078,7 +5083,7 @@ fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
     for property in object.properties() {
         output.push_str(&format!(
             "{child_padding}[{}] => ",
-            format_print_r_object_property(object.class_name(), &property)
+            format_print_r_object_property(&property)
         ));
         match property.value() {
             Value::Array(value) => {
@@ -5097,19 +5102,29 @@ fn format_print_r_object(object: &PhpObject, indent: usize) -> String {
     output
 }
 
-fn format_print_r_object_property(class_name: &str, property: &ObjectProperty) -> String {
+fn format_print_r_object_property(property: &ObjectProperty) -> String {
     match property.visibility() {
         Visibility::Public => property.name().to_string(),
         Visibility::Protected => format!("{}:protected", property.name()),
-        Visibility::Private => format!("{}:{class_name}:private", property.name()),
+        Visibility::Private => {
+            format!(
+                "{}:{}:private",
+                property.name(),
+                property.declaring_class_name()
+            )
+        }
     }
 }
 
-fn format_var_dump_object_property(class_name: &str, property: &ObjectProperty) -> String {
+fn format_var_dump_object_property(property: &ObjectProperty) -> String {
     match property.visibility() {
         Visibility::Public => format!("\"{}\"", property.name()),
         Visibility::Protected => format!("\"{}\":protected", property.name()),
-        Visibility::Private => format!("\"{}\":\"{class_name}\":private", property.name()),
+        Visibility::Private => format!(
+            "\"{}\":\"{}\":private",
+            property.name(),
+            property.declaring_class_name()
+        ),
     }
 }
 

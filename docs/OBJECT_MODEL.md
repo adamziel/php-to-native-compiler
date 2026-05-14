@@ -8,8 +8,9 @@ including a single `extends Parent` link between declared classes, and can
 evaluate `new ClassName(...)` for declared classes, including public or
 inherited public instance `__construct` execution. It stores class identity
 plus `null`
-instance-property slots for the exact class and inherited public properties,
-and can read/write public instance properties by static property name and check
+instance-property slots for the exact class and inherited public/protected/private
+properties with declaring-class ownership, and can read/write public instance
+properties by static property name and check
 direct public property operands with
 `isset($object->name)` and
 `empty($object->name)`. Objects are now represented as process-local handles, so
@@ -49,10 +50,11 @@ public declared and inherited properties with `null` values because property def
 represented yet.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
-`get_mangled_object_vars($object)` accepts current object values and currently
-returns public inherited slots plus exact-class non-public instance properties
-with PHP-style mangled keys. Non-public inherited slots and visibility-context
-behavior are not represented yet.
+`get_mangled_object_vars($object)` accepts current object values and returns
+inherited and exact-class public/protected/private instance slots with
+PHP-style mangled keys. Private keys use the declaring class name.
+Visibility-context behavior beyond the current declaring-class method context
+is not represented yet.
 `get_called_class()` is recognized as a zero-argument callable boundary, but it
 currently fails with a stable unsupported-call diagnostic until method/static
 class context and late static binding exist.
@@ -87,28 +89,29 @@ The model follows the PHP lookup rules needed by the first object slice:
 - property names are looked up case-sensitively;
 - instance object shapes preserve exact-class instance-property declaration
   order and skip static properties;
-- object values initialize inherited public instance properties and exact-class
-  instance properties to `null`;
+- object values initialize inherited and exact-class non-static instance
+  properties to `null` while preserving declaring class id/name for each slot;
 - public instance property reads return the current slot value;
 - public instance property writes mutate the current object value stored in that
   variable;
-- exact-class private/protected property reads and direct writes work only
-  while executing a method on that same class. This applies to `$this` and
-  same-class peer objects. Inherited non-public slots and child-context
-  protected property access remain unsupported;
+- private/protected property reads and direct writes work only when the active
+  method context matches the slot's declaring class. This applies to `$this`
+  and peer objects, including parent-declared slots on child objects while a
+  parent method is executing. Child-context protected property access to
+  parent-declared slots remains unsupported;
 - direct `isset($object->name)` checks return true for non-null public slots
-  and same-class non-public slots in active same-class method context, and
+  and declaring-class non-public slots in active method context, and
   false for null or missing slots;
 - direct `empty($object->name)` checks return true for falsey public slots,
-  falsey same-class non-public slots in active same-class method context,
+  falsey declaring-class non-public slots in active method context,
   missing slots, undefined target variables, and non-object target variables;
 - direct object-property compound assignment and pre/post increment/decrement
-  work for public slots and exact-class private/protected slots in active
-  same-class method context, reusing the current scalar helper behavior and
+  work for public slots and private/protected slots owned by the active
+  declaring-class method context, reusing the current scalar helper behavior and
   return-value rules;
 - direct object-property null coalescing and null coalescing assignment work
-  for public slots and exact-class private/protected slots in active
-  same-class method context, preserving the current lazy fallback and
+  for public slots and private/protected slots owned by the active
+  declaring-class method context, preserving the current lazy fallback and
   null-vs-falsey behavior;
 - public, same-class private, and protected same-class/child instance method
   calls use case-insensitive declared-or-inherited method lookup, evaluate
@@ -140,10 +143,9 @@ The model follows the PHP lookup rules needed by the first object slice:
 - `get_object_vars($object)` returns public exact and inherited instance
   property names in parent-to-child slot order with their current slot values
   for current object values;
-- `get_mangled_object_vars($object)` returns public inherited slots plus
-  exact-class non-public instance properties with PHP-style mangled keys for
-  current object values until non-public inherited slots and visibility-context
-  behavior exist;
+- `get_mangled_object_vars($object)` returns inherited and exact-class
+  public/protected/private instance properties with PHP-style mangled keys for
+  current object values. Private keys use the slot's declaring class name;
 - `is_a($object_or_class, $class_name[, $allow_string])` checks exact class
   identity and single-parent ancestor relationships using case-insensitive
   class metadata lookup; string first arguments are considered only when
@@ -264,15 +266,15 @@ cloning, destructors, serialization hooks, visibility enforcement,
 `self`/`parent`/`static` beyond the current explicit self/parent method-call
 slices, constructor behavior beyond public/inherited public instance
 `__construct` and explicit parent calls, constructor arguments for classes without constructors,
-non-public inherited property slots, property override compatibility,
-non-public property access outside same-class method context,
+child-context protected property access, property override compatibility,
+non-public property access outside declaring-class method context,
 non-public constructor access beyond the current constructor slice, dynamic method/property names,
 property assignment targets other than a direct variable, object comparisons,
 object-to-string conversion,
 object callables, array-offset `isset` operands, non-public property `isset`
-operands outside same-class method context, complex object-property `isset`
+operands outside declaring-class method context, complex object-property `isset`
 operands, dynamic property-name `empty` operands, non-public property
-visibility context for `empty` outside same-class method context, complex
+visibility context for `empty` outside declaring-class method context, complex
 object-property `empty` operands, magic `__isset`/`__get` behavior for
 `empty`, object-property `unset`, property uninitialization,
 typed/uninitialized property behavior, magic `__unset` behavior,

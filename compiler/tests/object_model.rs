@@ -301,6 +301,85 @@ $first->coalesce($second);
 }
 
 #[test]
+fn inherited_non_public_instance_slots_use_declaring_class_context() {
+    let source = r#"<?php
+class Base {
+    private $token;
+    protected $shared;
+
+    public function seedBase($token, $shared) {
+        $this->token = $token;
+        $this->shared = $shared;
+    }
+
+    public function describeBase() {
+        return $this->token . ":" . $this->shared;
+    }
+}
+
+class Child extends Base {
+    private $childToken;
+    protected $childShared;
+
+    public function seedChild($token, $shared) {
+        $this->childToken = $token;
+        $this->childShared = $shared;
+    }
+
+    public function describeChild() {
+        return $this->childToken . ":" . $this->childShared;
+    }
+}
+
+$child = new Child();
+$child->seedBase("base-token", "base-shared");
+$child->seedChild("child-token", "child-shared");
+echo $child->describeBase(), "\n";
+echo $child->describeChild(), "\n";
+print_r($child);
+echo "done";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "base-token:base-shared\nchild-token:child-shared\nChild Object\n(\n    [token:Base:private] => base-token\n    [shared:protected] => base-shared\n    [childToken:Child:private] => child-token\n    [childShared:protected] => child-shared\n)\ndone"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn child_context_protected_property_access_remains_explicitly_unsupported() {
+    let source = r#"<?php
+class Base {
+    protected $shared;
+
+    public function seedBase($shared) {
+        $this->shared = $shared;
+    }
+}
+
+class Child extends Base {
+    public function readShared() {
+        return $this->shared;
+    }
+}
+
+$child = new Child();
+$child->seedBase("base-shared");
+echo $child->readShared();
+"#;
+
+    let error = runtime_error(source);
+    assert_eq!(error.line, 12);
+    assert_eq!(error.column, 16);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: non-public property Child::$shared requires same-class method context in the current subset"
+    );
+}
+
+#[test]
 fn object_handles_preserve_identity_across_supported_value_copies() {
     let source = r#"<?php
 class Box {

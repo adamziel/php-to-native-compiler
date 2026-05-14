@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-14T18:35:00Z
+
+- Checkpoint before this task: `379cfc6 objects: support same-class non-public
+  null coalescing`, pushed to `origin/master`.
+- Task attempted: Milestone 656, inherited non-public property slots with
+  declaring-class ownership.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone656/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/OBJECT_MODEL.md`,
+  `docs/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p php_runtime object_`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_errors non_public_property_access_has_stable_runtime_error -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone652`,
+  `cargo run -p phpc -- test tests/fixtures/milestone653`,
+  `cargo run -p phpc -- test tests/fixtures/milestone654`,
+  `cargo run -p phpc -- test tests/fixtures/milestone655`,
+  `cargo run -p phpc -- test tests/fixtures/milestone656`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone656`
+  passed.
+- Remaining semantic gaps: child-context protected property access to
+  parent-declared protected slots, property override compatibility, static
+  properties, class constants, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit.
+- Next concrete task: run `git diff --check`, then checkpoint with
+  `tools/checkpoint.sh "objects: add inherited non-public property slots"` if
+  the full gate passes.
+
 ## Loop Event 2026-05-14T14:15:14Z
 
 - Task attempted: Milestone 646, inherited public constructor dispatch for the

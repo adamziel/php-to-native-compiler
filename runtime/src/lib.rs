@@ -1910,6 +1910,27 @@ impl PhpPropertyMetadata {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpObjectPropertyInitializer {
+    declaring_class_id: ClassId,
+    declaring_class_name: String,
+    property: PhpPropertyMetadata,
+}
+
+impl PhpObjectPropertyInitializer {
+    pub fn new(
+        declaring_class_id: ClassId,
+        declaring_class_name: impl Into<String>,
+        property: PhpPropertyMetadata,
+    ) -> Self {
+        Self {
+            declaring_class_id,
+            declaring_class_name: declaring_class_name.into(),
+            property,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhpMethodMetadata {
     name: String,
     visibility: Visibility,
@@ -1984,23 +2005,37 @@ impl PhpObject {
     }
 
     pub fn from_class_with_id(class: &PhpClassMetadata, id: i64) -> Self {
-        Self::from_class_with_inherited_public_properties_with_id(class, &[], id)
+        Self::from_class_with_inherited_properties_with_id(class, &[], id)
     }
 
-    pub fn from_class_with_inherited_public_properties_with_id(
+    pub fn from_class_with_inherited_properties_with_id(
         class: &PhpClassMetadata,
-        inherited_public_properties: &[PhpPropertyMetadata],
+        inherited_properties: &[PhpObjectPropertyInitializer],
         id: i64,
     ) -> Self {
-        let properties = inherited_public_properties
+        let properties = inherited_properties
             .iter()
-            .chain(class.properties().iter())
-            .filter(|property| !property.is_static())
-            .map(|property| ObjectProperty {
-                name: property.name().to_string(),
-                visibility: property.visibility(),
+            .filter(|initializer| !initializer.property.is_static())
+            .map(|initializer| ObjectProperty {
+                declaring_class_id: initializer.declaring_class_id,
+                declaring_class_name: initializer.declaring_class_name.clone(),
+                name: initializer.property.name().to_string(),
+                visibility: initializer.property.visibility(),
                 value: Value::Null,
             })
+            .chain(
+                class
+                    .properties()
+                    .iter()
+                    .filter(|property| !property.is_static())
+                    .map(|property| ObjectProperty {
+                        declaring_class_id: class.id(),
+                        declaring_class_name: class.name().to_string(),
+                        name: property.name().to_string(),
+                        visibility: property.visibility(),
+                        value: Value::Null,
+                    }),
+            )
             .collect();
 
         Self {
@@ -2033,17 +2068,7 @@ impl PhpObject {
 
     pub fn read_public_property(&self, name: &str) -> RuntimeResult<Value> {
         let properties = self.properties.borrow();
-        let property = properties
-            .iter()
-            .find(|property| property.name == name)
-            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
-
-        if property.visibility != Visibility::Public {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires visibility enforcement, which is not implemented",
-                self.class_name, name
-            )));
-        }
+        let property = self.public_property_or_error(&properties, name)?;
 
         Ok(property.value.clone())
     }
@@ -2054,33 +2079,16 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
     ) -> RuntimeResult<Value> {
         let properties = self.properties.borrow();
-        let property = properties
-            .iter()
-            .find(|property| property.name == name)
-            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
-
-        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires same-class method context in the current subset",
-                self.class_name, name
-            )));
-        }
+        let property = self.context_property(&properties, name, current_class_id)?;
 
         Ok(property.value.clone())
     }
 
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
-        let Some(property) = properties.iter().find(|property| property.name == name) else {
+        let Some(property) = self.public_property_or_none(&properties, name)? else {
             return Ok(false);
         };
-
-        if property.visibility != Visibility::Public {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires visibility enforcement, which is not implemented",
-                self.class_name, name
-            )));
-        }
 
         Ok(!matches!(property.value, Value::Null))
     }
@@ -2091,32 +2099,19 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
     ) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
-        let Some(property) = properties.iter().find(|property| property.name == name) else {
+        let Some(property) = self.context_property_or_none(&properties, name, current_class_id)?
+        else {
             return Ok(false);
         };
-
-        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires same-class method context in the current subset",
-                self.class_name, name
-            )));
-        }
 
         Ok(!matches!(property.value, Value::Null))
     }
 
     pub fn read_public_property_for_isset(&self, name: &str) -> RuntimeResult<Option<Value>> {
         let properties = self.properties.borrow();
-        let Some(property) = properties.iter().find(|property| property.name == name) else {
+        let Some(property) = self.public_property_or_none(&properties, name)? else {
             return Ok(None);
         };
-
-        if property.visibility != Visibility::Public {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires visibility enforcement, which is not implemented",
-                self.class_name, name
-            )));
-        }
 
         Ok(Some(property.value.clone()))
     }
@@ -2127,16 +2122,10 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
     ) -> RuntimeResult<Option<Value>> {
         let properties = self.properties.borrow();
-        let Some(property) = properties.iter().find(|property| property.name == name) else {
+        let Some(property) = self.context_property_or_none(&properties, name, current_class_id)?
+        else {
             return Ok(None);
         };
-
-        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires same-class method context in the current subset",
-                self.class_name, name
-            )));
-        }
 
         Ok(Some(property.value.clone()))
     }
@@ -2151,16 +2140,9 @@ impl PhpObject {
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
-        let Some(property) = properties.iter().find(|property| property.name == name) else {
+        let Some(property) = self.public_property_or_none(&properties, name)? else {
             return Ok(true);
         };
-
-        if property.visibility != Visibility::Public {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires visibility enforcement, which is not implemented",
-                self.class_name, name
-            )));
-        }
 
         Ok(!property.value.is_truthy())
     }
@@ -2171,33 +2153,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
     ) -> RuntimeResult<bool> {
         let properties = self.properties.borrow();
-        let Some(property) = properties.iter().find(|property| property.name == name) else {
+        let Some(property) = self.context_property_or_none(&properties, name, current_class_id)?
+        else {
             return Ok(true);
         };
-
-        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires same-class method context in the current subset",
-                self.class_name, name
-            )));
-        }
 
         Ok(!property.value.is_truthy())
     }
 
     pub fn write_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
-        let property = properties
-            .iter_mut()
-            .find(|property| property.name == name)
-            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
-
-        if property.visibility != Visibility::Public {
-            return Err(RuntimeError::unsupported_property_access(format!(
-                "non-public property {}::${} requires visibility enforcement, which is not implemented",
-                self.class_name, name
-            )));
-        }
+        let property = self.public_property_mut_or_error(&mut properties, name)?;
 
         property.value = value;
         Ok(())
@@ -2210,25 +2176,143 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
     ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
-        let property = properties
-            .iter_mut()
-            .find(|property| property.name == name)
-            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))?;
+        let property = self.context_property_mut(&mut properties, name, current_class_id)?;
 
-        if property.visibility != Visibility::Public && current_class_id != Some(self.class_id) {
+        property.value = value;
+        Ok(())
+    }
+
+    fn public_property_or_error<'a>(
+        &self,
+        properties: &'a [ObjectProperty],
+        name: &str,
+    ) -> RuntimeResult<&'a ObjectProperty> {
+        self.public_property_or_none(properties, name)?
+            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))
+    }
+
+    fn public_property_or_none<'a>(
+        &self,
+        properties: &'a [ObjectProperty],
+        name: &str,
+    ) -> RuntimeResult<Option<&'a ObjectProperty>> {
+        if let Some(property) = properties
+            .iter()
+            .rev()
+            .find(|property| property.name == name && property.visibility == Visibility::Public)
+        {
+            return Ok(Some(property));
+        }
+
+        self.unsupported_non_public_property(properties, name)
+    }
+
+    fn public_property_mut_or_error<'a>(
+        &self,
+        properties: &'a mut [ObjectProperty],
+        name: &str,
+    ) -> RuntimeResult<&'a mut ObjectProperty> {
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            return Ok(&mut properties[index]);
+        }
+
+        self.unsupported_non_public_property_mut(properties, name)
+    }
+
+    fn context_property<'a>(
+        &self,
+        properties: &'a [ObjectProperty],
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<&'a ObjectProperty> {
+        self.context_property_or_none(properties, name, current_class_id)?
+            .ok_or_else(|| RuntimeError::undefined_property(self.class_name.clone(), name))
+    }
+
+    fn context_property_or_none<'a>(
+        &self,
+        properties: &'a [ObjectProperty],
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<Option<&'a ObjectProperty>> {
+        if let Some(class_id) = current_class_id {
+            if let Some(property) = properties.iter().rev().find(|property| {
+                property.name == name
+                    && property.visibility != Visibility::Public
+                    && property.declaring_class_id == class_id
+            }) {
+                return Ok(Some(property));
+            }
+        }
+
+        self.public_property_or_none(properties, name)
+    }
+
+    fn context_property_mut<'a>(
+        &self,
+        properties: &'a mut [ObjectProperty],
+        name: &str,
+        current_class_id: Option<ClassId>,
+    ) -> RuntimeResult<&'a mut ObjectProperty> {
+        if let Some(class_id) = current_class_id {
+            if let Some(index) = properties.iter().rposition(|property| {
+                property.name == name
+                    && property.visibility != Visibility::Public
+                    && property.declaring_class_id == class_id
+            }) {
+                return Ok(&mut properties[index]);
+            }
+        }
+
+        self.public_property_mut_or_error(properties, name)
+    }
+
+    fn unsupported_non_public_property<'a>(
+        &self,
+        properties: &'a [ObjectProperty],
+        name: &str,
+    ) -> RuntimeResult<Option<&'a ObjectProperty>> {
+        if properties
+            .iter()
+            .any(|property| property.name == name && property.visibility != Visibility::Public)
+        {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
             )));
         }
 
-        property.value = value;
-        Ok(())
+        Ok(None)
+    }
+
+    fn unsupported_non_public_property_mut<'a>(
+        &self,
+        properties: &'a mut [ObjectProperty],
+        name: &str,
+    ) -> RuntimeResult<&'a mut ObjectProperty> {
+        if properties
+            .iter()
+            .any(|property| property.name == name && property.visibility != Visibility::Public)
+        {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        Err(RuntimeError::undefined_property(
+            self.class_name.clone(),
+            name,
+        ))
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectProperty {
+    declaring_class_id: ClassId,
+    declaring_class_name: String,
     name: String,
     visibility: Visibility,
     value: Value,
@@ -2243,15 +2327,23 @@ impl ObjectProperty {
         self.visibility
     }
 
+    pub fn declaring_class_id(&self) -> ClassId {
+        self.declaring_class_id
+    }
+
+    pub fn declaring_class_name(&self) -> &str {
+        &self.declaring_class_name
+    }
+
     pub fn value(&self) -> &Value {
         &self.value
     }
 
-    pub fn mangled_name(&self, class_name: &str) -> String {
+    pub fn mangled_name(&self) -> String {
         match self.visibility {
             Visibility::Public => self.name.clone(),
             Visibility::Protected => format!("\0*\0{}", self.name),
-            Visibility::Private => format!("\0{class_name}\0{}", self.name),
+            Visibility::Private => format!("\0{}\0{}", self.declaring_class_name, self.name),
         }
     }
 }
@@ -6551,15 +6643,9 @@ mod tests {
         let object = PhpObject::from_class(class);
         let properties = object.properties();
 
-        assert_eq!(properties[0].mangled_name(object.class_name()), "id");
-        assert_eq!(
-            properties[1].mangled_name(object.class_name()),
-            "\0*\0payload"
-        );
-        assert_eq!(
-            properties[2].mangled_name(object.class_name()),
-            "\0Packet\0secret"
-        );
+        assert_eq!(properties[0].mangled_name(), "id");
+        assert_eq!(properties[1].mangled_name(), "\0*\0payload");
+        assert_eq!(properties[2].mangled_name(), "\0Packet\0secret");
     }
 
     #[test]
@@ -6609,19 +6695,19 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             private.message(),
-            "unsupported object property access: non-public property Packet::$secret requires visibility enforcement, which is not implemented"
+            "unsupported object property access: non-public property Packet::$secret requires same-class method context in the current subset"
         );
 
         let private_isset = object.is_public_property_set("secret").unwrap_err();
         assert_eq!(
             private_isset.message(),
-            "unsupported object property access: non-public property Packet::$secret requires visibility enforcement, which is not implemented"
+            "unsupported object property access: non-public property Packet::$secret requires same-class method context in the current subset"
         );
 
         let private_empty = object.is_public_property_empty("secret").unwrap_err();
         assert_eq!(
             private_empty.message(),
-            "unsupported object property access: non-public property Packet::$secret requires visibility enforcement, which is not implemented"
+            "unsupported object property access: non-public property Packet::$secret requires same-class method context in the current subset"
         );
     }
 }

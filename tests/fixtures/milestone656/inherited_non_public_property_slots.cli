@@ -1,0 +1,14 @@
+exit: 0
+stdout:
+base-token:base-shared
+child-token:child-shared
+Child Object
+(
+    [token:Base:private] => base-token
+    [shared:protected] => base-shared
+    [childToken:Child:private] => child-token
+    [childShared:protected] => child-shared
+)
+done--- stdout end ---
+stderr:
+--- stderr end ---

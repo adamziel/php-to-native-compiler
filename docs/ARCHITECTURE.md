@@ -55,7 +55,8 @@ Implemented now:
 - ordered PHP arrays with integer/string keys
 - class metadata, object-shape descriptors, and minimal object values for
   `new ClassName(...)` over declared classes, process-local object handles,
-  public instance properties including inherited public slots, single-parent
+  public instance properties including inherited public slots, inherited
+  non-public instance slots with declaring-class ownership, single-parent
   metadata, inherited method lookup, public/same-class private/protected
   same-class and child instance method dispatch, and public/inherited public
   instance `__construct` plus explicit parent/self method dispatch with
@@ -944,7 +945,9 @@ ClassName(...)` can instantiate a declared class and execute a public or
 inherited public `__construct` method with `$this` bound to the new object
 handle. Classes without constructors still require no constructor arguments.
 The allocated object stores class identity and `null` instance-property slots
-in declaration order while skipping static properties.
+in inherited parent-to-child declaration order while skipping static
+properties. Each slot carries the declaring class id/name used for non-public
+access checks and private-property mangling.
 
 `phpc run` can read and write public instance properties by static property
 name, for example `$box->name` and `$box->name = "Ada"`. Writes mutate the
@@ -980,9 +983,10 @@ parent-to-child slot order.
 `get_mangled_object_vars($object)` accepts current object values and returns
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
-and private names as `\0ClassName\0name`. Dynamic properties, property
-defaults, inherited/trait/interface properties, and non-public property
-visibility-context behavior remain outside the current object model.
+and private names as `\0ClassName\0name` using the declaring class name.
+Dynamic properties, property defaults, trait/interface properties, and
+non-public property visibility-context behavior beyond declaring-class method
+context remain outside the current object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class and
 single-parent ancestor relationships against the current metadata table.
 `is_subclass_of(...)` shares the same argument boundary and walks the current
@@ -1004,22 +1008,24 @@ type-boundary diagnostic.
 current-subset hash derived from the handle id; exact system PHP hash formatting
 is not claimed yet, and non-object inputs fail with the current stable
 type-boundary diagnostic.
-Missing properties, non-object targets, and non-public properties still produce
-stable runtime diagnostics for normal reads/writes. Public, same-class private,
-and protected same-class/child instance methods can execute through `phpc run`
-with `$this` bound to the receiver object handle, and inherited public
-constructors execute during child instantiation. Protected constructors can
-execute from same-class or child-class method context. Explicit
+Missing properties, non-object targets, and non-public properties outside the
+current declaring-class method context still produce stable runtime
+diagnostics for normal reads/writes. Public, same-class private, and protected
+same-class/child instance methods can execute through `phpc run` with `$this`
+bound to the receiver object handle, and inherited public constructors execute
+during child instantiation. Protected constructors can execute from same-class
+or child-class method context. Explicit
 `parent::method(...)` and `parent::__construct(...)` calls execute from active
 instance method/constructor context against the current class's parent chain
 with the current `$this` object. `self::method(...)` calls execute from active
 instance method/constructor context against the current class and inherited
 method chain with the current `$this` object. Objects do not enforce
-non-public property visibility beyond same-class plain read/write,
+non-public property visibility beyond declaring-class plain read/write,
 `isset`/`empty`, read-modify-write, and null-coalescing forms, or full
-constructor visibility, expose reflection, implement dynamic method/property
-names, broader `parent::`/`self::`/`static::`, property override
-compatibility, broader inheritance/constructor semantics, or exact PHP
+constructor visibility. Child-method access to parent-declared protected
+properties remains unsupported. Objects do not expose reflection, implement
+dynamic method/property names, broader `parent::`/`self::`/`static::`,
+property override compatibility, broader inheritance/constructor semantics, or exact PHP
 lifecycle behavior.
 Static member syntax
 through `::`, including

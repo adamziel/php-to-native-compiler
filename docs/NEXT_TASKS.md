@@ -5919,13 +5919,27 @@ handled.
 
 ## Milestone 656: Object Visibility Continuation
 
-- [ ] Runtime/object lane: choose the next object-model ownership slice:
+- [x] Runtime/object lane: choose the next object-model ownership slice:
   property declaration ownership metadata needed for inherited non-public
   slots, child protected property visibility, or a documented blocker if the
-  current flat object slot representation must change first. Keep static
-  properties, class constants, property override compatibility, trait
-  composition, magic methods, references/copy-on-write, exact native error
-  objects, and native lowering explicit.
+  current flat object slot representation must change first. Implemented
+  inherited non-public instance property slots with declaring class id/name
+  ownership. Parent-declared methods now read/write parent private/protected
+  slots on child objects, and `get_mangled_object_vars`/debug output use the
+  declaring class name for private inherited keys. Kept child protected
+  property visibility, static properties, class constants, property override
+  compatibility, trait composition, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering explicit.
+
+## Milestone 657: Object Visibility Continuation
+
+- [ ] Runtime/object lane: choose the next property visibility slice:
+  child-context protected property access for parent-declared protected slots,
+  property override compatibility/conflict diagnostics, or a documented
+  blocker if protected visibility needs broader class relationship metadata.
+  Keep static properties, class constants, trait composition, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  explicit.
 
 ## Latest Checkpoint
 

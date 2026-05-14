@@ -96,14 +96,14 @@ incorrect native code.
   and executable magic constants documented in the support matrix
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
-  property reads/writes, same-class private/protected property
+  property reads/writes, inherited instance property slots with
+  declaring-class ownership, same-declaring-class private/protected property
   reads/writes, `isset`/`empty`, read-modify-write, and null-coalescing forms,
-  inherited public property slots, public and same-class private instance
-  method calls, inherited public method calls, protected same-class/child
-  method calls, explicit `parent::method()` and `parent::__construct()` calls
-  in instance context, narrow `self::method()` calls in instance context,
-  single-parent metadata, object `isset` and `empty`, and selected metadata
-  builtins
+  public and same-class private instance method calls, inherited public method
+  calls, protected same-class/child method calls, explicit `parent::method()`
+  and `parent::__construct()` calls in instance context, narrow
+  `self::method()` calls in instance context, single-parent metadata, object
+  `isset` and `empty`, and selected metadata builtins
 - a documented builtin subset for strings, arrays, constants, type checks,
   callability checks, object/class metadata, and debug-style output
 
@@ -113,9 +113,9 @@ generators, closures, typed declarations, interfaces, traits, enums,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`, all `static::` execution and late
 static binding, visibility enforcement beyond the current public and
-same-class property/private/protected-method/constructor slice, property
-override compatibility, dynamic method/property names, resources, and native
-extension integration.
+same-declaring-class property/private/protected-method/constructor slice,
+child-context protected property access, property override compatibility,
+dynamic method/property names, resources, and native extension integration.
 
 ### Native Path
 
