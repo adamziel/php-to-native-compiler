@@ -6149,9 +6149,20 @@ handled.
 
 ## Milestone 674: Object Static Continuation
 
-- [ ] Runtime/object lane: choose the next static/member slice: typed static
-  property metadata boundary, broader class constant semantics, object-receiver
-  static method dispatch, or a documented blocker. Keep trait composition,
+- [x] Runtime/object lane: add a distinct typed static property declaration
+  boundary before typed static property execution exists. Static property type
+  declarations now fail with a stable diagnostic naming the missing typed
+  metadata, uninitialized state, and write enforcement pieces instead of the
+  generic instance typed-property boundary. Kept typed static property storage,
+  default validation, write enforcement, inheritance compatibility, trait
+  composition, magic methods, references/copy-on-write, exact native error
+  objects, and native lowering explicit.
+
+## Milestone 675: Object Static Continuation
+
+- [ ] Runtime/object lane: choose the next static/member slice: broader class
+  constant semantics, object-receiver static method dispatch, typed static
+  property metadata design, or a documented blocker. Keep trait composition,
   magic methods, references/copy-on-write, exact native error objects, and
   native lowering explicit.
 

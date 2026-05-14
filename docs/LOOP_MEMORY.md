@@ -17257,3 +17257,28 @@ injects this file into every prompt. Each Codex pass should update it with:
   checks, then checkpoint with
   `tools/checkpoint.sh "objects: add late static class constants"` if the full
   gate passes.
+
+## Loop Event 2026-05-15T02:05:00Z
+
+- Checkpoint before this task: `33c502a objects: add late static class
+  constants`, pushed to `origin/master`.
+- Task attempted: Milestone 674, distinct typed static property declaration
+  boundary before typed static property execution exists.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`,
+  `tests/fixtures/unsupported_object_features/unsupported_typed_static_property.*`,
+  `docs/SUPPORT.md`, `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`, `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed after correcting the expected stderr newline
+  for `unsupported_typed_static_property.stderr`.
+- Remaining semantic gaps: typed static property metadata, uninitialized static
+  property state, default validation, write enforcement, inheritance
+  compatibility, trait composition, magic methods, references/copy-on-write,
+  exact native error objects, and native lowering remain explicit.
+- Next concrete task: run focused parser/unsupported-object fixture checks,
+  docs/diff checks, then checkpoint if the gate passes.

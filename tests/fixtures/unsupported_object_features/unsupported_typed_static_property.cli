@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/unsupported_object_features/unsupported_typed_static_property.php:3:19: unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented
+--- stderr end ---

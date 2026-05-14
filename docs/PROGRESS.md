@@ -556,6 +556,21 @@ Implemented:
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
   and `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`
   passed.
+- Added Milestone 674, distinct typed static property declaration boundary.
+  The parser now reports a static-property-specific diagnostic for declarations
+  such as `public static int $count;`, naming the missing typed metadata,
+  uninitialized state, and write enforcement pieces before typed static
+  property execution can be accepted. Instance typed property diagnostics stay
+  unchanged. Typed static property storage/default validation/write
+  enforcement, inheritance compatibility, traits, magic methods,
+  references/copy-on-write, exact native error objects, and native lowering
+  remain explicit. Focused verification so far: `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `git diff --check` passed.
 
 Next:
 

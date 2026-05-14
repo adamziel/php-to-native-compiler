@@ -503,9 +503,10 @@
   trait use inside classes, enum declarations,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
-  typed property declarations, instance property default values, multiple property
-  declarations, unsupported class constant declaration forms such as typed,
-  static, or multi-declarator class constants,
+  typed instance property declarations, typed static property declarations
+  before typed metadata/uninitialized state/write enforcement exist, instance
+  property default values, multiple property declarations, unsupported class
+  constant declaration forms such as typed, static, or multi-declarator class constants,
   unsupported `clone` expressions, unsupported
   `instanceof` expressions,
   unsupported magic static receiver forms outside the current `static::class`,

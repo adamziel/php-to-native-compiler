@@ -3908,6 +3908,26 @@ class Box {
         ),
         (
             r#"<?php
+class Box {
+    public static int $count;
+}
+"#,
+            3,
+            19,
+            "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
+        ),
+        (
+            r#"<?php
+class Box {
+    private static ?string $name = null;
+}
+"#,
+            3,
+            20,
+            "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
+        ),
+        (
+            r#"<?php
 class Base {
     abstract public function compute();
 }

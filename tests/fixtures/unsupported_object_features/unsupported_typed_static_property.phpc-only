@@ -1,0 +1,1 @@
+phpc intentionally rejects typed static property declarations before typed static property metadata, uninitialized state, and write enforcement exist.

@@ -332,7 +332,12 @@ impl Parser {
         }
 
         if self.check_unsupported_property_type_declaration() {
-            return Err(self.error_at(self.peek().span, unsupported_property_type_message()));
+            let message = if is_static {
+                unsupported_static_property_type_message()
+            } else {
+                unsupported_property_type_message()
+            };
+            return Err(self.error_at(self.peek().span, message));
         }
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
@@ -3681,6 +3686,10 @@ fn unsupported_return_type_message() -> &'static str {
 
 fn unsupported_property_type_message() -> &'static str {
     "unsupported property type declaration: typed property storage and enforcement are not implemented"
+}
+
+fn unsupported_static_property_type_message() -> &'static str {
+    "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented"
 }
 
 fn unsupported_multiple_properties_message() -> &'static str {
