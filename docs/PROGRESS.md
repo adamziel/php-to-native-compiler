@@ -317,14 +317,17 @@ Implemented:
   namespace/alias-aware class-constant lookup, dynamic
   `constant("Class::CONST")`/`defined("Class::CONST")`, traits, magic
   methods, references/copy-on-write, exact native error objects, and native
-  lowering remain explicit. Focused verification so far:
+  lowering remain explicit. Focused verification:
   `cargo check -p phpc`,
   `cargo test -p phpc --test object_model class_constants -- --test-threads=1`,
   `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --test-threads=1`,
   `cargo run -p phpc -- test tests/fixtures/milestone661`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone661`, and
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
-  passed.
+  passed. Full checkpoint verification with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-661 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/checkpoint.sh "objects: add class constants"`
+  also passed with 746 fixture tests, 467 system PHP comparisons, and 279
+  skipped.
 
 Next:
 

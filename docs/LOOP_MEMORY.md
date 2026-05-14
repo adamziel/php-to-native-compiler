@@ -183,15 +183,18 @@ injects this file into every prompt. Each Codex pass should update it with:
   `cargo run -p phpc -- test tests/fixtures/milestone661`,
   `cargo run -p phpc -- test --compare-php tests/fixtures/milestone661`, and
   `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`
-  passed.
+  passed. Full checkpoint verification with
+  `CARGO_TARGET_DIR=/tmp/phpc-target-full-661 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/checkpoint.sh "objects: add class constants"`
+  passed with 746 fixture tests, 467 system PHP comparisons, and 279 skipped,
+  producing checkpoint `f4f8b9a objects: add class constants`.
 - Remaining semantic gaps: typed constants, multiple class constants in one
   declaration, `static::CONST`, static properties, static methods, late static
   binding, namespace/alias-aware class-constant lookup, dynamic
   `constant("Class::CONST")`/`defined("Class::CONST")`, trait composition,
   magic methods, references/copy-on-write, exact native error objects, and
   native lowering remain explicit.
-- Next concrete task: run format/diff checks and checkpoint with
-  `tools/checkpoint.sh "objects: add class constants"` if the full gate passes.
+- Next concrete task: push checkpoint `f4f8b9a`, clean the dedicated target
+  dirs, then continue with Milestone 662.
 
 ## Loop Event 2026-05-14T14:15:14Z
 
