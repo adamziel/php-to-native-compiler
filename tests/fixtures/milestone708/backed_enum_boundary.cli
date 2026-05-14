@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/milestone708/backed_enum_boundary.php:2:12: unsupported backed enum declaration: backed enum values and scalar backing types are not implemented
+--- stderr end ---

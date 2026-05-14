@@ -1,0 +1,1 @@
+phpc intentionally rejects backed enums before scalar backing types and backed case values execute.

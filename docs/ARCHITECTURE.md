@@ -1004,11 +1004,11 @@ class lookup as instantiation. The autoload flag accepts current bool-like
 scalar values and does not trigger autoloading in the current subset; `null`,
 arrays, objects, references, and exact PHP deprecation/`TypeError` behavior
 remain unsupported for that flag.
-`interface_exists($name[, $autoload])` and
-`trait_exists($name[, $autoload])` accept the same string-name and bool-like
-scalar autoload boundary and check declared interface/trait metadata without
-triggering autoloading. `enum_exists($name[, $autoload])` keeps that argument
-boundary and returns false because enum metadata is not represented yet.
+`interface_exists($name[, $autoload])`, `trait_exists($name[, $autoload])`,
+and `enum_exists($name[, $autoload])` accept the same string-name and
+bool-like scalar autoload boundary and check declared interface/trait/unit-enum
+metadata without triggering autoloading. `class_exists()` also reports true
+for declared enums in the current class-like metadata slice.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,
 with case-sensitive property names and no autoload side effects.
@@ -1038,7 +1038,8 @@ not modeled yet.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.
-`get_declared_classes()` lists classes declared in the current parsed program;
+`get_declared_classes()` lists classes and unit enums declared in the current
+parsed program;
 `get_declared_interfaces()` lists interfaces declared in the current parsed
 program; `get_declared_traits()` lists empty top-level traits declared in the
 current parsed program.

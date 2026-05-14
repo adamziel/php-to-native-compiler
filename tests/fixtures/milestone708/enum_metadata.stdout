@@ -1,0 +1,13 @@
+yes
+yes
+class-like
+not-interface
+not-trait
+Array
+(
+    [0] => Exception
+    [1] => App\State\Box
+    [2] => App\State\Mode
+    [3] => App\State\Status
+)
+

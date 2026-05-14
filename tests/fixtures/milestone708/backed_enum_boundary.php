@@ -1,4 +1,4 @@
 <?php
-enum Status {
+enum Status: string {
     case Draft = "draft";
 }

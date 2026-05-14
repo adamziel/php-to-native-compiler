@@ -12,7 +12,7 @@ use php_runtime::{
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
-    ClassPropertyDecl, ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl,
+    ClassPropertyDecl, ClassVisibility, CompoundAssignOp, EnumDecl, Expr, ForAction, FunctionDecl,
     IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, Program, Span,
     StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
@@ -52,6 +52,8 @@ struct Interpreter {
     interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
     traits: Vec<Rc<TraitDecl>>,
     trait_lookup: HashMap<String, Rc<TraitDecl>>,
+    enums: Vec<Rc<EnumDecl>>,
+    enum_lookup: HashMap<String, Rc<EnumDecl>>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
@@ -237,6 +239,8 @@ impl Interpreter {
         let mut interface_lookup = HashMap::new();
         let mut traits = Vec::new();
         let mut trait_lookup = HashMap::new();
+        let mut enums = Vec::new();
+        let mut enum_lookup = HashMap::new();
         let mut methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
@@ -255,7 +259,10 @@ impl Interpreter {
                 }
                 Stmt::Class(class) if !class.is_nested => {
                     let key = class.name.to_ascii_lowercase();
-                    if interface_lookup.contains_key(&key) || trait_lookup.contains_key(&key) {
+                    if interface_lookup.contains_key(&key)
+                        || trait_lookup.contains_key(&key)
+                        || enum_lookup.contains_key(&key)
+                    {
                         return Err(runtime_error(
                             class.span,
                             RuntimeError::duplicate_class(&class.name),
@@ -267,6 +274,7 @@ impl Interpreter {
                     register_interface_name(
                         &classes,
                         &trait_lookup,
+                        &enum_lookup,
                         &mut interfaces,
                         &mut interface_lookup,
                         interface,
@@ -276,9 +284,20 @@ impl Interpreter {
                     register_trait_name(
                         &classes,
                         &interface_lookup,
+                        &enum_lookup,
                         &mut traits,
                         &mut trait_lookup,
                         trait_decl,
+                    )?;
+                }
+                Stmt::Enum(enum_decl) => {
+                    register_enum_name(
+                        &classes,
+                        &interface_lookup,
+                        &trait_lookup,
+                        &mut enums,
+                        &mut enum_lookup,
+                        enum_decl,
                     )?;
                 }
                 _ => {}
@@ -308,6 +327,8 @@ impl Interpreter {
             interface_lookup,
             traits,
             trait_lookup,
+            enums,
+            enum_lookup,
             class_constants,
             static_properties,
             classes,
@@ -378,6 +399,7 @@ impl Interpreter {
                     let key = class.name.to_ascii_lowercase();
                     if self.interface_lookup.contains_key(&key)
                         || self.trait_lookup.contains_key(&key)
+                        || self.enum_lookup.contains_key(&key)
                     {
                         return Err(runtime_error(
                             class.span,
@@ -390,6 +412,7 @@ impl Interpreter {
                     register_interface_name(
                         &self.classes,
                         &self.trait_lookup,
+                        &self.enum_lookup,
                         &mut self.interfaces,
                         &mut self.interface_lookup,
                         interface,
@@ -399,9 +422,20 @@ impl Interpreter {
                     register_trait_name(
                         &self.classes,
                         &self.interface_lookup,
+                        &self.enum_lookup,
                         &mut self.traits,
                         &mut self.trait_lookup,
                         trait_decl,
+                    )?;
+                }
+                Stmt::Enum(enum_decl) => {
+                    register_enum_name(
+                        &self.classes,
+                        &self.interface_lookup,
+                        &self.trait_lookup,
+                        &mut self.enums,
+                        &mut self.enum_lookup,
+                        enum_decl,
                     )?;
                 }
                 _ => {}
@@ -429,6 +463,16 @@ impl Interpreter {
     }
 
     fn register_nested_class_declaration(&mut self, class: &ClassDecl) -> CompileResult<()> {
+        let key = class.name.to_ascii_lowercase();
+        if self.interface_lookup.contains_key(&key)
+            || self.trait_lookup.contains_key(&key)
+            || self.enum_lookup.contains_key(&key)
+        {
+            return Err(runtime_error(
+                class.span,
+                RuntimeError::duplicate_class(&class.name),
+            ));
+        }
         let class_id = register_class_name(&mut self.classes, class)?;
         if let Err(error) = register_class_members(&mut self.classes, class) {
             self.classes.remove_last_declared_class(class_id);
@@ -739,7 +783,9 @@ impl Interpreter {
             Stmt::Include { path, once, span } => {
                 self.execute_file_include(path, *once, false, *span, scope)
             }
-            Stmt::Function(_) | Stmt::Interface(_) | Stmt::Trait(_) => Ok(Flow::Normal),
+            Stmt::Function(_) | Stmt::Interface(_) | Stmt::Trait(_) | Stmt::Enum(_) => {
+                Ok(Flow::Normal)
+            }
             Stmt::Class(class) => {
                 if class.is_nested {
                     self.register_nested_class_declaration(class)?;
@@ -5434,12 +5480,22 @@ impl Interpreter {
             "class_exists" => {
                 match args.as_slice() {
                     [Value::String(class_name)] => {
-                        Ok(Value::Bool(self.classes.lookup_class(class_name).is_some()))
+                        Ok(Value::Bool(
+                            self.classes.lookup_class(class_name).is_some()
+                                || self
+                                    .enum_lookup
+                                    .contains_key(&class_name.to_ascii_lowercase()),
+                        ))
                     }
                     [Value::String(class_name), autoload] => {
                         let _autoload =
                             metadata_exists_autoload_flag("class_exists()", autoload, span)?;
-                        Ok(Value::Bool(self.classes.lookup_class(class_name).is_some()))
+                        Ok(Value::Bool(
+                            self.classes.lookup_class(class_name).is_some()
+                                || self
+                                    .enum_lookup
+                                    .contains_key(&class_name.to_ascii_lowercase()),
+                        ))
                     }
                     [other] => Err(runtime_error(
                         span,
@@ -5550,11 +5606,17 @@ impl Interpreter {
                 )),
             },
             "enum_exists" => match args.as_slice() {
-                [Value::String(_enum_name)] => Ok(Value::Bool(false)),
-                [Value::String(_enum_name), autoload] => {
+                [Value::String(enum_name)] => Ok(Value::Bool(
+                    self.enum_lookup
+                        .contains_key(&enum_name.to_ascii_lowercase()),
+                )),
+                [Value::String(enum_name), autoload] => {
                     let _autoload =
                         metadata_exists_autoload_flag("enum_exists()", autoload, span)?;
-                    Ok(Value::Bool(false))
+                    Ok(Value::Bool(
+                        self.enum_lookup
+                            .contains_key(&enum_name.to_ascii_lowercase()),
+                    ))
                 }
                 [other] => Err(runtime_error(
                     span,
@@ -5589,6 +5651,11 @@ impl Interpreter {
                     classes
                         .append(Value::String(class.name().to_string()))
                         .expect("declared class count fits in array keys");
+                }
+                for enum_decl in &self.enums {
+                    classes
+                        .append(Value::String(enum_decl.name.clone()))
+                        .expect("declared class-like enum count fits in array keys");
                 }
                 Ok(Value::Array(classes))
             }
@@ -6931,6 +6998,7 @@ fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> Compil
 fn register_interface_name(
     classes: &PhpClassTable,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    enum_lookup: &HashMap<String, Rc<EnumDecl>>,
     interfaces: &mut Vec<Rc<InterfaceDecl>>,
     interface_lookup: &mut HashMap<String, Rc<InterfaceDecl>>,
     interface: &InterfaceDecl,
@@ -6939,6 +7007,7 @@ fn register_interface_name(
     if classes.lookup_class_id(&interface.name).is_some()
         || interface_lookup.contains_key(&key)
         || trait_lookup.contains_key(&key)
+        || enum_lookup.contains_key(&key)
     {
         return Err(runtime_error(
             interface.span,
@@ -6955,6 +7024,7 @@ fn register_interface_name(
 fn register_trait_name(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    enum_lookup: &HashMap<String, Rc<EnumDecl>>,
     traits: &mut Vec<Rc<TraitDecl>>,
     trait_lookup: &mut HashMap<String, Rc<TraitDecl>>,
     trait_decl: &TraitDecl,
@@ -6963,6 +7033,7 @@ fn register_trait_name(
     if classes.lookup_class_id(&trait_decl.name).is_some()
         || interface_lookup.contains_key(&key)
         || trait_lookup.contains_key(&key)
+        || enum_lookup.contains_key(&key)
     {
         return Err(runtime_error(
             trait_decl.span,
@@ -6973,6 +7044,32 @@ fn register_trait_name(
     let trait_decl = Rc::new(trait_decl.clone());
     traits.push(trait_decl.clone());
     trait_lookup.insert(key, trait_decl);
+    Ok(())
+}
+
+fn register_enum_name(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    enums: &mut Vec<Rc<EnumDecl>>,
+    enum_lookup: &mut HashMap<String, Rc<EnumDecl>>,
+    enum_decl: &EnumDecl,
+) -> CompileResult<()> {
+    let key = enum_decl.name.to_ascii_lowercase();
+    if classes.lookup_class_id(&enum_decl.name).is_some()
+        || interface_lookup.contains_key(&key)
+        || trait_lookup.contains_key(&key)
+        || enum_lookup.contains_key(&key)
+    {
+        return Err(runtime_error(
+            enum_decl.span,
+            RuntimeError::duplicate_class(&enum_decl.name),
+        ));
+    }
+
+    let enum_decl = Rc::new(enum_decl.clone());
+    enums.push(enum_decl.clone());
+    enum_lookup.insert(key, enum_decl);
     Ok(())
 }
 

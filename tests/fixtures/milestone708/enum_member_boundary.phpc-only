@@ -1,0 +1,1 @@
+phpc intentionally rejects enum methods, constants, properties, and trait use before enum object semantics exist.

@@ -1,0 +1,1 @@
+phpc reports only current runtime class-like metadata in get_declared_classes(); system PHP includes built-in/internal classes and enum internals.

@@ -875,29 +875,39 @@ fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
-fn enum_exists_reports_false_for_current_no_enum_model() {
+fn enum_exists_reports_declared_enum_metadata() {
     let source = r#"<?php
-class Box {}
+namespace App;
 
-if (!enum_exists("Box")) {
+class Box {}
+enum Mode { case Front; }
+enum Status {}
+
+if (!enum_exists("App\\Box")) {
     echo "class:not-enum\n";
 }
-if (!enum_exists("Missing")) {
-    echo "missing:not-enum\n";
+if (enum_exists("App\\Mode")) {
+    echo "mode:enum\n";
 }
-if (!enum_exists("Missing", false)) {
+if (class_exists("App\\Mode")) {
+    echo "mode:class-like\n";
+}
+if (!interface_exists("App\\Mode") && !trait_exists("App\\Mode")) {
+    echo "mode:not-interface-trait\n";
+}
+if (!enum_exists("App\\Missing", false)) {
     echo "missing:false-autoload\n";
 }
 $call = "enum_exists";
-if (!$call("Box", true)) {
-    echo "dynamic:not-enum\n";
+if ($call("APP\\STATUS", true)) {
+    echo "dynamic:enum\n";
 }
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "class:not-enum\nmissing:not-enum\nmissing:false-autoload\ndynamic:not-enum\n"
+        "class:not-enum\nmode:enum\nmode:class-like\nmode:not-interface-trait\nmissing:false-autoload\ndynamic:enum\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1499,6 +1509,27 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     assert_eq!(
         execution.stdout,
         "Array\n(\n    [0] => Exception\n    [1] => Box\n    [2] => Profile\n)\n3|Exception|Box|Profile\nException|Box|Profile"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_declared_classes_reports_declared_enums_as_class_like_metadata() {
+    let source = r#"<?php
+namespace App;
+
+enum Mode { case Front; }
+enum Status {}
+
+$declared = get_declared_classes();
+print_r($declared);
+echo count($declared), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [0] => Exception\n    [1] => App\\Mode\n    [2] => App\\Status\n)\n3\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -3875,6 +3906,61 @@ interface namedtrait {}
         trait_then_interface.message,
         "class namedtrait is already defined"
     );
+
+    let duplicate_enum = run_source(
+        r#"<?php
+enum Mode {}
+enum mode {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(duplicate_enum.phase, Phase::Runtime);
+    assert_eq!(duplicate_enum.line, 3);
+    assert_eq!(duplicate_enum.column, 1);
+    assert_eq!(duplicate_enum.message, "class mode is already defined");
+
+    let class_then_enum = run_source(
+        r#"<?php
+class State {}
+enum state {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(class_then_enum.phase, Phase::Runtime);
+    assert_eq!(class_then_enum.line, 3);
+    assert_eq!(class_then_enum.column, 1);
+    assert_eq!(class_then_enum.message, "class state is already defined");
+
+    let interface_then_enum = run_source(
+        r#"<?php
+interface Shape {}
+enum shape {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(interface_then_enum.phase, Phase::Runtime);
+    assert_eq!(interface_then_enum.line, 3);
+    assert_eq!(interface_then_enum.column, 1);
+    assert_eq!(
+        interface_then_enum.message,
+        "class shape is already defined"
+    );
+
+    let trait_then_enum = run_source(
+        r#"<?php
+trait Shared {}
+enum shared {}
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(trait_then_enum.phase, Phase::Runtime);
+    assert_eq!(trait_then_enum.line, 3);
+    assert_eq!(trait_then_enum.column, 1);
+    assert_eq!(trait_then_enum.message, "class shared is already defined");
 }
 
 #[test]
@@ -4108,12 +4194,12 @@ interface Logger {
         (
             r#"<?php
 enum Status {
-    case Draft;
+    case Draft = "draft";
 }
 "#,
-            2,
-            1,
-            "unsupported enum declaration: enum parsing and case/value execution are not implemented",
+            3,
+            16,
+            "unsupported enum case value: backed enum case values are not implemented",
         ),
         (
             r#"<?php
@@ -4167,7 +4253,7 @@ if (true) {
 "#,
             3,
             5,
-            "unsupported enum declaration: enum parsing and case/value execution are not implemented",
+            "unsupported enum declaration: only top-level enum declarations are implemented",
         ),
         (
             r#"<?php

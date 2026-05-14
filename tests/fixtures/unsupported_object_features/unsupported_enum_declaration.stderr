@@ -1,2 +1,2 @@
-parse error at 2:1: unsupported enum declaration: enum parsing and case/value execution are not implemented
+parse error at 3:16: unsupported enum case value: backed enum case values are not implemented
 

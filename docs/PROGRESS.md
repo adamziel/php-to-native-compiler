@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 708, bounded declared unit-enum metadata through `phpc run`.
+  The parser now accepts top-level unbacked enum declarations with bare
+  `case Name;` members, applies current namespace declaration resolution to
+  enum names, rejects nested enums, backed enum declarations/case values,
+  `implements` clauses, and non-case enum members, and registers enum names in
+  the same class-like case-insensitive namespace as classes, interfaces, and
+  traits. `enum_exists()` now reports declared user enums, `class_exists()`
+  reports declared enums as class-like metadata, `get_declared_classes()` lists
+  declared enums after current class metadata, and `interface_exists()` /
+  `trait_exists()` remain kind-specific. Enum case objects/value access,
+  backed values, enum methods/constants/properties, enum interface
+  implementation, built-in/internal enums, autoload interaction, exact PHP
+  diagnostics, partial-output behavior, and native lowering remain explicit.
+  Native lowering rejects enum declarations before backend execution. Focused
+  verification so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model enum -- --test-threads=1`,
+  `cargo test -p phpc --test object_model duplicate_interface_and_class_names_share_class_like_registry -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries enum -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone708`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone708`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed. The synthetic WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:9:10: unsupported closure: arrow functions are not implemented`.
 - Added Milestone 707, bounded declared trait metadata through `phpc run`.
   The parser now accepts empty top-level trait declarations, applies current
   namespace declaration resolution to trait names, rejects nested traits and

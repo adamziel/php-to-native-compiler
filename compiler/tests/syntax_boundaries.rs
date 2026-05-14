@@ -6,6 +6,7 @@ const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound a
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
+const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -715,6 +716,65 @@ fn emit_asm_rejects_trait_declaration_before_backend_execution() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_TRAIT_REJECTION);
+}
+
+#[test]
+fn unsupported_enum_declaration_has_stable_parse_errors() {
+    let cases = [
+        (
+            "<?php\nenum Status: string {\n    case Draft = \"draft\";\n}\n",
+            2,
+            12,
+            "unsupported backed enum declaration: backed enum values and scalar backing types are not implemented",
+        ),
+        (
+            "<?php\nenum Status implements Renderable {}\n",
+            2,
+            13,
+            "unsupported enum interface implementation: enum implements clauses are not implemented",
+        ),
+        (
+            "<?php\nenum Status {\n    public function label() {}\n}\n",
+            3,
+            5,
+            "unsupported enum member declaration: only unbacked enum case declarations are implemented",
+        ),
+        (
+            "<?php\nenum Status {\n    case Draft = \"draft\";\n}\n",
+            3,
+            16,
+            "unsupported enum case value: backed enum case values are not implemented",
+        ),
+        (
+            "<?php\nif (true) {\n    enum Nested {}\n}\n",
+            3,
+            5,
+            "unsupported enum declaration: only top-level enum declarations are implemented",
+        ),
+    ];
+
+    for (source, line, column, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, line);
+        assert_eq!(error.column, column);
+        assert_eq!(error.message, message);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_enum_declaration_at_codegen_boundary() {
+    let error = php_compiler::emit_ir_source("<?php\nenum Status { case Draft; }\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_ENUM_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_enum_declaration_before_backend_execution() {
+    let error = php_compiler::emit_asm_source("<?php\nenum Status { case Draft; }\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_ENUM_REJECTION);
 }
 
 #[test]

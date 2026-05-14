@@ -1,10 +1,10 @@
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, CatchType, ClassConstantDecl,
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, ConstDeclarator, Expr, ForAction, FunctionDecl, FunctionParam,
-    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, Program,
-    Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
-    UseImport,
+    CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
+    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
+    InterfaceMethodDecl, Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
+    TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -57,7 +57,7 @@ impl Parser {
             TokenKind::Class => self.parse_class(),
             TokenKind::Interface => self.parse_interface(),
             TokenKind::Trait => self.parse_trait(),
-            TokenKind::Enum => self.parse_unsupported_enum_declaration(),
+            TokenKind::Enum => self.parse_enum(),
             TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
                 if matches!(self.peek_next().kind, TokenKind::Class) =>
             {
@@ -450,11 +450,47 @@ impl Parser {
         })
     }
 
-    fn parse_unsupported_enum_declaration(&mut self) -> CompileResult<Stmt> {
+    fn parse_enum(&mut self) -> CompileResult<Stmt> {
         let span = self
             .consume_keyword(TokenKind::Enum, "expected 'enum'")?
             .span;
-        Err(self.error_at(span, unsupported_enum_declaration_message()))
+        if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
+            return Err(self.error_at(span, unsupported_nested_enum_declaration_message()));
+        }
+        let name = self.consume_identifier("expected enum name")?;
+        let name = self.resolve_declared_class_name(&name);
+        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            return Err(self.error_at(self.previous().span, unsupported_backed_enum_message()));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
+            return Err(self.error_at(
+                self.previous().span,
+                unsupported_enum_implementation_message(),
+            ));
+        }
+
+        self.consume_keyword(TokenKind::LBrace, "expected enum body")?;
+        let mut cases = Vec::new();
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            cases.push(self.parse_enum_case()?);
+        }
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after enum body")?;
+        Ok(Stmt::Enum(EnumDecl { name, cases, span }))
+    }
+
+    fn parse_enum_case(&mut self) -> CompileResult<EnumCaseDecl> {
+        if !self.check(
+            |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("case")),
+        ) {
+            return Err(self.error_at(self.peek().span, unsupported_enum_member_message()));
+        }
+        let span = self.advance().span;
+        let name = self.consume_identifier("expected enum case name")?;
+        if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            return Err(self.error_at(self.previous().span, unsupported_enum_case_value_message()));
+        }
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after enum case")?;
+        Ok(EnumCaseDecl { name, span })
     }
 
     fn parse_unsupported_class_modifier_declaration(&mut self) -> CompileResult<Stmt> {
@@ -1007,9 +1043,10 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Enum)) {
-                    return Err(
-                        self.error_at(self.peek().span, unsupported_enum_declaration_message())
-                    );
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_nested_enum_declaration_message(),
+                    ));
                 }
                 if self.check_unsupported_class_modifier_declaration() {
                     return Err(self.error_at(
@@ -1319,9 +1356,10 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Enum)) {
-                    return Err(
-                        self.error_at(self.peek().span, unsupported_enum_declaration_message())
-                    );
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_nested_enum_declaration_message(),
+                    ));
                 }
                 if self.check_unsupported_class_modifier_declaration() {
                     return Err(self.error_at(
@@ -2180,9 +2218,10 @@ impl Parser {
                     ));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::Enum)) {
-                    return Err(
-                        self.error_at(self.peek().span, unsupported_enum_declaration_message())
-                    );
+                    return Err(self.error_at(
+                        self.peek().span,
+                        unsupported_nested_enum_declaration_message(),
+                    ));
                 }
                 if self.check_unsupported_class_modifier_declaration() {
                     return Err(self.error_at(
@@ -4910,6 +4949,26 @@ fn unsupported_interface_method_body_message() -> &'static str {
 
 fn unsupported_enum_declaration_message() -> &'static str {
     "unsupported enum declaration: enum parsing and case/value execution are not implemented"
+}
+
+fn unsupported_nested_enum_declaration_message() -> &'static str {
+    "unsupported enum declaration: only top-level enum declarations are implemented"
+}
+
+fn unsupported_backed_enum_message() -> &'static str {
+    "unsupported backed enum declaration: backed enum values and scalar backing types are not implemented"
+}
+
+fn unsupported_enum_implementation_message() -> &'static str {
+    "unsupported enum interface implementation: enum implements clauses are not implemented"
+}
+
+fn unsupported_enum_member_message() -> &'static str {
+    "unsupported enum member declaration: only unbacked enum case declarations are implemented"
+}
+
+fn unsupported_enum_case_value_message() -> &'static str {
+    "unsupported enum case value: backed enum case values are not implemented"
 }
 
 fn unsupported_class_modifier_declaration_message() -> &'static str {

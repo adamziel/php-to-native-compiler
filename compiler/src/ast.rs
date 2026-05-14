@@ -148,6 +148,7 @@ pub enum Stmt {
     Function(FunctionDecl),
     Interface(InterfaceDecl),
     Trait(TraitDecl),
+    Enum(EnumDecl),
     Class(ClassDecl),
     Return {
         value: Option<Expr>,
@@ -351,6 +352,19 @@ pub struct InterfaceMethodDecl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDecl {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDecl {
+    pub name: String,
+    pub cases: Vec<EnumCaseDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumCaseDecl {
     pub name: String,
     pub span: Span,
 }

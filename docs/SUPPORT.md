@@ -388,8 +388,8 @@
   accepts string names and checks current declared interface metadata without
   autoloading, `trait_exists` accepts string names and checks current declared
   trait metadata without autoloading,
-  `enum_exists` accepts string names and returns false for the current no-enum
-  metadata model without autoloading,
+  `enum_exists` accepts string names and checks current declared unit-enum
+  metadata without autoloading,
   `property_exists` checks
   case-sensitive declared and inherited property metadata for current object values or
   string class names, `method_exists` checks case-insensitive declared and
@@ -410,8 +410,8 @@
   validating the supported object/string and class-name argument boundary,
   `get_parent_class` returns the immediate parent class name for supported
   object/declared-string inputs with parent metadata and false otherwise,
-  `get_declared_classes` returns a zero-indexed array of classes
-  declared in the current program in declaration order,
+  `get_declared_classes` returns a zero-indexed array of classes declared in
+  the current program followed by declared unit enums,
   `get_declared_interfaces` returns a zero-indexed array of interfaces
   declared in the current program in declaration order,
   `get_declared_traits` returns a zero-indexed array of traits declared in the
@@ -569,7 +569,8 @@
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
   static interface methods, interface implementation, trait members,
-  trait use inside classes, enum declarations,
+  trait use inside classes, backed enum declarations and enum members beyond
+  bare cases,
   `abstract`/`final`/`readonly` class
   modifiers, `abstract`/`final`/`readonly` class member modifiers,
   typed instance property declarations, typed static property declarations
@@ -736,10 +737,11 @@
   string-valued dynamic function calls. The autoload flag accepts current
   bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
-  names, return false for all supported calls because enum metadata is not
-  represented yet, and are available through string-valued dynamic function
-  calls. The autoload flag accepts current bool-like scalar values and does not
-  trigger autoloading.
+  names, perform case-insensitive lookup against top-level unit enums declared
+  in the current parsed program, and are available through string-valued
+  dynamic function calls. The autoload flag accepts current bool-like scalar
+  values and does not trigger autoloading. `class_exists()` also reports true
+  for declared enums in the current class-like metadata slice.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared and inherited property metadata with case-sensitive property names,
@@ -801,8 +803,8 @@
   one is recorded and false otherwise, and is available through string-valued
   dynamic calls.
   `get_declared_classes()` returns a zero-indexed array of classes declared in
-  the current parsed program in declaration order and is available through
-  string-valued dynamic calls.
+  the current parsed program followed by declared unit enums and is available
+  through string-valued dynamic calls.
   `get_declared_interfaces()` returns a zero-indexed array of interfaces
   declared in the current parsed program in declaration order and is available
   through string-valued dynamic calls. Built-in/internal interface entries are
@@ -2104,9 +2106,10 @@
   traits declared in the current parsed program; the autoload flag accepts
   current bool-like scalar values and does not trigger autoloading.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
-  names and return false for all supported calls because enum metadata is not
-  represented yet; the autoload flag accepts current bool-like scalar values
-  and does not trigger autoloading.
+  names and perform case-insensitive lookup against top-level unit enums
+  declared in the current parsed program; the autoload flag accepts current
+  bool-like scalar values and does not trigger autoloading. `class_exists()`
+  also reports true for declared enums.
   `property_exists($object_or_class, $property)` checks declared and inherited
   property metadata for current object values or string class names with
   case-sensitive property names. `method_exists($object_or_class, $method)` checks declared and inherited
@@ -2644,8 +2647,9 @@
   trait members, trait use inside classes,
   trait methods/properties/constants, trait conflict resolution, aliases,
   visibility changes, namespace-aware traits,
-  enum declarations, enum cases, backed enum values, enum methods, enum
-  interface implementations, namespace-aware enums,
+  backed enum declarations, enum case objects, backed enum values, enum
+  methods, enum constants/properties, enum interface implementations,
+  namespace-aware enum member access,
   `abstract`/`final`/`readonly` class modifiers,
   `abstract`/`final`/`readonly` class member modifiers, abstract methods, final
   methods, readonly properties, typed property storage and enforcement,
@@ -3500,9 +3504,10 @@
   namespaces/import aliases beyond parsed declarations, exact native
   `TypeError` behavior, and native lowering beyond direct string-name false
   folding
-- `enum_exists` declared enum metadata, built-in/internal enum entries,
-  autoloading, namespaces/import aliases, exact native `TypeError` behavior,
-  and native lowering beyond direct string-name false folding
+- `enum_exists` built-in/internal enum entries, autoloading,
+  namespaces/import aliases beyond parsed declarations, exact native
+  `TypeError` behavior, and native lowering beyond direct string-name false
+  folding
 - `get_declared_interfaces` built-in/internal interface entries, autoloading,
   exact native ordering, and native lowering
 - `get_declared_traits` built-in/internal trait entries, autoloading,
@@ -3533,7 +3538,8 @@
 - configurable recursion/call-stack limits matching PHP deployments
 - exception objects and exception handling beyond the current throw/try runtime
   boundaries
-- interface inheritance/implementation enforcement, traits, and enums
+- interface inheritance/implementation enforcement, trait composition, and enum
+  case objects/backed values/methods/interfaces
 - generator functions, generator objects, `yield`, `yield from`, key/value
   yields, by-reference yields, `send`/`throw`/`return` generator semantics,
   and native lowering

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+parse error at tests/fixtures/milestone708/nested_enum_boundary.php:3:5: unsupported enum declaration: only top-level enum declarations are implemented
+--- stderr end ---

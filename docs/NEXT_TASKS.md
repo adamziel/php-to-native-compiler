@@ -6469,16 +6469,28 @@ handled.
   conflict resolution, aliasing, built-in/internal traits, autoload
   interaction, exact PHP diagnostics, partial-output behavior, and native
   lowering.
+- [x] Parser/runtime lane: implement the bounded declared unit-enum metadata
+  slice for the WordPress bootstrap enum declaration blocker reported at
+  `<bootstrap-shim>:6:1`. The parser now accepts top-level unbacked enum
+  declarations with bare `case Name;` members, registers enum names in the
+  class-like case-insensitive registry, powers `enum_exists()`, reports
+  declared enums through `class_exists()` and `get_declared_classes()`, and
+  keeps native lowering rejecting enum declarations before backend execution.
+  Tests, fixtures, docs, and native rejection coverage name the remaining
+  unsupported edges: enum case objects/value access, backed enum values, enum
+  methods/constants/properties, enum interface implementation, built-in/internal
+  enums, autoload interaction, exact PHP diagnostics, partial-output behavior,
+  and native lowering.
 - [ ] Parser/runtime lane: implement or explicitly bound the next WordPress
-  bootstrap enum declaration blocker reported at `<bootstrap-shim>:6:1`, with
-  tests, CLI coverage, docs, and named unsupported edges for enum cases,
-  backed values, enum methods, interface implementation, exact PHP
-  diagnostics, partial-output behavior, and native lowering.
+  bootstrap arrow-function blocker reported at `<bootstrap-shim>:9:10`, with
+  tests, CLI coverage, docs, and named unsupported edges for closure values,
+  captures, `$this` binding, callable invocation, exact PHP diagnostics,
+  partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 707 work, the latest committed checkpoint is
-  `40d5a80 runtime: add declared interface metadata`, covering Milestone 706.
+- Before the current Milestone 708 work, the latest committed checkpoint is
+  `04c8026 runtime: add declared trait metadata`, covering Milestone 707.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

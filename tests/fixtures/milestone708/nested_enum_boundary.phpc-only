@@ -1,0 +1,1 @@
+phpc intentionally rejects nested enum declarations before conditional enum registration semantics exist.

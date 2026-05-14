@@ -18255,6 +18255,43 @@ injects this file into every prompt. Each Codex pass should update it with:
   if the full gate passes. Milestone 703 should bound the next WordPress nested
   class declaration blocker at `<bootstrap-shim>:7:5`.
 
+## Loop Event 2026-05-14T22:49:12Z
+
+- Checkpoint before this task: `04c8026 runtime: add declared trait metadata`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 708, bounded declared unit-enum metadata for the
+  synthetic WordPress bootstrap enum declaration blocker at
+  `<bootstrap-shim>:6:1`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone708/*`,
+  `tests/fixtures/unsupported_object_features/unsupported_enum_declaration.*`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/OBJECT_MODEL.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model enum -- --test-threads=1`,
+  `cargo test -p phpc --test object_model duplicate_interface_and_class_names_share_class_like_registry -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries enum -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone708`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone708`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  and `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: enum case objects/value access, backed enum values,
+  enum methods/constants/properties, enum interface implementation,
+  built-in/internal enums, autoload interaction, exact PHP diagnostics,
+  partial-output behavior, WordPress bootstrap environment, exact native
+  errors, and native enum lowering remain explicit. The synthetic WordPress
+  shim now reaches the arrow-function blocker at `<bootstrap-shim>:9:10`.
+- Next concrete task: run `cargo fmt --check`, `git diff --check`, focused
+  gates if needed, then checkpoint with
+  `tools/checkpoint.sh "runtime: add declared enum metadata"` if the full gate
+  passes. Milestone 709 should bound the next WordPress arrow-function blocker.
+
 ## Loop Event 2026-05-14T00:00:00Z
 
 - Checkpoint before this task: `40d5a80 runtime: add declared interface

@@ -61,8 +61,10 @@ parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared and inherited properties with `null` values because property defaults are not
 represented yet.
-`interface_exists()` and `trait_exists()` check declared user interface and
-empty top-level trait metadata without triggering autoloading.
+`interface_exists()`, `trait_exists()`, and `enum_exists()` check declared
+user interface, empty top-level trait, and top-level unit-enum metadata
+without triggering autoloading. `class_exists()` reports true for declared
+enums in the current class-like metadata slice.
 `get_declared_interfaces()` and `get_declared_traits()` list declared user
 interfaces and empty top-level traits in declaration order.
 `get_object_vars($object)` accepts current object values and returns public
@@ -323,7 +325,8 @@ object handle hash behavior has native support.
 
 The implemented class-declaration parser intentionally excludes nested and
 conditional class declarations, interface implementation/inheritance, trait
-members, trait use inside classes,
+members, trait use inside classes, backed enum declarations, enum case
+objects, enum methods/constants/properties, enum interface implementation,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
@@ -364,7 +367,7 @@ native ordering,
 `interface_exists` true results for built-in/internal interfaces and interface
 implementation relationships,
 `trait_exists` true results for built-in/internal traits,
-`enum_exists` true results for declared/built-in/internal enums,
+`enum_exists` true results for built-in/internal enums,
 `get_declared_interfaces` built-in/internal interface entries,
 `get_declared_traits` built-in/internal trait entries,
 interfaces, traits, aliases/imports, namespace-aware class names, autoloading,
