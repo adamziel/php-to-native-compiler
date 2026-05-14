@@ -3466,13 +3466,13 @@ impl Parser {
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
+            Expr::SelfClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::Cast { .. }
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
             | Expr::ClassConstant { .. }
-            | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }

@@ -122,10 +122,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   Milestone 700. The previous unsupported `(bool)` cast blocker at
   `<bootstrap-shim>:572:16`, corresponding to
   `wp-includes/sodium_compat/src/Compat.php:572`, is covered by Milestone 701.
-  The shim probe now reaches a default-parameter constant-expression blocker
-  at `<bootstrap-shim>:1714:23`, corresponding to
+  The previous default-parameter constant-expression blocker at
+  `<bootstrap-shim>:1714:23`, corresponding to
   `self::CRYPTO_GENERICHASH_BYTES` in
-  `wp-includes/sodium_compat/src/Compat.php:1714`.
+  `wp-includes/sodium_compat/src/Compat.php:1714`, is covered by Milestone 702.
+  The shim probe now reaches unsupported nested class declaration syntax at
+  `<bootstrap-shim>:7:5`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace and import resolution;

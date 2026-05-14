@@ -147,8 +147,9 @@
   trailing commas in argument lists
 - trailing default parameter values for user functions over the documented
   constant-expression subset, including bare references to previously defined
-  unqualified constants and the current built-in global constant slice when an
-  omitted argument is bound
+  unqualified constants, the current built-in global constant slice, and
+  class-method `self::CONST` defaults resolved from the declaring class context
+  when an omitted argument is bound
 - recursive user-function calls up to a fixed 128-frame user-function call-depth
   guard
 - `return`
@@ -1894,11 +1895,14 @@
   runtime error, and non-string callees fail with a stable unsupported-call
   runtime error. Required parameters, optional trailing commas after the final
   real parameter, and trailing default parameter values are supported.
-  Defaults may use the current constant-expression subset: `null`, booleans, integers,
-  floats, strings, short and long arrays with supported keys, unary
-  expressions, binary expressions over those values, and bare references to
+  Defaults may use the current constant-expression subset: `null`, booleans,
+  integers, floats, strings, short and long arrays with supported keys, unary
+  expressions, binary expressions over those values, bare references to
   unqualified constants that are defined in the current runtime constant table
-  before the omitted argument is bound. The exact uppercase built-in
+  before the omitted argument is bound, and `self::CONST` defaults in class
+  methods. `self::CONST` defaults resolve through the declaring method class
+  context when the omitted argument is bound, including inherited method
+  dispatch and same-class private constants. The exact uppercase built-in
   `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH` constants are also
   accepted in default expressions. String-valued dynamic calls accept the same
   optional trailing comma syntax after the final positional argument. Omitted
@@ -1916,9 +1920,12 @@
   That guard is a project-specific runtime diagnostic, not PHP's native stack or
   memory exhaustion behavior; it is not configurable and does not produce stack
   traces. Forward constant references at omitted-argument binding time,
-  namespace-aware constants, class constants, dynamic defaults,
-  references/copy-on-write behavior, and native lowering for defaults are not
-  implemented. Native lowering for user-function declarations and returns is
+  namespace-aware constants, `ClassName::CONST`, `parent::CONST`,
+  `static::CONST`, class-name constants such as `self::class`, dynamic
+  defaults, references/copy-on-write behavior, and native lowering for defaults
+  are not implemented. `self::CONST` defaults outside class method context parse
+  but fail with a stable runtime diagnostic when an omitted argument is bound.
+  Native lowering for user-function declarations and returns is
   explicitly rejected until function symbol tables, stack-frame layout, default
   parameter binding, recursion guards, return-value flow, and exact native
   error behavior exist. Non-constant defaults such as variables, calls,
@@ -2795,8 +2802,8 @@
   diagnostic rather than executed
 - function-scope `global` declarations / importing top-level variables into
   function scope
-- default parameter values outside the documented constant-expression and
-  unqualified constant-reference subset
+- default parameter values outside the documented constant-expression,
+  unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters
 - variadic parameters and variadic argument unpacking
 - reference parameter invocation, reference returns, reference assignments, and

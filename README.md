@@ -121,7 +121,8 @@ incorrect native code.
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
-  `self::method()` calls in instance context, narrow `ClassName::class`,
+  `self::method()` calls in instance context, class-method default parameters
+  using `self::CONST` from the declaring method class, narrow `ClassName::class`,
   `self::class`, and `parent::class` resolution, narrow class constants
   through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
   `static::CONST` in active called-class context,

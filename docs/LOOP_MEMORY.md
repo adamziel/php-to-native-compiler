@@ -18092,3 +18092,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   is present. Milestone 702 should bound the next WordPress default-parameter
   blocker, `self::CRYPTO_GENERICHASH_BYTES` at
   `wp-includes/sodium_compat/src/Compat.php:1714`.
+
+## Loop Event 2026-05-14T08:45:00Z
+
+- Checkpoint before this task: `a77f31a docs: record bool cast checkpoint`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 702, bounded `self::CONST` default parameter values
+  for WordPress's sodium compat class.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/default_parameter_constants.rs`,
+  `tests/fixtures/milestone702/*`, `README.md`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test default_parameter_constants -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone702`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone702`,
+  `cargo build -p phpc`,
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`,
+  and `git diff --check` passed.
+- Remaining semantic gaps: `ClassName::CONST`, `parent::CONST`,
+  `static::CONST`, class-name constants, dynamic defaults, broader class
+  constant expression forms, references/copy-on-write, exact PHP diagnostics,
+  partial-output behavior, WordPress bootstrap environment, exact native
+  errors, and native lowering remain explicit.
+- Next concrete task: run `cargo check -p phpc`, focused gates if needed, then
+  checkpoint with
+  `tools/checkpoint.sh "functions: allow self constants in method defaults"`
+  if the full gate passes. Milestone 703 should bound the next WordPress nested
+  class declaration blocker at `<bootstrap-shim>:7:5`.

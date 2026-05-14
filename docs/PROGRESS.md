@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 702, bounded `self::CONST` default parameter values for class
+  methods through `phpc run`. The default-expression whitelist now accepts
+  `Expr::SelfClassConstant`; omitted method arguments are already evaluated
+  after pushing the declaring class context, so `self::CONST` resolves through
+  the method's declaring class, including inherited static method dispatch and
+  same-class private constants. `ClassName::CONST`, `parent::CONST`,
+  `static::CONST`, class-name constants, dynamic defaults, broader class
+  constant expression forms, references/copy-on-write, exact PHP diagnostics,
+  partial-output behavior, and native lowering remain explicit. Focused
+  verification: `cargo fmt --check`, `cargo test -p phpc --test default_parameter_constants -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone702`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone702`,
+  `cargo build -p phpc`,
+  `PHPC_BIN=target/debug/phpc tools/wordpress-inventory.sh --normalize /tmp/phpc-wordpress/wordpress`,
+  and `git diff --check` passed. The WordPress bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:7:5: unsupported nested class declaration: only top-level class declarations are implemented`.
 - Added Milestone 701, bounded `(bool)`/`(boolean)` cast execution through
   `phpc run`. The parser now accepts both aliases, the interpreter reuses the
   current PHP-shaped truthiness model for null, booleans, integers, floats,

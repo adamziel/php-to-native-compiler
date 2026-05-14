@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+32
+64
+secret:32
+manual:8
+16
+128
+--- stdout end ---
+stderr:
+--- stderr end ---
