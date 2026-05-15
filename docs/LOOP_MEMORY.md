@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `f85da4e tools: add wordpress front controller probe`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 847, bounded `preg_replace()` support for the
+  reached WordPress `wpdb::prepare()` placeholder normalization pattern in
+  `wp-includes/class-wpdb.php:1511`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/preg_replace_builtin.rs`,
+  `tests/fixtures/milestone847/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone847`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  undefined `ABSPATH`; the bootstrap shim exits `0`; the front-controller probe
+  advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1514:18: undefined function preg_split()`.
+- Remaining semantic gaps: dynamic PCRE variables beyond the reached shape,
+  broad captures/backrefs, replacement arrays, subject arrays, callbacks,
+  limit/count output, invalid-pattern warnings, exact PCRE behavior,
+  SQL/database semantics, and native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress wpdb preg replace"`.
+  The next runtime milestone should inspect the reached `preg_split()` shape.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `b281211 runtime: add wordpress str replace arrays`, pushed to
   `origin/master`.
 - Task attempted: Milestone 846, WordPress inventory front-controller probe for

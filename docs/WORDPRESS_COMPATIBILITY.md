@@ -1263,6 +1263,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` with replacement `'%%\\1'`, and
   reports that broader PCRE replacement shape as the current front-controller
   runtime blocker.
+  Milestone 847 adds a bounded implementation for that exact placeholder
+  normalization shape. The real front-controller probe now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1514:18: undefined function preg_split()`,
+  the following `wpdb::prepare()` placeholder extraction call.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

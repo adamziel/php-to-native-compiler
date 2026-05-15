@@ -12365,13 +12365,29 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
         && !is_wordpress_mail_host_cleanup_pattern(&pattern)
         && !is_wordpress_kses_control_char_cleanup_pattern(&pattern)
         && !is_wordpress_kses_slash_zero_cleanup_pattern(&pattern)
+        && !is_wordpress_wpdb_prepare_placeholder_escape_pattern(&pattern)
     {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "preg_replace()",
-                "only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, and KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/ are implemented in the current subset",
+                "only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/, and wpdb prepare placeholder escape pattern are implemented in the current subset",
             ),
+        ));
+    }
+    if is_wordpress_wpdb_prepare_placeholder_escape_pattern(&pattern) {
+        if !is_wordpress_wpdb_prepare_placeholder_escape_replacement(&replacement) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_replace()",
+                    "only the WordPress wpdb prepare placeholder replacement %%\\1 is implemented for this pattern",
+                ),
+            ));
+        }
+
+        return Ok(Value::String(
+            escape_wordpress_wpdb_prepare_unescaped_percents(&subject),
         ));
     }
     if !replacement.is_empty() {
@@ -12468,6 +12484,89 @@ fn is_wordpress_kses_removed_control_char(ch: char) -> bool {
 
 fn is_wordpress_kses_slash_zero_cleanup_pattern(pattern: &str) -> bool {
     pattern == "/\\\\\\\\+0+/" || pattern == "/\\\\+0+/"
+}
+
+fn is_wordpress_wpdb_prepare_placeholder_escape_pattern(pattern: &str) -> bool {
+    pattern.starts_with("/%(?:%|$|(?!(") && pattern.ends_with(")?[sdfFi]))/")
+}
+
+fn is_wordpress_wpdb_prepare_placeholder_escape_replacement(replacement: &str) -> bool {
+    replacement == "%%\\1" || replacement == "%%\\\\1"
+}
+
+fn escape_wordpress_wpdb_prepare_unescaped_percents(subject: &str) -> String {
+    let bytes = subject.as_bytes();
+    let mut output = String::with_capacity(subject.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            let ch = subject[index..]
+                .chars()
+                .next()
+                .expect("index is kept on a character boundary");
+            output.push(ch);
+            index += ch.len_utf8();
+            continue;
+        }
+
+        if bytes.get(index + 1) == Some(&b'%') {
+            output.push_str("%%");
+            index += 2;
+            continue;
+        }
+
+        if is_wordpress_wpdb_prepare_placeholder_suffix(&subject[index + 1..]) {
+            output.push('%');
+        } else {
+            output.push_str("%%");
+        }
+        index += 1;
+    }
+
+    output
+}
+
+fn is_wordpress_wpdb_prepare_placeholder_suffix(suffix: &str) -> bool {
+    let bytes = suffix.as_bytes();
+    let mut index = 0;
+
+    if matches!(bytes.first(), Some(b'1'..=b'9')) {
+        let mut digits_end = 1;
+        while matches!(bytes.get(digits_end), Some(b'0'..=b'9')) {
+            digits_end += 1;
+        }
+        if bytes.get(digits_end) == Some(&b'$') {
+            index = digits_end + 1;
+        }
+    }
+
+    while matches!(bytes.get(index), Some(b'-' | b'+' | b'0'..=b'9')) {
+        index += 1;
+    }
+
+    match bytes.get(index) {
+        Some(b' ' | b'0') => index += 1,
+        Some(b'\'') if bytes.get(index + 1).is_some() => index += 2,
+        _ => {}
+    }
+
+    while matches!(bytes.get(index), Some(b'-' | b'+' | b'0'..=b'9')) {
+        index += 1;
+    }
+
+    if bytes.get(index) == Some(&b'.') {
+        let precision_start = index + 1;
+        let mut precision_end = precision_start;
+        while matches!(bytes.get(precision_end), Some(b'0'..=b'9')) {
+            precision_end += 1;
+        }
+        if precision_end == precision_start {
+            return false;
+        }
+        index = precision_end;
+    }
+
+    matches!(bytes.get(index), Some(b's' | b'd' | b'f' | b'F' | b'i'))
 }
 
 fn remove_wordpress_kses_slash_zero(subject: &str) -> String {

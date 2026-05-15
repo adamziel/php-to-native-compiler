@@ -994,15 +994,14 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 846 is the active checkpoint candidate: the WordPress inventory now
-  includes a front-controller probe for `wp-blog-header.php` in addition to the
-  direct settings probe and bootstrap shim.
-- The next immediate WordPress-directed lane is the front-controller runtime
-  blocker at `wp-includes/class-wpdb.php:1511`: a `wpdb::prepare()`
-  placeholder-normalization `preg_replace()` pattern. This should be handled
-  only as a bounded regex replacement slice, without claiming broad PCRE,
-  SQL/database, plugin/theme, admin, REST, HTTP, SAPI, or native WordPress
-  support.
+- Milestone 847 is the active checkpoint candidate: bounded `preg_replace()`
+  support covers the reached `wpdb::prepare()` placeholder-normalization
+  pattern in the front-controller probe.
+- The next immediate WordPress-directed lane is the following
+  `preg_split()` placeholder extraction call at `wp-includes/class-wpdb.php:1514`.
+  This should be handled only as a bounded regex split slice, without claiming
+  broad PCRE, SQL/database, plugin/theme, admin, REST, HTTP, SAPI, or native
+  WordPress support.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

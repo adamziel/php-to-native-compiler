@@ -704,11 +704,16 @@
   redirect allowlist while preserving already-percent-encoded bytes. The
   mail-host path removes a leading lowercase `www.`. The KSES paths remove
   represented ASCII control characters in the documented ranges and slash-zero
-  sequences. Pattern or
-  replacement arrays, subject arrays, non-empty replacements, limit/count
-  arguments, callbacks, full PCRE replacement behavior, captures/backrefs,
-  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
-  diagnostics, and native lowering remain unsupported.
+  sequences. The `wpdb::prepare()` placeholder path accepts the reached
+  `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` shape after WordPress expands
+  `$allowed_format`, with the exact `'%%\\1'` replacement, escaping
+  unrecognized percent signs while preserving recognized placeholders in the
+  current formatting-prefix subset. Pattern or replacement arrays, subject
+  arrays, arbitrary non-empty replacements, limit/count arguments, callbacks,
+  full PCRE replacement behavior, captures/backrefs beyond the reached
+  placeholder replacement, invalid-pattern warnings, byte/Unicode edge cases,
+  broad coercions, exact diagnostics, SQL semantics, and native lowering remain
+  unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
   integer mask and one integer argument to store a new current mask while
   returning the previous mask. The interpreter initializes the mask to `E_ALL`.

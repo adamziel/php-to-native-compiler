@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+SELECT %s, %05d, 100%%, %%q, %%s, %1$s
+LIKE %foo%% AND rate %%1$q
+--- stdout end ---
+stderr:
+--- stderr end ---

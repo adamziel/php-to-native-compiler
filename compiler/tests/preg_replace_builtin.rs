@@ -130,6 +130,33 @@ echo $call('/\\\\+0+/', '', '\\000x');
 }
 
 #[test]
+fn preg_replace_executes_current_wordpress_wpdb_prepare_placeholder_escape() {
+    let execution = run_source(
+        r#"<?php
+$allowed_format = '(?:[1-9][0-9]*[$])?[-+0-9]*(?: |0|\'.)?[-+0-9]*(?:\.[0-9]+)?';
+echo preg_replace(
+    "/%(?:%|$|(?!($allowed_format)?[sdfFi]))/",
+    '%%\\1',
+    'SELECT %s, %05d, 100%, %q, %%s, %1$s'
+);
+echo "\n";
+echo preg_replace(
+    "/%(?:%|$|(?!($allowed_format)?[sdfFi]))/",
+    '%%\\1',
+    'LIKE %foo% AND rate %1$q'
+);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "SELECT %s, %05d, 100%%, %%q, %%s, %1$s\nLIKE %foo%% AND rate %%1$q"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_replace_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
@@ -156,7 +183,7 @@ preg_replace('/[^a-z].*/', '', 'abc123');
     assert_eq!(unsupported_pattern.column, 1);
     assert_eq!(
         unsupported_pattern.message,
-        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, and KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/ are implemented in the current subset"
+        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/, and wpdb prepare placeholder escape pattern are implemented in the current subset"
     );
 
     let unsupported_replacement = runtime_error(

@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 847, bounded `preg_replace()` support for the reached
+  WordPress `wpdb::prepare()` placeholder normalization pattern in
+  `wp-includes/class-wpdb.php:1511`. The interpreter now accepts the current
+  `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` shape after WordPress expands the
+  `$allowed_format` fragment, with the exact `'%%\\1'` replacement, and
+  escapes unrecognized percent signs while preserving recognized
+  `%s`/`%d`/`%f`/`%F`/`%i` placeholders with the reached formatting-prefix
+  subset. Dynamic PCRE variables beyond this shape, broad captures/backrefs,
+  replacement arrays, subject arrays, callbacks, limit/count output, invalid
+  pattern warnings, exact PCRE semantics, SQL/database semantics, and native
+  lowering remain unsupported. The real WordPress 6.9.4 front-controller probe
+  now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:1514:18: undefined function preg_split()`.
+  The bootstrap-shim probe still exits `0`, and direct `wp-settings.php` still
+  stops at undefined `ABSPATH`. Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone847`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 846, a `front_controller_probe` to the WordPress inventory
   script. In addition to the direct `wp-settings.php` probe and the
   deterministic bootstrap shim, the inventory now runs `wp-blog-header.php`
