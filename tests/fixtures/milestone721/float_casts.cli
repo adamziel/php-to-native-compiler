@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+0|0|1
+42|-3.8|15|2.9
+0|0|1000
+float|double--- stdout end ---
+stderr:
+--- stderr end ---

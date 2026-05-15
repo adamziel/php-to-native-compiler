@@ -7148,6 +7148,34 @@ impl Interpreter {
                 )),
             },
             CastKind::Bool => Ok(Value::Bool(value.is_truthy())),
+            CastKind::Float => match value {
+                Value::Null => Ok(Value::Float(0.0)),
+                Value::Bool(value) => Ok(Value::Float(if value { 1.0 } else { 0.0 })),
+                Value::Int(value) => Ok(Value::Float(value as f64)),
+                Value::Float(value) => Ok(Value::Float(value)),
+                Value::String(value) => cast_string_to_float(&value, span),
+                Value::Array(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(float)",
+                        "array-to-float cast behavior is not implemented",
+                    ),
+                )),
+                Value::Object(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(float)",
+                        "object-to-float cast behavior is not implemented",
+                    ),
+                )),
+                Value::Closure(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(float)",
+                        "Closure object-to-float cast behavior is not implemented",
+                    ),
+                )),
+            },
         }
     }
 }
@@ -7184,6 +7212,38 @@ fn starts_with_numeric_prefix(value: &str) -> bool {
         Some('0'..='9') | Some('.') => true,
         _ => false,
     }
+}
+
+fn cast_string_to_float(value: &str, span: Span) -> CompileResult<Value> {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    if trimmed.is_empty() {
+        return Ok(Value::Float(0.0));
+    }
+
+    if let Ok(value) = trimmed.parse::<f64>() {
+        if value.is_finite() {
+            return Ok(Value::Float(value));
+        }
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "(float)",
+                "non-finite float string cast behavior is not implemented",
+            ),
+        ));
+    }
+
+    if starts_with_numeric_prefix(trimmed) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "(float)",
+                "leading-numeric string cast behavior is not implemented",
+            ),
+        ));
+    }
+
+    Ok(Value::Float(0.0))
 }
 
 fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileResult<Value> {

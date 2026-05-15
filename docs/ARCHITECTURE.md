@@ -60,6 +60,14 @@ conditions as fatal project diagnostics rather than recoverable PHP
 warnings/notices. Native lowering rejects the wrapper until generated code has
 a real diagnostic severity and suppression model.
 
+Cast expressions are represented as `Expr::Cast` with a small `CastKind`
+covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
+`(float)/(double)`. The interpreter owns PHP-shaped conversion for the current
+scalar/null subset and keeps warning-producing or object/array/resource-heavy
+cast behavior as runtime or parse boundaries. Native lowering rejects all cast
+expressions until generated code has scalar conversion, warning/recovery,
+allocation, and exact diagnostic behavior.
+
 ## Runtime Crate
 
 `runtime/` contains the PHP-shaped boxed value model used by the interpreter and

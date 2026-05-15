@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 721, a bounded `(float)`/`(double)` cast expression slice
+  through `phpc run`. The parser now accepts `(float)` and `(double)` as cast
+  aliases, and the interpreter converts the current scalar/null subset:
+  `null`/`false` to `0.0`, `true` to `1.0`, integers to floats, floats
+  unchanged, well-formed finite numeric strings through the current float
+  parser, and empty or non-numeric strings to `0.0`. Leading-numeric strings,
+  non-finite string results, array/object/closure/resource casts, `(real)`,
+  `(array)`, `(object)`, `(unset)`, `(binary)`, exact PHP diagnostics,
+  partial-output behavior, and native lowering remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe still reports
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), (bool), and (float) casts are implemented`,
+  now corresponding to the sodium compatibility `(array)` cast at
+  `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47`:
+  `return (array) $this->internalArray;`. Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test scalar_casts cast -- --test-threads=1`,
+  `cargo test -p phpc --test float_casts_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone721`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone721`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+
 - Added Milestone 720, a bounded PHP error-control syntax slice for the real
   WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:665:56`,
   corresponding to `wp-includes/sodium_compat/src/Core/Util.php:605` and

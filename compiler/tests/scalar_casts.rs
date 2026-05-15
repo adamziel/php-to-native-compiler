@@ -1,5 +1,5 @@
 use php_compiler::error::Phase;
-use php_compiler::{emit_ir_source, run_source};
+use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 
@@ -64,6 +64,26 @@ echo (bool) new Flag() ? "true" : "false";
 }
 
 #[test]
+fn float_casts_execute_for_current_scalar_and_null_subset() {
+    let execution = run_source(
+        r#"<?php
+echo (float) null, "|", (float) false, "|", (float) true, "\n";
+echo (double) 42, "|", (float) -3.8, "|", (float) " 15 ", "|", (float) "2.9", "\n";
+echo (float) "", "|", (float) "not numeric", "|", (float) "1e3", "\n";
+echo is_float((float) "1") ? "float" : "other", "|";
+echo ((double) "2.25") === 2.25 ? "double" : "other";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0|0|1\n42|-3.8|15|2.9\n0|0|1000\nfloat|double"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn string_casts_reject_array_and_object_warning_paths_for_now() {
     let error = run_source("<?php\necho (string) [1];\n").unwrap_err();
 
@@ -100,15 +120,38 @@ fn int_casts_reject_unimplemented_warning_paths_for_now() {
 }
 
 #[test]
+fn float_casts_reject_unimplemented_warning_paths_for_now() {
+    let error = run_source("<?php\necho (float) [1];\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call (float): array-to-float cast behavior is not implemented"
+    );
+
+    let error = run_source("<?php\necho (float) \"42abc\";\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call (float): leading-numeric string cast behavior is not implemented"
+    );
+}
+
+#[test]
 fn remaining_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (float) \"1\";\n").unwrap_err();
+    let error = run_source("<?php\necho (array) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string), (int), and (bool) casts are implemented"
+        "unsupported cast expression: only (string), (int), (bool), and (float) casts are implemented"
     );
 }
 
@@ -125,6 +168,24 @@ fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
     assert_eq!(error.message, LLVM_UNARY_REJECTION);
 
     let error = emit_ir_source("<?php\necho (bool) 42;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+
+    let error = emit_ir_source("<?php\necho (float) 42;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+
+    let error = emit_ir_source("<?php\necho (double) \"2.25\";\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_float_cast_until_native_cast_lowering_exists() {
+    let error = emit_asm_source("<?php\necho (float) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_UNARY_REJECTION);

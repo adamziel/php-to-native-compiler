@@ -6608,20 +6608,29 @@ handled.
   warning/fatal behavior, partial-output behavior, and native lowering
   unsupported, and advances the bootstrap-shim probe to
   `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), and (bool) casts are implemented`.
-- [ ] Parser/runtime lane: implement or explicitly bound `(float)`/`(double)`
+- [x] Parser/runtime lane: implemented bounded `(float)`/`(double)`
   casts for the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:1015:20`, likely corresponding to
   `wp-includes/sodium_compat/src/Core/Util.php:255` and
-  `$mixedVar = (float) $mixedVar;`, with tests, CLI coverage, docs, and named
-  unsupported edges for array/object/resource casts, leading-numeric warning
-  behavior, non-finite values, exact PHP diagnostics, partial-output behavior,
-  and native lowering.
+  `$mixedVar = (float) $mixedVar;`. The Milestone 721 slice converts the
+  current scalar/null subset, keeps array/object/resource casts,
+  leading-numeric warning behavior, non-finite values, exact PHP diagnostics,
+  partial-output behavior, and native lowering unsupported, and reveals that
+  the current bootstrap-shim cast blocker is now `(array)` at
+  `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47`.
+- [ ] Parser/runtime lane: implement or explicitly bound `(array)` casts for
+  the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:1015:20`, corresponding to
+  `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47` and
+  `return (array) $this->internalArray;`, with tests, CLI coverage, docs, and
+  named unsupported edges for object property materialization/mangling,
+  scalar-to-array rules, resources, references/copy-on-write, exact PHP
+  diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 720 checkpoint, the latest committed checkpoint
-  is `b166056 runtime: add class constant string lookup`, covering Milestone
-  719.
+- Before the current Milestone 721 checkpoint, the latest committed checkpoint
+  is `8ff3e58 runtime: add error control syntax`, covering Milestone 720.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

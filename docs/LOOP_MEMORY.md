@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T01:03:00Z
+
+- Checkpoint before this task: `8ff3e58 runtime: add error control syntax`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 721, bounded `(float)`/`(double)` cast expressions
+  for the real WordPress 6.9.4 bootstrap-shim cast blocker.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/scalar_casts.rs`,
+  `compiler/tests/float_casts_cli.rs`, `tests/fixtures/milestone721/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test scalar_casts cast -- --test-threads=1`,
+  `cargo test -p phpc --test float_casts_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone721`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone721`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+- Remaining semantic gaps: leading-numeric string warning/recovery behavior,
+  non-finite string results, array/object/closure/resource casts, `(real)`,
+  `(array)`, `(object)`, `(unset)`, `(binary)`, exact PHP diagnostics,
+  partial-output behavior, and native lowering remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), (bool), and (float) casts are implemented`,
+  corresponding to `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47`
+  and `return (array) $this->internalArray;`.
+- Next concrete task: implement or explicitly bound `(array)` casts for the
+  WordPress sodium compatibility `SplFixedArray` path.
+
 ## Loop Event 2026-05-15T00:43:00Z
 
 - Checkpoint before this task: `b166056 runtime: add class constant string

@@ -196,7 +196,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   lowering. The bootstrap-shim probe now reaches
   `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), and (bool) casts are implemented`,
   likely corresponding to the sodium compatibility `(float)` cast at
-  `wp-includes/sodium_compat/src/Core/Util.php:255`.
+  `wp-includes/sodium_compat/src/Core/Util.php:255`. Milestone 721 covers
+  `(float)` and `(double)` for the current scalar/null subset only. This is
+  not full leading-numeric warning/recovery behavior, non-finite string
+  behavior, array/object/resource casts, exact PHP diagnostics,
+  partial-output behavior, or native lowering. The bootstrap-shim probe now
+  reaches
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), (bool), and (float) casts are implemented`,
+  corresponding to the sodium compatibility `(array)` cast at
+  `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47` and
+  `return (array) $this->internalArray;`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
