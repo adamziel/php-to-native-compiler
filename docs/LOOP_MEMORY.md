@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `8cd2295 runtime: add mysqli character set name metadata`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 902, a synthetic WordPress-shaped `wpdb`
+  charset-name bookkeeping smoke over deterministic
+  `mysqli_character_set_name()` placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone902/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone902`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- tests/fixtures/milestone902 docs/PROGRESS.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: a WordPress-shaped charset-name bookkeeping path
+  can record deterministic placeholder charset-name metadata.
+- Remaining semantic gaps: real WordPress charset negotiation, connection
+  charset state, escaping fidelity, client-library/server metadata inspection,
+  host database integration, warning/error fidelity, database state mutation,
+  and native database lowering remain missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi metadata or diagnostic boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `120009b tests: add wordpress wpdb charset metadata smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 901, bounded deterministic

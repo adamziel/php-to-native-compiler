@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 902, a synthetic WordPress-shaped `wpdb` charset-name
+  bookkeeping smoke that calls the bounded
+  `mysqli_character_set_name($this->dbh)` placeholder path, records
+  deterministic local charset-name metadata, and verifies that the metadata
+  boundary ran. This is a harness smoke only; it does not add real WordPress
+  charset negotiation, connection charset state, escaping fidelity,
+  client-library/server metadata inspection, PHP warning/error fidelity, host
+  database integration, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone902`.
+
 - Added Milestone 901, bounded `mysqli_character_set_name()` support for
   deterministic placeholder MySQLi charset-name metadata. The runtime accepts
   `mysqli_character_set_name($handle)` for current placeholder `mysqli`

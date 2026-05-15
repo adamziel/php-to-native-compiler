@@ -1411,7 +1411,9 @@ historical blockers and remaining full-support gaps include:
   deterministic `mysqli_character_set_name()` placeholder charset-name
   metadata without real charset negotiation, connection charset state tracking,
   escaping behavior changes, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 902 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` charset-name bookkeeping smoke without claiming real
+  WordPress charset negotiation or escaping fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

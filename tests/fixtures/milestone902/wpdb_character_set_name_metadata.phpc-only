@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_character_set_name()` metadata through a WordPress-shaped `wpdb`
+charset-name bookkeeping path. System PHP needs a real mysqli connection and
+reports the active connection character set name supplied by the client library
+and server.

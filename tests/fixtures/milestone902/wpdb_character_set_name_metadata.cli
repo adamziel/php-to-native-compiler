@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone902/wpdb_character_set_name_metadata.php
+utf8mb4
+utf8mb4
+checked
