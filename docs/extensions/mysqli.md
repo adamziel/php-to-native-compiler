@@ -5,7 +5,7 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-`mysqli_stat`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
+`mysqli_get_charset`, `mysqli_stat`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
@@ -65,6 +65,14 @@ server protocol.
 `mysqli_thread_id($handle)` accepts the placeholder object and returns
 deterministic thread id `1`. It does not inspect a real server connection,
 allocate server-side threads, or support thread killing/reconnect behavior.
+
+`mysqli_get_charset($handle)` accepts the placeholder object and returns a
+deterministic `stdClass`-shaped metadata object for the current utf8mb4
+placeholder: `charset = "utf8mb4"`, `collation = "utf8mb4_unicode_520_ci"`,
+`dir = ""`, `min_length = 1`, `max_length = 4`, `number = 246`, and
+`state = 0`. It does not negotiate or inspect a real connection charset,
+reflect client-library/server metadata, track collation changes, or affect
+escaping.
 
 `mysqli_get_connection_stats($handle)` accepts the placeholder object and
 returns an eight-key deterministic statistics array:

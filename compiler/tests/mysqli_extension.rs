@@ -380,20 +380,42 @@ fn mysqli_set_charset_accepts_current_utf8mb4_placeholder() {
     let execution = run_source(
         r#"<?php
 $call = "mysqli_set_charset";
+$charset_call = "mysqli_get_charset";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo is_callable($charset_call) ? "charset-callable" : "charset-missing";
 $handle = mysqli_init();
 mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
 echo "|";
 echo mysqli_set_charset($handle, "utf8mb4") ? "set" : "failed";
 echo "|";
 echo $call($handle, "UTF8MB4") ? "dynamic" : "failed";
+$charset = mysqli_get_charset($handle);
+$dynamic = $charset_call($handle);
+echo "|";
+echo $charset->charset;
+echo "|";
+echo $charset->collation;
+echo "|";
+echo $charset->min_length;
+echo "|";
+echo $charset->max_length;
+echo "|";
+echo $charset->number;
+echo "|";
+echo $charset->state;
+echo "|";
+echo $dynamic->charset;
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|set|dynamic");
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|charset-callable|set|dynamic|utf8mb4|utf8mb4_unicode_520_ci|1|4|246|0|utf8mb4"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -948,6 +970,21 @@ mysqli_set_charset($handle, "latin1");
     assert_eq!(
         unsupported_charset.message,
         "unsupported call mysqli_set_charset(): only the deterministic utf8mb4 placeholder charset is implemented in the current subset, got latin1"
+    );
+
+    let bad_get_charset_handle = run_source(
+        r#"<?php
+mysqli_get_charset("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_get_charset_handle.phase, Phase::Runtime);
+    assert_eq!(bad_get_charset_handle.line, 2);
+    assert_eq!(bad_get_charset_handle.column, 1);
+    assert_eq!(
+        bad_get_charset_handle.message,
+        "unsupported call mysqli_get_charset(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -1540,6 +1577,8 @@ echo function_exists("mysqli_get_proto_info") ? "1" : "0";
 echo is_callable("mysqli_get_proto_info") ? "1" : "0";
 echo function_exists("mysqli_thread_id") ? "1" : "0";
 echo is_callable("mysqli_thread_id") ? "1" : "0";
+echo function_exists("mysqli_get_charset") ? "1" : "0";
+echo is_callable("mysqli_get_charset") ? "1" : "0";
 echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
@@ -1608,7 +1647,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 82, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 84, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1676,6 +1715,18 @@ mysqli_get_server_version(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_host_info(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_charset(mysqli_init());
 "#,
     )
     .unwrap_err();

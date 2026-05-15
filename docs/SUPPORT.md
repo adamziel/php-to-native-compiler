@@ -515,7 +515,7 @@
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
-  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_set_charset`,
+  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`, `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -839,6 +839,12 @@
   deterministic thread id `1` without inspecting a real server connection,
   allocating server-side threads, or supporting thread killing/reconnect
   behavior.
+  `mysqli_get_charset($handle)` accepts the placeholder object and returns a
+  deterministic `stdClass`-shaped metadata object for the current utf8mb4
+  placeholder, with `charset`, `collation`, `dir`, `min_length`,
+  `max_length`, `number`, and `state` properties, without negotiating or
+  inspecting a real connection charset, client-library/server metadata,
+  collation changes, or escaping effects.
   `mysqli_get_connection_stats($handle)` accepts the placeholder object and
   returns an eight-key deterministic statistics array with zeroed traffic/query
   counters plus deterministic placeholder connection counters, without real
@@ -2406,6 +2412,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
+  `mysqli_get_charset`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -2729,7 +2736,8 @@
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
-  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
+  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`,
+  `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
   `mysqli_sqlstate`, `mysqli_warning_count`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`,
@@ -2874,7 +2882,7 @@
   `mysqli_get_server_info`, `mysqli_get_server_version`,
   `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
-  `mysqli_thread_id`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
+  `mysqli_thread_id`, `mysqli_get_charset`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_sqlstate`, `mysqli_warning_count`,
@@ -2944,6 +2952,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
+  `mysqli_get_charset`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
@@ -2962,7 +2971,8 @@
   `mysqli_get_client_version(...)` return only deterministic placeholder
   client-library metadata, `mysqli_get_proto_info(...)` returns only
   deterministic placeholder protocol metadata, `mysqli_thread_id(...)` returns
-  only deterministic placeholder thread-id metadata,
+  only deterministic placeholder thread-id metadata, `mysqli_get_charset(...)`
+  returns only deterministic placeholder charset/collation metadata,
   `mysqli_get_connection_stats(...)` returns only deterministic placeholder
   connection-statistics metadata, `mysqli_stat(...)` returns only deterministic
   zeroed server-status metadata, `mysqli_autocommit(...)` returns only
@@ -2992,6 +3002,7 @@
   `mysqli_get_client_info(...)`/`mysqli_get_client_version(...)`/
   `mysqli_get_proto_info(...)`/
   `mysqli_thread_id(...)`/
+  `mysqli_get_charset(...)`/
   `mysqli_get_connection_stats(...)`/`mysqli_stat(...)`/
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
@@ -4647,6 +4658,7 @@
   `mysqli_get_server_version()`/`mysqli_get_host_info()`/`mysqli_get_client_info()`/
   `mysqli_get_client_version()`/`mysqli_get_proto_info()`/
   `mysqli_thread_id()`/
+  `mysqli_get_charset()`/
   `mysqli_get_connection_stats()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/
   `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/

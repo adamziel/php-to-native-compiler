@@ -8316,16 +8316,28 @@ handled.
   connection identity, server-thread fidelity, reconnect behavior,
   `mysqli_kill()` integration, host database integration, warnings/errors, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after thread-id
+- [x] Runtime/mysqli lane: inspect the next MySQLi boundary after thread-id
   placeholders and choose a small tested slice, such as deterministic
   `mysqli_get_charset()` metadata or a sharper named diagnostic, before
   broader SQL execution or real host state is claimed.
+  Milestone 899 implements bounded deterministic `mysqli_get_charset($handle)`
+  metadata. It accepts current placeholder `mysqli` handles, returns a
+  `stdClass`-shaped object with stable utf8mb4 charset/collation fields,
+  rejects non-`mysqli` handles with stable diagnostics, and is visible through
+  runtime and native metadata lookup. This is not real charset negotiation,
+  client-library/server metadata inspection, collation state, charset mutation
+  tracking, escaping behavior changes, warnings/errors, or native database
+  lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_get_charset()` placeholder through WordPress-shaped charset
+  metadata bookkeeping without claiming real charset/collation negotiation or
+  escaping fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `261c02b runtime: add mysqli thread id metadata`, covering
-  Milestone 897 before the current Milestone 898 candidate.
+  `5b34b7f tests: add wordpress wpdb thread id smoke`, covering
+  Milestone 898 before the current Milestone 899 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

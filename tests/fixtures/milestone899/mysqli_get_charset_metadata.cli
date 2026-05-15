@@ -1,0 +1,11 @@
+$ phpc run tests/fixtures/milestone899/mysqli_get_charset_metadata.php
+yes
+callable
+utf8mb4
+utf8mb4_unicode_520_ci
+builtin
+1
+4
+246
+0
+utf8mb4

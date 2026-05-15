@@ -4243,6 +4243,26 @@ impl Interpreter {
         Ok(Value::Int(1))
     }
 
+    fn call_mysqli_get_charset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_charset", args, 1, span)?;
+        expect_mysqli_handle("mysqli_get_charset()", &args[0], span)?;
+        self.create_stdclass_with_properties(
+            vec![
+                ("charset".to_string(), Value::String("utf8mb4".to_string())),
+                (
+                    "collation".to_string(),
+                    Value::String("utf8mb4_unicode_520_ci".to_string()),
+                ),
+                ("dir".to_string(), Value::String(String::new())),
+                ("min_length".to_string(), Value::Int(1)),
+                ("max_length".to_string(), Value::Int(4)),
+                ("number".to_string(), Value::Int(246)),
+                ("state".to_string(), Value::Int(0)),
+            ],
+            span,
+        )
+    }
+
     fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_connection_stats", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
@@ -9265,6 +9285,7 @@ impl Interpreter {
             "mysqli_get_client_version" => self.call_mysqli_get_client_version(&args, span),
             "mysqli_get_proto_info" => self.call_mysqli_get_proto_info(&args, span),
             "mysqli_thread_id" => self.call_mysqli_thread_id(&args, span),
+            "mysqli_get_charset" => self.call_mysqli_get_charset(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
@@ -12211,6 +12232,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_client_version"
             | "mysqli_get_proto_info"
             | "mysqli_thread_id"
+            | "mysqli_get_charset"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"

@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_charset()` metadata. System PHP needs a real mysqli connection and
+reports the active connection charset and collation supplied by the client
+library and server.
