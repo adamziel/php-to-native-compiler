@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 827, bounded `call_user_func_array()` support for the
+  reached WordPress hook-dispatch path. The interpreter now exposes
+  `call_user_func_array` through function/callability metadata and dynamic
+  string-valued calls, supports string callbacks resolving to current user
+  functions or documented callable builtins, supports `[object, method]`
+  public instance-method callbacks and `[class, method]` public static-method
+  callbacks, and expands integer-keyed ordered arrays as positional argument
+  lists. String-keyed named arguments, closure and `__invoke` callbacks,
+  non-public method callbacks, by-reference argument propagation,
+  array/object callable forms beyond the documented two-element shape, exact
+  warning behavior, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the reached
+  `call_user_func_array()` call to
+  `runtime error at <bootstrap-shim>:346:23: undefined function next()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test call_user_func_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone827`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 826, bounded `current()` support for the reached WordPress
   bootstrap ordered-array access path. The runtime now returns the first stored
   value for a current ordered array and returns `false` for an empty array;

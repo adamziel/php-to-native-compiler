@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T15:35:00Z
+
+- Checkpoint before this task:
+  `d72de2e runtime: add bounded current`, pushed to `origin/master`.
+- Task attempted: Milestone 827, bounded `call_user_func_array()` support for
+  the reached WordPress hook-dispatch path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/call_user_func_builtin.rs`,
+  `tests/fixtures/milestone827/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test call_user_func_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone827`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:346:23: undefined function next()`.
+- Remaining semantic gaps: closure and `__invoke` callbacks, non-public method
+  callbacks, by-reference argument propagation, string-keyed named arguments,
+  broad callable resolution, exact warning behavior, native lowering, and real
+  WordPress bootstrap support remain unsupported.
+- Next concrete task: implement the reached bounded `next()` behavior for
+  ordered arrays while keeping full internal array-pointer semantics,
+  interaction with `current()`/`reset()`/`end()`/`prev()`, object operands,
+  references/copy-on-write, exact warnings/errors, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T15:05:00Z
 
 - Checkpoint before this task:

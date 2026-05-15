@@ -1107,6 +1107,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   exact warning behavior, or native lowering. The real bootstrap-shim probe
   now advances to
   `runtime error at <bootstrap-shim>:341:15: undefined function call_user_func_array()`.
+  Milestone 827 implements bounded `call_user_func_array()` for string
+  callbacks, public `[object, method]` instance callbacks, public
+  `[class, method]` static callbacks, and integer-keyed ordered arrays used as
+  positional argument lists. This is not broad callable support, closure or
+  `__invoke` dispatch, non-public method callbacks, by-reference argument
+  propagation, string-keyed named arguments, exact warning behavior, or native
+  lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:346:23: undefined function next()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

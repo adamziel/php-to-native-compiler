@@ -7032,6 +7032,7 @@ impl Interpreter {
             "error_reporting" => self.call_error_reporting(args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
+            "call_user_func_array" => self.call_user_func_array_builtin(args, span),
             "implode" => call_implode(&args, span),
             "dirname" => {
                 if !(1..=2).contains(&args.len()) {
@@ -9196,6 +9197,208 @@ impl Interpreter {
         self.call_callable_with_values(callable, args[1..].to_vec(), span)
     }
 
+    fn call_user_func_array_builtin(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("call_user_func_array", &args, 2, span)?;
+
+        let Value::Array(argument_array) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "argument array must be array in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+
+        let mut positional_args = Vec::with_capacity(argument_array.len());
+        for entry in argument_array.entries() {
+            if matches!(entry.key, ArrayKey::String(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "call_user_func_array()",
+                        "string-keyed named arguments are not implemented in the current subset",
+                    ),
+                ));
+            }
+            positional_args.push(entry.value.clone());
+        }
+
+        match &args[0] {
+            Value::String(callback_name) => {
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                self.call_callable_with_values(callable, positional_args, span)
+            }
+            Value::Array(callback) => {
+                self.call_array_callable_with_values(callback, positional_args, span)
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "closure invocation is not implemented",
+                ),
+            )),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    format!(
+                        "callback must evaluate to string or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_array_callable_with_values(
+        &mut self,
+        callback: &PhpArray,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((target, method_name)) = array_callable_parts(callback) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "call_user_func_array()",
+                    "array callback must be [object-or-class, method] in the current subset",
+                ),
+            ));
+        };
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
+                    self.resolve_instance_method(object.class_id(), method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static method dispatch through object array callables is not implemented",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    Some(object.clone()),
+                    Some(class_id),
+                    Some(object.class_id()),
+                    Vec::new(),
+                    None,
+                )
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                let receiver_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let Some((
+                    declaring_class_id,
+                    declaring_class_name,
+                    resolved_method_name,
+                    visibility,
+                    is_static,
+                )) = self.resolve_instance_method(class_id, method_name)
+                else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(format!(
+                            "{}::{method_name}()",
+                            receiver_class.name()
+                        )),
+                    ));
+                };
+                if !is_static {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "non-static method array callables require an object receiver in the current subset",
+                        ),
+                    ));
+                }
+                if visibility != Visibility::Public {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{declaring_class_name}::{method_name}()"),
+                            "array callable method dispatch is only implemented for public methods",
+                        ),
+                    ));
+                }
+
+                let function = self.method_function(
+                    declaring_class_id,
+                    &declaring_class_name,
+                    &resolved_method_name,
+                    span,
+                )?;
+                let function = function.as_ref();
+                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    None,
+                    Some(declaring_class_id),
+                    Some(class_id),
+                    Vec::new(),
+                    None,
+                )
+            }
+            _ => unreachable!("array_callable_parts restricts callback targets"),
+        }
+    }
+
     fn call_set_error_handler(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -10815,6 +11018,7 @@ fn is_builtin(name: &str) -> bool {
             | "error_reporting"
             | "sprintf"
             | "call_user_func"
+            | "call_user_func_array"
             | "implode"
             | "dirname"
             | "abs"

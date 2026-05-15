@@ -6258,6 +6258,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "error_reporting"
             | "sprintf"
             | "call_user_func"
+            | "call_user_func_array"
             | "implode"
             | "dirname"
             | "abs"

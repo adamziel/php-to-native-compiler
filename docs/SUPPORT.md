@@ -479,7 +479,8 @@
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `strcasecmp`, `str_contains`, `strpos`, `preg_match`, `preg_replace`, `str_replace`,
   `substr_count`,
-  `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
+  `error_reporting`, `sprintf`, `call_user_func`, `call_user_func_array`,
+  `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
@@ -682,9 +683,15 @@
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
   current user functions or documented callable builtins and forwards evaluated
   positional values through the current value-call path. Array callables,
-  closure invocation, `__invoke`, `call_user_func_array`, references, variadic
-  unpacking, exact PHP warning behavior, and native lowering remain
-  unsupported.
+  closure invocation, `__invoke`, references, variadic unpacking, exact PHP
+  warning behavior, and native lowering remain unsupported.
+  `call_user_func_array($callback, $args)` supports string callbacks resolving
+  to current user functions or documented callable builtins, public
+  `[object, method]` instance callbacks, public `[class, method]` static
+  callbacks, and integer-keyed ordered arrays expanded as positional argument
+  lists. String-keyed named arguments, closure and `__invoke` callbacks,
+  non-public methods, by-reference argument propagation, other callable array
+  shapes, exact PHP warning behavior, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -2466,7 +2473,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
   `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
-  `sprintf`, `call_user_func`, `implode`, `file_exists`, `is_dir`, `abs`,
+  `sprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -2604,7 +2611,7 @@
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`,
   `strpos`, `substr_count`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -2776,6 +2783,11 @@
   builtin section above; direct native `call_user_func(...)` calls still reject
   under the function-call boundary, while native function-table introspection
   recognizes the name.
+  `call_user_func_array` accepts the same current string/array callable and
+  integer-keyed positional argument-array subset as the builtin section above;
+  direct native `call_user_func_array(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `implode` accepts the same current scalar/null array-value subset as the
   builtin section above; direct native `implode(...)` calls still reject under
   the function-call boundary, while native function-table introspection
@@ -4088,9 +4100,11 @@
   scalar-to-int coercion for non-integer operands, arrays, and
   objects so generated code does not imply partial PHP bytewise string,
   coercion, overflow, or complete shift-count semantics.
-- dynamic callables outside the string function-name subset, including array
-  callables, object/method callables, first-class callable syntax,
-  `call_user_func_array`, and namespace/autoload-aware callable resolution
+- dynamic callables outside the documented string function-name and bounded
+  `call_user_func_array()` array-callable subset, including closure
+  invocation, `__invoke`, first-class callable syntax, non-public method
+  callbacks, by-reference argument propagation, named arguments, and
+  namespace/autoload-aware callable resolution
 - `array_key_exists` lossy or non-finite float key coercion and PHP
   warning/deprecation behavior, array/object/resource/reference keys, exact
   native `TypeError` objects, reference/copy-on-write behavior, and native
