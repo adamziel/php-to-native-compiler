@@ -1275,13 +1275,17 @@ echo "|";
 echo mysqli_more_results($handle) ? "more" : "done";
 echo "|";
 echo mysqli_next_result($handle) ? "next" : "done";
+echo "|";
+echo mysqli_store_result($handle) === false ? "no-store" : "stored";
+echo "|";
+echo mysqli_use_result($handle) === false ? "no-use" : "using";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "mysqli_result|0|no-field|no-row|freed|done|done"
+        "mysqli_result|0|no-field|no-row|freed|done|done|no-store|no-use"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1611,6 +1615,36 @@ mysqli_data_seek($result, "0");
         invalid_data_seek_offset.message,
         "unsupported call mysqli_data_seek(): offset must be int in the current subset, got string"
     );
+
+    let bad_store_result_handle = run_source(
+        r#"<?php
+mysqli_store_result("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_store_result_handle.phase, Phase::Runtime);
+    assert_eq!(bad_store_result_handle.line, 2);
+    assert_eq!(bad_store_result_handle.column, 1);
+    assert_eq!(
+        bad_store_result_handle.message,
+        "unsupported call mysqli_store_result(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_use_result_handle = run_source(
+        r#"<?php
+mysqli_use_result("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_use_result_handle.phase, Phase::Runtime);
+    assert_eq!(bad_use_result_handle.line, 2);
+    assert_eq!(bad_use_result_handle.column, 1);
+    assert_eq!(
+        bad_use_result_handle.message,
+        "unsupported call mysqli_use_result(): first argument must be mysqli object in the current subset, got string"
+    );
 }
 
 #[test]
@@ -1932,6 +1966,10 @@ echo function_exists("mysqli_more_results") ? "1" : "0";
 echo is_callable("mysqli_more_results") ? "1" : "0";
 echo function_exists("mysqli_next_result") ? "1" : "0";
 echo is_callable("mysqli_next_result") ? "1" : "0";
+echo function_exists("mysqli_store_result") ? "1" : "0";
+echo is_callable("mysqli_store_result") ? "1" : "0";
+echo function_exists("mysqli_use_result") ? "1" : "0";
+echo is_callable("mysqli_use_result") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -1945,7 +1983,7 @@ echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 101, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 105, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2301,6 +2339,30 @@ mysqli_info(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_warnings(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_store_result(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_use_result(mysqli_init());
 "#,
     )
     .unwrap_err();

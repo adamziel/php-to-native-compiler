@@ -8472,16 +8472,27 @@ handled.
   `mysqli_get_warnings()` placeholder metadata after a placeholder charset setup
   query. It is not real SQL warning objects, warning iteration, warnings,
   errors, host database state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi result or metadata boundary
+- [x] Runtime/mysqli lane: inspect the next MySQLi result or metadata boundary
   used by WordPress after clean warning-chain state, such as
   `mysqli_store_result()`/`mysqli_use_result()` or a sharper unsupported
   diagnostic, before claiming broader result lifecycle fidelity.
+  Milestone 915 implements bounded deterministic
+  `mysqli_store_result($handle)`/`mysqli_use_result($handle)` clean
+  no-pending-result support. They accept current placeholder `mysqli` handles,
+  return `false`, reject non-`mysqli` handles with stable diagnostics, and are
+  visible through runtime and native metadata lookup. This is not buffered or
+  unbuffered result transfer, pending result tracking, warnings/errors, host
+  database state, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_store_result()`/`mysqli_use_result()` placeholders through a
+  WordPress-shaped connection result-drain method without claiming real result
+  buffering or unbuffered result lifecycle fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a239efe runtime: add mysqli warnings placeholder`, covering Milestone 913
-  before the current Milestone 914 candidate.
+  `5e374f5 tests: add wordpress wpdb warnings smoke`, covering Milestone 914
+  before the current Milestone 915 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

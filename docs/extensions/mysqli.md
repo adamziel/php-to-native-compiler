@@ -17,8 +17,8 @@ Status: boundary only.
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
-`mysqli_more_results`, `mysqli_next_result`, `mysqli_report`, and
-`mysqli_init` are currently visible through
+`mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
+`mysqli_use_result`, `mysqli_report`, and `mysqli_init` are currently visible through
 `function_exists()`, `is_callable()`, dynamic string-valued function lookup,
 and native function-table introspection so WordPress' early database startup
 paths can move to the next real bootstrap blocker.
@@ -164,6 +164,12 @@ connection, `mysqli_more_results($handle)` and `mysqli_next_result($handle)`
 return `false`. This does not execute SQL, store rows, expose real field
 metadata, or model real result resources.
 
+For the placeholder connection, `mysqli_store_result($handle)` and
+`mysqli_use_result($handle)` return deterministic `false` for clean
+no-pending-result state. They do not transfer buffered or unbuffered result
+sets from the connection, track pending result state, or expose real result
+resources.
+
 `mysqli_query($handle, 'SELECT ID, post_title FROM wp_posts WHERE ID = 1')`
 returns a placeholder `mysqli_result` object with deterministic interpreter
 state: fields `ID` and `post_title`, plus one row where `ID` is `1` and
@@ -229,6 +235,8 @@ state beyond placeholder result counts, no real statement-info state beyond
 deterministic null clean state, no real affected-row or insert-id state beyond
 deterministic zero clean state, no real connection liveness checks or
 reconnect behavior beyond deterministic ping success, no real
+connection-level buffered or unbuffered result retrieval beyond clean
+no-pending-result placeholders, no real
 autocommit or transaction state beyond deterministic autocommit and
 begin-transaction/commit/rollback success, no
 charset/collation negotiation, no SQLSTATE, warning-count, or warning-chain

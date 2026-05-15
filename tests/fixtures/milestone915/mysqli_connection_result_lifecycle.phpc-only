@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_store_result()` and `mysqli_use_result()` clean no-pending-result state
+after a placeholder WordPress charset setup query. System PHP needs a real
+mysqli connection and host extension result buffering state; phpc only returns
+clean placeholder state for connection-level result retrieval.

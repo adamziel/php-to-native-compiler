@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 915, bounded `mysqli_store_result()` and
+  `mysqli_use_result()` support for deterministic placeholder MySQLi clean
+  connection-level no-pending-result metadata. The runtime accepts current
+  placeholder `mysqli` handles, returns deterministic clean state (`false`) for
+  both calls, rejects non-`mysqli` handles with stable diagnostics, and exposes
+  both names through runtime and native metadata lookup. This is not real
+  buffered or unbuffered result transfer, pending result tracking, host
+  database state, PHP warning/error fidelity, or native database lowering.
+  Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_query -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone915`.
+
 - Added Milestone 914, a synthetic WordPress-shaped `wpdb` query-warning
   bookkeeping smoke that calls the bounded `mysqli_get_warnings($this->dbh)`
   placeholder after the deterministic charset setup query, records clean local

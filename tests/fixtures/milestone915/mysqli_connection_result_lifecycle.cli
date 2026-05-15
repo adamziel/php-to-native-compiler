@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone915/mysqli_connection_result_lifecycle.php
+yes
+callable
+no-store
+no-use
+dynamic-store-clean
+dynamic-use-clean
