@@ -1076,10 +1076,14 @@ unchecked work. Current state:
 - Milestone 854 is committed: remaining `SELECT`
   statements after the deterministic placeholder cases fail with a specific
   non-empty `mysqli` result-set diagnostic.
-- Milestone 855 is the active checkpoint candidate: the exact deterministic
+- Milestone 855 is committed: the exact deterministic
   query `SELECT ID, post_title FROM wp_posts WHERE ID = 1` returns a
   placeholder row-backed `mysqli_result` with two fields and one `stdClass`
   row, while all general SQL/database behavior remains unsupported.
+- Milestone 856 is the active checkpoint candidate: a synthetic
+  `wpdb::get_results()` smoke consumes that one-row placeholder through
+  WordPress-shaped `last_result` and `num_rows` state without claiming real
+  database support.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

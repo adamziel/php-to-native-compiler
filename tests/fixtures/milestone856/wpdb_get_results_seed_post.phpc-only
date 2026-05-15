@@ -1,0 +1,2 @@
+Requires phpc's deterministic placeholder MySQLi row boundary; system PHP would
+require a real database and may produce host-specific connection/query errors.

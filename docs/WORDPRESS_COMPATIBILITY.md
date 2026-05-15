@@ -1287,6 +1287,17 @@ historical blockers and remaining full-support gaps include:
   lines ending at `<wordpress-root>/wp-includes/pluggable.php`. This proves a
   bounded smoke path, not plugin/theme/admin/REST, real database, HTTP,
   filesystem, SAPI, rendered request, or native WordPress support.
+  Milestone 851 commits a synthetic front-controller smoke for that shape.
+  Milestones 852 and 853 add the first placeholder empty `mysqli_result`
+  lifecycle and a synthetic empty `wpdb::query()` consumption smoke.
+  Milestone 854 sharpens the boundary for remaining `SELECT` statements.
+  Milestone 855 adds one deterministic row-backed placeholder result for
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1`, and Milestone 856 adds a
+  synthetic `wpdb::get_results()` smoke that stores that row in
+  `last_result`, increments `num_rows`, and returns the row array. These are
+  still deterministic harness milestones, not SQL execution, real database
+  state, plugin/theme/admin/REST, SAPI, rendered request, or native WordPress
+  support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

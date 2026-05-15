@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 856, a WordPress-shaped `wpdb::get_results()` smoke over
+  the deterministic Milestone 855 seed-post row. The synthetic `wpdb` class
+  initializes the placeholder connection, runs the exact
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1` query, loops through
+  `mysqli_fetch_object()`, stores the row in `$this->last_result`, increments
+  `$this->num_rows`, frees the result, drains placeholder multi-result state,
+  and returns the row array. The `phpc-only` fixture verifies one returned row,
+  one recorded row, `ID = 1`, and the placeholder title. This is a harness
+  smoke only; it does not add real WordPress query semantics, SQL execution,
+  database state, object-cache behavior, real post content, error/warning
+  fidelity, or native lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone856`.
+
 - Added Milestone 855, the first deterministic non-empty placeholder
   `mysqli_result` row shape. The exact query
   `SELECT ID, post_title FROM wp_posts WHERE ID = 1` now returns a

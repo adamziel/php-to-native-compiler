@@ -29,6 +29,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `c4be502 runtime: add wordpress mysqli seed row`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 856, a synthetic WordPress-shaped
+  `wpdb::get_results()` smoke over the deterministic seed-post placeholder
+  result.
+- Files changed so far: `tests/fixtures/milestone856/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone856`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb::get_results()` path can store
+  one deterministic placeholder post row in `last_result`, update `num_rows`,
+  return the row array, free the placeholder result, and drain placeholder
+  multi-result state.
+- Remaining semantic gaps: real SQL execution, database state, query parsing,
+  WordPress post/content fidelity, cache integration, associative fetch modes,
+  error/warning behavior, and native database lowering remain missing.
+- Next concrete task: update docs, run formatting/diff checks, then use the
+  full serialized checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `d8df507 runtime: clarify mysqli non-empty result boundary`, pushed to
   `origin/master`.
 - Task attempted: Milestone 855, the first deterministic row-backed

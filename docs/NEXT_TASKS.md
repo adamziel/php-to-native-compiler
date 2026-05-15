@@ -7867,16 +7867,26 @@ handled.
   `mysqli_num_fields()`, `mysqli_fetch_field()`, `mysqli_fetch_object()`, and
   `mysqli_free_result()`. It is still not SQL execution, real database state,
   WordPress content fidelity, real metadata, or native database lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb::get_results()` or
+- [x] WordPress harness lane: add a synthetic `wpdb::get_results()` or
   equivalent one-row smoke that consumes the Milestone 855 deterministic
   row-backed result through WordPress-shaped query state without claiming real
   database support.
+  Milestone 856 adds a `phpc-only` synthetic `wpdb::get_results()` fixture
+  that runs the exact seed-post placeholder query, fetches one object row,
+  stores it in `$this->last_result`, increments `$this->num_rows`, frees the
+  result, drains placeholder multi-result state, and returns the row array.
+  It is not real SQL execution, database state, WordPress query fidelity,
+  cache behavior, real post content, or native lowering.
+- [ ] Runtime/mysqli lane: add the next explicit boundary for post-query
+  operations that WordPress will need before real database support, such as
+  deterministic `mysqli_fetch_assoc()`/array row hydration or a named
+  unsupported diagnostic for unsupported fetch modes.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d8df507 runtime: clarify mysqli non-empty result boundary`, covering
-  Milestone 854 before the current Milestone 855 candidate.
+  `c4be502 runtime: add wordpress mysqli seed row`, covering Milestone 855
+  before the current Milestone 856 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
