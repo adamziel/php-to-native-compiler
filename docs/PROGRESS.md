@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 858, a synthetic WordPress-shaped associative
+  `wpdb::get_results()` smoke over the deterministic
+  `mysqli_fetch_assoc()` seed-post row. The fixture defines the current
+  WordPress-style `OBJECT` and `ARRAY_A` result constants locally, calls
+  `get_results($query, ARRAY_A)`, takes the associative fetch branch, stores
+  the array row in `$this->last_result`, increments `$this->num_rows`, frees
+  the placeholder result, drains placeholder multi-result state, and verifies
+  the returned row plus recorded query state. This is a harness smoke only; it
+  does not add WordPress core constants, real `wpdb` output-mode fidelity,
+  SQL execution, database state, real post content, cache behavior,
+  warnings/errors, or native lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone858`.
+
 - Added Milestone 857, bounded `mysqli_fetch_assoc()` support for the
   deterministic seed-post placeholder result. `mysqli_fetch_assoc($result)`
   now accepts the current placeholder `mysqli_result`, shares the result row

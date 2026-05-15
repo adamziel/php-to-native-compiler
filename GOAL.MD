@@ -1084,10 +1084,14 @@ unchecked work. Current state:
   `wpdb::get_results()` smoke consumes that one-row placeholder through
   WordPress-shaped `last_result` and `num_rows` state without claiming real
   database support.
-- Milestone 857 is the active checkpoint candidate: deterministic
+- Milestone 857 is committed: deterministic
   `mysqli_fetch_assoc()` returns the seed-post placeholder row as an
   associative PHP array and shares the placeholder result cursor with object
   fetching.
+- Milestone 858 is the active checkpoint candidate: a synthetic
+  `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
+  through WordPress-shaped `last_result` and `num_rows` state without claiming
+  real database support.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

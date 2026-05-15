@@ -7887,16 +7887,26 @@ handled.
   `post_title`, then returns `false`. It is not `mysqli_fetch_array()`, numeric
   indexes, broad fetch modes, SQL execution, real database state, or native
   lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` associative-result smoke
+- [x] WordPress harness lane: add a synthetic `wpdb` associative-result smoke
   that consumes the Milestone 857 `mysqli_fetch_assoc()` path through a
   WordPress-shaped `ARRAY_A` or equivalent result mode without claiming real
   database support.
+  Milestone 858 adds a `phpc-only` synthetic `wpdb::get_results($query,
+  ARRAY_A)` fixture that takes an associative fetch branch, stores the row in
+  `$this->last_result`, increments `$this->num_rows`, frees the placeholder
+  result, drains placeholder multi-result state, and returns the row array.
+  It is not real WordPress `wpdb` output-mode fidelity, core constants, SQL
+  execution, database state, cache behavior, or native lowering.
+- [ ] Runtime/mysqli lane: add a named boundary or deterministic slice for the
+  next common fetch mode, such as `mysqli_fetch_array()` with documented
+  unsupported numeric/mixed index behavior before broadening beyond the
+  seed-post placeholder query.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b6bb122 tests: add wordpress wpdb seed row smoke`, covering Milestone 856
-  before the current Milestone 857 candidate.
+  `b40bd9b runtime: add wordpress mysqli associative row`, covering Milestone
+  857 before the current Milestone 858 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

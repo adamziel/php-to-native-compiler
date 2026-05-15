@@ -1,0 +1,11 @@
+$ phpc run tests/fixtures/milestone858/wpdb_get_results_array_a.php
+exit: 0
+stdout:
+1
+1
+1
+Hello world placeholder
+Hello world placeholder
+--- stdout end ---
+stderr:
+--- stderr end ---

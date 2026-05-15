@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `b40bd9b runtime: add wordpress mysqli associative row`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 858, a synthetic `wpdb::get_results($query,
+  ARRAY_A)` smoke over the deterministic `mysqli_fetch_assoc()` seed-post
+  placeholder result.
+- Files changed so far: `tests/fixtures/milestone858/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone858`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb::get_results(..., ARRAY_A)`
+  path can store one deterministic associative placeholder post row in
+  `last_result`, update `num_rows`, return the row array, free the placeholder
+  result, and drain placeholder multi-result state.
+- Remaining semantic gaps: real WordPress `wpdb` output-mode fidelity,
+  WordPress core constants, real SQL execution, database state, query parsing,
+  cache behavior, post/content fidelity, errors/warnings, and native database
+  lowering remain missing.
+- Next concrete task: update docs, run formatting/diff checks, then use the
+  full serialized checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `b6bb122 tests: add wordpress wpdb seed row smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 857, deterministic `mysqli_fetch_assoc()` support
