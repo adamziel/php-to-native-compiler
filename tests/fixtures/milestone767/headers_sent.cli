@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+open
+--- stdout end ---
+stderr:
+--- stderr end ---

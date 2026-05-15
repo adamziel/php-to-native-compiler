@@ -426,8 +426,8 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `header`, `assert`, `get_class`, `is_object`,
-  `get_debug_type`,
+  `function_exists`, `extension_loaded`, `header`, `headers_sent`, `assert`,
+  `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
@@ -536,6 +536,10 @@
   state, replacement/removal behavior, output-sent warnings, web-server/SAPI
   integration, exact diagnostics, partial-output behavior, and native lowering
   remain unsupported.
+  `headers_sent()` accepts no arguments and returns `false` in the current
+  no-header-state runtime shim. Filename/line output arguments, output-started
+  tracking, header storage, output buffers, SAPI differences, exact warnings,
+  and native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
   It returns `true` for `json` and `hash`, and `false` for other names,
@@ -2157,8 +2161,8 @@
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `dirname`, `extension_loaded`, `header`, `get_class`,
-  `is_object`, `get_debug_type`,
+  `function_exists`, `dirname`, `extension_loaded`, `header`, `headers_sent`,
+  `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`,
@@ -2283,8 +2287,8 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `header`, `assert`, `spl_autoload_register`, `get_class`,
-  `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
+  `dirname`, `extension_loaded`, `header`, `headers_sent`, `assert`,
+  `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`, `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
   `get_class_methods`, `is_a`, `is_subclass_of`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `get_parent_class`,
@@ -2347,6 +2351,10 @@
   `header` accepts the same current no-op header subset as the builtin section
   above; direct native `header(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
+  `headers_sent` accepts the same current no-argument `false` subset as the
+  builtin section above; direct native `headers_sent(...)` calls still reject
+  under the function-call boundary, while native function-table introspection
+  recognizes the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3898,6 +3906,10 @@
   replacement/removal behavior, output-sent warnings, SAPI/web-server
   integration, exact `ValueError`/`TypeError` diagnostics, partial-output
   behavior, and native lowering beyond function-table introspection
+- `headers_sent()` behavior beyond the current no-argument always-`false`
+  shim: filename/line output arguments, output-started tracking, header
+  storage, output buffers, SAPI differences, exact warnings, and native
+  lowering beyond function-table introspection
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,

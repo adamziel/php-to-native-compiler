@@ -47,6 +47,27 @@ echo $result === null ? "|null" : "|not-null";
 }
 
 #[test]
+fn headers_sent_accepts_current_no_header_state_signature() {
+    let execution = run_source(
+        r#"<?php
+echo headers_sent() ? "sent" : "open";
+header("X-Test: one");
+echo "|";
+$call = "headers_sent";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo $call() ? "sent" : "open";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "open|yes|callable|open");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn header_rejects_forms_outside_current_subset() {
     let missing = runtime_error(
         r#"<?php
@@ -98,6 +119,34 @@ echo header("X-Test: one", true, "500");
 }
 
 #[test]
+fn headers_sent_rejects_forms_outside_current_subset() {
+    let output_arg = runtime_error(
+        r#"<?php
+$file = "";
+echo headers_sent($file);
+"#,
+    );
+    assert_eq!(output_arg.line, 3);
+    assert_eq!(output_arg.column, 6);
+    assert_eq!(
+        output_arg.message,
+        "unsupported call headers_sent(): filename and line output arguments are not implemented; call without arguments in the current subset"
+    );
+
+    let too_many = runtime_error(
+        r#"<?php
+echo headers_sent("", 0, "extra");
+"#,
+    );
+    assert_eq!(too_many.line, 2);
+    assert_eq!(too_many.column, 6);
+    assert_eq!(
+        too_many.message,
+        "arity mismatch for headers_sent(): expected 0 to 2 argument(s), got 3"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_header_until_native_runtime_call_lowering_exists() {
     let error = emit_ir_source(
         r#"<?php
@@ -113,16 +162,28 @@ header("Content-Type: text/html");
 }
 
 #[test]
+fn emit_ir_rejects_headers_sent_until_native_runtime_call_lowering_exists() {
+    let error = emit_ir_source("<?php\necho headers_sent();\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
 fn emit_ir_includes_header_in_native_callable_lookup_table() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("header") ? "1" : "0";
 echo is_callable("header") ? "1" : "0";
+echo function_exists("headers_sent") ? "1" : "0";
+echo is_callable("headers_sent") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

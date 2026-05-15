@@ -7015,18 +7015,26 @@ handled.
   probe to
   `runtime error at <bootstrap-shim>:3890:10: undefined function headers_sent()`,
   corresponding to `wp-includes/functions.php:3890`.
-- [ ] Web/SAPI runtime lane: implement a bounded `headers_sent()` slice for the
+- [x] Web/SAPI runtime lane: implement a bounded `headers_sent()` slice for the
   next real WordPress bootstrap-shim blocker, likely returning `false` for the
   current no-header-state CLI shim unless output/header state is implemented.
   Keep by-reference filename/line output arguments, output-buffer interaction,
   header storage, SAPI differences, exact warnings, and native lowering named
   unless implemented.
+  Milestone 767 implements no-argument `headers_sent()` as `false` for the
+  current no-header-state shim and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1469:9: undefined function abs()`,
+  corresponding to `wp-includes/load.php:1469`.
+- [ ] Numeric builtin lane: implement a bounded `abs()` slice for the next real
+  WordPress bootstrap-shim blocker, covering the reached integer-cast
+  `absint()` path while documenting unsupported float overflow/NaN/infinity
+  behavior, non-scalar operands, exact diagnostics, and native lowering unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 766 checkpoint, the latest committed checkpoint
-  is `311a670 runtime: add array variable reference assignment`, covering
-  Milestone 765.
+- Before the current Milestone 767 checkpoint, the latest committed checkpoint
+  is `d990214 runtime: add bounded strcasecmp`, covering Milestone 766.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

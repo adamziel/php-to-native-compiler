@@ -918,6 +918,10 @@ shape, returns `null`, and deliberately records no response state yet. Native
 function-table introspection recognizes the name, while direct native calls
 reject until response state, diagnostics, and SAPI integration have a lowered
 runtime model.
+`headers_sent()` is an interpreter-only no-header-state web/SAPI boundary. The
+current no-argument slice returns `false` so reached WordPress guard branches
+can continue, but filename/line output arguments, output-started tracking,
+output buffers, SAPI differences, and native lowering are not modeled.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

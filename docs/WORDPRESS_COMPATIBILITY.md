@@ -626,6 +626,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   corresponding to `wp-includes/functions.php:3890`. This is not broad scalar
   coercion, array/object/resource operands, binary/locale edge cases, exact PHP
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 767 implements bounded no-argument `headers_sent()` as `false` for
+  the current no-header-state runtime shim. It advances the real
+  bootstrap-shim probe past `wp-includes/functions.php:3890` to
+  `runtime error at <bootstrap-shim>:1469:9: undefined function abs()`,
+  corresponding to `wp-includes/load.php:1469`. This is not filename/line
+  output arguments, output-started tracking, header storage, output buffers,
+  SAPI differences, exact warnings, native lowering, or WordPress bootstrap
+  support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -201,6 +201,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   output-buffer interaction, header storage, SAPI differences, exact warnings,
   and native lowering named unless implemented.
 
+## Loop Event 2026-05-15T08:12:00Z
+
+- Checkpoint before this task:
+  `d990214 runtime: add bounded strcasecmp`, pushed to `origin/master`.
+- Task attempted: Milestone 767, bounded no-argument `headers_sent()` for the
+  WordPress web/SAPI guard blocker.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/header_builtin.rs`,
+  `tests/fixtures/milestone767/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test header_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone767`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: filename/line output arguments, output-started
+  tracking, header storage, output buffers, SAPI differences, exact warnings,
+  and native lowering remain unsupported. Direct `wp-settings.php` still stops
+  on undefined `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:1469:9: undefined function abs()`,
+  corresponding to `wp-includes/load.php:1469`.
+- Next concrete task: implement a bounded `abs()` numeric builtin slice for the
+  reached `absint()` path while keeping float overflow/NaN/infinity behavior,
+  non-scalar operands, exact diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

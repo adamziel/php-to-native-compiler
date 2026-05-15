@@ -7114,6 +7114,7 @@ impl Interpreter {
                 }
             }
             "header" => call_header(&args, span),
+            "headers_sent" => call_headers_sent(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -9291,6 +9292,7 @@ fn is_builtin(name: &str) -> bool {
             | "extension_loaded"
             | "file_exists"
             | "header"
+            | "headers_sent"
             | "assert"
             | "get_class"
             | "is_object"
@@ -9782,6 +9784,31 @@ fn call_header(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::Null)
+}
+
+fn call_headers_sent(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "headers_sent()",
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if !args.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "headers_sent()",
+                "filename and line output arguments are not implemented; call without arguments in the current subset",
+            ),
+        ));
+    }
+
+    Ok(Value::Bool(false))
 }
 
 fn call_version_compare(args: &[Value], span: Span) -> CompileResult<Value> {
