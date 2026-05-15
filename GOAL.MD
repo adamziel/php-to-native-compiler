@@ -189,10 +189,11 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
 
 For WordPress specifically, Milestone 724 advanced the bootstrap-shim probe
 past `clone` expressions by adding fresh object handles and shallow property
-slot copying for objects without declared `__clone` methods. The next visible
-bootstrap-shim blocker is now loop-depth control flow:
-`parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`,
-corresponding to `wp-includes/load.php:1610` and `break 2;`.
+slot copying for objects without declared `__clone` methods. Milestone 725
+then advanced past loop-depth `break 2;` by letting active loops and switches
+consume positive integer literal `break N;`/`continue N;` depths. The next
+visible bootstrap-shim blocker is now function-scope global imports:
+`runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -300,10 +301,10 @@ The repository already has a working Rust workspace with:
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through the bounded clone slice and then stops at
-  `break 2` loop-depth control flow. The direct `wp-settings.php` probe still
-  stops at undefined `ABSPATH`, which is an entrypoint/environment issue rather
-  than proof of core bootstrap support.
+  probe currently advances through the bounded loop-depth control-flow slice
+  and then stops at function-scope `global` imports. The direct
+  `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
+  entrypoint/environment issue rather than proof of core bootstrap support.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

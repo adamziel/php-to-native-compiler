@@ -1298,12 +1298,22 @@ fn unsupported_break_forms_are_rejected_with_stable_parse_error() {
         (
             r#"<?php
 while (true) {
-    break 2;
+    break $depth;
 }
 "#,
             3,
             5,
-            "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported",
+            "unsupported break: only positive integer loop-depth literals are implemented in the current subset",
+        ),
+        (
+            r#"<?php
+while (true) {
+    break 0;
+}
+"#,
+            3,
+            11,
+            "unsupported break: loop-depth must be a positive integer literal in the current subset",
         ),
         (
             r#"<?php
@@ -1329,22 +1339,22 @@ fn unsupported_continue_forms_are_rejected_with_stable_parse_error() {
         (
             r#"<?php
 while (true) {
-    continue 2;
+    continue $depth;
 }
 "#,
             3,
             5,
-            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported",
+            "unsupported continue: only positive integer loop-depth literals are implemented in the current subset",
         ),
         (
             r#"<?php
 while (true) {
-    CONTINUE 2;
+    continue 0;
 }
 "#,
             3,
-            5,
-            "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported",
+            14,
+            "unsupported continue: loop-depth must be a positive integer literal in the current subset",
         ),
         (
             r#"<?php

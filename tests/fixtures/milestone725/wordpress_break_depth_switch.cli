@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+found:plugins_loaded
+done--- stdout end ---
+stderr:
+--- stderr end ---

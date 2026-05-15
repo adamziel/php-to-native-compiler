@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Milestone 725, bounded loop-depth `break N;` and `continue N;`
+  control flow through `phpc run` for positive integer literal depths. The AST
+  now records loop-control depth, the parser accepts positive integer literal
+  depths, and the interpreter lets each active loop or switch consume one
+  level. This supports `break 2;` out of a switch nested in a loop and
+  `continue 2;` from a switch to the next outer loop iteration while preserving
+  the existing plain-`continue;`-inside-switch runtime boundary. Dynamic depth
+  expressions, zero/negative depths, depths too large for the active
+  loop/switch stack, exact PHP warnings/diagnostics, partial-output behavior,
+  and native lowering remain unsupported. The direct WordPress probe still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `break 2;` blocker in
+  `wp-includes/load.php:1610` and now stops at
+  `runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test for_loop loop_depth -- --test-threads=1`,
+  `cargo test -p phpc --test switch loop_depth -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_break_forms_are_rejected_with_stable_parse_error -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_continue_forms_are_rejected_with_stable_parse_error -- --test-threads=1`,
+  `cargo test -p phpc --test loop_control_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone725`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone725`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 724, a bounded `clone` expression slice through `phpc run`.
   The parser now accepts `clone expr`, and the interpreter requires the operand
   to evaluate to a current object value, allocates a fresh process-local object

@@ -1,2 +1,2 @@
-parse error at 3:5: unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported
+parse error at 3:5: unsupported continue: only positive integer loop-depth literals are implemented in the current subset
 

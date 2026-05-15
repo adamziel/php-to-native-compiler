@@ -1,4 +1,4 @@
 <?php
 while (true) {
-    break 2;
+    break $depth;
 }

@@ -227,6 +227,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   native lowering. The bootstrap-shim probe now reaches
   `parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`,
   corresponding to `wp-includes/load.php:1610` and `break 2;`.
+  Milestone 725 covers positive integer literal loop-depth control flow for
+  `break N;` and `continue N;`, including `break 2;` out of a switch nested in
+  a loop. This is not dynamic loop-depth expressions, zero/negative depth
+  handling, exact PHP diagnostics, partial-output behavior, or native lowering.
+  The bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

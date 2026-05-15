@@ -1411,20 +1411,58 @@ impl Parser {
 
     fn parse_break(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
-        if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-            return Err(self.error_at(token.span, unsupported_break_depth_message()));
-        }
+        let depth = self.parse_loop_control_depth(token.span, "break")?;
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after break")?;
-        Ok(Stmt::Break { span: token.span })
+        Ok(Stmt::Break {
+            depth,
+            span: token.span,
+        })
     }
 
     fn parse_continue(&mut self) -> CompileResult<Stmt> {
         let token = self.advance().clone();
-        if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-            return Err(self.error_at(token.span, unsupported_continue_depth_message()));
-        }
+        let depth = self.parse_loop_control_depth(token.span, "continue")?;
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after continue")?;
-        Ok(Stmt::Continue { span: token.span })
+        Ok(Stmt::Continue {
+            depth,
+            span: token.span,
+        })
+    }
+
+    fn parse_loop_control_depth(
+        &mut self,
+        keyword_span: Span,
+        keyword: &str,
+    ) -> CompileResult<usize> {
+        if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+            return Ok(1);
+        }
+
+        let token = self.advance().clone();
+        let TokenKind::Int(depth) = token.kind else {
+            let message = if keyword.eq_ignore_ascii_case("break") {
+                unsupported_break_depth_message()
+            } else {
+                unsupported_continue_depth_message()
+            };
+            return Err(self.error_at(keyword_span, message));
+        };
+
+        if depth < 1 {
+            return Err(self.error_at(
+                token.span,
+                format!(
+                    "unsupported {keyword}: loop-depth must be a positive integer literal in the current subset"
+                ),
+            ));
+        }
+
+        usize::try_from(depth).map_err(|_| {
+            self.error_at(
+                token.span,
+                format!("unsupported {keyword}: loop-depth is too large for the current subset"),
+            )
+        })
     }
 
     fn parse_return(&mut self) -> CompileResult<Stmt> {
@@ -4999,7 +5037,7 @@ fn unsupported_if_alternate_message() -> &'static str {
 }
 
 fn unsupported_break_depth_message() -> &'static str {
-    "unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported"
+    "unsupported break: only positive integer loop-depth literals are implemented in the current subset"
 }
 
 fn unsupported_break_expression_message() -> &'static str {
@@ -5007,7 +5045,7 @@ fn unsupported_break_expression_message() -> &'static str {
 }
 
 fn unsupported_continue_depth_message() -> &'static str {
-    "unsupported continue: loop-depth arguments are not implemented; only 'continue;' for the innermost loop is supported"
+    "unsupported continue: only positive integer loop-depth literals are implemented in the current subset"
 }
 
 fn unsupported_continue_expression_message() -> &'static str {

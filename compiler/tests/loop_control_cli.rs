@@ -8,8 +8,14 @@ fn loop_control_cli_snapshots_match_committed_outputs() {
     let workspace_root = manifest_dir
         .parent()
         .expect("compiler has a workspace root");
-    let fixture_dir = workspace_root.join("tests/fixtures/milestone6");
-    let mut fixtures = cli_snapshot_fixtures(&fixture_dir);
+    let fixture_dirs = [
+        workspace_root.join("tests/fixtures/milestone6"),
+        workspace_root.join("tests/fixtures/milestone725"),
+    ];
+    let mut fixtures = fixture_dirs
+        .iter()
+        .flat_map(|fixture_dir| cli_snapshot_fixtures(fixture_dir, workspace_root))
+        .collect::<Vec<_>>();
 
     fixtures.sort();
     assert!(
@@ -18,11 +24,13 @@ fn loop_control_cli_snapshots_match_committed_outputs() {
     );
 
     for fixture in fixtures {
-        let file_name = fixture
-            .file_name()
-            .and_then(|value| value.to_str())
-            .expect("loop-control fixture file name is valid UTF-8");
-        let fixture_arg = format!("tests/fixtures/milestone6/{file_name}");
+        let relative_fixture = fixture
+            .strip_prefix(workspace_root)
+            .expect("fixture lives under workspace root");
+        let fixture_arg = relative_fixture
+            .to_str()
+            .expect("fixture path is valid UTF-8")
+            .to_string();
         let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
             .current_dir(workspace_root)
             .args(["run", &fixture_arg])
@@ -38,9 +46,17 @@ fn loop_control_cli_snapshots_match_committed_outputs() {
     }
 }
 
-fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
+fn cli_snapshot_fixtures(fixture_dir: &Path, workspace_root: &Path) -> Vec<PathBuf> {
     fs::read_dir(fixture_dir)
-        .expect("loop-control fixture directory is readable")
+        .unwrap_or_else(|error| {
+            panic!(
+                "loop-control fixture directory {} is readable: {error}",
+                fixture_dir
+                    .strip_prefix(workspace_root)
+                    .unwrap_or(fixture_dir)
+                    .display()
+            )
+        })
         .map(|entry| {
             entry
                 .expect("loop-control fixture entry is readable")

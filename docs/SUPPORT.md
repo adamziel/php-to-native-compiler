@@ -568,8 +568,8 @@
   `if`/`elseif`/`else` colon/`endif` syntax
 - explicit parse diagnostics for unsupported expression-position `switch` and
   malformed alternate colon/`endswitch` switch bodies
-- explicit parse diagnostics for unsupported `break`/`continue` loop-depth
-  arguments
+- explicit parse diagnostics for unsupported dynamic or invalid
+  `break`/`continue` loop-depth arguments
 - explicit parse diagnostics for unsupported exception-control syntax:
   throw expressions plus malformed or standalone `catch` and `finally`
 - explicit parse diagnostics for unsupported generator `yield` and
@@ -1210,9 +1210,13 @@
   user-function body without an enclosing active loop fails with a stable
   invalid-loop-control runtime error. A `continue;` that reaches a `switch`
   body is rejected with a stable runtime error instead of modeling PHP's
-  warning-and-break behavior. Loop-depth arguments such as `break 2;` and
-  `continue 2;` are rejected with stable parse diagnostics. Exception syntax
-  is rejected separately at parse time, and native lowering is not implemented.
+  warning-and-break behavior. Positive integer literal loop-depth arguments
+  such as `break 2;` and `continue 2;` are supported by consuming one active
+  loop or switch level at a time; `continue 2;` can target an outer loop from
+  inside a switch. Dynamic depth expressions, zero/negative depths, too-large
+  depths, exact PHP diagnostics, and native lowering remain unsupported.
+  Exception syntax is rejected separately at parse time, and native lowering is
+  not implemented.
 - Switch: statement-form brace `switch` and alternate
   `switch (...): ... endswitch;` execute in `phpc run` over the current scalar
   loose-comparison subset. The switch expression is evaluated once, case
@@ -2970,10 +2974,10 @@
   statement
 - expression-form `switch`, malformed alternate colon/`endswitch` switch
   bodies, and `continue;` behavior inside switch
-- `break`/`continue` loop-depth arguments such as `break 2;` and `continue 2;`;
-  only statement-form `break;` for the innermost active `while`, supported
-  `for`, supported `do ... while`, supported array `foreach`, or supported
-  `switch`, and `continue;` for the innermost active loop are implemented
+- dynamic, zero, negative, or too-large `break`/`continue` loop-depth
+  arguments; only statement-form positive integer literal depths are
+  implemented for active `while`, supported `for`, supported `do ... while`,
+  supported array `foreach`, and supported `switch` control stacks
 - native lowering for `if`/`elseif`/`else`, including alternate colon/`endif`
   syntax, `while`, `for`, `do ... while`, `switch`, `goto` labels, `break`,
   and `continue`; generated code currently rejects those forms before lowering

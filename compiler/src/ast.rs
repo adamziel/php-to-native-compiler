@@ -165,9 +165,11 @@ pub enum Stmt {
         span: Span,
     },
     Break {
+        depth: usize,
         span: Span,
     },
     Continue {
+        depth: usize,
         span: Span,
     },
     Global {

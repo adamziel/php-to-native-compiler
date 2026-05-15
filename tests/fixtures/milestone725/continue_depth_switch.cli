@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+0:after:skip:2:after:3:after:--- stdout end ---
+stderr:
+--- stderr end ---

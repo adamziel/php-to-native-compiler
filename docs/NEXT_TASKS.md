@@ -6651,18 +6651,27 @@ handled.
   and references/copy-on-write explicit, and advances the real bootstrap-shim
   probe to
   `parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`.
-- [ ] Parser/runtime lane: implement or explicitly bound loop-depth
+- [x] Parser/runtime lane: implement or explicitly bound loop-depth
   `break N;`/`continue N;` control flow for the real WordPress 6.9.4
   bootstrap-shim blocker at `<bootstrap-shim>:1610:6`, corresponding to
   `wp-includes/load.php:1610` and `break 2;`, with tests, CLI coverage, docs,
   and named unsupported edges for invalid depths, switch/loop stack behavior,
   `continue N`, exact PHP diagnostics, partial-output behavior, and native
-  lowering.
+  lowering. The Milestone 725 slice supports positive integer literal depths,
+  keeps dynamic/invalid depths and native lowering explicit, and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
+- [ ] Runtime lane: implement or explicitly bound function-scope
+  `global $name, ...;` imports for the real WordPress 6.9.4 bootstrap-shim
+  blocker at `<bootstrap-shim>:158:2`, with tests, CLI coverage, docs, and
+  named unsupported edges for references/aliasing, copy-on-write, dynamic
+  variable names, unset interactions, included-file scope, exact PHP
+  diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 724 checkpoint, the latest committed checkpoint
-  is `8be05b5 runtime: add nested array assignment`, covering Milestone 723.
+- Before the current Milestone 725 checkpoint, the latest committed checkpoint
+  is `f559202 runtime: add bounded clone expressions`, covering Milestone 724.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

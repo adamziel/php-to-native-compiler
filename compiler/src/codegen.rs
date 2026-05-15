@@ -373,8 +373,10 @@ impl LlvmGenerator {
             | Stmt::Switch { span, .. }
             | Stmt::Goto { span, .. }
             | Stmt::Label { span, .. }
-            | Stmt::Break { span }
-            | Stmt::Continue { span } => Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION)),
+            | Stmt::Break { span, .. }
+            | Stmt::Continue { span, .. } => {
+                Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION))
+            }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, LLVM_ARRAY_REJECTION)),
             Stmt::UnsetVariable { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
@@ -3145,8 +3147,8 @@ impl CGenerator {
             | Stmt::Switch { span, .. }
             | Stmt::Goto { span, .. }
             | Stmt::Label { span, .. }
-            | Stmt::Break { span }
-            | Stmt::Continue { span } => {
+            | Stmt::Break { span, .. }
+            | Stmt::Continue { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION))
             }
             Stmt::Foreach { span, .. } => Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION)),

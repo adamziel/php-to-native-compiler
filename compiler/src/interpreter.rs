@@ -235,8 +235,8 @@ impl ConstantTable {
 
 enum Flow {
     Normal,
-    Break(Span),
-    Continue(Span),
+    Break { depth: usize, span: Span },
+    Continue { depth: usize, span: Span },
     Return(Value),
     Goto { label: String, span: Span },
 }
@@ -542,11 +542,11 @@ impl Interpreter {
                 stderr: String::new(),
                 exit_code: 0,
             }),
-            Flow::Break(span) => Err(runtime_error(
+            Flow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
             )),
-            Flow::Continue(span) => Err(runtime_error(
+            Flow::Continue { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
@@ -577,7 +577,9 @@ impl Interpreter {
                     index = *target;
                     continue;
                 }
-                flow @ (Flow::Break(_) | Flow::Continue(_) | Flow::Return(_)) => return Ok(flow),
+                flow @ (Flow::Break { .. } | Flow::Continue { .. } | Flow::Return(_)) => {
+                    return Ok(flow);
+                }
             }
             index += 1;
         }
@@ -652,8 +654,21 @@ impl Interpreter {
             } => {
                 while self.evaluate(condition, scope)?.is_truthy() {
                     match self.execute_statements(body, scope)? {
-                        Flow::Normal | Flow::Continue(_) => {}
-                        Flow::Break(_) => break,
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok(Flow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok(Flow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
                         flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
                 }
@@ -664,8 +679,21 @@ impl Interpreter {
             } => {
                 loop {
                     match self.execute_statements(body, scope)? {
-                        Flow::Normal | Flow::Continue(_) => {}
-                        Flow::Break(_) => break,
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok(Flow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok(Flow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
                         flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
 
@@ -694,8 +722,21 @@ impl Interpreter {
                     }
 
                     match self.execute_statements(body, scope)? {
-                        Flow::Normal | Flow::Continue(_) => {}
-                        Flow::Break(_) => break,
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok(Flow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok(Flow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
                         flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
 
@@ -734,8 +775,21 @@ impl Interpreter {
                     }
                     scope.write_static(value, entry.value.clone());
                     match self.execute_statements(body, scope)? {
-                        Flow::Normal | Flow::Continue(_) => {}
-                        Flow::Break(_) => break,
+                        Flow::Normal => {}
+                        Flow::Continue { depth, .. } if depth <= 1 => {}
+                        Flow::Continue { depth, span } => {
+                            return Ok(Flow::Continue {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
+                        Flow::Break { depth, .. } if depth <= 1 => break,
+                        Flow::Break { depth, span } => {
+                            return Ok(Flow::Break {
+                                depth: depth - 1,
+                                span,
+                            });
+                        }
                         flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
                     }
                 }
@@ -819,8 +873,14 @@ impl Interpreter {
             Stmt::Try {
                 body, finally_body, ..
             } => self.execute_try_statement(body, finally_body.as_deref(), scope),
-            Stmt::Break { span } => Ok(Flow::Break(*span)),
-            Stmt::Continue { span } => Ok(Flow::Continue(*span)),
+            Stmt::Break { depth, span } => Ok(Flow::Break {
+                depth: *depth,
+                span: *span,
+            }),
+            Stmt::Continue { depth, span } => Ok(Flow::Continue {
+                depth: *depth,
+                span: *span,
+            }),
             Stmt::Global { span, .. } => {
                 if self.function_context.is_empty() {
                     Ok(Flow::Normal)
@@ -998,8 +1058,8 @@ impl Interpreter {
 
         match flow? {
             Flow::Normal | Flow::Return(_) => Ok(Flow::Normal),
-            Flow::Break(span) => Ok(Flow::Break(span)),
-            Flow::Continue(span) => Ok(Flow::Continue(span)),
+            Flow::Break { depth, span } => Ok(Flow::Break { depth, span }),
+            Flow::Continue { depth, span } => Ok(Flow::Continue { depth, span }),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -1089,14 +1149,26 @@ impl Interpreter {
         while index < cases.len() {
             match self.execute_statements(&cases[index].body, scope)? {
                 Flow::Normal => {}
-                Flow::Break(_) => return Ok(Flow::Normal),
-                Flow::Continue(span) => {
+                Flow::Break { depth, .. } if depth <= 1 => return Ok(Flow::Normal),
+                Flow::Break { depth, span } => {
+                    return Ok(Flow::Break {
+                        depth: depth - 1,
+                        span,
+                    });
+                }
+                Flow::Continue { depth, span } if depth <= 1 => {
                     return Err(runtime_error(
                         span,
                         RuntimeError::invalid_loop_control(
                             "continue inside switch is not implemented; use break for switch cases in the current subset",
                         ),
                     ));
+                }
+                Flow::Continue { depth, span } => {
+                    return Ok(Flow::Continue {
+                        depth: depth - 1,
+                        span,
+                    });
                 }
                 flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
             }
@@ -4407,11 +4479,11 @@ impl Interpreter {
 
         match flow? {
             Flow::Normal => Ok(Value::Null),
-            Flow::Break(span) => Err(runtime_error(
+            Flow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
             )),
-            Flow::Continue(span) => Err(runtime_error(
+            Flow::Continue { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),

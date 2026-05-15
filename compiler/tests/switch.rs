@@ -83,6 +83,31 @@ while ($i < 3) {
 }
 
 #[test]
+fn loop_depth_break_can_exit_switch_and_outer_loop() {
+    let execution = run_source(
+        r#"<?php
+$i = 0;
+while ($i < 3) {
+    switch ($i) {
+        case 0:
+            echo "zero";
+            break 2;
+        default:
+            echo "other";
+    }
+    echo "after";
+    $i = $i + 1;
+}
+echo ":done";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "zero:done");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn uppercase_switch_and_case_keywords_execute() {
     let execution = run_source(
         r#"<?php

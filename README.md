@@ -90,7 +90,8 @@ incorrect native code.
   current value boundaries, ternaries, increments/decrements, and PHP
   error-control syntax `@expr` as a transparent runtime wrapper without
   warning/notice suppression
-- `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
+- `if`, loops, `switch`, `break`/`continue` including positive integer literal
+  loop-depth arguments, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls,
   bounded namespace-scoped function declarations and unqualified same-namespace

@@ -69,6 +69,13 @@ conditions as fatal project diagnostics rather than recoverable PHP
 warnings/notices. Native lowering rejects the wrapper until generated code has
 a real diagnostic severity and suppression model.
 
+Loop-control statements record an explicit positive integer depth in the AST.
+The interpreter represents `break N;` and `continue N;` as control-flow signals
+whose depth is consumed one active `while`, `for`, `do ... while`, `foreach`,
+or `switch` level at a time. Plain `continue;` that targets a switch remains a
+runtime boundary, while `continue 2;` can pass through the switch to an outer
+loop. Native lowering rejects all current structured control flow.
+
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
 covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
 `(float)/(double)`, and `(array)`. The interpreter owns PHP-shaped conversion
