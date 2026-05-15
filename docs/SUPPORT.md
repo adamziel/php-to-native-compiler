@@ -495,7 +495,7 @@
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
   `rtrim`, `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `substr_count`,
-  `error_reporting`, `sprintf`, `call_user_func`, `call_user_func_array`,
+  `error_reporting`, `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `uniqid`,
@@ -571,12 +571,16 @@
   `ini_set()`/`ini_restore()`, `ini_get_all()`, SAPI differences, extension
   ownership/access metadata, exact option catalogs, coercions, exact
   diagnostics, and native lowering remain unsupported.
-  `sprintf($format, ...$values)` supports string format values with literal
-  text, escaped percent signs `%%`, sequential `%s` string placeholders, and
-  positional `%N$s` string placeholders. Placeholder values use the current
-  PHP-shaped echo string conversion. PHP's full format grammar, numeric
-  formats such as `%d`, width/precision/star modifiers, sign/padding flags,
-  locale behavior, argument reordering beyond `%N$s`, array/object/resource
+  `sprintf($format, ...$values)` and `vsprintf($format, $values)` support
+  string format values with literal text, escaped percent signs `%%`,
+  sequential and positional `%s`, `%d`, `%f`, and `%F` placeholders, plus the
+  reached WordPress width, precision, sign, zero/custom padding, and left-align
+  subset. `vsprintf()` requires the second argument to be a current ordered
+  array and consumes values in insertion order. String placeholders use the
+  current PHP-shaped echo string conversion; numeric placeholders accept
+  null/bool/int/float/numeric-string values in the current finite numeric
+  subset. PHP's full format grammar, star width or precision, length
+  modifiers, locale behavior, broad argument reordering, array/object/resource
   conversions, exact warning behavior, partial-output behavior, and native
   lowering remain unsupported.
   `strtolower($value)` supports exactly one scalar/null string-convertible
@@ -2593,7 +2597,7 @@
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `error_reporting`,
-  `sprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
+  `sprintf`, `vsprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -2730,7 +2734,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
-  `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`,
+  `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`, `vsprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -2910,10 +2914,10 @@
   section above; direct native `min(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
-  `sprintf` accepts the same current string-format subset as the builtin
-  section above; direct native `sprintf(...)` calls still reject under the
-  function-call boundary, while native function-table introspection recognizes
-  the name.
+  `sprintf` and `vsprintf` accept the same current bounded format subset as the
+  builtin section above; direct native `sprintf(...)` and `vsprintf(...)` calls
+  still reject under the function-call boundary, while native function-table
+  introspection recognizes both names.
   `strcasecmp` accepts the same current scalar/null string-convertible subset
   as the builtin section above; direct native `strcasecmp(...)` calls still
   reject under the function-call boundary, while native function-table
@@ -4481,11 +4485,11 @@
 - `version_compare()` outside the current numeric-component subset: PHP's full
   version-string grammar, pre-release labels, arbitrary separators, invalid
   argument diagnostics, extension version coupling, and native lowering
-- `sprintf()` outside the current string-placeholder subset: PHP's full format
-  grammar, numeric formats, width/precision/star modifiers, sign/padding
-  flags, locale behavior, broad argument reordering, array/object/resource
-  conversions, exact warning behavior, partial-output behavior, and native
-  lowering beyond function-table introspection
+- `sprintf()`/`vsprintf()` outside the current `%s`/`%d`/`%f`/`%F` subset:
+  PHP's full format grammar, star width or precision, length modifiers, locale
+  behavior, broad argument reordering, array/object/resource conversions,
+  exact warning behavior, partial-output behavior, and native lowering beyond
+  function-table introspection
 - `strcasecmp()` outside the current exact-two-argument scalar/null
   string-convertible subset: array operands, object/resource coercions, binary
   string edge cases beyond valid UTF-8 runtime strings, locale-sensitive

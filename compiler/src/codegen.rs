@@ -6269,6 +6269,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "compact"
             | "error_reporting"
             | "sprintf"
+            | "vsprintf"
             | "call_user_func"
             | "call_user_func_array"
             | "implode"

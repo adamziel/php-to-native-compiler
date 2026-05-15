@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `21164a6 runtime: add wordpress wpdb preg split`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 849, bounded `vsprintf()` support for the reached
+  WordPress `wpdb::prepare()` formatting call in `wp-includes/class-wpdb.php:1763`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/sprintf_builtin.rs`,
+  `tests/fixtures/milestone849/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test sprintf_builtin -- --nocapture`,
+  `cargo test -p phpc --test sprintf_cli -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone849`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  undefined `ABSPATH`; the bootstrap shim exits `0`; the front-controller probe
+  advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:935:5: unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
+- Remaining semantic gaps: broad PHP formatting, real DB connections, result
+  resources, charset negotiation, SQL execution, error-state fidelity, and
+  native lowering remain explicit.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress wpdb vsprintf"`.
+  The next runtime milestone should inspect the reached `mysqli_query()` charset
+  setup statement.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `0763f04 runtime: add wordpress wpdb preg replace`, pushed to
   `origin/master`.
 - Task attempted: Milestone 848, bounded `preg_split()` support for the

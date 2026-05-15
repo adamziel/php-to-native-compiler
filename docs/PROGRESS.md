@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 849, bounded `vsprintf()` support for the reached WordPress
+  `wpdb::prepare()` formatting call in `wp-includes/class-wpdb.php:1763`.
+  The existing formatter now also supports the WordPress-shaped `%d`, `%f`/
+  `%F`, width, precision, sign, zero/custom padding, and positional selector
+  subset needed after placeholder rewriting; `vsprintf()` accepts a string
+  format and current ordered array values. Broad PHP formatting, star width or
+  precision, locale-sensitive formatting, warnings/partial output,
+  argument-reference behavior, SQL/database execution, and native lowering
+  remain unsupported. The real WordPress 6.9.4 front-controller probe now
+  advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:935:5: unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
+  The bootstrap-shim probe still exits `0`, and direct `wp-settings.php` still
+  stops at undefined `ABSPATH`. Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test sprintf_builtin -- --nocapture`,
+  `cargo test -p phpc --test sprintf_cli -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone849`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 848, bounded `preg_split()` support for the reached
   WordPress `wpdb::prepare()` placeholder extraction pattern in
   `wp-includes/class-wpdb.php:1514`. The interpreter now accepts the current

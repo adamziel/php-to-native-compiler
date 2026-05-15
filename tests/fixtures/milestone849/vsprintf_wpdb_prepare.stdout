@@ -1,0 +1,2 @@
+SELECT option_value FROM wp_options WHERE option_name = 'rewrite_rules' LIMIT 1
+SELECT % literal, `wp_posts`, 'post_name', 00007, 3.50

@@ -994,14 +994,15 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 848 is the active checkpoint candidate: bounded `preg_split()`
-  support covers the reached `wpdb::prepare()` placeholder-extraction pattern
-  in the front-controller probe.
+- Milestone 849 is the active checkpoint candidate: bounded `vsprintf()`
+  support covers the reached `wpdb::prepare()` formatting call in the
+  front-controller probe.
 - The next immediate WordPress-directed lane is the following
-  `vsprintf()` formatting call at `wp-includes/class-wpdb.php:1763`. This
-  should be handled only as a bounded `wpdb::prepare()` formatting slice,
-  without claiming broad formatting, SQL/database, plugin/theme, admin, REST,
-  HTTP, SAPI, or native WordPress support.
+  `mysqli_query()` charset setup statement
+  `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'` reached from
+  `wp-includes/class-wpdb.php:935`. This should be handled only as a bounded
+  deterministic database placeholder slice, without claiming real database,
+  plugin/theme, admin, REST, HTTP, SAPI, or native WordPress support.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

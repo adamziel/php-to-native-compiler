@@ -7793,18 +7793,27 @@ handled.
   pattern with `limit` `-1` and `PREG_SPLIT_DELIM_CAPTURE`. The real
   front-controller probe now advances to
   `runtime error at <wordpress-root>/wp-blog-header.php:1763:12: undefined function vsprintf()`.
-- [ ] Runtime/formatting lane: inspect and implement the reached
+- [x] Runtime/formatting lane: inspect and implement the reached
   `vsprintf()` call in `wp-includes/class-wpdb.php:1763` only as a bounded
   WordPress `wpdb::prepare()` subset. Keep broad format-string behavior,
   argument unpacking/reference semantics, locale-sensitive formatting,
   warnings, SQL/database execution, and native lowering named unless
   implemented.
+  Milestone 849 covers `vsprintf()` over current ordered arrays and expands
+  the shared formatter for the reached `%s`/`%d`/`%F` WordPress prepare
+  shapes. The real front-controller probe now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:935:5: unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
+- [ ] Runtime/mysqli lane: inspect and implement the reached WordPress
+  `mysqli_query()` charset setup statement
+  `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'` as a deterministic
+  placeholder boundary. Keep real DB connections, result resources, charset
+  negotiation, SQL execution, error-state fidelity, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 848 checkpoint, the latest committed checkpoint
-  is `0763f04 runtime: add wordpress wpdb preg replace`, covering
-  Milestone 847.
+- Before the current Milestone 849 checkpoint, the latest committed checkpoint
+  is `21164a6 runtime: add wordpress wpdb preg split`, covering Milestone 848.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

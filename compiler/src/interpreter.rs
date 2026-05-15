@@ -7419,6 +7419,7 @@ impl Interpreter {
             )),
             "error_reporting" => self.call_error_reporting(args, span),
             "sprintf" => call_sprintf(&args, span),
+            "vsprintf" => call_vsprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
             "call_user_func_array" => self.call_user_func_array_builtin(args, span),
             "implode" => call_implode(&args, span),
@@ -11467,6 +11468,7 @@ fn is_builtin(name: &str) -> bool {
             | "compact"
             | "error_reporting"
             | "sprintf"
+            | "vsprintf"
             | "call_user_func"
             | "call_user_func_array"
             | "implode"
@@ -13370,10 +13372,74 @@ fn call_sprintf(args: &[Value], span: Span) -> CompileResult<Value> {
         }
     };
 
-    bounded_sprintf(format, &args[1..], span).map(Value::String)
+    bounded_sprintf("sprintf()", format, &args[1..], span).map(Value::String)
 }
 
-fn bounded_sprintf(format: &str, args: &[Value], span: Span) -> CompileResult<String> {
+fn call_vsprintf(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("vsprintf()", args, 2, span)?;
+
+    let format = match &args[0] {
+        Value::String(value) => value,
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "vsprintf()",
+                    format!(
+                        "format argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    let Value::Array(array) = &args[1] else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "vsprintf()",
+                format!(
+                    "values argument must be array in the current subset, got {}",
+                    args[1].type_name()
+                ),
+            ),
+        ));
+    };
+
+    let values = array
+        .entries()
+        .iter()
+        .map(|entry| entry.value.clone())
+        .collect::<Vec<_>>();
+    bounded_sprintf("vsprintf()", format, &values, span).map(Value::String)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SprintfPlaceholder {
+    arg_index: usize,
+    positional: bool,
+    kind: SprintfPlaceholderKind,
+    width: Option<usize>,
+    precision: Option<usize>,
+    left_align: bool,
+    show_plus: bool,
+    pad: char,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SprintfPlaceholderKind {
+    String,
+    Int,
+    Float,
+}
+
+fn bounded_sprintf(
+    function: &'static str,
+    format: &str,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<String> {
     let mut output = String::new();
     let bytes = format.as_bytes();
     let mut index = 0;
@@ -13395,69 +13461,298 @@ fn bounded_sprintf(format: &str, args: &[Value], span: Span) -> CompileResult<St
         }
 
         let placeholder_start = index - 1;
-        let digits_start = index;
-        while index < bytes.len() && bytes[index].is_ascii_digit() {
-            index += 1;
+        let (placeholder, next_index) = parse_sprintf_placeholder(format, index, next_arg)
+            .ok_or_else(|| {
+                let placeholder_end = if index < bytes.len() {
+                    index
+                        + format[index..]
+                            .chars()
+                            .next()
+                            .expect("index is in bounds")
+                            .len_utf8()
+                } else {
+                    index
+                };
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "unsupported format placeholder {} in the current subset",
+                            &format[placeholder_start..placeholder_end.min(bytes.len())]
+                        ),
+                    ),
+                )
+            })?;
+
+        if !placeholder.positional {
+            next_arg += 1;
         }
+        index = next_index;
 
-        let positional = if index > digits_start && index < bytes.len() && bytes[index] == b'$' {
-            let position = format[digits_start..index].parse::<usize>().ok();
-            index += 1;
-            position.and_then(|position| position.checked_sub(1))
-        } else {
-            index = digits_start;
-            None
-        };
-
-        if index >= bytes.len() || bytes[index] != b's' {
-            let placeholder_end = if index < bytes.len() {
-                index
-                    + format[index..]
-                        .chars()
-                        .next()
-                        .expect("index is in bounds")
-                        .len_utf8()
-            } else {
-                index
-            };
+        let Some(value) = args.get(placeholder.arg_index) else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "sprintf()",
+                    function,
                     format!(
-                        "unsupported format placeholder {} in the current subset",
-                        &format[placeholder_start..placeholder_end.min(bytes.len())]
+                        "missing argument for placeholder {}",
+                        placeholder.arg_index + 1
+                    ),
+                ),
+            ));
+        };
+        output.push_str(&format_sprintf_value(function, &placeholder, value, span)?);
+    }
+
+    Ok(output)
+}
+
+fn parse_sprintf_placeholder(
+    format: &str,
+    mut index: usize,
+    next_arg: usize,
+) -> Option<(SprintfPlaceholder, usize)> {
+    let bytes = format.as_bytes();
+    let digits_start = index;
+    while matches!(bytes.get(index), Some(b'0'..=b'9')) {
+        index += 1;
+    }
+
+    let positional = if index > digits_start && bytes.get(index) == Some(&b'$') {
+        let position = format[digits_start..index].parse::<usize>().ok()?;
+        index += 1;
+        Some(position.checked_sub(1)?)
+    } else {
+        index = digits_start;
+        None
+    };
+
+    let mut width = None;
+    let mut precision = None;
+    let mut left_align = false;
+    let mut show_plus = false;
+    let mut pad = ' ';
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'-' => {
+                left_align = true;
+                index += 1;
+            }
+            b'+' => {
+                show_plus = true;
+                index += 1;
+            }
+            b' ' => {
+                index += 1;
+            }
+            b'0' if width.is_none() => {
+                pad = '0';
+                let width_start = index;
+                while matches!(bytes.get(index), Some(b'0'..=b'9')) {
+                    index += 1;
+                }
+                width = format[width_start..index].parse::<usize>().ok();
+            }
+            b'1'..=b'9' => {
+                let width_start = index;
+                while matches!(bytes.get(index), Some(b'0'..=b'9')) {
+                    index += 1;
+                }
+                width = format[width_start..index].parse::<usize>().ok();
+            }
+            b'\'' => {
+                index += 1;
+                let ch = format[index..].chars().next()?;
+                pad = ch;
+                index += ch.len_utf8();
+            }
+            b'.' => {
+                index += 1;
+                let precision_start = index;
+                while matches!(bytes.get(index), Some(b'0'..=b'9')) {
+                    index += 1;
+                }
+                if precision_start == index {
+                    return None;
+                }
+                precision = format[precision_start..index].parse::<usize>().ok();
+            }
+            b's' | b'd' | b'f' | b'F' => break,
+            _ => return None,
+        }
+    }
+
+    let kind = match bytes.get(index)? {
+        b's' => SprintfPlaceholderKind::String,
+        b'd' => SprintfPlaceholderKind::Int,
+        b'f' | b'F' => SprintfPlaceholderKind::Float,
+        _ => return None,
+    };
+
+    Some((
+        SprintfPlaceholder {
+            arg_index: positional.unwrap_or(next_arg),
+            positional: positional.is_some(),
+            kind,
+            width,
+            precision,
+            left_align,
+            show_plus,
+            pad,
+        },
+        index + 1,
+    ))
+}
+
+fn format_sprintf_value(
+    function: &'static str,
+    placeholder: &SprintfPlaceholder,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    let formatted = match placeholder.kind {
+        SprintfPlaceholderKind::String => {
+            let value = value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?;
+            if let Some(precision) = placeholder.precision {
+                value.chars().take(precision).collect()
+            } else {
+                value
+            }
+        }
+        SprintfPlaceholderKind::Int => {
+            let value = sprintf_int_argument(function, value, span)?;
+            if placeholder.show_plus && value >= 0 {
+                format!("+{value}")
+            } else {
+                value.to_string()
+            }
+        }
+        SprintfPlaceholderKind::Float => {
+            let value = sprintf_float_argument(function, value, span)?;
+            let precision = placeholder.precision.unwrap_or(6);
+            if placeholder.show_plus && value >= 0.0 {
+                format!("+{value:.precision$}")
+            } else {
+                format!("{value:.precision$}")
+            }
+        }
+    };
+
+    Ok(apply_sprintf_width(
+        formatted,
+        placeholder.width,
+        placeholder.left_align,
+        placeholder.pad,
+    ))
+}
+
+fn apply_sprintf_width(value: String, width: Option<usize>, left_align: bool, pad: char) -> String {
+    let Some(width) = width else {
+        return value;
+    };
+    let len = value.chars().count();
+    if len >= width {
+        return value;
+    }
+
+    let padding = pad.to_string().repeat(width - len);
+    if left_align {
+        format!("{value}{padding}")
+    } else if pad == '0' && (value.starts_with('-') || value.starts_with('+')) {
+        format!("{}{}{}", &value[..1], padding, &value[1..])
+    } else {
+        format!("{padding}{value}")
+    }
+}
+
+fn sprintf_int_argument(function: &'static str, value: &Value, span: Span) -> CompileResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(*value)),
+        Value::Int(value) => Ok(*value),
+        Value::Float(value) if value.is_finite() => Ok(*value as i64),
+        Value::String(value) => parse_sprintf_numeric_string(value)
+            .map(|value| value as i64)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        "numeric placeholders require numeric scalar arguments in the current subset",
+                    ),
+                )
+            }),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "numeric placeholders require numeric scalar arguments in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn sprintf_float_argument(function: &'static str, value: &Value, span: Span) -> CompileResult<f64> {
+    let value = match value {
+        Value::Null => 0.0,
+        Value::Bool(value) => {
+            if *value {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Value::Int(value) => *value as f64,
+        Value::Float(value) => *value,
+        Value::String(value) => parse_sprintf_numeric_string(value).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "numeric placeholders require numeric scalar arguments in the current subset",
+                ),
+            )
+        })?,
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "numeric placeholders require numeric scalar arguments in the current subset, got {}",
+                        other.type_name()
                     ),
                 ),
             ));
         }
-        index += 1;
+    };
 
-        let arg_index = if let Some(position) = positional {
-            position
-        } else {
-            let position = next_arg;
-            next_arg += 1;
-            position
-        };
-
-        let Some(value) = args.get(arg_index) else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "sprintf()",
-                    format!("missing argument for placeholder {}", arg_index + 1),
-                ),
-            ));
-        };
-        output.push_str(
-            &value
-                .try_echo_string()
-                .map_err(|error| runtime_error(span, error))?,
-        );
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "numeric placeholders require finite numeric arguments in the current subset",
+            ),
+        ))
     }
+}
 
-    Ok(output)
+fn parse_sprintf_numeric_string(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    value.parse::<f64>().ok().filter(|value| value.is_finite())
 }
 
 fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {

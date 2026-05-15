@@ -1272,6 +1272,10 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `PREG_SPLIT_DELIM_CAPTURE`. The real front-controller probe now advances to
   `runtime error at <wordpress-root>/wp-blog-header.php:1763:12: undefined function vsprintf()`,
   the `wpdb::prepare()` formatting call after placeholder parsing.
+  Milestone 849 adds bounded `vsprintf()` support for that formatting path and
+  expands the shared formatter for the reached `%s`/`%d`/`%F` WordPress
+  prepare subset. The real front-controller probe now advances to
+  `runtime error at <wordpress-root>/wp-blog-header.php:935:5: unsupported call mysqli_query(): only the WordPress SQL mode probe and empty wp_options SELECT placeholders are implemented in the current subset; got SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
