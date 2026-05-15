@@ -132,6 +132,8 @@ Implemented now:
   inherited method lookup, public/same-class private/protected same-class and
   child instance method dispatch, and public/inherited public instance
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
+  parsed abstract/final/readonly class modifiers plus abstract/final method
+  modifiers as metadata, with abstract class instantiation rejected at runtime,
   bounded dynamic property-name reads/writes for existing public slots and
   `stdClass` public dynamic slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy
   current property slots when no `__clone` method is declared

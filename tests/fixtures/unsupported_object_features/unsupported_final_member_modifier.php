@@ -1,4 +1,4 @@
 <?php
 class Leaf {
-    public final function seal() {}
+    public final final function seal() {}
 }

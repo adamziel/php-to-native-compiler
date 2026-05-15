@@ -1,2 +1,2 @@
 <?php
-final class Leaf {}
+final final class Leaf {}

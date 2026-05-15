@@ -4419,6 +4419,49 @@ echo $default->label();
 }
 
 #[test]
+fn class_modifiers_and_abstract_method_signatures_can_register() {
+    let execution = run_source(
+        r#"<?php
+abstract class Base {
+    abstract protected function compute();
+}
+
+final class Leaf extends Base {
+    public function compute() {
+        return "ok";
+    }
+}
+
+readonly class Marker {}
+
+$leaf = new Leaf();
+echo $leaf->compute();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn abstract_class_instantiation_reports_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+abstract class Base {}
+new Base();
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported object instantiation for Base: abstract classes are not instantiable in the current subset"
+    );
+}
+
+#[test]
 fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
     let cases = [
         (
@@ -4477,30 +4520,6 @@ enum Status {
         ),
         (
             r#"<?php
-abstract class Base {}
-"#,
-            2,
-            1,
-            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
-        ),
-        (
-            r#"<?php
-final class Leaf {}
-"#,
-            2,
-            1,
-            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
-        ),
-        (
-            r#"<?php
-readonly class Value {}
-"#,
-            2,
-            1,
-            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
-        ),
-        (
-            r#"<?php
 if (true) {
     trait NestedTrait {}
 }
@@ -4528,16 +4547,6 @@ if (true) {
             3,
             5,
             "unsupported enum declaration: only top-level enum declarations are implemented",
-        ),
-        (
-            r#"<?php
-if (true) {
-    abstract class NestedBase {}
-}
-"#,
-            3,
-            5,
-            "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented",
         ),
         (
             r#"<?php
@@ -4596,26 +4605,6 @@ class Box {
             3,
             20,
             "unsupported static property type declaration: typed static property metadata, uninitialized state, and write enforcement are not implemented",
-        ),
-        (
-            r#"<?php
-class Base {
-    abstract public function compute();
-}
-"#,
-            3,
-            5,
-            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented",
-        ),
-        (
-            r#"<?php
-class Leaf {
-    public final function seal() {}
-}
-"#,
-            3,
-            12,
-            "unsupported class member modifier: abstract, final, and readonly member modifiers are not implemented",
         ),
         (
             r#"<?php

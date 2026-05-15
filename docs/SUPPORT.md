@@ -237,10 +237,12 @@
   names, exact warning/notice behavior, included-file scope interactions,
   copy-on-write, and native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
-  `class Name { ... }` and `class Child extends Parent { ... }` with
+  `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
+  `readonly class Name { ... }`, and `class Child extends Parent { ... }` with
   single-parent metadata, property names, class constant names, method names,
-  visibility, and static flags for the documented subset, including compatible
-  public/protected inherited property redeclarations sharing one runtime slot
+  visibility, static flags, and abstract/final method flags for the documented
+  subset, including abstract method signatures, final methods, compatible
+  public/protected inherited property redeclarations sharing one runtime slot,
   and untyped static properties initialized from the current
   constant-expression default subset or `null`. Top-level classes are
   pre-registered before execution. Braced nested declarations in control-flow
@@ -252,7 +254,9 @@
   without `__construct` are supported only with no constructor arguments.
   Declared or inherited public instance `__construct` methods execute with
   scoped `$this`, positional arguments, and the current default-parameter
-  subset.
+  subset. Instantiating an abstract class reports a stable runtime boundary;
+  abstract-method implementation enforcement, final inheritance/method
+  enforcement, and readonly class semantics are not implemented.
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`. Plain reads and direct writes for
@@ -2880,9 +2884,9 @@
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
-  `abstract`/`final`/`readonly` class modifiers,
-  `abstract`/`final`/`readonly` class member modifiers, abstract methods, final
-  methods, readonly properties, typed property storage and enforcement,
+  abstract-method implementation enforcement, final inheritance/method
+  enforcement, readonly class semantics, readonly properties, typed property
+  storage and enforcement,
   property initialization rules beyond the current untyped constant-expression
   default subset, inheritance interactions,
   multiple properties in one declaration, per-property defaults in

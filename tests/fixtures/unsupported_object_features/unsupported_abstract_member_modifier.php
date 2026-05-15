@@ -1,4 +1,4 @@
 <?php
 class Base {
-    abstract public function compute();
+    abstract final function compute();
 }

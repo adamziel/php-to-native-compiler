@@ -6902,17 +6902,24 @@ handled.
   method return declarations as runtime boundaries and advances the real
   bootstrap-shim probe to
   `parse error at <bootstrap-shim>:15:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
-- [ ] Parser/object lane: implement or explicitly bound class modifiers for
+- [x] Parser/object lane: implement or explicitly bound class modifiers for
   the next real WordPress bootstrap-shim blocker at `<bootstrap-shim>:15:1`.
-  The first target is parser registration for `abstract` and `final` class
-  declarations without claiming abstract-method enforcement, final
-  inheritance/method enforcement, readonly class semantics, or native lowering.
+  Milestone 755 parses `abstract`, `final`, and `readonly` class modifiers plus
+  `abstract`/`final` method modifiers as metadata, rejects abstract class
+  instantiation as a runtime boundary, and advances the real bootstrap-shim
+  probe to
+  `parse error at <bootstrap-shim>:63:26: unsupported magic class name: self, parent, and static class name resolution is not implemented`.
+- [ ] Parser/object lane: implement or explicitly bound broader
+  `self::class`, `parent::class`, and `static::class` class-name resolution for
+  the next real WordPress bootstrap-shim blocker at `<bootstrap-shim>:63:26`.
+  The first target should cover the reached WordPress class-name expression
+  without claiming full magic class name behavior in arbitrary parse/runtime
+  contexts.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 754 checkpoint, the latest committed checkpoint
-  is `a6e3e10 parser: bound object-property array reference targets`, covering
-  Milestone 753.
+- Before the current Milestone 755 checkpoint, the latest committed checkpoint
+  is `3b45941 parser: bound reference returns`, covering Milestone 754.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

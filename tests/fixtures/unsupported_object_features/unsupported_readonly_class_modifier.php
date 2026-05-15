@@ -1,2 +1,2 @@
 <?php
-readonly class Value {}
+readonly readonly class Value {}

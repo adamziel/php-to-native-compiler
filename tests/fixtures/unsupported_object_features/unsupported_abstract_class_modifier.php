@@ -1,2 +1,2 @@
 <?php
-abstract class Base {}
+abstract final class Base {}

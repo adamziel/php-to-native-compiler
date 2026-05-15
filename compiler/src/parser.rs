@@ -31,6 +31,14 @@ enum SwitchBodyKind {
     Alternate,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ClassMemberModifiers {
+    visibility: ClassVisibility,
+    is_static: bool,
+    is_abstract: bool,
+    is_final: bool,
+}
+
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
         Self {
@@ -61,11 +69,7 @@ impl Parser {
             TokenKind::Interface => self.parse_interface(),
             TokenKind::Trait => self.parse_trait(),
             TokenKind::Enum => self.parse_enum(),
-            TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
-                if matches!(self.peek_next().kind, TokenKind::Class) =>
-            {
-                self.parse_unsupported_class_modifier_declaration()
-            }
+            TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly => self.parse_class(),
             TokenKind::Namespace => self.parse_namespace(),
             TokenKind::Use => self.parse_use_declaration(),
             TokenKind::Declare => self.parse_unsupported_declare(),
@@ -303,9 +307,61 @@ impl Parser {
     }
 
     fn parse_class(&mut self) -> CompileResult<Stmt> {
-        let span = self
+        let mut is_abstract = false;
+        let mut is_final = false;
+        let mut is_readonly = false;
+        let mut modifier_span = None;
+
+        loop {
+            match self.peek().kind {
+                TokenKind::Abstract => {
+                    if is_abstract {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate abstract modifier in class declaration",
+                        ));
+                    }
+                    is_abstract = true;
+                    modifier_span.get_or_insert(self.peek().span);
+                    self.advance();
+                }
+                TokenKind::Final => {
+                    if is_final {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate final modifier in class declaration",
+                        ));
+                    }
+                    is_final = true;
+                    modifier_span.get_or_insert(self.peek().span);
+                    self.advance();
+                }
+                TokenKind::Readonly => {
+                    if is_readonly {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate readonly modifier in class declaration",
+                        ));
+                    }
+                    is_readonly = true;
+                    modifier_span.get_or_insert(self.peek().span);
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+
+        if is_abstract && is_final {
+            return Err(self.error_at(
+                modifier_span.expect("abstract/final modifier should set span"),
+                "unsupported class modifier combination: abstract final classes are not implemented",
+            ));
+        }
+
+        let class_span = self
             .consume_keyword(TokenKind::Class, "expected 'class'")?
             .span;
+        let span = modifier_span.unwrap_or(class_span);
         let is_nested = self.nested_statement_depth > 0;
         let name = self.consume_identifier("expected class name")?;
         let name = self.resolve_declared_class_name(&name);
@@ -334,6 +390,9 @@ impl Parser {
             name,
             parent,
             members,
+            is_abstract,
+            is_final,
+            is_readonly,
             is_nested,
             span,
         }))
@@ -494,21 +553,19 @@ impl Parser {
         Ok(EnumCaseDecl { name, span })
     }
 
-    fn parse_unsupported_class_modifier_declaration(&mut self) -> CompileResult<Stmt> {
-        let span = self.advance().span;
-        Err(self.error_at(span, unsupported_class_modifier_declaration_message()))
-    }
-
     fn parse_class_member(&mut self) -> CompileResult<ClassMember> {
-        let (visibility, is_static) = self.parse_class_member_modifiers()?;
+        let modifiers = self.parse_class_member_modifiers()?;
 
         if self.match_identifier("const") {
             let span = self.previous().span;
-            if is_static {
+            if modifiers.is_static {
                 return Err(self.error_at(
                     span,
                     "unsupported class constant declaration: static class constants are not implemented",
                 ));
+            }
+            if modifiers.is_abstract || modifiers.is_final {
+                return Err(self.error_at(span, unsupported_class_member_modifier_message()));
             }
             if matches!(self.peek().kind, TokenKind::Identifier(_))
                 && matches!(self.peek_next().kind, TokenKind::Identifier(_))
@@ -535,7 +592,7 @@ impl Parser {
             )?;
             return Ok(ClassMember::Constant(ClassConstantDecl {
                 name,
-                visibility,
+                visibility: modifiers.visibility,
                 value,
                 span: name_span,
             }));
@@ -543,17 +600,34 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
-            let function = self.parse_function_after_keyword(span, false)?;
+            let function = if modifiers.is_abstract {
+                let function = self.parse_function_signature_after_keyword(span)?;
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after abstract method declaration",
+                )?;
+                function
+            } else {
+                self.parse_function_after_keyword(span, false)?
+            };
             return Ok(ClassMember::Method(ClassMethodDecl {
                 function,
-                visibility,
-                is_static,
+                visibility: modifiers.visibility,
+                is_static: modifiers.is_static,
+                is_abstract: modifiers.is_abstract,
+                is_final: modifiers.is_final,
                 span,
             }));
         }
 
         if self.check_unsupported_property_type_declaration() {
-            let message = if is_static {
+            if modifiers.is_abstract || modifiers.is_final {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_class_member_modifier_message(),
+                ));
+            }
+            let message = if modifiers.is_static {
                 unsupported_static_property_type_message()
             } else {
                 unsupported_property_type_message()
@@ -562,10 +636,16 @@ impl Parser {
         }
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            if modifiers.is_abstract || modifiers.is_final {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_class_member_modifier_message(),
+                ));
+            }
             let (name, span) = self.consume_variable_with_span("expected property name")?;
             let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                 let expr = self.parse_expression()?;
-                if is_static {
+                if modifiers.is_static {
                     self.ensure_supported_static_property_default_expr(&expr)?;
                 } else {
                     self.ensure_supported_instance_property_default_expr(&expr)?;
@@ -586,8 +666,8 @@ impl Parser {
             )?;
             return Ok(ClassMember::Property(ClassPropertyDecl {
                 name,
-                visibility,
-                is_static,
+                visibility: modifiers.visibility,
+                is_static: modifiers.is_static,
                 default,
                 span,
             }));
@@ -597,9 +677,11 @@ impl Parser {
         Err(self.error_at(token.span, unsupported_class_member_message(&token.kind)))
     }
 
-    fn parse_class_member_modifiers(&mut self) -> CompileResult<(ClassVisibility, bool)> {
+    fn parse_class_member_modifiers(&mut self) -> CompileResult<ClassMemberModifiers> {
         let mut visibility = None;
         let mut is_static = false;
+        let mut is_abstract = false;
+        let mut is_final = false;
 
         loop {
             let modifier = match &self.peek().kind {
@@ -616,6 +698,32 @@ impl Parser {
                     is_static = true;
                     self.advance();
                     continue;
+                }
+                TokenKind::Abstract => {
+                    if is_abstract {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate abstract modifier in class member declaration",
+                        ));
+                    }
+                    is_abstract = true;
+                    self.advance();
+                    continue;
+                }
+                TokenKind::Final => {
+                    if is_final {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate final modifier in class member declaration",
+                        ));
+                    }
+                    is_final = true;
+                    self.advance();
+                    continue;
+                }
+                TokenKind::Readonly => {
+                    let span = self.advance().span;
+                    return Err(self.error_at(span, unsupported_class_member_modifier_message()));
                 }
                 _ => None,
             };
@@ -635,7 +743,19 @@ impl Parser {
             break;
         }
 
-        Ok((visibility.unwrap_or(ClassVisibility::Public), is_static))
+        if is_abstract && is_final {
+            return Err(self.error_at(
+                self.previous().span,
+                "unsupported class member modifier combination: abstract final methods are not implemented",
+            ));
+        }
+
+        Ok(ClassMemberModifiers {
+            visibility: visibility.unwrap_or(ClassVisibility::Public),
+            is_static,
+            is_abstract,
+            is_final,
+        })
     }
 
     fn parse_unsupported_declare(&mut self) -> CompileResult<Stmt> {
@@ -1056,12 +1176,6 @@ impl Parser {
                         unsupported_nested_enum_declaration_message(),
                     ));
                 }
-                if self.check_unsupported_class_modifier_declaration() {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_class_modifier_declaration_message(),
-                    ));
-                }
                 statements.push(self.parse_statement()?);
             }
             Ok(statements)
@@ -1387,12 +1501,6 @@ impl Parser {
                     return Err(self.error_at(
                         self.peek().span,
                         unsupported_nested_enum_declaration_message(),
-                    ));
-                }
-                if self.check_unsupported_class_modifier_declaration() {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_class_modifier_declaration_message(),
                     ));
                 }
                 statements.push(self.parse_statement()?);
@@ -2469,12 +2577,6 @@ impl Parser {
                     return Err(self.error_at(
                         self.peek().span,
                         unsupported_nested_enum_declaration_message(),
-                    ));
-                }
-                if self.check_unsupported_class_modifier_declaration() {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_class_modifier_declaration_message(),
                     ));
                 }
                 statements.push(self.parse_statement()?);
@@ -5374,10 +5476,6 @@ fn unsupported_enum_case_value_message() -> &'static str {
     "unsupported enum case value: backed enum case values are not implemented"
 }
 
-fn unsupported_class_modifier_declaration_message() -> &'static str {
-    "unsupported class modifier: abstract, final, and readonly class modifiers are not implemented"
-}
-
 fn unsupported_clone_message() -> &'static str {
     "unsupported clone expression: object handle copying and __clone dispatch are not implemented"
 }
@@ -5427,13 +5525,6 @@ fn unsupported_trait_use_message() -> &'static str {
 }
 
 impl Parser {
-    fn check_unsupported_class_modifier_declaration(&self) -> bool {
-        matches!(
-            self.peek().kind,
-            TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly
-        ) && matches!(self.peek_next().kind, TokenKind::Class)
-    }
-
     fn check_unsupported_property_type_declaration(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,

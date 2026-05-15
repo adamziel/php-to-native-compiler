@@ -441,6 +441,9 @@ pub struct ClassDecl {
     pub name: String,
     pub parent: Option<String>,
     pub members: Vec<ClassMember>,
+    pub is_abstract: bool,
+    pub is_final: bool,
+    pub is_readonly: bool,
     pub is_nested: bool,
     pub span: Span,
 }
@@ -506,6 +509,8 @@ pub struct ClassMethodDecl {
     pub function: FunctionDecl,
     pub visibility: ClassVisibility,
     pub is_static: bool,
+    pub is_abstract: bool,
+    pub is_final: bool,
     pub span: Span,
 }
 

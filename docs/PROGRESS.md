@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 755, class and method modifier parsing for the current object
+  metadata subset. The parser now accepts `abstract`, `final`, and `readonly`
+  class modifiers and accepts `abstract`/`final` method modifiers, including
+  abstract method signatures ending in `;` and final methods with bodies.
+  Abstract classes register into metadata but `new AbstractClass()` reports the
+  stable runtime boundary `unsupported object instantiation for <class>:
+  abstract classes are not instantiable in the current subset`. This is not
+  abstract-method implementation enforcement on child classes, final
+  inheritance or final-method enforcement, readonly property/class semantics,
+  PHP `Error` objects, exact diagnostics, or native lowering. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:15:1` class-modifier blocker to
+  `parse error at <bootstrap-shim>:63:26: unsupported magic class name: self, parent, and static class name resolution is not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model class_modifiers -- --test-threads=1`,
+  `cargo test -p phpc --test object_model abstract_class_instantiation -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone755`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 754, by-reference function and method return declarations as
   a runtime boundary. The parser now accepts declarations such as
   `function &identity(...)` and `public function &make_entry(...)` so guarded

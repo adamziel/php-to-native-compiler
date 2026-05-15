@@ -148,6 +148,9 @@ incorrect native code.
   redeclarations sharing one runtime slot,
   braced nested class declarations that register only when execution reaches
   the `class` statement,
+  parsed `abstract`/`final`/`readonly` class modifiers and
+  `abstract`/`final` method modifiers as metadata, with abstract class
+  instantiation rejected as a runtime boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
   no-argument instantiation and user subclasses for `Exception`,
   public and same-class private instance method calls, inherited public method

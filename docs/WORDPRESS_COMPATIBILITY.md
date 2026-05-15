@@ -494,6 +494,18 @@ The first bootstrap probe is expected to fail. Known blockers include:
   enforcement, final inheritance/method enforcement, readonly class semantics,
   real PHP alias/reference semantics, copy-on-write, exact PHP diagnostics, or
   WordPress bootstrap support.
+  Milestone 755 parses `abstract`, `final`, and `readonly` class modifiers plus
+  `abstract`/`final` method modifiers as metadata, and rejects abstract class
+  instantiation as a runtime boundary. After that slice, the direct
+  `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:63:26: unsupported magic class name: self, parent, and static class name resolution is not implemented`.
+  This is not full magic class-name resolution, abstract-method implementation
+  enforcement, final inheritance/method enforcement, readonly class semantics,
+  PHP `Error` objects, exact diagnostics, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

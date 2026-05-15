@@ -76,6 +76,8 @@ pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     methods: HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    abstract_classes: HashSet<ClassId>,
+    abstract_methods: HashSet<(ClassId, String)>,
     interfaces: Vec<Rc<InterfaceDecl>>,
     interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
     traits: Vec<Rc<TraitDecl>>,
@@ -331,6 +333,8 @@ impl Interpreter {
         let mut enums = Vec::new();
         let mut enum_lookup = HashMap::new();
         let mut methods = HashMap::new();
+        let mut abstract_classes = HashSet::new();
+        let mut abstract_methods = HashSet::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
         let instance_property_defaults = HashMap::new();
@@ -404,15 +408,21 @@ impl Interpreter {
                     &mut class_constants,
                     &mut static_properties,
                     &mut methods,
+                    &mut abstract_methods,
                     class_id,
                     class,
                 );
+                if class.is_abstract {
+                    abstract_classes.insert(class_id);
+                }
             }
         }
 
         let mut interpreter = Self {
             functions,
             methods,
+            abstract_classes,
+            abstract_methods,
             interfaces,
             interface_lookup,
             traits,
@@ -523,7 +533,10 @@ impl Interpreter {
                             RuntimeError::duplicate_class(&class.name),
                         ));
                     }
-                    register_class_name(&mut self.classes, class)?;
+                    let class_id = register_class_name(&mut self.classes, class)?;
+                    if class.is_abstract {
+                        self.abstract_classes.insert(class_id);
+                    }
                 }
                 Stmt::Interface(interface) => {
                     register_interface_name(
@@ -571,6 +584,7 @@ impl Interpreter {
                 &mut self.class_constants,
                 &mut self.static_properties,
                 &mut self.methods,
+                &mut self.abstract_methods,
                 class_id,
                 class,
             );
@@ -592,7 +606,11 @@ impl Interpreter {
             ));
         }
         let class_id = register_class_name(&mut self.classes, class)?;
+        if class.is_abstract {
+            self.abstract_classes.insert(class_id);
+        }
         if let Err(error) = register_class_members(&mut self.classes, class) {
+            self.abstract_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -600,6 +618,7 @@ impl Interpreter {
             &mut self.class_constants,
             &mut self.static_properties,
             &mut self.methods,
+            &mut self.abstract_methods,
             class_id,
             class,
         );
@@ -608,8 +627,10 @@ impl Interpreter {
                 &mut self.class_constants,
                 &mut self.static_properties,
                 &mut self.methods,
+                &mut self.abstract_methods,
                 class_id,
             );
+            self.abstract_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -618,10 +639,12 @@ impl Interpreter {
                 &mut self.class_constants,
                 &mut self.static_properties,
                 &mut self.methods,
+                &mut self.abstract_methods,
                 class_id,
             );
             self.instance_property_defaults
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+            self.abstract_classes.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
@@ -1858,6 +1881,15 @@ impl Interpreter {
                 .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
             (class.id(), class.name().to_string())
         };
+        if self.abstract_classes.contains(&class_id) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "abstract classes are not instantiable in the current subset",
+                ),
+            ));
+        }
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
 
@@ -1922,11 +1954,12 @@ impl Interpreter {
             ));
         }
 
-        let function = self
-            .methods
-            .get(&(constructor_class_id, constructor_name.to_ascii_lowercase()))
-            .cloned()
-            .expect("declared constructor metadata should have a stored function body");
+        let function = self.method_function(
+            constructor_class_id,
+            &constructor_class_name,
+            &constructor_name,
+            span,
+        )?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, span)?;
@@ -3384,11 +3417,7 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
-        let function = self
-            .methods
-            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
-            .cloned()
-            .expect("declared method metadata should have a stored function body");
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, span)?;
@@ -3458,11 +3487,7 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
-        let function = self
-            .methods
-            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
-            .cloned()
-            .expect("declared parent method metadata should have a stored function body");
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, span)?;
@@ -3552,14 +3577,12 @@ impl Interpreter {
                 span,
             )?;
 
-            let function = self
-                .methods
-                .get(&(
-                    declaring_class_id,
-                    _resolved_method_name.to_ascii_lowercase(),
-                ))
-                .cloned()
-                .expect("declared static method metadata should have a stored function body");
+            let function = self.method_function(
+                declaring_class_id,
+                &declaring_class_name,
+                &_resolved_method_name,
+                span,
+            )?;
             let function = function.as_ref();
             ensure_user_function_arity(function, args.len(), span)?;
             ensure_supported_function_signature(function, span)?;
@@ -3664,14 +3687,12 @@ impl Interpreter {
             ));
         }
 
-        let function = self
-            .methods
-            .get(&(
-                declaring_class_id,
-                resolved_method_name.to_ascii_lowercase(),
-            ))
-            .cloned()
-            .expect("declared object static method metadata should have a stored function body");
+        let function = self.method_function(
+            declaring_class_id,
+            &declaring_class_name,
+            &resolved_method_name,
+            span,
+        )?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, span)?;
@@ -4563,11 +4584,7 @@ impl Interpreter {
 
         self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
 
-        let function = self
-            .methods
-            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
-            .cloned()
-            .expect("declared self method metadata should have a stored function body");
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, span)?;
@@ -4660,11 +4677,7 @@ impl Interpreter {
             ));
         }
 
-        let function = self
-            .methods
-            .get(&(class_id, resolved_method_name.to_ascii_lowercase()))
-            .cloned()
-            .expect("declared late static method metadata should have a stored function body");
+        let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, span)?;
@@ -4707,6 +4720,32 @@ impl Interpreter {
             current = class.parent_id();
         }
         None
+    }
+
+    fn method_function(
+        &self,
+        class_id: ClassId,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<Rc<FunctionDecl>> {
+        let key = (class_id, method_name.to_ascii_lowercase());
+        if self.abstract_methods.contains(&key) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "abstract methods are not executable in the current subset",
+                ),
+            ));
+        }
+
+        self.methods.get(&key).cloned().ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{class_name}::{method_name}()")),
+            )
+        })
     }
 
     fn class_has_property_in_hierarchy(&self, class_id: ClassId, property_name: &str) -> bool {
@@ -8375,6 +8414,7 @@ fn register_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), Value>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    abstract_methods: &mut HashSet<(ClassId, String)>,
     class_id: ClassId,
     class: &ClassDecl,
 ) {
@@ -8387,10 +8427,12 @@ fn register_class_member_runtime_tables(
                 static_properties.insert((class_id, property.name.clone()), Value::Null);
             }
             ClassMember::Method(method) => {
-                methods.insert(
-                    (class_id, method.function.name.to_ascii_lowercase()),
-                    Rc::new(method.function.clone()),
-                );
+                let key = (class_id, method.function.name.to_ascii_lowercase());
+                if method.is_abstract {
+                    abstract_methods.insert(key);
+                } else {
+                    methods.insert(key, Rc::new(method.function.clone()));
+                }
             }
             ClassMember::Property(_) => {}
         }
@@ -8401,11 +8443,13 @@ fn remove_class_member_runtime_tables(
     class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: &mut HashMap<(ClassId, String), Value>,
     methods: &mut HashMap<(ClassId, String), Rc<FunctionDecl>>,
+    abstract_methods: &mut HashSet<(ClassId, String)>,
     class_id: ClassId,
 ) {
     class_constants.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     static_properties.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
     methods.retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+    abstract_methods.retain(|(declaring_class_id, _)| *declaring_class_id != class_id);
 }
 
 fn register_class_members(
