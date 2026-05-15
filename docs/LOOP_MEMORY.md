@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T11:55:00Z
+
+- Checkpoint before this task:
+  `bf7d206 runtime: add bounded mysqli escaping`, pushed to `origin/master`.
+- Task attempted: Milestone 819, bounded deterministic no-argument `rand()`
+  support for the reached `wpdb::placeholder_escape()` salt path.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/random_builtin.rs`, `tests/fixtures/milestone819/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test random_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone819`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:2424:25: undefined function hash_hmac()`,
+  corresponding to `wp-includes/class-wpdb.php:2424` in
+  `wpdb::placeholder_escape()`.
+- Remaining semantic gaps: PHP random-state compatibility, min/max arguments,
+  swapped bounds, seeding, `mt_rand()`/`srand()` coupling, cryptographic
+  randomness, exact diagnostics, native lowering, and real WordPress bootstrap
+  support remain unsupported.
+- Next concrete task: implement the reached bounded
+  `hash_hmac('sha256', uniqid($salt, true), $salt)` path while keeping broad
+  hashing algorithms, raw/binary output, coercions, diagnostics, and native
+  lowering named unless implemented.
+
 ## Loop Event 2026-05-15T11:38:00Z
 
 - Checkpoint before this task:

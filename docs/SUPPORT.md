@@ -479,7 +479,7 @@
   `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
-  `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
+  `version_compare`, `microtime`, `ini_get`, `min`, `rand`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -639,6 +639,11 @@
   the smallest integer. Array-form `min([..])`, mixed-type comparison rules,
   float/string/bool/null/object/resource operands, exact PHP diagnostics, and
   native lowering remain unsupported.
+  `rand()` supports the reached no-argument form only and returns a
+  deterministic integer for WordPress placeholder-salt exploration. Min/max
+  arguments, random-state compatibility with PHP, seeding, `mt_rand()`/`srand()`
+  coupling, cryptographic randomness, exact diagnostics, and native lowering
+  remain unsupported.
   `call_user_func($callback, ...$args)` supports string callbacks resolving to
   current user functions or documented callable builtins and forwards evaluated
   positional values through the current value-call path. Array callables,
@@ -2117,7 +2122,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`,
-  `error_reporting`, `min`, `dirname`, `file_exists`,
+  `error_reporting`, `min`, `rand`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_query`, `mysqli_select_db`, `mysqli_real_escape_string`,
@@ -2427,7 +2432,7 @@
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `ksort`, `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `ksort`, `in_array`, `array_search`, `rand`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
@@ -2567,7 +2572,7 @@
   `array_filter`, `array_map`, `ksort`, `in_array`, `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
-  `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
+  `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
   `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
   `mysqli_get_server_info`, `mysqli_query`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_report`, `mysqli_init`, `header`,

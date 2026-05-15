@@ -7504,17 +7504,26 @@ handled.
   `runtime error at <bootstrap-shim>:2422:71: undefined function rand()`,
   corresponding to `wp-includes/class-wpdb.php:2422` in
   `wpdb::placeholder_escape()`.
-- [ ] Runtime/random lane: implement the reached bounded `rand()` behavior for
+- [x] Runtime/random lane: implement the reached bounded `rand()` behavior for
   `wpdb::placeholder_escape()` without claiming cryptographic randomness or
   full PHP random-state compatibility. Keep seeding, mt/rand state coupling,
   min/max argument forms, swapped bounds, exact warnings/errors,
   deterministic-test policy, and native lowering named unless implemented.
+  Milestone 819 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:2424:25: undefined function hash_hmac()`,
+  corresponding to `wp-includes/class-wpdb.php:2424` in
+  `wpdb::placeholder_escape()`.
+- [ ] Runtime/hash lane: implement the reached bounded `hash_hmac('sha256',
+  uniqid($salt, true), $salt)` behavior for `wpdb::placeholder_escape()`.
+  Decide whether to use a narrow deterministic helper or a standard Rust crate.
+  Keep broad algorithms, binary/raw output variants, array/object coercions,
+  exact warnings/errors, cryptographic guarantees, host entropy, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 818 checkpoint, the latest committed checkpoint
-  is `941c01d runtime: add bounded reference output copyback`, covering
-  Milestone 817.
+- Before the current Milestone 819 checkpoint, the latest committed checkpoint
+  is `bf7d206 runtime: add bounded mysqli escaping`, covering Milestone 818.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

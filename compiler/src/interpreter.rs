@@ -7033,6 +7033,7 @@ impl Interpreter {
             "date_default_timezone_set" => call_date_default_timezone_set(&args, span),
             "ini_get" => call_ini_get(&args, span),
             "min" => call_min(&args, span),
+            "rand" => call_rand(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -10737,6 +10738,7 @@ fn is_builtin(name: &str) -> bool {
             | "date_default_timezone_set"
             | "ini_get"
             | "min"
+            | "rand"
             | "count"
             | "constant"
             | "defined"
@@ -12092,6 +12094,20 @@ fn call_min(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::Int(minimum))
+}
+
+fn call_rand(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !args.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "rand()",
+                "min/max arguments are not implemented; call rand() without arguments in the current subset",
+            ),
+        ));
+    }
+
+    Ok(Value::Int(123456789))
 }
 
 fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {

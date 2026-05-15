@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 819, bounded deterministic no-argument `rand()` support for
+  the reached WordPress `wpdb::placeholder_escape()` salt path. The runtime now
+  exposes `rand` through function/callability metadata and dynamic
+  string-valued calls, returns a deterministic integer for no-argument calls,
+  and rejects min/max forms as explicit unsupported boundaries. This is not PHP
+  random-state compatibility, seeding, `mt_rand()`/`srand()` coupling,
+  min/max argument behavior, swapped bounds, cryptographic randomness, exact
+  diagnostics, or native lowering. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances past `rand()` to
+  `runtime error at <bootstrap-shim>:2424:25: undefined function hash_hmac()`,
+  corresponding to `wp-includes/class-wpdb.php:2424` in
+  `wpdb::placeholder_escape()`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test random_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone819`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 818, bounded `mysqli_real_escape_string()` support for the
   reached WordPress `wpdb::_real_escape()` option lookup path. The runtime now
   exposes `mysqli_real_escape_string` through function/callability metadata and

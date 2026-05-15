@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone819/wordpress_placeholder_escape_rand.php"
+  ],
+  "stdin": "",
+  "stdout": "123456789",
+  "stderr": "",
+  "exit": 0
+}

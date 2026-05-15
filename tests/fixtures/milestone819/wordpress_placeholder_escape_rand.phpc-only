@@ -1,0 +1,1 @@
+Project-specific random boundary: phpc returns a deterministic no-argument rand() value for the reached WordPress placeholder salt path, while system PHP returns host random values.

@@ -6263,6 +6263,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "date_default_timezone_set"
             | "ini_get"
             | "min"
+            | "rand"
             | "count"
             | "constant"
             | "defined"

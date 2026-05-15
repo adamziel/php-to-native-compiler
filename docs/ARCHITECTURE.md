@@ -925,6 +925,11 @@ result, and leaves binary string edge cases and native lowering out of scope.
 memory-limit clamp. It accepts two or more integer arguments and returns the
 smallest integer, while array-form calls, mixed-type comparison rules, and
 native lowering remain out of scope.
+`rand()` is an interpreter-only deterministic random boundary for the reached
+WordPress `wpdb::placeholder_escape()` salt path. The current slice accepts no
+arguments and returns a fixed integer so compatibility probes are reproducible;
+PHP random-state compatibility, min/max forms, seeding, cryptographic
+randomness, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native

@@ -120,8 +120,9 @@ the reached `WP_Hook::add_filter()` priority check; bounded `ksort()` now
 covers the reached hook-priority ordering path; direct-variable by-reference
 output parameters cover the reached `WP_Object_Cache::get(..., $found)`
 cache-miss path; bounded `mysqli_real_escape_string()` now covers the reached
-`wpdb::_real_escape()` option lookup path; it now stops at a missing bounded
-`rand()` call in `wpdb::placeholder_escape()`.
+`wpdb::_real_escape()` option lookup path; bounded deterministic `rand()` now
+covers the reached `wpdb::placeholder_escape()` salt path; it now stops at a
+missing bounded `hash_hmac()` call in that same path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -403,7 +404,10 @@ shape. Milestone 818 covers bounded `mysqli_real_escape_string()` for the
 reached `wpdb::_real_escape()` option lookup path over the existing
 placeholder `mysqli` object. The current frontier is now missing bounded
 `rand()` support in the reached `wpdb::placeholder_escape()` path at
-`wp-includes/class-wpdb.php:2422`.
+`wp-includes/class-wpdb.php:2422`. Milestone 819 covers bounded deterministic
+no-argument `rand()` for that path. The current frontier is now missing
+bounded `hash_hmac()` support in `wpdb::placeholder_escape()` at the adjacent
+`wp-includes/class-wpdb.php:2424` call.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -580,9 +584,10 @@ The repository already has a working Rust workspace with:
   copy the callee's final value back to the caller, covering the reached
   `WP_Object_Cache::get(..., $found)` output shape. Bounded
   `mysqli_real_escape_string()` covers the reached `wpdb::_real_escape()`
-  option lookup path over the placeholder MySQLi handle. The next bottleneck is
-  missing bounded `rand()` support in the reached
-  `wpdb::placeholder_escape()` path.
+  option lookup path over the placeholder MySQLi handle. Bounded deterministic
+  `rand()` covers the reached `wpdb::placeholder_escape()` salt path. The next
+  bottleneck is missing bounded `hash_hmac()` support in that same placeholder
+  escape path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

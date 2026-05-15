@@ -1039,6 +1039,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `runtime error at <bootstrap-shim>:2422:71: undefined function rand()`,
   corresponding to `wp-includes/class-wpdb.php:2422` in
   `wpdb::placeholder_escape()`.
+  Milestone 819 implements bounded deterministic no-argument `rand()` for the
+  reached salt path in `wpdb::placeholder_escape()`. This is not PHP random
+  state compatibility, min/max arguments, swapped bounds, seeding,
+  `mt_rand()`/`srand()` coupling, cryptographic randomness, exact diagnostics,
+  or native lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:2424:25: undefined function hash_hmac()`,
+  corresponding to the adjacent placeholder hashing call in
+  `wp-includes/class-wpdb.php:2424`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
