@@ -7184,16 +7184,24 @@ handled.
   Milestone 783 implements deterministic CLI `$_SERVER` defaults plus
   `PHP_SAPI = "cli"` and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:46:35: undefined function preg_match()`.
-- [ ] Regex/runtime lane: implement a bounded `preg_match()` slice for the
+- [x] Regex/runtime lane: implement a bounded `preg_match()` slice for the
   reached WordPress `wp_fix_server_vars()` SAPI-name path. Keep full PCRE
   behavior, captures/matches output, flags, offsets, invalid-pattern warnings,
   byte/Unicode edge cases, subject coercions, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 784 implements a bounded slash-delimited literal pattern slice and
+  advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:635:3: undefined function error_reporting()`.
+- [ ] Error/reporting runtime lane: implement a bounded `error_reporting()`
+  slice for the reached WordPress startup path. Keep mutable reporting masks,
+  constants such as `E_ALL`, interaction with warnings/notices/deprecations,
+  ini state, previous-mask return behavior, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 783 checkpoint, the latest committed checkpoint
-  is `2f5087f runtime: add bounded timezone setter`, covering Milestone 782.
+- Before the current Milestone 784 checkpoint, the latest committed checkpoint
+  is `4c972e8 runtime: add bounded server state`, covering Milestone 783.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

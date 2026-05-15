@@ -5969,6 +5969,7 @@ impl Interpreter {
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_contains" => call_str_contains(&args, span),
             "str_replace" => call_str_replace(&args, span),
+            "preg_match" => call_preg_match(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
             "implode" => call_implode(&args, span),
@@ -9466,6 +9467,7 @@ fn is_builtin(name: &str) -> bool {
             | "strcasecmp"
             | "str_contains"
             | "str_replace"
+            | "preg_match"
             | "sprintf"
             | "call_user_func"
             | "implode"
@@ -9749,6 +9751,133 @@ fn call_str_contains(args: &[Value], span: Span) -> CompileResult<Value> {
     let needle = string_contains_argument("str_contains()", "needle", &args[1], span)?;
 
     Ok(Value::Bool(haystack.contains(&needle)))
+}
+
+fn call_preg_match(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=5).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "preg_match()",
+                ArityExpectation::Between { min: 2, max: 5 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if args.len() > 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_match()",
+                "matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset",
+            ),
+        ));
+    }
+
+    let pattern = string_contains_argument("preg_match()", "pattern", &args[0], span)?;
+    let subject = string_contains_argument("preg_match()", "subject", &args[1], span)?;
+    let pattern = BoundedPregPattern::parse(&pattern).map_err(|message| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call("preg_match()", message),
+        )
+    })?;
+
+    Ok(Value::Int(if pattern.matches(&subject) { 1 } else { 0 }))
+}
+
+enum BoundedPregPattern {
+    Contains(String),
+    Prefix(String),
+    Suffix(String),
+    Exact(String),
+}
+
+impl BoundedPregPattern {
+    fn parse(pattern: &str) -> Result<Self, String> {
+        let Some(body_and_modifiers) = pattern.strip_prefix('/') else {
+            return Err(
+                "only slash-delimited patterns are implemented in the current subset".to_string(),
+            );
+        };
+
+        let (body, modifiers) = split_slash_delimited_pattern(body_and_modifiers).ok_or_else(|| {
+            "only slash-delimited patterns with a closing delimiter are implemented in the current subset"
+                .to_string()
+        })?;
+        if !modifiers.is_empty() {
+            return Err("pattern modifiers are not implemented in the current subset".to_string());
+        }
+
+        let (starts_with_anchor, body) = match body.strip_prefix('^') {
+            Some(rest) => (true, rest),
+            None => (false, body),
+        };
+        let (ends_with_anchor, body) = match body.strip_suffix('$') {
+            Some(rest) => (true, rest),
+            None => (false, body),
+        };
+
+        let literal = decode_bounded_preg_literal(body)?;
+        Ok(match (starts_with_anchor, ends_with_anchor) {
+            (true, true) => Self::Exact(literal),
+            (true, false) => Self::Prefix(literal),
+            (false, true) => Self::Suffix(literal),
+            (false, false) => Self::Contains(literal),
+        })
+    }
+
+    fn matches(&self, subject: &str) -> bool {
+        match self {
+            Self::Contains(literal) => subject.contains(literal),
+            Self::Prefix(literal) => subject.starts_with(literal),
+            Self::Suffix(literal) => subject.ends_with(literal),
+            Self::Exact(literal) => subject == literal,
+        }
+    }
+}
+
+fn split_slash_delimited_pattern(pattern: &str) -> Option<(&str, &str)> {
+    let index = pattern.rfind('/')?;
+    Some((&pattern[..index], &pattern[index + 1..]))
+}
+
+fn decode_bounded_preg_literal(body: &str) -> Result<String, String> {
+    let mut literal = String::new();
+    let mut chars = body.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            let Some(escaped) = chars.next() else {
+                return Err(
+                    "trailing pattern escapes are not implemented in the current subset"
+                        .to_string(),
+                );
+            };
+            match escaped {
+                '/' | '\\' | '.' | '-' | '^' | '$' => literal.push(escaped),
+                _ => {
+                    return Err(format!(
+                        "escape sequence \\{escaped} is not implemented in the current subset"
+                    ));
+                }
+            }
+            continue;
+        }
+
+        if matches!(
+            ch,
+            '*' | '+' | '?' | '[' | ']' | '(' | ')' | '{' | '}' | '|'
+        ) {
+            return Err(format!(
+                "regex metacharacter {ch} is not implemented in the current subset"
+            ));
+        }
+
+        literal.push(ch);
+    }
+
+    Ok(literal)
 }
 
 fn string_contains_argument(

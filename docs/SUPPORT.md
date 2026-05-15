@@ -427,7 +427,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`,
+- builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `preg_match`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
@@ -525,6 +525,15 @@
   haystack contains the current UTF-8 runtime needle. Empty needles return
   `true`. Array operands, object/resource coercions, binary string edge cases
   beyond valid UTF-8 runtime strings, exact PHP diagnostics, and native
+  lowering remain unsupported.
+  `preg_match($pattern, $subject)` supports exactly two scalar/null
+  string-convertible arguments. The current regex slice supports
+  slash-delimited literal contains/prefix/suffix/exact patterns with `^` and
+  `$` anchors plus a small literal escape subset, returns integer `1` for a
+  match and `0` for no match, and exists to cover the reached WordPress
+  `wp_fix_server_vars()` SAPI-name pattern. Captures/matches output, flags,
+  offsets, full PCRE syntax, pattern modifiers, invalid-pattern warnings,
+  byte/Unicode edge cases, broad coercions, exact diagnostics, and native
   lowering remain unsupported.
   `str_replace($search, $replace, $subject)` supports the current scalar/null
   string-convertible subset for all three arguments and returns the subject
@@ -1949,7 +1958,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `min`, `dirname`, `file_exists`,
+  `strtolower`, `trim`, `str_contains`, `preg_match`, `min`, `dirname`, `file_exists`,
   `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
   `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
@@ -2246,7 +2255,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `count`,
+  `str_contains`, `preg_match`, `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -4043,6 +4052,11 @@
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and
   native lowering beyond function-table introspection
+- `preg_match()` outside the current two-argument slash-delimited literal
+  contains/prefix/suffix/exact pattern subset: captures/matches output, flags,
+  offsets, full PCRE syntax, modifiers, invalid-pattern warnings, byte/Unicode
+  behavior, broad coercions, exact diagnostics, and native lowering beyond
+  function-table introspection
 - `min()` outside the current two-or-more integer argument subset: array-form
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table

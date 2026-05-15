@@ -761,6 +761,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   import policy, `$GLOBALS` aliasing, references/copy-on-write, cookies,
   uploads, all superglobals, header state, exact warning behavior, native
   lowering, or WordPress bootstrap support.
+  Milestone 784 implements bounded `preg_match()` for the reached
+  `wp_fix_server_vars()` SAPI-name pattern. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:635:3: undefined function error_reporting()`.
+  This is not full PCRE support, captures/matches output, flags, offsets,
+  invalid-pattern warning behavior, byte/Unicode regex fidelity, exact
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 784, bounded `preg_match()` for the current WordPress
+  `wp_fix_server_vars()` SAPI-name path. The runtime now accepts exactly two
+  current scalar/null string-convertible arguments, supports slash-delimited
+  literal contains/prefix/suffix/exact patterns with `^` and `$` anchors and a
+  small literal escape subset, returns `1` for matches and `0` for misses,
+  exposes the builtin through function/callability metadata and dynamic
+  string-valued calls, and keeps direct native calls behind the generic
+  function-call lowering boundary. Captures/matches output, flags, offsets,
+  full PCRE syntax, pattern modifiers, invalid-pattern warning behavior,
+  byte/Unicode edge cases, broad subject coercions, exact diagnostics, and
+  native lowering remain unsupported. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances past the reached `preg_match()` call to
+  `runtime error at <bootstrap-shim>:635:3: undefined function error_reporting()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test preg_match_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone784`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 783, bounded request/SAPI startup state for the current
   WordPress `wp_fix_server_vars()` path. The interpreter now seeds a root
   `$_SERVER` superglobal with deterministic CLI defaults for

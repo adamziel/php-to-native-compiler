@@ -26,6 +26,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:02:56Z
+
+- Checkpoint before this task:
+  `4c972e8 runtime: add bounded server state`, pushed to `origin/master`.
+- Task attempted: Milestone 784, bounded `preg_match()` for the reached
+  WordPress `wp_fix_server_vars()` SAPI-name path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/preg_match_builtin.rs`,
+  `tests/fixtures/milestone784/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test preg_match_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone784`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: captures/matches output, flags, offsets, full PCRE
+  syntax, pattern modifiers, invalid-pattern warnings, byte/Unicode behavior,
+  broad coercions, exact diagnostics, native regex lowering, and broad
+  WordPress regex coverage remain unsupported.
+- Next concrete task: implement a bounded `error_reporting()` slice for the
+  reached WordPress startup path while documenting mutable masks, `E_*`
+  constants, warning/notice/deprecation interactions, ini state, previous-mask
+  return behavior, exact diagnostics, and native lowering unless implemented.
+
 ## Loop Event 2026-05-15T07:57:43Z
 
 - Checkpoint before this task:
