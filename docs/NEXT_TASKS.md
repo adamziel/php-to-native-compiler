@@ -7385,17 +7385,29 @@ handled.
   `8.0.0-phpc-placeholder` for the placeholder `mysqli` object and advances
   the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:904:10: undefined function compact()`.
-- [ ] Runtime/array-symbol lane: add bounded `compact()` support for the
+- [x] Runtime/array-symbol lane: add bounded `compact()` support for the
   reached WordPress startup path. Start with direct string variable-name
   arguments over the current symbol table, preserve PHP-shaped omission of
   missing names if implemented, and keep array arguments, nested arrays,
   invalid names, warning behavior, variable-variable interactions, exact
   diagnostics, and native lowering named unless implemented.
+  Milestone 806 accepts one or more direct string variable-name arguments,
+  reads the current caller scope, omits missing variables, returns an array
+  keyed by found names, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:951:11: undefined function mysqli_query()`.
+- [ ] Runtime/database lane: add a bounded `mysqli_query()` boundary for the
+  reached WordPress `set_sql_mode()` path. Start with the exact
+  `SELECT @@SESSION.sql_mode` query shape and decide whether to return an
+  empty/false result boundary or a placeholder result object that can feed the
+  immediately following `mysqli_fetch_array()` call. Keep real query
+  execution, result resources, row iteration, SQL errors/warnings, connection
+  state, escaping, exact diagnostics, and native database lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 805 checkpoint, the latest committed checkpoint
-  is `349bca3 runtime: add bounded preg_replace`, covering Milestone 804.
+- Before the current Milestone 806 checkpoint, the latest committed checkpoint
+  is `7e7faab runtime: add bounded mysqli server info`, covering Milestone 805.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

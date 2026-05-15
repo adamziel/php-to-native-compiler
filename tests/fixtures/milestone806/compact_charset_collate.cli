@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+utf8mb4|utf8mb4_unicode_ci
+--- stdout end ---
+stderr:
+--- stderr end ---

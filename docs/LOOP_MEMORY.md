@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T13:22:00Z
+
+- Checkpoint before this task:
+  `7e7faab runtime: add bounded mysqli server info`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 806, bounded `compact()` support for the reached
+  WordPress `wpdb::determine_charset()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/compact_builtin.rs`,
+  `tests/fixtures/milestone806/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test compact_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone806`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:951:11: undefined function mysqli_query()`.
+- Remaining semantic gaps: array arguments, nested arrays, invalid names, PHP
+  warning behavior for missing or invalid names, variable-variable
+  interactions, exact diagnostics, `call_user_func` caller-scope dispatch, and
+  native lowering remain unsupported.
+- Next concrete task: add a bounded `mysqli_query()` boundary for the reached
+  WordPress `set_sql_mode()` path while keeping real query execution, result
+  resources, row iteration, SQL errors/warnings, connection state, escaping,
+  exact diagnostics, and native database lowering named unless implemented.
+
 ## Loop Event 2026-05-15T12:58:00Z
 
 - Checkpoint before this task:

@@ -6250,6 +6250,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "str_replace"
             | "preg_match"
             | "preg_replace"
+            | "compact"
             | "error_reporting"
             | "sprintf"
             | "call_user_func"

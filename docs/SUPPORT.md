@@ -454,7 +454,7 @@
   `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
-  `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
+  `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -644,6 +644,13 @@
   resources/objects, queries, result sets, escaping, charset handling,
   errors/warnings, transactions, configuration beyond the report-mode flag,
   PDO behavior, and native database calls are not implemented.
+  `compact($name, ...$names)` supports one or more direct string variable-name
+  arguments, reads the current caller scope, returns an array keyed by each
+  found variable name, and omits missing variables. This covers the reached
+  WordPress `compact('charset', 'collate')` path. Array arguments, nested
+  arrays, invalid names, PHP warning behavior for missing or invalid names,
+  variable-variable interactions, exact diagnostics, and native lowering remain
+  unsupported.
   `assert($assertion, $description = null)` evaluates one or two arguments
   normally and returns `true` for truthy assertions. The optional description
   is inert metadata in this slice and may be `null`, bool, int, float, or
@@ -2061,7 +2068,7 @@
   `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_report`, `mysqli_init`,
-  `array_change_key_case`, `array_column`, `array_is_list`,
+  `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
@@ -2358,7 +2365,7 @@
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
   `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `implode`, `file_exists`, `is_dir`, `abs`,
-  `microtime`, `ini_get`, `min`, `count`,
+  `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -4228,6 +4235,10 @@
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table
   introspection
+- `compact()` outside the current direct string variable-name argument subset:
+  array arguments, nested arrays, invalid names, PHP warning behavior for
+  missing or invalid names, variable-variable interactions, exact diagnostics,
+  and native lowering beyond function-table introspection
 - `str_replace()` outside the current scalar/null string-convertible
   three-argument subset: array search/replace/subject forms, the fourth
   `$count` output argument, object/resource coercions, exact warning behavior,

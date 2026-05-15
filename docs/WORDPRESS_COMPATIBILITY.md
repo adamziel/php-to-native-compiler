@@ -933,6 +933,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not real server negotiation, connection-state validation, host I/O,
   extension resources, query/result behavior, exact diagnostics, native
   database lowering, or WordPress bootstrap support.
+  Milestone 806 implements bounded `compact()` for the reached
+  `wpdb::determine_charset()` path. It accepts direct string variable names,
+  reads the current caller scope, omits missing variables, and returns an array
+  keyed by found names. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:951:11: undefined function mysqli_query()`.
+  This is not full `compact()` array/nested argument behavior,
+  variable-variable interaction, warning behavior, native lowering, real query
+  execution, result resources, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

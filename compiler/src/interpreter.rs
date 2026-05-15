@@ -5744,6 +5744,9 @@ impl Interpreter {
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
                 }
+                if key == "compact" {
+                    return self.call_compact(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -5774,6 +5777,9 @@ impl Interpreter {
                 }
                 if key == "preg_match" {
                     return self.call_preg_match_with_optional_matches(args, span, caller_scope);
+                }
+                if key == "compact" {
+                    return self.call_compact(args, span, caller_scope);
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
@@ -5915,6 +5921,51 @@ impl Interpreter {
             caller_scope.write_static(matches_name, Value::Array(PhpArray::new()));
             Ok(Value::Int(0))
         }
+    }
+
+    fn call_compact(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("compact()", ArityExpectation::AtLeast(1), args.len()),
+            ));
+        }
+
+        let mut compacted = PhpArray::new();
+        for arg in args {
+            let value = self.evaluate(arg, caller_scope)?;
+            let Value::String(name) = value else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "compact()",
+                        format!(
+                            "variable names must be direct strings in the current subset, got {}",
+                            value.type_name()
+                        ),
+                    ),
+                ));
+            };
+            if !is_compact_variable_name(&name) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "compact()",
+                        "variable names must be non-empty simple identifiers in the current subset",
+                    ),
+                ));
+            }
+            if let Some(value) = caller_scope.read_named(&name) {
+                compacted.insert(name, value);
+            }
+        }
+
+        Ok(Value::Array(compacted))
     }
 
     fn call_exit_construct(
@@ -6323,6 +6374,13 @@ impl Interpreter {
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
+            "compact" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compact()",
+                    "caller-scope variable lookup is only implemented for direct and dynamic compact() calls in the current subset",
+                ),
+            )),
             "error_reporting" => self.call_error_reporting(args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -10006,6 +10064,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_replace"
             | "preg_match"
             | "preg_replace"
+            | "compact"
             | "error_reporting"
             | "sprintf"
             | "call_user_func"
@@ -10586,6 +10645,17 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
         .position(|byte| !(byte.is_ascii_digit() || byte == b'.'))
         .unwrap_or(subject.len());
     Ok(Value::String(subject[..end].to_string()))
+}
+
+fn is_compact_variable_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    if !(first == b'_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
 }
 
 enum BoundedPregPattern {
