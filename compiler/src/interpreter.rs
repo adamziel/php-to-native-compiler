@@ -4269,6 +4269,12 @@ impl Interpreter {
         Ok(Value::String("utf8mb4".to_string()))
     }
 
+    fn call_mysqli_field_count(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_field_count", args, 1, span)?;
+        expect_mysqli_handle("mysqli_field_count()", &args[0], span)?;
+        Ok(Value::Int(0))
+    }
+
     fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_connection_stats", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
@@ -9293,6 +9299,7 @@ impl Interpreter {
             "mysqli_thread_id" => self.call_mysqli_thread_id(&args, span),
             "mysqli_get_charset" => self.call_mysqli_get_charset(&args, span),
             "mysqli_character_set_name" => self.call_mysqli_character_set_name(&args, span),
+            "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
@@ -12241,6 +12248,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_thread_id"
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
+            | "mysqli_field_count"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"

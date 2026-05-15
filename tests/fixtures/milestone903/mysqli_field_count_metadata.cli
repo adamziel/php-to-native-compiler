@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone903/mysqli_field_count_metadata.php
+yes
+callable
+0
+0

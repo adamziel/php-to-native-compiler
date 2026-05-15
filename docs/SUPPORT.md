@@ -516,7 +516,7 @@
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`,
-  `mysqli_character_set_name`, `mysqli_set_charset`,
+  `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -849,6 +849,9 @@
   `mysqli_character_set_name($handle)` accepts the placeholder object and
   returns deterministic `utf8mb4` without inspecting, negotiating, or tracking
   a real connection character set.
+  `mysqli_field_count($handle)` accepts the placeholder object and returns
+  deterministic clean-state field count `0` without tracking the most recent
+  query on the connection, result metadata, or SQL execution state.
   `mysqli_get_connection_stats($handle)` accepts the placeholder object and
   returns an eight-key deterministic statistics array with zeroed traffic/query
   counters plus deterministic placeholder connection counters, without real
@@ -2416,7 +2419,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-  `mysqli_get_charset`, `mysqli_character_set_name`,
+  `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -2741,7 +2744,8 @@
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`,
-  `mysqli_character_set_name`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
+  `mysqli_character_set_name`, `mysqli_field_count`,
+  `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
   `mysqli_sqlstate`, `mysqli_warning_count`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`,
@@ -2887,7 +2891,7 @@
   `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
   `mysqli_thread_id`, `mysqli_get_charset`, `mysqli_character_set_name`,
-  `mysqli_get_connection_stats`, `mysqli_autocommit`,
+  `mysqli_field_count`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_sqlstate`, `mysqli_warning_count`,
@@ -2957,7 +2961,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-  `mysqli_get_charset`, `mysqli_character_set_name`,
+  `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
@@ -2979,7 +2983,8 @@
   only deterministic placeholder thread-id metadata, `mysqli_get_charset(...)`
   returns only deterministic placeholder charset/collation metadata,
   `mysqli_character_set_name(...)` returns only deterministic placeholder
-  charset-name metadata,
+  charset-name metadata, `mysqli_field_count(...)` returns only deterministic
+  placeholder clean field-count metadata,
   `mysqli_get_connection_stats(...)` returns only deterministic placeholder
   connection-statistics metadata, `mysqli_stat(...)` returns only deterministic
   zeroed server-status metadata, `mysqli_autocommit(...)` returns only
@@ -3011,6 +3016,7 @@
   `mysqli_thread_id(...)`/
   `mysqli_get_charset(...)`/
   `mysqli_character_set_name(...)`/
+  `mysqli_field_count(...)`/
   `mysqli_get_connection_stats(...)`/`mysqli_stat(...)`/
   `mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
   `mysqli_commit(...)`/`mysqli_rollback(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
@@ -4668,6 +4674,7 @@
   `mysqli_thread_id()`/
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
+  `mysqli_field_count()`/
   `mysqli_get_connection_stats()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/
   `mysqli_sqlstate()`/`mysqli_warning_count()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/

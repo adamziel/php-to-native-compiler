@@ -1,0 +1,3 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_field_count()` metadata. System PHP needs a real mysqli connection and
+reports the number of columns for the most recent query on that connection.

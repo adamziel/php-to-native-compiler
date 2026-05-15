@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 903, bounded `mysqli_field_count()` support for
+  deterministic placeholder MySQLi clean field-count metadata. The runtime
+  accepts `mysqli_field_count($handle)` for current placeholder `mysqli`
+  objects, returns deterministic `0`, rejects non-`mysqli` handles with stable
+  diagnostics, and exposes the name through runtime and native metadata lookup.
+  This is not most-recent-query tracking, result metadata tracking, SQL
+  execution state, host database integration, PHP warning/error fidelity, or
+  native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_field_count -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone903`.
+
 - Added Milestone 902, a synthetic WordPress-shaped `wpdb` charset-name
   bookkeeping smoke that calls the bounded
   `mysqli_character_set_name($this->dbh)` placeholder path, records

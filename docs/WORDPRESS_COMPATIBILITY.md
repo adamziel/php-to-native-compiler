@@ -1413,7 +1413,11 @@ historical blockers and remaining full-support gaps include:
   escaping behavior changes, warning/error fidelity, or native database
   lowering. Milestone 902 wires that placeholder through a synthetic
   WordPress-shaped `wpdb` charset-name bookkeeping smoke without claiming real
-  WordPress charset negotiation or escaping fidelity.
+  WordPress charset negotiation or escaping fidelity. Milestone 903 adds
+  deterministic `mysqli_field_count()` clean field-count metadata without
+  most-recent-query tracking, result metadata tracking, SQL execution state,
+  warning/error fidelity, host database integration, or native database
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

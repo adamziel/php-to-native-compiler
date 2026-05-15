@@ -202,7 +202,8 @@ thread-id bookkeeping smoke, plus deterministic `mysqli_get_charset()`
 placeholder charset/collation metadata, now wired through a synthetic
 WordPress-shaped `wpdb` charset/collation bookkeeping smoke, plus deterministic
 `mysqli_character_set_name()` placeholder charset-name metadata, now wired
-through a synthetic WordPress-shaped `wpdb` charset-name bookkeeping smoke.
+through a synthetic WordPress-shaped `wpdb` charset-name bookkeeping smoke,
+plus deterministic `mysqli_field_count()` clean field-count metadata.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

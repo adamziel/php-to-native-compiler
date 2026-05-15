@@ -8360,16 +8360,26 @@ handled.
   negotiation, connection charset state, escaping fidelity,
   client-library/server metadata inspection, host database integration,
   warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after charset-name
+- [x] Runtime/mysqli lane: inspect the next MySQLi boundary after charset-name
   placeholders and choose a small tested slice, such as deterministic
   `mysqli_field_count()` metadata or a sharper named diagnostic, before
   broader SQL execution or real host state is claimed.
+  Milestone 903 implements bounded deterministic `mysqli_field_count($handle)`
+  metadata. It accepts current placeholder `mysqli` handles, returns
+  deterministic clean-state field count `0`, rejects non-`mysqli` handles with
+  stable diagnostics, and is visible through runtime and native metadata
+  lookup. This is not most-recent-query tracking, result metadata tracking,
+  SQL execution state, host database integration, warnings/errors, or native
+  database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_field_count()` placeholder through WordPress-shaped query
+  metadata bookkeeping without claiming real last-query field-count fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `8cd2295 runtime: add mysqli character set name metadata`, covering
-  Milestone 901 before the current Milestone 902 candidate.
+  `3a981ab tests: add wordpress wpdb character set name smoke`, covering
+  Milestone 902 before the current Milestone 903 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
