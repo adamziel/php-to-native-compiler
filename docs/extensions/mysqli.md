@@ -3,12 +3,12 @@
 Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-`mysqli_query`, `mysqli_affected_rows`, `mysqli_insert_id`,
-`mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_fetch_object`,
-`mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_row`,
-`mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
-`mysqli_data_seek`, `mysqli_free_result`, `mysqli_more_results`,
-`mysqli_next_result`, `mysqli_report`, and
+`mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
+`mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
+`mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
+`mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
+`mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
+`mysqli_more_results`, `mysqli_next_result`, `mysqli_report`, and
 `mysqli_init` are currently visible through
 `function_exists()`, `is_callable()`, dynamic string-valued function lookup,
 and native function-table introspection so WordPress' early database startup
@@ -33,6 +33,11 @@ select a database, negotiate charset, or produce real mysqli connection state.
 `8.0.0-phpc-placeholder`, a deterministic fake server string used by
 WordPress' `wpdb::db_version()` guard. It does not query a server or reflect
 real connection metadata.
+
+`mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder object and
+returns deterministic `true` for the reached WordPress charset setup shape.
+Charset values other than `utf8mb4`, collation state, charset negotiation,
+warning/error behavior, and escaping charset effects are not implemented.
 
 `mysqli_query($handle, 'SELECT @@SESSION.sql_mode')` accepts the placeholder
 object and that exact SQL mode probe, returning `false` as a deterministic
@@ -102,6 +107,6 @@ queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no
 fetch modes beyond the documented placeholder row shapes, no real row-count
 state beyond placeholder result counts, no real affected-row or insert-id state
-beyond deterministic zero clean state, no errors/warnings, no transactions, no
-configuration beyond the current report-mode flag, no PDO bridge, and no
-native database lowering.
+beyond deterministic zero clean state, no real charset/collation negotiation,
+no errors/warnings, no transactions, no configuration beyond the current
+report-mode flag, no PDO bridge, and no native database lowering.

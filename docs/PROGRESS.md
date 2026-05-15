@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 871, bounded `mysqli_set_charset()` support for placeholder
+  MySQLi handles. The runtime now accepts
+  `mysqli_set_charset($handle, "utf8mb4")` case-insensitively for current
+  placeholder `mysqli` objects, returns deterministic `true`, rejects
+  non-`mysqli` handles, non-string charset values, and unsupported charset
+  names with stable diagnostics, and exposes the name through runtime and
+  native metadata lookup. This is not real connection charset negotiation,
+  collation state, SQL escaping charset fidelity, warning/error behavior, host
+  database integration, or native database lowering. Focused verification so
+  far:
+  `cargo test -p phpc --test mysqli_extension mysqli_set_charset -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone871`.
+
 - Added Milestone 870, a synthetic WordPress-shaped `wpdb::query()` smoke that
   records the bounded clean-state `mysqli_affected_rows($this->dbh)` and
   `mysqli_insert_id($this->dbh)` values after the exact charset setup

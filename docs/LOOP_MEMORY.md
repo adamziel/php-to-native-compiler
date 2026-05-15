@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `a2ac217 tests: add wordpress wpdb mutation metadata smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 871, bounded `mysqli_set_charset()` placeholder
+  support for current `utf8mb4` WordPress charset setup.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone871/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_set_charset -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone871`, and
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed.
+- Current WordPress frontier: placeholder MySQLi handles can now accept the
+  reached `utf8mb4` charset setup call directly, separate from the existing
+  exact `SET NAMES ... COLLATE ...` query boundary.
+- Remaining semantic gaps: real charset/collation negotiation, escaping
+  charset effects, warning/error behavior, host database integration, real
+  WordPress `wpdb` fidelity, and native database lowering remain missing.
+- Next concrete task: run focused Rust and fixture verification, then
+  whitespace checks and the serialized checkpoint gate if focused checks pass.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `adb33c6 runtime: add mysqli clean mutation metadata`, pushed to
   `origin/master`.
 - Task attempted: Milestone 870, a synthetic WordPress-shaped `wpdb::query()`

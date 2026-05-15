@@ -8022,16 +8022,26 @@ handled.
   no-result query. It is not real WordPress mutation query behavior, SQL
   execution, database state, transactions, warnings/errors, real
   affected-row/insert-id state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next database boundary after clean
+- [x] Runtime/mysqli lane: inspect the next database boundary after clean
   mutation metadata and choose a small tested slice, such as an explicit
   `mysqli_set_charset()` placeholder boundary or a named unsupported diagnostic
   for mutation SQL before broadening query execution.
+  Milestone 871 implements bounded `mysqli_set_charset($handle, $charset)` for
+  placeholder `mysqli` objects. It accepts string `utf8mb4`
+  case-insensitively, returns deterministic `true`, rejects non-`mysqli`
+  handles, non-string charsets, and unsupported charset names with stable
+  diagnostics, and is visible through runtime and native metadata lookup. This
+  is not real connection charset negotiation, collation state, escaping charset
+  fidelity, warnings/errors, host database integration, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+  `mysqli_set_charset()` through a WordPress-shaped charset setup method
+  without claiming real charset/collation behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `adb33c6 runtime: add mysqli clean mutation metadata`, covering Milestone 869
-  before the current Milestone 870 candidate.
+  `a2ac217 tests: add wordpress wpdb mutation metadata smoke`, covering
+  Milestone 870 before the current Milestone 871 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

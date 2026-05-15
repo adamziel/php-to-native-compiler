@@ -512,8 +512,8 @@
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
-  `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_set_charset`,
+  `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -813,6 +813,9 @@
   not backed by a host connection. `mysqli_get_server_info($handle)` accepts
   the placeholder `mysqli` object and returns the deterministic placeholder
   string `8.0.0-phpc-placeholder` for WordPress version-guard exploration.
+  `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder handle and
+  returns deterministic `true` for the reached WordPress charset setup path
+  without negotiating a real connection charset or collation state.
   `mysqli_query($handle, 'SELECT @@SESSION.sql_mode')` accepts the placeholder
   handle and that exact WordPress SQL mode probe, returning `false` as a
   deterministic empty/no-result boundary so WordPress skips SQL mode
@@ -2343,7 +2346,7 @@
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -2873,7 +2876,9 @@
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
   current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` returns only the current deterministic
-  placeholder string, and `mysqli_query(...)` returns only the current false
+  placeholder string, `mysqli_set_charset(...)` returns only deterministic
+  success for the current `utf8mb4` placeholder charset, and
+  `mysqli_query(...)` returns only the current false
   SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
   synthetic empty-result boundaries;
   `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
@@ -2885,7 +2890,7 @@
   scalar/null string-convertible values; direct `mysqli_connect(...)` calls
   are still a stable unsupported runtime boundary, and direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
-  `mysqli_get_server_info(...)`/`mysqli_query(...)`/
+  `mysqli_get_server_info(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
@@ -4534,7 +4539,7 @@
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
-  `mysqli_query()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_query()`/`mysqli_set_charset()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/

@@ -4180,6 +4180,35 @@ impl Interpreter {
         Ok(Value::String("8.0.0-phpc-placeholder".to_string()))
     }
 
+    fn call_mysqli_set_charset(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_set_charset", args, 2, span)?;
+        expect_mysqli_handle("mysqli_set_charset()", &args[0], span)?;
+        let Value::String(charset) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_set_charset()",
+                    format!(
+                        "charset must be string in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        if charset.eq_ignore_ascii_case("utf8mb4") {
+            return Ok(Value::Bool(true));
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_set_charset()",
+                format!(
+                    "only the deterministic utf8mb4 placeholder charset is implemented in the current subset, got {charset}"
+                ),
+            ),
+        ))
+    }
+
     fn call_mysqli_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(2..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -8959,6 +8988,7 @@ impl Interpreter {
             )),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
+            "mysqli_set_charset" => self.call_mysqli_set_charset(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_errno" => self.call_mysqli_errno(&args, span),
             "mysqli_error" => self.call_mysqli_error(&args, span),
@@ -11889,6 +11919,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_connect"
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
+            | "mysqli_set_charset"
             | "mysqli_query"
             | "mysqli_errno"
             | "mysqli_error"
