@@ -2381,7 +2381,7 @@ impl PhpObject {
             )));
         }
 
-        if !self.class_name.eq_ignore_ascii_case("stdClass") {
+        if !self.allows_dynamic_public_properties() {
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -2396,6 +2396,11 @@ impl PhpObject {
             value,
         });
         Ok(())
+    }
+
+    fn allows_dynamic_public_properties(&self) -> bool {
+        self.class_name.eq_ignore_ascii_case("stdClass")
+            || self.class_name.eq_ignore_ascii_case("wpdb")
     }
 
     pub fn write_property_from_context(

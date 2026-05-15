@@ -142,8 +142,9 @@ Implemented now:
   modifiers as metadata, with abstract class instantiation rejected at runtime,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
   class contexts,
-  bounded dynamic property-name reads/writes for existing public slots and
-  `stdClass` public dynamic slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy
+  bounded dynamic property-name reads/writes for existing public slots,
+  `stdClass` public dynamic slots, and the WordPress `wpdb` compatibility
+  class's dynamic table-name slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy
   current property slots when no `__clone` method is declared
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures

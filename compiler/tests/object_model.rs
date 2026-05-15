@@ -392,6 +392,22 @@ echo $data->$intKey;
 }
 
 #[test]
+fn dynamic_public_property_names_materialize_wordpress_wpdb_slots() {
+    let source = r#"<?php
+class wpdb {}
+
+$db = new wpdb();
+$table = "categories";
+$db->$table = "wp_categories";
+echo $db->categories, "|", $db->$table;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "wp_categories|wp_categories");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn braced_dynamic_property_names_read_write_current_expression_subset() {
     let source = r#"<?php
 class Account {

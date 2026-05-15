@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone811/wordpress_wpdb_dynamic_table_property.php"
+  ],
+  "stdin": "",
+  "stdout": "wp_categories|wp_categories",
+  "stderr": "",
+  "exit": 0
+}

@@ -1,0 +1,1 @@
+Project-specific WordPress boundary: phpc currently materializes dynamic public table-name slots for the wpdb compatibility class even though general #[AllowDynamicProperties] attribute semantics remain unsupported.

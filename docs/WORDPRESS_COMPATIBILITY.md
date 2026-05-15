@@ -973,6 +973,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not arbitrary regex delimiter support, broad character-class or
   case-insensitive PCRE behavior, invalid-pattern warnings, native regex
   lowering, or WordPress bootstrap support.
+  Milestone 811 implements bounded dynamic public property materialization for
+  the WordPress `wpdb` compatibility class so reached table-name assignments
+  such as `$this->$table = $prefixed_table` can create `categories` and related
+  slots. The real bootstrap-shim probe now advances to
+  `parse error at <bootstrap-shim>:499:3: unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented`.
+  This is not general `#[AllowDynamicProperties]`, magic property behavior,
+  non-public dynamic access, exact notices/deprecations, references,
+  copy-on-write, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -84,7 +84,8 @@
   `$object->$name = expr`, and `$object->{$expr} = expr` are supported for
   direct object variables when the property-name expression evaluates to a
   string or integer name and resolves to an existing public slot; writes can
-  also materialize public dynamic slots on `stdClass` objects. Array literal
+  also materialize public dynamic slots on `stdClass` objects and the
+  WordPress `wpdb` compatibility class for reached table-name slots. Array literal
   reference elements such as `array(&$value)` and keyed values like
   `array('name' => &$value)` are parsed and evaluate the current value, but do
   not create PHP reference aliases yet. Reference assignment sources support
@@ -1280,17 +1281,19 @@
   `parent::method(...)` static method dispatch is supported for the current
   visible declared/inherited static-method subset.
   Dynamic instance property names are supported only for existing public slots
-  on current object values and public dynamic slots on `stdClass`, using
-  string or integer property-name values. The parser accepts both
+  on current object values, public dynamic slots on `stdClass`, and public
+  dynamic slots on the WordPress `wpdb` compatibility class, using string or
+  integer property-name values. The parser accepts both
   `$object->$name` and braced `$object->{$expr}` forms in the current read and
   direct-variable-root write subset. Keyword-named direct properties are
   accepted after `->`; keyword method calls are still rejected with an explicit
   parse diagnostic. Dynamic methods, dynamic static property names, non-public
   dynamic property access, magic property hooks, dynamic property-name
   `isset`/`empty`/`??`/`??=`, compound assignment,
-  increment/decrement, string interpolation, non-`stdClass` missing-property
-  creation, and exact PHP dynamic-property notices/deprecations remain
-  unsupported. Non-public
+  increment/decrement, string interpolation, missing-property creation outside
+  `stdClass` and the bounded `wpdb` compatibility class, `#[AllowDynamicProperties]`
+  attribute semantics, and exact PHP dynamic-property notices/deprecations
+  remain unsupported. Non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant
   semantics, clone behavior beyond the current shallow property-slot copy, `__clone`,
@@ -3420,8 +3423,10 @@
   import expansion, autoload-aware lookup, and namespace-aware native lowering
 - dynamic method names; `$object->$method()` currently fails with a stable
   parse diagnostic. Dynamic property-name support is limited to existing
-  public slots and `stdClass` public dynamic slots, without magic methods,
-  non-public dynamic access, or exact notice/deprecation behavior
+  public slots, `stdClass` public dynamic slots, and the bounded WordPress
+  `wpdb` dynamic table-name slot materialization path, without general
+  `#[AllowDynamicProperties]`, magic methods, non-public dynamic access, or
+  exact notice/deprecation behavior
 - private instance method dispatch outside same-class method context,
   protected instance method dispatch outside same-class/child method context,
   non-static methods through dynamic static receivers, and `$this` outside

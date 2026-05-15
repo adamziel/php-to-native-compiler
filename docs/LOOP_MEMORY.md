@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T15:25:00Z
+
+- Checkpoint before this task:
+  `133cde4 runtime: add bounded wordpress table prefix regex`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 811, bounded dynamic public property
+  materialization for the WordPress `wpdb` compatibility class.
+- Files changed so far: `runtime/src/lib.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone811/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test object_model dynamic_public_property_names -- --nocapture`,
+  `cargo run -p phpc -- test tests/fixtures/milestone811`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `parse error at <bootstrap-shim>:499:3: unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented`.
+- Remaining semantic gaps: general `#[AllowDynamicProperties]`, magic
+  property hooks, non-public dynamic access, exact PHP dynamic-property
+  notices/deprecations, references/copy-on-write, native lowering, and
+  WordPress bootstrap support remain unsupported.
+- Next concrete task: support the reached compound-assignment target shape
+  while keeping broad nested/mixed mutation targets, references/copy-on-write,
+  exact diagnostics, and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T15:00:00Z
 
 - Checkpoint before this task:

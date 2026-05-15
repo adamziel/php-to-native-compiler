@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 811, bounded dynamic public property materialization for the
+  WordPress `wpdb` compatibility class. Dynamic property-name writes now
+  materialize missing public slots on `wpdb`, matching the reached
+  `wpdb::set_prefix()` table-name assignment path for `categories` and related
+  table names. This is not general `#[AllowDynamicProperties]` support, magic
+  property handling, non-public dynamic access, dynamic methods, exact
+  notices/deprecations, references/copy-on-write, or native lowering. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past
+  `wpdb::$categories` table-name initialization to
+  `parse error at <bootstrap-shim>:499:3: unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test object_model dynamic_public_property_names -- --nocapture`,
+  `cargo run -p phpc -- test tests/fixtures/milestone811`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 810, bounded `preg_match()` support for the reached
   WordPress `wpdb::set_prefix()` table-prefix validation guard. The runtime
   now recognizes the exact pattern `|[^a-z0-9_]|i`, returns no match for

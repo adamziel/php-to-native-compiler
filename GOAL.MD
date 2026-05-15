@@ -111,7 +111,9 @@ the reached `mysqli_real_connect()` placeholder-success path, and the reached
 `mysqli_select_db()` placeholder-success path, and the bootstrap shim now
 provides the conventional `$table_prefix = 'wp_';` startup variable, and
 bounded `preg_match()` now covers the reached table-prefix validation guard;
-it now stops at undefined `wpdb::$categories` object-property state.
+bounded `wpdb` dynamic table-name properties now cover the reached
+`wpdb::$categories` assignment path; it now stops at an unsupported
+compound-assignment target shape.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -374,8 +376,9 @@ Milestone 808 added bounded deterministic `mysqli_select_db()` success for the
 placeholder handle. Milestone 809 added the conventional `$table_prefix`
 startup variable to the WordPress inventory bootstrap shim. The current
 Milestone 810 added the exact WordPress table-prefix validation
-`preg_match()` guard. The current frontier is now undefined `wpdb::$categories`
-object-property state in the table-name initialization path.
+`preg_match()` guard. Milestone 811 added bounded `wpdb` dynamic public
+table-name property materialization. The current frontier is now an
+unsupported compound-assignment target shape.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -539,9 +542,10 @@ The repository already has a working Rust workspace with:
   caller-scope packing, bounded `mysqli_query()` false-result behavior, and
   bounded `mysqli_select_db()` deterministic success. The inventory bootstrap
   shim now supplies `$table_prefix = 'wp_';` as startup state, and bounded
-  `preg_match()` now covers the reached table-prefix validation guard.
-  The next bottleneck is undefined `wpdb::$categories` state in the table-name
-  initialization path.
+  `preg_match()` now covers the reached table-prefix validation guard. Bounded
+  `wpdb` dynamic public table-name properties cover the reached
+  `wpdb::$categories` initialization path.
+  The next bottleneck is an unsupported compound-assignment target shape.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

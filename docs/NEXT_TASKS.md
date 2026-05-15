@@ -7435,17 +7435,27 @@ handled.
   `|[^a-z0-9_]|i`, returns no match for conventional prefixes such as `wp_`,
   and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1034:5: undefined property wpdb::$categories`.
-- [ ] Runtime/object lane: model the reached `wpdb::$categories` table-name
+- [x] Runtime/object lane: model the reached `wpdb::$categories` table-name
   initialization state without hiding broader object-property semantics. Start
   from the `wpdb::tables('old')` path reached after `set_prefix()`, and keep
   dynamic properties, declared/default property initialization, visibility,
   references/copy-on-write, exact diagnostics, and native lowering named unless
   implemented.
+  Milestone 811 materializes dynamic public slots on the WordPress `wpdb`
+  compatibility class for reached table-name assignments and advances the real
+  bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:499:3: unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented`.
+- [ ] Parser/runtime mutation lane: support the reached compound-assignment
+  target shape, likely an append or nested target in the next WordPress
+  bootstrap path. Keep broad nested compound assignment, mixed
+  object/property/ArrayAccess targets, references/copy-on-write, exact
+  diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 810 checkpoint, the latest committed checkpoint
-  is `a5493b1 tools: seed wordpress table prefix shim`, covering Milestone 809.
+- Before the current Milestone 811 checkpoint, the latest committed checkpoint
+  is `133cde4 runtime: add bounded wordpress table prefix regex`, covering
+  Milestone 810.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
