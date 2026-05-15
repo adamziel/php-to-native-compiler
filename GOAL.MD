@@ -70,12 +70,13 @@ array `=&` path for `wp_parse_args()`, bounded `strcasecmp()`, bounded
 no-argument `headers_sent()`, bounded `abs()`, bounded `header_remove()`, and
 a bounded `mysqli_connect` function-table boundary, top-level `global`
 null-materialization, bounded `microtime(true)`, and bounded deterministic
-`ini_get()` registry reads, bounded `strtolower()`, bounded `trim()`, and a
-bounded leading-numeric `(int)` string-cast slice. The current shim frontier
+`ini_get()` registry reads, bounded `strtolower()`, bounded `trim()`, a
+bounded leading-numeric `(int)` string-cast slice, and bounded
+`str_contains()`. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it now stops at an undefined
-`str_contains()` call in `wp_convert_hr_to_bytes()`.
+`min()` call in `wp_convert_hr_to_bytes()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -298,8 +299,9 @@ top-level `global` null-materialization. Milestone 772 added bounded
 registry reads. Milestone 774 added bounded `strtolower()`; the current
 bootstrap-shim frontier is now an undefined `trim()` call in
 `wp_convert_hr_to_bytes()`. Milestone 775 added bounded default-mask `trim()`;
-Milestone 776 added bounded leading-numeric `(int)` string casts, and the
-current frontier is now an undefined `str_contains()` call in that function.
+Milestone 776 added bounded leading-numeric `(int)` string casts. Milestone
+777 added bounded `str_contains()`, and the current frontier is now an
+undefined `min()` call in that function.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -439,9 +441,9 @@ The repository already has a working Rust workspace with:
   bounded `header_remove()`, a `mysqli_connect` boundary, top-level `global`
   null-materialization, bounded `microtime(true)`, and bounded deterministic
   `ini_get()` registry reads, bounded `strtolower()`, and bounded default-mask
-  `trim()`, and bounded leading-numeric `(int)` string casts. The next
-  bottleneck is an undefined `str_contains()` call in the WordPress bootstrap
-  shim.
+  `trim()`, bounded leading-numeric `(int)` string casts, and bounded
+  `str_contains()`. The next bottleneck is an undefined `min()` call in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

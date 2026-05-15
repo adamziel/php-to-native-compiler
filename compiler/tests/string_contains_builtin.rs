@@ -1,0 +1,93 @@
+use php_compiler::emit_ir_source;
+use php_compiler::error::Phase;
+use php_compiler::run_source;
+
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+
+#[test]
+fn str_contains_executes_current_scalar_string_subset() {
+    let execution = run_source(
+        r#"<?php
+echo str_contains("128m", "m") ? "yes" : "no";
+echo "|";
+echo str_contains("128m", "g") ? "yes" : "no";
+echo "|";
+echo str_contains(42, "2") ? "yes" : "no";
+echo "|";
+echo str_contains(null, "") ? "yes" : "no";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|no|yes|yes");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_contains_is_available_through_string_valued_calls() {
+    let execution = run_source(
+        r#"<?php
+$call = "str_contains";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo $call("abc", "b") ? "found" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|found");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_contains_rejects_forms_outside_current_subset() {
+    let array_haystack = run_source("<?php\nstr_contains(['abc'], 'a');\n").unwrap_err();
+    assert_eq!(array_haystack.phase, Phase::Runtime);
+    assert_eq!(array_haystack.line, 2);
+    assert_eq!(array_haystack.column, 1);
+    assert_eq!(
+        array_haystack.message,
+        "unsupported call str_contains(): haystack argument arrays are not implemented in the current subset"
+    );
+
+    let array_needle = run_source("<?php\nstr_contains('abc', ['a']);\n").unwrap_err();
+    assert_eq!(array_needle.phase, Phase::Runtime);
+    assert_eq!(array_needle.line, 2);
+    assert_eq!(array_needle.column, 1);
+    assert_eq!(
+        array_needle.message,
+        "unsupported call str_contains(): needle argument arrays are not implemented in the current subset"
+    );
+
+    let too_few = run_source("<?php\nstr_contains('abc');\n").unwrap_err();
+    assert_eq!(too_few.phase, Phase::Runtime);
+    assert_eq!(too_few.line, 2);
+    assert_eq!(too_few.column, 1);
+    assert_eq!(
+        too_few.message,
+        "arity mismatch for str_contains(): expected 2 argument(s), got 1"
+    );
+}
+
+#[test]
+fn emit_ir_folds_str_contains_metadata_but_rejects_direct_calls() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo function_exists("str_contains") ? "1" : "0";
+echo is_callable("str_contains") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert!(!ir.contains("function_exists"), "{ir}");
+    assert!(!ir.contains("is_callable"), "{ir}");
+
+    let error = emit_ir_source("<?php\nstr_contains('abc', 'b');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}

@@ -413,7 +413,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_replace`,
+- builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `version_compare`, `microtime`, `ini_get`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -505,6 +505,12 @@
   `-1`, `0`, or `1`. Array operands, object/resource coercions, binary string
   edge cases beyond valid UTF-8 runtime strings, locale-sensitive behavior,
   exact PHP diagnostics, and native lowering remain unsupported.
+  `str_contains($haystack, $needle)` supports exactly two scalar/null
+  string-convertible arguments and returns whether the current UTF-8 runtime
+  haystack contains the current UTF-8 runtime needle. Empty needles return
+  `true`. Array operands, object/resource coercions, binary string edge cases
+  beyond valid UTF-8 runtime strings, exact PHP diagnostics, and native
+  lowering remain unsupported.
   `str_replace($search, $replace, $subject)` supports the current scalar/null
   string-convertible subset for all three arguments and returns the subject
   unchanged for an empty search string. Array search/replace/subject forms,
@@ -1905,7 +1911,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `dirname`, `file_exists`, `mysqli_connect`,
+  `strtolower`, `trim`, `str_contains`, `dirname`, `file_exists`, `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2199,7 +2205,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `count`,
+  `str_contains`, `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2323,7 +2329,7 @@
   first-class callable syntax, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_replace`, `sprintf`,
+- Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`, `sprintf`,
   `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -2432,6 +2438,10 @@
   subset as the builtin section above; direct native `trim(...)` calls still
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
+  `str_contains` accepts the same current scalar/null string-convertible
+  haystack and needle subset as the builtin section above; direct native
+  `str_contains(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3979,6 +3989,10 @@
   edge cases beyond the current represented runtime-string subset,
   array/object/resource coercions, exact PHP diagnostics, and native lowering
   beyond function-table introspection
+- `str_contains()` outside the current exact-two-argument scalar/null
+  string-convertible subset: binary string edge cases beyond valid UTF-8
+  runtime strings, array/object/resource coercions, exact PHP diagnostics, and
+  native lowering beyond function-table introspection
 - `str_replace()` outside the current scalar/null string-convertible
   three-argument subset: array search/replace/subject forms, the fourth
   `$count` output argument, object/resource coercions, exact warning behavior,

@@ -5939,6 +5939,7 @@ impl Interpreter {
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
+            "str_contains" => call_str_contains(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -9310,6 +9311,7 @@ fn is_builtin(name: &str) -> bool {
             | "strtolower"
             | "trim"
             | "strcasecmp"
+            | "str_contains"
             | "str_replace"
             | "sprintf"
             | "call_user_func"
@@ -9579,6 +9581,36 @@ fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     let right = string_compare_argument("strcasecmp()", "second", &args[1], span)?;
 
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
+}
+
+fn call_str_contains(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_contains", args, 2, span)?;
+
+    let haystack = string_contains_argument("str_contains()", "haystack", &args[0], span)?;
+    let needle = string_contains_argument("str_contains()", "needle", &args[1], span)?;
+
+    Ok(Value::Bool(haystack.contains(&needle)))
+}
+
+fn string_contains_argument(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
 }
 
 fn string_compare_argument(

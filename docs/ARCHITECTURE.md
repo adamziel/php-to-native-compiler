@@ -902,6 +902,10 @@ current scalar/null string-convertible values. The first slice implements the
 default PHP whitespace mask for represented runtime strings so WordPress can
 parse shorthand INI values, while custom masks, binary/null-byte edge cases,
 and native lowering remain out of scope.
+`str_contains()` is an interpreter-only bounded string-search builtin for
+current scalar/null string-convertible haystack and needle values. It uses the
+current UTF-8 runtime string representation, keeps PHP's empty-needle `true`
+result, and leaves binary string edge cases and native lowering out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native

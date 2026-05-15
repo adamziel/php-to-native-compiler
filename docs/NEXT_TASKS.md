@@ -7115,16 +7115,26 @@ handled.
   `(int)` casts and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1691:7: undefined function str_contains()`,
   corresponding to `wp-includes/load.php:1691`.
-- [ ] String builtin lane: implement a bounded `str_contains()` slice for the
+- [x] String builtin lane: implement a bounded `str_contains()` slice for the
   next WordPress bootstrap blocker, starting with scalar/null string-convertible
   haystack and needle arguments. Keep binary string edge cases, array/object/
   resource coercions, exact diagnostics, empty-needle behavior, and native
   lowering named unless implemented.
+  Milestone 777 implements the current scalar/null string-convertible
+  `str_contains()` slice with empty-needle `true` behavior and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1700:9: undefined function min()`,
+  corresponding to `wp-includes/load.php:1700`.
+- [ ] Math/value builtin lane: implement a bounded `min()` slice for the next
+  WordPress bootstrap blocker, starting with the reached two integer arguments
+  in `wp_convert_hr_to_bytes()`. Keep array argument forms, mixed-type
+  comparison rules, object/resource operands, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 776 checkpoint, the latest committed checkpoint
-  is `15059d2 runtime: add bounded trim`, covering Milestone 775.
+- Before the current Milestone 777 checkpoint, the latest committed checkpoint
+  is `f01182b runtime: add bounded leading int casts`, covering Milestone 776.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

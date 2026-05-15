@@ -709,6 +709,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   recovery for leading-numeric strings, full numeric grammar compatibility,
   non-finite/out-of-range cast support, array/object/resource coercions, exact
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 777 implements bounded `str_contains()` for the reached shorthand
+  memory-limit suffix checks. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1700:9: undefined function min()`,
+  corresponding to `wp-includes/load.php:1700`. This is not binary string
+  compatibility beyond valid UTF-8 runtime strings, array/object/resource
+  coercions, exact diagnostics, native lowering, or WordPress bootstrap
+  support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

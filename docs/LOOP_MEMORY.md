@@ -457,6 +457,29 @@ injects this file into every prompt. Each Codex pass should update it with:
   for the reached `wp_convert_hr_to_bytes()` path while documenting empty-needle
   behavior, binary string, coercion, diagnostic, and native-lowering gaps.
 
+## Loop Event 2026-05-15T11:55:00Z
+
+- Checkpoint before this task:
+  `f01182b runtime: add bounded leading int casts`, pushed to `origin/master`.
+- Task attempted: Milestone 777, bounded `str_contains()` for the WordPress
+  `wp_convert_hr_to_bytes()` suffix checks.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/string_contains_builtin.rs`,
+  `tests/fixtures/milestone777/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_contains_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone777`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: binary string edge cases beyond valid UTF-8 runtime
+  strings, array/object/resource coercions, exact PHP diagnostics, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:1700:9: undefined function min()`.
+- Next concrete task: implement a bounded `min()` slice for the reached
+  `wp_convert_hr_to_bytes()` path while documenting array forms, mixed-type
+  comparisons, object/resource operands, diagnostics, and native-lowering gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:
