@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -62,6 +63,7 @@ struct Interpreter {
     required_once: HashSet<PathBuf>,
     static_locals: HashMap<(String, String), Value>,
     active_static_locals: Vec<Vec<String>>,
+    global_symbols: Rc<RefCell<HashMap<String, Value>>>,
     source_file: Option<String>,
     call_depth: usize,
     next_object_id: i64,
@@ -144,7 +146,9 @@ enum CompoundAssignmentPlace {
 struct SymbolTable {
     // Static variables and future dynamic variable names share the same
     // materialized storage path; current syntax only calls the static methods.
-    symbols: HashMap<String, Value>,
+    symbols: Rc<RefCell<HashMap<String, Value>>>,
+    global_symbols: Option<Rc<RefCell<HashMap<String, Value>>>>,
+    imported_globals: HashSet<String>,
 }
 
 impl SymbolTable {
@@ -152,14 +156,41 @@ impl SymbolTable {
         Self::default()
     }
 
+    fn new_child(global_symbols: Rc<RefCell<HashMap<String, Value>>>) -> Self {
+        Self {
+            symbols: Rc::new(RefCell::new(HashMap::new())),
+            global_symbols: Some(global_symbols),
+            imported_globals: HashSet::new(),
+        }
+    }
+
+    fn from_root(symbols: Rc<RefCell<HashMap<String, Value>>>) -> Self {
+        Self {
+            symbols,
+            global_symbols: None,
+            imported_globals: HashSet::new(),
+        }
+    }
+
+    fn import_global(&mut self, name: &str) {
+        if let Some(global_symbols) = &self.global_symbols {
+            let value = global_symbols
+                .borrow()
+                .get(name)
+                .cloned()
+                .unwrap_or(Value::Null);
+            global_symbols.borrow_mut().insert(name.to_string(), value);
+            self.imported_globals.insert(name.to_string());
+        }
+    }
+
     fn read_static(&self, name: &str, span: Span) -> CompileResult<Value> {
         self.read_named(name)
-            .cloned()
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(name)))
     }
 
     fn write_static(&mut self, name: &str, value: Value) {
-        self.write_named(name.to_string(), value);
+        self.write_named(name, value);
     }
 
     fn is_set_static(&self, name: &str) -> bool {
@@ -167,31 +198,32 @@ impl SymbolTable {
     }
 
     fn unset_static(&mut self, name: &str) {
-        self.symbols.remove(name);
+        if self.imported_globals.contains(name) {
+            self.imported_globals.remove(name);
+            self.symbols.borrow_mut().remove(name);
+            return;
+        }
+        self.symbols.borrow_mut().remove(name);
     }
 
-    fn array_slot_for_static_write(&mut self, name: &str) -> &mut Value {
-        self.symbols
-            .entry(name.to_string())
-            .or_insert_with(|| Value::Array(PhpArray::new()))
+    fn read_named(&self, name: &str) -> Option<Value> {
+        if self.imported_globals.contains(name) {
+            return self
+                .global_symbols
+                .as_ref()
+                .and_then(|symbols| symbols.borrow().get(name).cloned());
+        }
+        self.symbols.borrow().get(name).cloned()
     }
 
-    fn object_slot_for_static_write(
-        &mut self,
-        name: &str,
-        span: Span,
-    ) -> CompileResult<&mut Value> {
-        self.symbols
-            .get_mut(name)
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_variable(name)))
-    }
-
-    fn read_named(&self, name: &str) -> Option<&Value> {
-        self.symbols.get(name)
-    }
-
-    fn write_named(&mut self, name: String, value: Value) {
-        self.symbols.insert(name, value);
+    fn write_named(&mut self, name: &str, value: Value) {
+        if self.imported_globals.contains(name) {
+            if let Some(global_symbols) = &self.global_symbols {
+                global_symbols.borrow_mut().insert(name.to_string(), value);
+                return;
+            }
+        }
+        self.symbols.borrow_mut().insert(name.to_string(), value);
     }
 }
 
@@ -345,6 +377,7 @@ impl Interpreter {
             required_once: HashSet::new(),
             static_locals: HashMap::new(),
             active_static_locals: Vec::new(),
+            global_symbols: Rc::new(RefCell::new(HashMap::new())),
             source_file,
             call_depth: 0,
             next_object_id: 1,
@@ -535,7 +568,7 @@ impl Interpreter {
     }
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
-        let mut scope = SymbolTable::new();
+        let mut scope = SymbolTable::from_root(self.global_symbols.clone());
         match self.execute_statements(&program.statements, &mut scope)? {
             Flow::Normal | Flow::Return(_) => Ok(Execution {
                 stdout: self.stdout.clone(),
@@ -881,16 +914,14 @@ impl Interpreter {
                 depth: *depth,
                 span: *span,
             }),
-            Stmt::Global { span, .. } => {
+            Stmt::Global { names, .. } => {
                 if self.function_context.is_empty() {
                     Ok(Flow::Normal)
                 } else {
-                    Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_global(
-                            "importing globals into function scope is not implemented",
-                        ),
-                    ))
+                    for name in names {
+                        scope.import_global(name);
+                    }
+                    Ok(Flow::Normal)
                 }
             }
             Stmt::StaticLocal { declarations, span } => {
@@ -1218,7 +1249,7 @@ impl Interpreter {
     ) -> CompileResult<()> {
         let key = self.evaluate_array_key(index, scope)?;
 
-        match scope.read_named(name).cloned() {
+        match scope.read_named(name) {
             Some(Value::Array(mut array)) => {
                 array.remove(key);
                 scope.write_static(name, Value::Array(array));
@@ -1759,13 +1790,15 @@ impl Interpreter {
                     None => None,
                 };
                 let value = self.evaluate(expr, scope)?;
-                let slot = scope.array_slot_for_static_write(name);
+                let mut slot = scope
+                    .read_named(name)
+                    .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
                 if matches!(slot, Value::Null) {
-                    *slot = Value::Array(PhpArray::new());
+                    slot = Value::Array(PhpArray::new());
                 }
 
-                match slot {
+                match &mut slot {
                     Value::Array(array) => match key {
                         Some(key) => {
                             array.insert(key, value.clone());
@@ -1786,6 +1819,7 @@ impl Interpreter {
                         ));
                     }
                 }
+                scope.write_static(name, slot);
 
                 Ok(value)
             }
@@ -1810,9 +1844,7 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                let slot = scope.object_slot_for_static_write(object, *span)?;
-
-                match slot {
+                match scope.read_static(object, *span)? {
                     Value::Object(object) => object
                         .write_property_from_context(
                             property,
@@ -1861,14 +1893,20 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
-        let slot = scope.array_slot_for_static_write(name);
+        let mut slot = scope
+            .read_named(name)
+            .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
         if matches!(slot, Value::Null) {
-            *slot = Value::Array(PhpArray::new());
+            slot = Value::Array(PhpArray::new());
         }
 
-        match slot {
-            Value::Array(array) => Self::write_nested_array_value(array, keys, value, span),
+        match &mut slot {
+            Value::Array(array) => {
+                Self::write_nested_array_value(array, keys, value, span)?;
+                scope.write_static(name, slot);
+                Ok(())
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::invalid_array_access(format!(
@@ -2112,29 +2150,25 @@ impl Interpreter {
                 scope.write_static(&name, value);
                 Ok(())
             }
-            CompoundAssignmentPlace::ArrayIndex { name, key } => {
-                match scope.read_named(&name).cloned() {
-                    Some(Value::Array(mut array)) => {
-                        array.insert(key, value);
-                        scope.write_static(&name, Value::Array(array));
-                        Ok(())
-                    }
-                    Some(other) => Err(runtime_error(
-                        span,
-                        RuntimeError::invalid_array_access(format!(
-                            "cannot write offset on {}",
-                            other.type_name()
-                        )),
-                    )),
-                    None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+            CompoundAssignmentPlace::ArrayIndex { name, key } => match scope.read_named(&name) {
+                Some(Value::Array(mut array)) => {
+                    array.insert(key, value);
+                    scope.write_static(&name, Value::Array(array));
+                    Ok(())
                 }
-            }
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                )),
+                None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
+            },
             CompoundAssignmentPlace::ObjectProperty { object, property } => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
-                let slot = scope.object_slot_for_static_write(&object, span)?;
-
-                match slot {
+                match scope.read_static(&object, span)? {
                     Value::Object(object) => object
                         .write_property_from_context(
                             &property,
@@ -2411,15 +2445,18 @@ impl Interpreter {
 
                 if should_assign {
                     let value = self.evaluate(expr, scope)?;
-                    let slot = scope.array_slot_for_static_write(name);
+                    let mut slot = scope
+                        .read_named(name)
+                        .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
                     if matches!(slot, Value::Null) {
-                        *slot = Value::Array(PhpArray::new());
+                        slot = Value::Array(PhpArray::new());
                     }
 
-                    match slot {
+                    match &mut slot {
                         Value::Array(array) => {
                             array.insert(key, value.clone());
+                            scope.write_static(name, slot);
                             Ok(value)
                         }
                         other => Err(runtime_error(
@@ -2472,9 +2509,7 @@ impl Interpreter {
 
                 if should_assign {
                     let value = self.evaluate(expr, scope)?;
-                    let slot = scope.object_slot_for_static_write(object, *span)?;
-
-                    match slot {
+                    match scope.read_static(object, *span)? {
                         Value::Object(object) => object
                             .write_property_from_context(
                                 property,
@@ -2601,7 +2636,6 @@ impl Interpreter {
         let value = match left {
             Expr::Variable(name, _) => scope
                 .read_named(name)
-                .cloned()
                 .filter(|value| !matches!(value, Value::Null)),
             Expr::Index { target, index, .. } => {
                 self.evaluate_direct_array_offset_for_null_coalescing(target, index, scope)?
@@ -2662,7 +2696,7 @@ impl Interpreter {
         };
 
         let key = self.evaluate_array_key(index, scope)?;
-        match scope.read_named(name).cloned() {
+        match scope.read_named(name) {
             Some(Value::Array(array)) => Ok(array
                 .get(key)
                 .cloned()
@@ -4427,7 +4461,7 @@ impl Interpreter {
         if let Some(called_class_context) = called_class_context {
             self.called_class_context.push(called_class_context);
         }
-        let mut local_scope = SymbolTable::new();
+        let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
         if let Some(this_object) = this_object {
             local_scope.write_static("this", Value::Object(this_object));
         }
@@ -7025,7 +7059,7 @@ impl Interpreter {
             ));
         };
 
-        match caller_scope.read_named(name).cloned() {
+        match caller_scope.read_named(name) {
             Some(Value::Array(array)) => {
                 let key = self.evaluate_array_key(index, caller_scope)?;
                 Ok(matches!(array.get(key), Some(value) if !matches!(value, Value::Null)))
@@ -7165,7 +7199,7 @@ impl Interpreter {
             ));
         };
 
-        match caller_scope.read_named(name).cloned() {
+        match caller_scope.read_named(name) {
             Some(Value::Array(array)) => {
                 let key = self.evaluate_array_key(index, caller_scope)?;
                 Ok(array.get(key).map_or(true, |value| !value.is_truthy()))
@@ -8356,13 +8390,9 @@ mod tests {
     fn symbol_table_array_write_slot_materializes_undefined_static_variable() {
         let mut symbols = SymbolTable::new();
 
-        let slot = symbols.array_slot_for_static_write("items");
-        match slot {
-            Value::Array(array) => {
-                array.append(Value::String("first".to_string())).unwrap();
-            }
-            other => panic!("expected materialized array slot, got {other:?}"),
-        }
+        let mut array = PhpArray::new();
+        array.append(Value::String("first".to_string())).unwrap();
+        symbols.write_static("items", Value::Array(array));
 
         let value = symbols.read_static("items", Span::new(1, 1)).unwrap();
         let Value::Array(array) = value else {

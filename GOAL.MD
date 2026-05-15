@@ -191,9 +191,11 @@ For WordPress specifically, Milestone 724 advanced the bootstrap-shim probe
 past `clone` expressions by adding fresh object handles and shallow property
 slot copying for objects without declared `__clone` methods. Milestone 725
 then advanced past loop-depth `break 2;` by letting active loops and switches
-consume positive integer literal `break N;`/`continue N;` depths. The next
-visible bootstrap-shim blocker is now function-scope global imports:
-`runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
+consume positive integer literal `break N;`/`continue N;` depths. Milestone
+726 then advanced past function-scope `global $name, ...;` imports by routing
+direct imported globals through the root symbol table. The next visible
+bootstrap-shim blocker is now the missing `PHP_VERSION` compatibility constant:
+`runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -301,8 +303,9 @@ The repository already has a working Rust workspace with:
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through the bounded loop-depth control-flow slice
-  and then stops at function-scope `global` imports. The direct
+  probe currently advances through bounded loop-depth control flow and
+  function-scope `global` imports, then stops at the missing `PHP_VERSION`
+  compatibility constant. The direct
   `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

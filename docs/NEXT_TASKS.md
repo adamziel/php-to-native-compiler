@@ -6661,17 +6661,29 @@ handled.
   keeps dynamic/invalid depths and native lowering explicit, and advances the
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
-- [ ] Runtime lane: implement or explicitly bound function-scope
+- [x] Runtime lane: implement or explicitly bound function-scope
   `global $name, ...;` imports for the real WordPress 6.9.4 bootstrap-shim
   blocker at `<bootstrap-shim>:158:2`, with tests, CLI coverage, docs, and
   named unsupported edges for references/aliasing, copy-on-write, dynamic
   variable names, unset interactions, included-file scope, exact PHP
+  diagnostics, partial-output behavior, and native lowering. The Milestone 726
+  slice supports direct variable imports through the shared root symbol table,
+  materializes missing imported globals as `null`, treats `unset($name)` after
+  import as dropping the local import without deleting the root value, keeps
+  reference/COW semantics and native lowering explicit, and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
+- [ ] Runtime lane: implement or explicitly bound the `PHP_VERSION` built-in
+  compatibility constant for the real WordPress 6.9.4 bootstrap-shim blocker
+  at `<bootstrap-shim>:160:17`, with tests, CLI coverage, docs, and named
+  unsupported edges for PHP-version policy, related version constants,
+  `phpversion()`/`version_compare()` behavior, extension versions, exact PHP
   diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 725 checkpoint, the latest committed checkpoint
-  is `f559202 runtime: add bounded clone expressions`, covering Milestone 724.
+- Before the current Milestone 726 checkpoint, the latest committed checkpoint
+  is `ade5528 runtime: add loop-depth control flow`, covering Milestone 725.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

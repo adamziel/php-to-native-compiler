@@ -181,7 +181,13 @@
 - isolated local scopes for user-function calls; parameters and function-local
   assignments can shadow global names without mutating them
 - top-level `global $name, ...;` declarations as no-op/import-compatible
-  statements; function-scope `global` imports remain unsupported
+  statements. Function-scope `global $name, ...;` imports direct variable names
+  from the root global symbol table, materializes missing globals as `null`,
+  routes direct reads and writes through the shared root slot, and treats
+  `unset($name)` after import as removing the local import without deleting the
+  root global value. Reference-backed alias objects, `$GLOBALS`, dynamic global
+  names, exact warning/notice behavior, included-file scope interactions,
+  copy-on-write, and native lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }` and `class Child extends Parent { ... }` with
   single-parent metadata, property names, class constant names, method names,
@@ -2925,8 +2931,9 @@
   member forms through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed
-- function-scope `global` declarations / importing top-level variables into
-  function scope
+- full `global`/`$GLOBALS` semantics: reference-backed aliases, dynamic global
+  names, superglobals, included-file scope interactions, copy-on-write, exact
+  warning/notice behavior, and native lowering
 - default parameter values outside the documented constant-expression,
   unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters

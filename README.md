@@ -94,6 +94,7 @@ incorrect native code.
   loop-depth arguments, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls,
+  bounded function-scope `global $name, ...;` imports for direct variables,
   bounded namespace-scoped function declarations and unqualified same-namespace
   calls with global fallback lookup,
   inert no-capture anonymous and arrow closure values,
@@ -101,7 +102,7 @@ incorrect native code.
   parameter/return type syntax is accepted as metadata only, without runtime
   type enforcement
 - top-level `global $name, ...;` declarations as no-op/import-compatible
-  statements; function-scope `global` imports remain unsupported
+  statements
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
   append writes, nested direct-variable array-offset assignment expressions,
   offset removal, array iteration, and simple positional statement-form

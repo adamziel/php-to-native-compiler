@@ -19,11 +19,13 @@ PHP source
 Milestone 1 implements the lexer, parser, AST, a direct interpreter/runtime
 execution path, and a narrow LLVM IR text emitter for simple straight-line code.
 The interpreter runs top-level statements in a global symbol table and creates a
-fresh local symbol table for each user-function call. Static reads, writes,
-`isset($name)`, `empty($name)`, direct `unset($name)`, and top-level
-`global $name, ...;` declarations operate on the active symbol table.
-Importing globals into function scope through `global` declarations is not
-implemented.
+fresh local symbol table for each user-function call. Local scopes can import
+direct root variables through `global $name, ...;`; imported names route direct
+reads and writes through the shared root symbol table, while `unset($name)`
+drops the local import without deleting the root value. Top-level `global`
+declarations remain no-op/import-compatible statements. This is still a
+materialized-symbol-table model, not PHP's full reference-backed alias,
+`$GLOBALS`, copy-on-write, dynamic global-name, or included-file scope model.
 
 ## Compiler Crate
 

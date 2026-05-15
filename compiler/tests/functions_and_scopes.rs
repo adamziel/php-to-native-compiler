@@ -57,8 +57,8 @@ echo read_value();
 }
 
 #[test]
-fn global_declaration_has_stable_unsupported_runtime_error() {
-    let error = runtime_error(
+fn function_scope_global_declaration_imports_existing_global_value() {
+    let execution = run_source(
         r#"<?php
 $value = 1;
 function read_global() {
@@ -67,14 +67,93 @@ function read_global() {
 }
 echo read_global();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 5);
-    assert_eq!(
-        error.message,
-        "unsupported global declaration: importing globals into function scope is not implemented"
-    );
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn function_scope_global_declaration_writes_back_to_global_scope() {
+    let execution = run_source(
+        r#"<?php
+$count = 1;
+function bump() {
+    global $count;
+    $count = $count + 1;
+}
+bump();
+echo $count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn function_scope_global_declaration_materializes_missing_global_as_null() {
+    let execution = run_source(
+        r#"<?php
+function make_missing() {
+    global $missing;
+    var_dump($missing);
+    $missing = 3;
+}
+make_missing();
+var_dump($missing);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "NULL\nint(3)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn function_scope_global_declaration_shares_values_across_calls() {
+    let execution = run_source(
+        r#"<?php
+$value = "old";
+function writer() {
+    global $value;
+    $value = "new";
+}
+function reader() {
+    global $value;
+    return $value;
+}
+writer();
+echo reader();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "new");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_imported_global_drops_local_import_without_removing_global_value() {
+    let execution = run_source(
+        r#"<?php
+$value = "global";
+function reset_local() {
+    global $value;
+    unset($value);
+    $value = "local";
+    echo $value, "\n";
+}
+reset_local();
+echo $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "local\nglobal");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

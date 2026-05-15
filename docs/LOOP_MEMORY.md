@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T05:10:00Z
+
+- Checkpoint before this task: `ade5528 runtime: add loop-depth control flow`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 726, bounded function-scope `global $name, ...;`
+  imports for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:158:2`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/global_import_cli.rs`, `tests/fixtures/milestone726/*`,
+  stale unsupported-global runtime-error fixtures, `README.md`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes global -- --test-threads=1`,
+  `cargo test -p phpc --test global_import_cli -- --test-threads=1`,
+  `cargo test -p phpc --lib symbol_table -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone726`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone726`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: reference-backed aliases, `$GLOBALS`, dynamic global
+  names, superglobals, included-file scope interactions, copy-on-write, exact
+  warning/notice behavior, partial-output behavior, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
+- Next concrete task: implement or explicitly bound the `PHP_VERSION` built-in
+  compatibility constant while keeping PHP-version policy, related constants,
+  `phpversion()`/`version_compare()`, extension versions, exact diagnostics,
+  partial-output behavior, and native lowering explicit.
+
 ## Loop Event 2026-05-15T04:15:00Z
 
 - Checkpoint before this task: `f559202 runtime: add bounded clone expressions`,

@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 726, bounded function-scope `global $name, ...;` imports
+  through `phpc run` for direct variable names. The interpreter now keeps a
+  shared root symbol table for top-level execution and lets user-function local
+  scopes import selected names from that root table. Imported globals read and
+  write the shared root slot, missing imported globals materialize as `null`,
+  and `unset($name)` after import drops the local import without deleting the
+  root global value. Reference-backed alias objects, `$GLOBALS`, dynamic global
+  names, superglobals, included-file scope interactions, copy-on-write, exact
+  warning/notice behavior, partial-output behavior, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous function-scope `global`
+  blocker at `<bootstrap-shim>:158:2` and now stops at
+  `runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes global -- --test-threads=1`,
+  `cargo test -p phpc --test global_import_cli -- --test-threads=1`,
+  `cargo test -p phpc --lib symbol_table -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone726`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone726`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 725, bounded loop-depth `break N;` and `continue N;`
   control flow through `phpc run` for positive integer literal depths. The AST
   now records loop-control depth, the parser accepts positive integer literal
@@ -3150,8 +3177,8 @@ Tested:
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/implicit_global_read.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/implicit_global_read.php:4:12: undefined variable '$value'`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/unsupported_global.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/unsupported_global.php:4:5: unsupported global declaration: importing globals into function scope is not implemented`.
+- `cargo run -p phpc -- run tests/fixtures/milestone726/global_import.php`
+  prints the committed function-scope global import output.
 - `cargo run -p phpc -- run tests/fixtures/milestone4/recursive_factorial.php`
   prints the committed recursive factorial output.
 - `cargo run -p phpc -- run tests/fixtures/milestone4/default_parameters.php`

@@ -233,6 +233,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   handling, exact PHP diagnostics, partial-output behavior, or native lowering.
   The bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:158:2: unsupported global declaration: importing globals into function scope is not implemented`.
+  Milestone 726 covers bounded function-scope `global $name, ...;` imports for
+  direct variable names by routing imported reads/writes through the root global
+  symbol table and materializing missing imported globals as `null`. This is
+  not PHP's full reference-backed aliasing, `$GLOBALS`, dynamic global names,
+  superglobals, included-file scope behavior, copy-on-write, exact
+  warning/notice behavior, partial-output behavior, or native lowering. The
+  bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
