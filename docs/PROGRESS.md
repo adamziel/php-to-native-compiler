@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 879, bounded `mysqli_stat()` support for placeholder MySQLi
+  handles. The runtime now accepts `mysqli_stat($handle)` for current
+  placeholder `mysqli` objects, returns deterministic zeroed server-status
+  metadata, rejects non-`mysqli` handles with a stable diagnostic, and exposes
+  the name through runtime and native metadata lookup. This is not real server
+  status, live connection inspection, query counters, thread/table metadata,
+  host database integration, warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_stat -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone879`.
+
 - Added Milestone 878, a synthetic WordPress-shaped `wpdb` host-info metadata
   smoke that calls the bounded `mysqli_get_host_info($this->dbh)` placeholder
   path, records the deterministic metadata on local object state, and verifies

@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `4e15419 tests: add wordpress wpdb host info smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 879, bounded `mysqli_stat()` placeholder metadata
+  for current `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone879/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_stat -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone879`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi handles now expose a named
+  deterministic server-status metadata boundary.
+- Remaining semantic gaps: real server status, live connection inspection,
+  query counters, thread/table metadata, host database integration,
+  warning/error fidelity, real WordPress `wpdb` fidelity, and native database
+  lowering remain missing.
+- Next concrete task: run focused full MySQLi extension tests, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `4aef04a runtime: add mysqli host info placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 878, a synthetic WordPress-shaped `wpdb`

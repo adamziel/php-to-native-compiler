@@ -4188,6 +4188,15 @@ impl Interpreter {
         ))
     }
 
+    fn call_mysqli_stat(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_stat", args, 1, span)?;
+        expect_mysqli_handle("mysqli_stat()", &args[0], span)?;
+        Ok(Value::String(
+            "Uptime: 0  Threads: 0  Questions: 0  Slow queries: 0  Opens: 0  Flush tables: 0  Open tables: 0  Queries per second avg: 0.000"
+                .to_string(),
+        ))
+    }
+
     fn call_mysqli_set_charset(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_set_charset", args, 2, span)?;
         expect_mysqli_handle("mysqli_set_charset()", &args[0], span)?;
@@ -9015,6 +9024,7 @@ impl Interpreter {
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_get_host_info" => self.call_mysqli_get_host_info(&args, span),
+            "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_set_charset" => self.call_mysqli_set_charset(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_errno" => self.call_mysqli_errno(&args, span),
@@ -11948,6 +11958,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
             | "mysqli_get_host_info"
+            | "mysqli_stat"
             | "mysqli_set_charset"
             | "mysqli_query"
             | "mysqli_errno"

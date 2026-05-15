@@ -1344,7 +1344,9 @@ historical blockers and remaining full-support gaps include:
   inspecting a real host, transport, socket, protocol, or live connection.
   Milestone 878 adds a synthetic WordPress-shaped `wpdb` host-info bookkeeping
   smoke that records that deterministic metadata without claiming real
-  connection metadata fidelity.
+  connection metadata fidelity. Milestone 879 adds deterministic zeroed
+  `mysqli_stat()` placeholder server-status metadata without real counters,
+  thread/table state, live connection inspection, or host database integration.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

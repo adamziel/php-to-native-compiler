@@ -8100,16 +8100,25 @@ handled.
   is not real WordPress connection metadata fidelity, host/transport/socket
   state, protocol metadata, live connection inspection, warnings/errors, host
   database integration, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next connection metadata boundary after
+- [x] Runtime/mysqli lane: inspect the next connection metadata boundary after
   host-info placeholders and choose a small tested slice, such as deterministic
   `mysqli_stat()` metadata or a named transaction/autocommit boundary, before
   broader SQL execution or real host state is claimed.
+  Milestone 879 implements bounded `mysqli_stat($handle)` for placeholder
+  `mysqli` objects. It returns deterministic zeroed server-status metadata,
+  rejects non-`mysqli` handles with stable diagnostics, and is visible through
+  runtime and native metadata lookup. This is not real server status, live
+  connection inspection, query counters, thread/table metadata, host database
+  integration, warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records
+  deterministic `mysqli_stat()` output through WordPress-shaped connection
+  status bookkeeping without claiming real server status or counters.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4aef04a runtime: add mysqli host info placeholder`, covering Milestone 877
-  before the current Milestone 878 candidate.
+  `4e15419 tests: add wordpress wpdb host info smoke`, covering Milestone 878
+  before the current Milestone 879 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
