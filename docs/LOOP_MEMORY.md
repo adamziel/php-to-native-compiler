@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T17:55:00Z
+
+- Checkpoint before this task:
+  `7de9213 runtime: allow omitted reference defaults`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 817, bounded direct-variable by-reference
+  parameter copy-back for the reached `WP_Object_Cache::get(..., $found)`
+  output-parameter path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone817/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_reference_parameter.*`,
+  `README.md`, `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes reference_parameter -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone817`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:1283:15: undefined function mysqli_real_escape_string()`.
+- Remaining semantic gaps: true alias binding for reference parameters,
+  non-variable reference arguments, rebinding aliases, reference containers,
+  copy-on-write, exact diagnostics, native lowering, and real WordPress
+  bootstrap support remain unsupported.
+- Next concrete task: implement the reached bounded
+  `mysqli_real_escape_string($this->dbh, $data)` behavior for
+  `wpdb::_real_escape()` while keeping real database connection state and broad
+  escaping semantics named unless implemented.
+
 ## Loop Event 2026-05-15T17:25:00Z
 
 - Checkpoint before this task:

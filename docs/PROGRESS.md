@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 817, bounded direct-variable by-reference parameter copy-back
+  for the reached WordPress object-cache output-parameter path. Calls that
+  provide a direct variable for a by-reference user-function or method
+  parameter now pass the current caller value into the callee and copy the
+  callee's final parameter value back to the caller variable after execution.
+  This covers `WP_Object_Cache::get(..., $found)` setting `$found = false` in
+  the reached cache-miss path. This is not true alias binding during
+  execution, non-variable reference arguments, rebinding aliases, reference
+  containers, copy-on-write, exact diagnostics, or native lowering. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past
+  `WP_Object_Cache::get(..., $found)` to
+  `runtime error at <bootstrap-shim>:1283:15: undefined function mysqli_real_escape_string()`,
+  corresponding to the reached `wpdb::_real_escape()` option lookup path.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes reference_parameter -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone817`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 816, omitted optional by-reference parameter defaults. User
   function and method declarations may still contain by-reference parameters,
   but invocation is now rejected only for by-reference parameters actually

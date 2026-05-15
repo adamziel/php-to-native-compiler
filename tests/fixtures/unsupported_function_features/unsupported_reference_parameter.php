@@ -2,5 +2,4 @@
 function mutate(&$value) {
     return $value;
 }
-$value = 1;
-echo mutate($value);
+echo mutate(1);

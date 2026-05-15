@@ -480,22 +480,39 @@ echo label("Ada");
 }
 
 #[test]
-fn reference_parameter_invocation_is_rejected_until_references_exist() {
+fn direct_variable_reference_parameter_invocation_copies_back_current_value() {
+    let execution = run_source(
+        r#"<?php
+function mutate(&$value) {
+    $value = 2;
+    return "done";
+}
+$value = 1;
+echo mutate($value), "|", $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "done|2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_parameter_invocation_rejects_non_variable_arguments() {
     let error = runtime_error(
         r#"<?php
 function mutate(&$value) {
     $value = 2;
 }
-$value = 1;
-mutate($value);
+mutate(1);
 "#,
     );
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 1);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 8);
     assert_eq!(
         error.message,
-        "unsupported call mutate(): reference parameter invocation is not implemented"
+        "unsupported call mutate(): reference parameter invocation is only implemented for direct variable arguments in the current subset"
     );
 }
 
@@ -514,6 +531,28 @@ echo "|", cache_get("notoptions");
     .unwrap();
 
     assert_eq!(execution.stdout, "|found-nullnotoptions");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn method_reference_parameter_invocation_copies_back_direct_variable() {
+    let execution = run_source(
+        r#"<?php
+class Cache {
+    public function get($key, &$found = null) {
+        $found = false;
+        return $key;
+    }
+}
+
+$cache = new Cache();
+$found = null;
+echo $cache->get("notoptions", $found), "|", $found === false ? "miss" : "hit";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "notoptions|miss");
     assert_eq!(execution.exit_code, 0);
 }
 

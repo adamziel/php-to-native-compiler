@@ -34,8 +34,11 @@
 - by-reference function and method parameters may be declared. Calls that omit
   an optional by-reference parameter use that parameter's default value in the
   callee local scope without creating an alias. Calls that provide a
-  by-reference parameter still report `unsupported call <name>(): reference
-  parameter invocation is not implemented`.
+  by-reference parameter are supported only for direct variable arguments: the
+  caller's current value is copied into the callee local parameter and the
+  callee's final parameter value is copied back to the caller variable after
+  execution. This is a bounded output-parameter path, not true alias binding
+  during execution.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
   object-property array-offset targets such as `$object->items[$key] =& $value`
@@ -3496,10 +3499,11 @@
 - required parameters after default parameters
 - variadic parameters outside the bounded final-parameter by-value slice, and
   variadic argument unpacking
-- provided reference parameter invocation, reference returns, executable
+- provided reference parameter invocation outside direct variable arguments,
+  true alias binding for reference parameters, reference returns, executable
   reference assignments, reference assignments from nested
   offsets/properties/static members/function calls, by-reference iteration, and
-  by-reference calls
+  broader by-reference calls
 - parameter/return type enforcement, coercion, exact `TypeError` behavior,
   `strict_types`, variance, reflection metadata, and native lowering for type
   declarations

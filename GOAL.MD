@@ -118,8 +118,8 @@ compound assignment now covers the reached object-cache mutation path; direct
 global assignment; direct object-property array-offset `isset(...)` now covers
 the reached `WP_Hook::add_filter()` priority check; bounded `ksort()` now
 covers the reached hook-priority ordering path; it now stops at a
-provided by-reference parameter invocation boundary in the reached
-`WP_Object_Cache::get(..., $found)` option-cache path.
+bounded `mysqli_real_escape_string()` gap in the reached `wpdb::_real_escape()`
+option lookup path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -395,7 +395,11 @@ provided by-reference parameter invocation boundary in
 `WP_Object_Cache::get(..., $found)`. Milestone 816 covers omitted optional
 by-reference parameters with defaults, which moves past `wp_cache_get()`'s
 omitted `$found` parameter in `get_option()` but not the later provided
-`$found` output variable.
+`$found` output variable. Milestone 817 covers direct-variable by-reference
+parameter copy-back for the reached `WP_Object_Cache::get(..., $found)` output
+shape. The current frontier is now missing bounded
+`mysqli_real_escape_string()` support in the reached `wpdb::_real_escape()`
+option lookup path.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -568,9 +572,11 @@ The repository already has a working Rust workspace with:
   `isset(...)` covers the reached `WP_Hook::add_filter()` priority check.
   Bounded `ksort($array, SORT_NUMERIC)` covers the reached hook-priority
   ordering path. Omitted optional by-reference parameters with defaults can now
-  execute without reference binding. The next bottleneck is a provided
-  by-reference output variable in the reached
-  `WP_Object_Cache::get(..., $found)` option-cache path.
+  execute without reference binding. Direct-variable by-reference parameters
+  copy the callee's final value back to the caller, covering the reached
+  `WP_Object_Cache::get(..., $found)` output shape. The next bottleneck is
+  missing bounded `mysqli_real_escape_string()` support in the reached
+  `wpdb::_real_escape()` option lookup path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

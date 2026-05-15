@@ -1020,6 +1020,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `runtime error at <bootstrap-shim>:154:9: unsupported call get(): reference parameter invocation is not implemented`,
   corresponding to `WP_Object_Cache::get(..., $found)` with a provided direct
   variable output parameter.
+  Milestone 817 implements bounded direct-variable by-reference parameter
+  copy-back, covering `WP_Object_Cache::get(..., $found)` setting `$found` on
+  the reached cache-miss path. This is not true alias binding during
+  execution, non-variable reference arguments, rebinding aliases, reference
+  containers, copy-on-write, exact diagnostics, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1283:15: undefined function mysqli_real_escape_string()`,
+  corresponding to the reached `wpdb::_real_escape()` option lookup path.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

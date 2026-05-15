@@ -242,8 +242,8 @@ By-reference function and method return declarations also parse as runtime
 boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.
 Omitted optional by-reference parameters can use their defaults without alias
-binding; calls that provide by-reference parameters remain explicit runtime
-boundaries.
+binding; direct-variable by-reference arguments use a bounded copy-in/copy-back
+path for output-parameter style calls. Broader aliasing remains unsupported.
 By-reference `foreach` value syntax is also a runtime boundary: containing code
 can parse, but reached loops fail with a stable unsupported diagnostic until
 aliasing, mutation ordering, and copy-on-write are implemented.

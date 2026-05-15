@@ -322,6 +322,12 @@ impl SymbolTable {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ReferenceBinding {
+    param_name: String,
+    caller_name: String,
+}
+
 #[derive(Debug, Clone, Default)]
 struct ConstantTable {
     values: HashMap<String, Value>,
@@ -4511,21 +4517,21 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
-        }
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
 
         let called_class_id = object.class_id();
-        self.call_user_function_with_this(
+        self.call_user_function_with_checked_values(
             function,
-            object,
             values,
+            Some(object),
             Some(class_id),
             Some(called_class_id),
+            reference_bindings,
+            Some(caller_scope),
         )
     }
 
@@ -4602,6 +4608,8 @@ impl Interpreter {
                 None,
                 Some(class_id),
                 Some(called_class_id),
+                Vec::new(),
+                None,
             )
         } else {
             let this_object = match caller_scope.read_named("this") {
@@ -4690,6 +4698,8 @@ impl Interpreter {
                 None,
                 Some(declaring_class_id),
                 Some(class_id),
+                Vec::new(),
+                None,
             );
         }
 
@@ -4800,6 +4810,8 @@ impl Interpreter {
             None,
             Some(declaring_class_id),
             Some(receiver_class_id),
+            Vec::new(),
+            None,
         )
     }
 
@@ -5699,6 +5711,8 @@ impl Interpreter {
                 None,
                 Some(class_id),
                 Some(called_class_id),
+                Vec::new(),
+                None,
             )
         } else {
             let this_object = match caller_scope.read_named("this") {
@@ -5785,6 +5799,8 @@ impl Interpreter {
             None,
             Some(class_id),
             Some(called_class_id),
+            Vec::new(),
+            None,
         )
     }
 
@@ -6505,15 +6521,21 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, args.len(), span)?;
+        ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
-        let mut values = Vec::with_capacity(args.len());
-        for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
-        }
+        let (values, reference_bindings) =
+            self.evaluate_user_function_call_arguments(function, args, span, caller_scope)?;
 
-        self.call_user_function_with_checked_values(function, values, None, None, None)
+        self.call_user_function_with_checked_values(
+            function,
+            values,
+            None,
+            None,
+            None,
+            reference_bindings,
+            Some(caller_scope),
+        )
     }
 
     fn call_user_function_with_values(
@@ -6526,7 +6548,69 @@ impl Interpreter {
         ensure_user_function_arity(function, args.len(), span)?;
         ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
-        self.call_user_function_with_checked_values(function, args, None, None, None)
+        self.call_user_function_with_checked_values(
+            function,
+            args,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+        )
+    }
+
+    fn evaluate_user_function_call_arguments(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
+        let mut values = Vec::with_capacity(args.len());
+        let mut reference_bindings = Vec::new();
+
+        for (index, arg) in args.iter().enumerate() {
+            let Some(param) = function.params.get(index) else {
+                values.push(self.evaluate(arg, caller_scope)?);
+                continue;
+            };
+
+            if param.by_reference {
+                let Expr::Variable(caller_name, _) = arg else {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "reference parameter invocation is only implemented for direct variable arguments in the current subset",
+                        ),
+                    ));
+                };
+                values.push(caller_scope.read_static(caller_name, arg.span())?);
+                reference_bindings.push(ReferenceBinding {
+                    param_name: param.name.clone(),
+                    caller_name: caller_name.clone(),
+                });
+            } else {
+                values.push(self.evaluate(arg, caller_scope)?);
+            }
+        }
+
+        if function
+            .params
+            .iter()
+            .enumerate()
+            .any(|(index, param)| param.by_reference && param.is_variadic && index < args.len())
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "variadic reference parameter invocation is not implemented",
+                ),
+            ));
+        }
+
+        Ok((values, reference_bindings))
     }
 
     fn call_user_function_with_checked_values(
@@ -6536,6 +6620,8 @@ impl Interpreter {
         this_object: Option<PhpObject>,
         class_context: Option<ClassId>,
         called_class_context: Option<ClassId>,
+        reference_bindings: Vec<ReferenceBinding>,
+        reference_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<Value> {
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
@@ -6604,7 +6690,16 @@ impl Interpreter {
             self.called_class_context.pop();
         }
 
-        match flow? {
+        let flow = flow?;
+        if let Some(reference_scope) = reference_scope {
+            for binding in reference_bindings {
+                if let Some(value) = local_scope.read_named(&binding.param_name) {
+                    reference_scope.write_static(&binding.caller_name, value);
+                }
+            }
+        }
+
+        match flow {
             Flow::Normal => Ok(Value::Null),
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
@@ -6634,6 +6729,8 @@ impl Interpreter {
             Some(this_object),
             class_context,
             called_class_context,
+            Vec::new(),
+            None,
         )
     }
 
@@ -12225,15 +12322,7 @@ fn ensure_supported_function_signature(
     actual: usize,
     span: Span,
 ) -> CompileResult<()> {
-    if function.returns_by_reference {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                callable_name(&function.name),
-                "reference returns are not implemented",
-            ),
-        ));
-    }
+    ensure_supported_function_metadata(function, span)?;
 
     if function
         .params
@@ -12246,6 +12335,20 @@ fn ensure_supported_function_signature(
             RuntimeError::unsupported_call(
                 callable_name(&function.name),
                 "reference parameter invocation is not implemented",
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_supported_function_metadata(function: &FunctionDecl, span: Span) -> CompileResult<()> {
+    if function.returns_by_reference {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "reference returns are not implemented",
             ),
         ));
     }

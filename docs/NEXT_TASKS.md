@@ -7485,17 +7485,27 @@ handled.
   implemented.
   Milestone 816 advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:154:9: unsupported call get(): reference parameter invocation is not implemented`.
-- [ ] Runtime/reference-output lane: implement the reached provided direct
+- [x] Runtime/reference-output lane: implement the reached provided direct
   variable by-reference output-parameter shape for
   `WP_Object_Cache::get(..., $found)` without claiming full aliasing. Keep
   non-variable reference arguments, rebinding aliases, reference containers,
   copy-on-write, exact diagnostics, and native lowering named unless
   implemented.
+  Milestone 817 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1283:15: undefined function mysqli_real_escape_string()`.
+- [ ] Runtime/mysqli lane: implement the reached bounded
+  `mysqli_real_escape_string($this->dbh, $data)` behavior for
+  `wpdb::_real_escape()` over the existing placeholder `mysqli` object and
+  scalar string-convertible data. Keep connection charset state, real database
+  connection behavior, warning/error routing, exact escaping edge cases,
+  binary/invalid-string behavior, SQL execution, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 816 checkpoint, the latest committed checkpoint
-  is `ecdaab9 runtime: add bounded numeric key sort`, covering Milestone 815.
+- Before the current Milestone 817 checkpoint, the latest committed checkpoint
+  is `7de9213 runtime: allow omitted reference defaults`, covering Milestone
+  816.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
