@@ -96,6 +96,8 @@ struct Interpreter {
     active_static_locals: Vec<Vec<String>>,
     global_symbols: Rc<RefCell<HashMap<String, Value>>>,
     error_reporting_mask: i64,
+    error_handler: Option<Value>,
+    error_handler_mask: Option<i64>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -456,6 +458,8 @@ impl Interpreter {
             active_static_locals: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
+            error_handler: None,
+            error_handler_mask: None,
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -7297,6 +7301,7 @@ impl Interpreter {
                     )),
                 }
             }
+            "set_error_handler" => self.call_set_error_handler(args, span),
             "header" => call_header(&args, span),
             "header_remove" => call_header_remove(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
@@ -8085,6 +8090,80 @@ impl Interpreter {
         })?;
 
         self.call_callable_with_values(callable, args[1..].to_vec(), span)
+    }
+
+    fn call_set_error_handler(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "set_error_handler()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        match &args[0] {
+            Value::String(name) if self.lookup_function(name).is_some() => {}
+            Value::String(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "set_error_handler()",
+                        "callback must be a valid callable in the current subset",
+                    ),
+                ));
+            }
+            Value::Array(array) if is_array_callable_resolved(&self.classes, array) => {}
+            Value::Array(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "set_error_handler()",
+                        "callback must be a valid callable in the current subset",
+                    ),
+                ));
+            }
+            Value::Closure(_) => {}
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "set_error_handler()",
+                        format!(
+                            "callback argument must be string, array callable, or closure in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let mask = if let Some(mask) = args.get(1) {
+            match mask {
+                Value::Int(mask) => Some(*mask),
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "set_error_handler()",
+                            format!(
+                                "error levels argument must be int in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+
+        let previous = self.error_handler.clone().unwrap_or(Value::Null);
+        self.error_handler = Some(args[0].clone());
+        self.error_handler_mask = mask;
+        Ok(previous)
     }
 
     fn call_error_reporting(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -9618,6 +9697,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_dir"
             | "is_readable"
             | "register_shutdown_function"
+            | "set_error_handler"
             | "header"
             | "header_remove"
             | "headers_sent"

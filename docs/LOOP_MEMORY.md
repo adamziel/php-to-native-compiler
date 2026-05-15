@@ -26,6 +26,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:35:51Z
+
+- Checkpoint before this task:
+  `016c895 runtime: add bounded magic method`, pushed to `origin/master`.
+- Task attempted: Milestone 789, bounded `set_error_handler()` registration
+  for the reached WordPress startup error-handler path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/error_handler_builtin.rs`,
+  `tests/fixtures/milestone789/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo test -p phpc --test error_handler_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone789`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: handler invocation, warning/notice/deprecation
+  routing, fatal/shutdown interactions, `restore_error_handler()`,
+  previous-handler stack semantics, non-integer mask coercions, exact
+  diagnostics, and native lowering remain unsupported.
+- Next concrete task: implement or explicitly bound closure capture binding for
+  the reached WordPress `set_error_handler(function (...) use (&$utf8_pcre) {
+  ... })` path while documenting closure invocation, alias/reference
+  semantics, copy-on-write, `$this` binding, static closures, exact capture
+  timing, exact diagnostics, and native lowering unless implemented.
+
 ## Loop Event 2026-05-15T08:28:44Z
 
 - Checkpoint before this task:

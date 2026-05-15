@@ -438,7 +438,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `preg_match`, `str_replace`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
-  `is_dir`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
+  `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -630,6 +630,16 @@
   shutdown phase. Callback ordering, argument delivery, by-reference callback
   behavior, output buffering, destructor/finally interaction, fatal-error
   context, exact diagnostics, and native lowering remain unsupported.
+  `set_error_handler($callback, $error_levels = E_ALL)` accepts a currently
+  valid string callable, object/static array callable, or closure plus an
+  optional integer error-level mask, records the current handler value, and
+  returns the previous handler value or `null`. The current slice validates
+  registration only; it does not invoke handlers or route warnings, notices,
+  deprecations, or fatal conditions through user callbacks. Previous-handler
+  restoration, `restore_error_handler()`, error-level filtering, callback
+  invocation arguments, by-reference callback behavior, output buffering,
+  shutdown/fatal interaction, exact diagnostics, and native lowering remain
+  unsupported.
   `date_default_timezone_set($timezoneId)` accepts one string argument, returns
   `true` for `UTC`, and returns `false` for other identifiers without PHP's
   notice machinery. Full timezone database validation, global timezone state,
@@ -1983,7 +1993,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `str_contains`, `preg_match`, `error_reporting`, `min`, `dirname`, `file_exists`,
-  `is_dir`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
+  `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
@@ -2406,7 +2416,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,

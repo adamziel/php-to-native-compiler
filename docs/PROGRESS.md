@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 789, bounded `set_error_handler()` registration for the
+  current WordPress startup error-handler path. The runtime now accepts a
+  currently valid string callable, object/static array callable, or closure,
+  accepts an optional integer error-level mask, stores the current handler
+  value, returns the previous handler or `null`, exposes the builtin through
+  function/callability metadata and dynamic string-valued calls, and keeps
+  direct native calls behind the generic function-call lowering boundary.
+  Handler invocation, warning/notice/deprecation routing, fatal/shutdown
+  interaction, `restore_error_handler()`, exact previous-handler stack
+  semantics, non-integer mask coercions, exact diagnostics, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past the reached `set_error_handler()` call to
+  `runtime error at <bootstrap-shim>:54:3: unsupported call closure: closure capture binding is not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo test -p phpc --test error_handler_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone789`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 788, bounded `__METHOD__` magic-constant evaluation for the
   current WordPress startup method path. The parser now accepts `__METHOD__`
   as an executable magic constant. The interpreter evaluates it to

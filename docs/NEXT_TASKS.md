@@ -7226,17 +7226,26 @@ handled.
   Milestone 788 implements current function/method-context `__METHOD__`
   evaluation and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:53:2: undefined function set_error_handler()`.
-- [ ] Error runtime lane: implement or explicitly bound `set_error_handler()`
+- [x] Error runtime lane: implement or explicitly bound `set_error_handler()`
   registration for the reached WordPress fatal/error handling path. Keep
   callback invocation, warning/notice/deprecation routing, previous-handler
   return semantics, error-level filtering, shutdown/fatal interactions,
   restoration, exact PHP diagnostics, and native lowering named unless
   implemented.
+  Milestone 789 implements bounded registration and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:54:3: unsupported call closure: closure capture binding is not implemented`.
+- [ ] Closure runtime lane: implement or explicitly bound by-value and
+  by-reference closure capture binding for the reached WordPress
+  `set_error_handler(function (...) use (&$utf8_pcre) { ... })` path. Keep
+  closure invocation, alias/reference semantics, copy-on-write, `$this`
+  binding, static closures, exact capture timing, native lowering, and exact
+  PHP diagnostics named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 788 checkpoint, the latest committed checkpoint
-  is `9665746 parser: add braced dynamic properties`, covering Milestone 787.
+- Before the current Milestone 789 checkpoint, the latest committed checkpoint
+  is `016c895 runtime: add bounded magic method`, covering Milestone 788.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

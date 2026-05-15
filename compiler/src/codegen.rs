@@ -6300,6 +6300,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "is_dir"
             | "is_readable"
             | "register_shutdown_function"
+            | "set_error_handler"
             | "header"
             | "header_remove"
             | "headers_sent"
