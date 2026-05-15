@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T09:47:10Z
+
+- Checkpoint before this task:
+  `4397c40 runtime: add bounded magic class constant`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 798, bounded `mysqli_report()` compatibility
+  boundary for the reached WordPress `mysqli_report( MYSQLI_REPORT_OFF )` path
+  in `wp-includes/class-wpdb.php:1970`.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone798/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone798`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:1972:16: undefined function mysqli_init()`.
+- Remaining semantic gaps: real mysqli extension state, `mysqli_init()`,
+  connections, resources/objects, queries, result sets, report-mode
+  warning/error routing, unsupported mode combinations, exact diagnostics, PDO,
+  and native database lowering remain unsupported.
+- Next concrete task: add an honest `mysqli_init()` boundary or minimal handle
+  for the reached WordPress startup path while keeping real connections, host
+  IO, query/result behavior, escaping, charset state, warning/error routing,
+  exact diagnostics, and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T09:36:40Z
 
 - Checkpoint before this task:

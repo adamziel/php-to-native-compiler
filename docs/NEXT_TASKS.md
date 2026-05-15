@@ -7301,17 +7301,28 @@ handled.
   method context and to an empty string outside class context, advancing the
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1970:3: undefined function mysqli_report()`.
-- [ ] Runtime/database lane: add a bounded `mysqli_report()` compatibility
+- [x] Runtime/database lane: add a bounded `mysqli_report()` compatibility
   boundary for the reached WordPress startup path. Keep real mysqli extension
   state, report mode validation beyond the reached constants, connection/query
   behavior, warning/error routing, exact diagnostics, and native lowering named
   unless implemented.
+  Milestone 798 exposes `mysqli_report`, defines the reached report constants,
+  accepts `MYSQLI_REPORT_OFF` and `MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT`,
+  stores the current mode, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1972:16: undefined function mysqli_init()`.
+- [ ] Runtime/database lane: add an honest `mysqli_init()` boundary for the
+  reached WordPress startup path. Decide whether to return a minimal mysqli
+  object/resource handle that only survives until the next connection call, or
+  to report a stable unsupported database initialization diagnostic. Keep real
+  connections, host IO, query/result behavior, escaping, charset state,
+  warning/error routing, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 797 checkpoint, the latest committed checkpoint
-  is `b34f9ff parser: add object property unset operands`, covering
-  Milestone 796.
+- Before the current Milestone 798 checkpoint, the latest committed checkpoint
+  is `4397c40 runtime: add bounded magic class constant`, covering
+  Milestone 797.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

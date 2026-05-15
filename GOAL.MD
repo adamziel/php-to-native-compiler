@@ -101,9 +101,9 @@ the first `__METHOD__` magic constant in method context, the first closure
 capture in the `set_error_handler()` path, the reached `preg_match('//u', '')`
 UTF-8 probe, the following `restore_error_handler()` cleanup, and the reached
 array literal reference element, and the reached object-property
-reference-assignment source, the reached `unset($this->$name)` path, and
-executable `__CLASS__` in class context; it now stops at missing
-`mysqli_report()`.
+reference-assignment source, the reached `unset($this->$name)` path,
+executable `__CLASS__` in class context, and the reached `mysqli_report()`
+mode call; it now stops at missing `mysqli_init()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -346,9 +346,11 @@ reached UTF-8 startup probe. Milestone 792 added bounded
 `restore_error_handler()` cleanup. Milestone 793 added keyword-named
 object-property reads/writes after `->`. Milestone 794 added bounded array
 literal reference elements without aliasing. Milestone 795 added bounded
-object-property reference-assignment sources without aliasing, and bounded
-direct/dynamic object-property `unset(...)` operands that null visible slots.
-The current frontier is now missing `mysqli_report()` in WordPress startup.
+object-property reference-assignment sources without aliasing. Milestone 796
+added bounded direct/dynamic object-property `unset(...)` operands that null
+visible slots. Milestone 797 added bounded executable `__CLASS__` evaluation in
+class context. Milestone 798 added bounded `mysqli_report()` mode handling.
+The current frontier is now missing `mysqli_init()` in WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -502,8 +504,9 @@ The repository already has a working Rust workspace with:
   aliasing, and bounded object-property reference-assignment sources without
   aliasing, and bounded direct/dynamic object-property `unset(...)` operands
   that null visible property slots, and bounded executable `__CLASS__`
-  evaluation in class context. The next bottleneck is missing `mysqli_report()`
-  in the WordPress bootstrap shim.
+  evaluation in class context, and bounded `mysqli_report()` mode handling for
+  the reached startup call. The next bottleneck is missing `mysqli_init()` in
+  the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

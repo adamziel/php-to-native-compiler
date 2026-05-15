@@ -98,6 +98,7 @@ struct Interpreter {
     error_reporting_mask: i64,
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
+    mysqli_report_mode: i64,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -460,6 +461,7 @@ impl Interpreter {
             error_reporting_mask: PHP_E_ALL,
             error_handler: None,
             error_handler_mask: None,
+            mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -7244,6 +7246,34 @@ impl Interpreter {
                     "mysqli/database connections are not implemented in the current subset",
                 ),
             )),
+            "mysqli_report" => {
+                expect_arity(name, &args, 1, span)?;
+                let Value::Int(mode) = args[0] else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_report()",
+                            format!(
+                                "report mode must be int in the current subset, got {}",
+                                args[0].type_name()
+                            ),
+                        ),
+                    ));
+                };
+                if mode != PHP_MYSQLI_REPORT_OFF
+                    && mode != (PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT)
+                {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_report()",
+                            "only MYSQLI_REPORT_OFF and MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT are supported in the current subset",
+                        ),
+                    ));
+                }
+                self.mysqli_report_mode = mode;
+                Ok(Value::Bool(true))
+            }
             "file_exists" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9794,6 +9824,7 @@ fn is_builtin(name: &str) -> bool {
             | "function_exists"
             | "extension_loaded"
             | "mysqli_connect"
+            | "mysqli_report"
             | "file_exists"
             | "is_dir"
             | "is_readable"
@@ -9890,6 +9921,9 @@ const PHP_E_RECOVERABLE_ERROR: i64 = 4096;
 const PHP_E_DEPRECATED: i64 = 8192;
 const PHP_E_USER_DEPRECATED: i64 = 16384;
 const PHP_E_ALL: i64 = 32767;
+const PHP_MYSQLI_REPORT_OFF: i64 = 0;
+const PHP_MYSQLI_REPORT_ERROR: i64 = 1;
+const PHP_MYSQLI_REPORT_STRICT: i64 = 2;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -9920,6 +9954,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
         "SORT_STRING" => Some(Value::Int(2)),
+        "MYSQLI_REPORT_OFF" => Some(Value::Int(PHP_MYSQLI_REPORT_OFF)),
+        "MYSQLI_REPORT_ERROR" => Some(Value::Int(PHP_MYSQLI_REPORT_ERROR)),
+        "MYSQLI_REPORT_STRICT" => Some(Value::Int(PHP_MYSQLI_REPORT_STRICT)),
         _ => None,
     }
 }

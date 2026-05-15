@@ -6218,7 +6218,10 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
         | "ARRAY_FILTER_USE_KEY"
         | "SORT_REGULAR"
         | "SORT_NUMERIC"
-        | "SORT_STRING" => true,
+        | "SORT_STRING"
+        | "MYSQLI_REPORT_OFF"
+        | "MYSQLI_REPORT_ERROR"
+        | "MYSQLI_REPORT_STRICT" => true,
         _ => false,
     }
 }
@@ -6306,6 +6309,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "function_exists"
             | "extension_loaded"
             | "mysqli_connect"
+            | "mysqli_report"
             | "file_exists"
             | "is_dir"
             | "is_readable"

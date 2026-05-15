@@ -860,6 +860,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not trait/namespace magic-constant support, anonymous-class exact
   names, source-mapping fidelity, native lowering, real mysqli extension
   behavior, or WordPress bootstrap support.
+  Milestone 798 implements a bounded `mysqli_report()` report-mode boundary
+  for the reached `mysqli_report( MYSQLI_REPORT_OFF )` path in
+  `wp-includes/class-wpdb.php:1970`. It defines the reached report constants,
+  accepts `MYSQLI_REPORT_OFF` and `MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT`,
+  stores the current mode, and returns `true`. The real bootstrap-shim probe
+  now advances to
+  `runtime error at <bootstrap-shim>:1972:16: undefined function mysqli_init()`.
+  This is not real mysqli extension state, `mysqli_init()`, connections,
+  resources/objects, query/result behavior, warning/error routing, exact
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
