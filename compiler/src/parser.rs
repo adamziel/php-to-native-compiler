@@ -3,8 +3,8 @@ use crate::ast::{
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterfaceMethodDecl, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
-    TraitDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
+    SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -3957,31 +3957,35 @@ impl Parser {
                     "\\{}",
                     self.parse_qualified_name(false, "expected class name after 'new'")?
                 );
-                self.resolve_class_like_name(&raw)
+                NewClassName::Named(self.resolve_class_like_name(&raw))
             }
-            TokenKind::Static => {
-                return Err(self.error_at(token.span, unsupported_magic_class_name_message()));
-            }
+            TokenKind::Static => NewClassName::StaticClass,
             TokenKind::Identifier(name) => {
-                if is_magic_static_receiver(&name) {
-                    return Err(self.error_at(token.span, unsupported_magic_class_name_message()));
-                }
-                if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                if name.eq_ignore_ascii_case("self") {
+                    NewClassName::SelfClass
+                } else if name.eq_ignore_ascii_case("parent") {
+                    NewClassName::ParentClass
+                } else if name.eq_ignore_ascii_case("static") {
+                    NewClassName::StaticClass
+                } else if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
                     let raw = self.parse_qualified_name_after_first(name)?;
-                    self.resolve_class_like_name(&raw)
+                    NewClassName::Named(self.resolve_class_like_name(&raw))
                 } else {
-                    self.resolve_class_like_name(&name)
+                    NewClassName::Named(self.resolve_class_like_name(&name))
                 }
             }
             TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
                 self.advance();
                 let suffix = self.parse_qualified_name(false, "expected class name after 'new'")?;
-                self.resolve_relative_namespace_class_name(&suffix)
+                NewClassName::Named(self.resolve_relative_namespace_class_name(&suffix))
             }
             _ => return Err(self.error_at(token.span, "expected class name after 'new'")),
         };
-        self.consume_keyword(TokenKind::LParen, "expected '(' after class name")?;
-        let args = self.parse_call_arguments_after_open()?;
+        let args = if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+            self.parse_call_arguments_after_open()?
+        } else {
+            Vec::new()
+        };
         Ok(Expr::New {
             class_name,
             args,
@@ -5482,10 +5486,6 @@ fn unsupported_clone_message() -> &'static str {
 
 fn unsupported_instanceof_message() -> &'static str {
     "unsupported instanceof expression: class/interface relationship checks are not implemented"
-}
-
-fn unsupported_magic_class_name_message() -> &'static str {
-    "unsupported magic class name: self, parent, and static class name resolution is not implemented"
 }
 
 fn is_magic_static_receiver(name: &str) -> bool {

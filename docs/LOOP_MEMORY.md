@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-16T00:35:00Z
+
+- Checkpoint before this task:
+  `4af1587 parser: add class modifiers`, pushed to `origin/master`.
+- Task attempted: Milestone 756, bounded magic class-name instantiation for
+  `new self`, `new parent`, and `new static`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `tests/fixtures/milestone756/*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model magic_class_names_in_new -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries magic_class_name_instantiation -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone756`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: magic class-name instantiation is limited to active
+  class/method contexts and the existing object instantiation path. Dynamic
+  class-name expressions, anonymous classes, exact PHP `Error` objects, broader
+  magic class-name behavior, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `parse error at <bootstrap-shim>:131:70: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
+- Next concrete task: identify the `<bootstrap-shim>:131:70` assignment target
+  shape and implement or explicitly bound that parser/value-model lane.
+
 ## Loop Event 2026-05-16T00:05:00Z
 
 - Checkpoint before this task:

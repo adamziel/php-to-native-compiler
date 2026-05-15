@@ -506,6 +506,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full magic class-name resolution, abstract-method implementation
   enforcement, final inheritance/method enforcement, readonly class semantics,
   PHP `Error` objects, exact diagnostics, or WordPress bootstrap support.
+  Milestone 756 resolves `new self`, `new parent`, and `new static` in active
+  class/method contexts and accepts no-argument forms without parentheses.
+  After that slice, the direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:131:70: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
+  This is not full dynamic class-name instantiation, anonymous classes, exact
+  PHP `Error` objects, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

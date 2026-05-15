@@ -256,7 +256,12 @@
   scoped `$this`, positional arguments, and the current default-parameter
   subset. Instantiating an abstract class reports a stable runtime boundary;
   abstract-method implementation enforcement, final inheritance/method
-  enforcement, and readonly class semantics are not implemented.
+  enforcement, and readonly class semantics are not implemented. Magic
+  class-name instantiation through `new self`, `new parent`, and `new static`
+  is supported in active class/method contexts, including no-argument forms
+  without parentheses, by resolving to the current, parent, or called class
+  before using the same instantiation path. Contextless magic class
+  instantiation reports a stable runtime boundary.
 - public instance property reads and direct-variable writes by static property
   name, including inherited public property slots:
   `$object->name` and `$object->name = ...`. Plain reads and direct writes for
@@ -2892,7 +2897,8 @@
   multiple properties in one declaration, per-property defaults in
   multi-property declarations, typed/multiple/final/interface/trait/enum class
   constants, typed static properties, static property storage removal, late
-  static binding, magic methods, namespaces,
+  static binding beyond the current `static::` method/property/constant and
+  `new static` slices, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties
   beyond `stdClass` public slot materialization, dynamic property-name forms
   beyond existing public slots and `stdClass`, dynamic method names, protected method visibility outside

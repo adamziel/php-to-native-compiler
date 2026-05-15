@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_magic_class_name_new.php:2:10: unsupported magic class name: self, parent, and static class name resolution is not implemented
+runtime error at tests/fixtures/unsupported_syntax_features/unsupported_magic_class_name_new.php:2:6: unsupported object instantiation for self: self requires active class context
 --- stderr end ---

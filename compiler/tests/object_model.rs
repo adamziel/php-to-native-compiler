@@ -2932,6 +2932,62 @@ echo $root->name();
 }
 
 #[test]
+fn magic_class_names_in_new_expressions_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public static function makeSelf() {
+        return new self();
+    }
+
+    public static function makeStatic() {
+        return new static();
+    }
+}
+
+class Child extends Base {
+    public function makeParent() {
+        return new parent;
+    }
+}
+
+echo get_class(Base::makeSelf()), "\n";
+echo get_class(Child::makeSelf()), "\n";
+echo get_class(Child::makeStatic()), "\n";
+$child = new Child();
+echo get_class($child->makeParent());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Base\nBase\nChild\nBase");
+
+    let self_error = runtime_error("<?php\nnew self();\n");
+    assert_eq!(self_error.line, 2);
+    assert_eq!(self_error.column, 1);
+    assert_eq!(
+        self_error.message,
+        "unsupported object instantiation for self: self requires active class context"
+    );
+
+    let parent_error = runtime_error(
+        r#"<?php
+class Root {
+    public function make() {
+        return new parent();
+    }
+}
+$root = new Root();
+$root->make();
+"#,
+    );
+    assert_eq!(
+        parent_error.message,
+        "unsupported object instantiation for parent: parent requires a parent class"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_class_name_constants_until_native_object_lowering_exists() {
     for source in [
         "<?php\necho Box::class;\n",

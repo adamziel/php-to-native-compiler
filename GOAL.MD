@@ -260,8 +260,10 @@ Milestone 753 then parsed that direct target shape as the existing runtime
 boundary. Milestone 754 then parsed by-reference function and method return
 declarations as runtime boundaries. Milestone 755 then parsed class and method
 modifiers for the current metadata subset; the current bootstrap-shim blocker
-is now broader magic class-name resolution at `<bootstrap-shim>:63:26`, reported
-as `unsupported magic class name: self, parent, and static class name resolution is not implemented`.
+then became broader magic class-name resolution at `<bootstrap-shim>:63:26`.
+Milestone 756 resolved `new self`, `new parent`, and `new static` in active
+class/method contexts; the current bootstrap-shim blocker is now an unsupported
+assignment-expression target at `<bootstrap-shim>:131:70`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -394,8 +396,10 @@ The repository already has a working Rust workspace with:
   object-property array-offset targets as the same runtime boundary, and
   by-reference function/method return declarations as runtime boundaries, plus
   `abstract`/`final`/`readonly` class modifiers and `abstract`/`final` method
-  modifiers as metadata. The next bottleneck is broader `self`/`parent`/`static`
-  class-name resolution in the WordPress bootstrap shim.
+  modifiers as metadata, and `new self`/`new parent`/`new static` magic
+  class-name instantiation in active class/method contexts. The next bottleneck
+  is an unsupported assignment-expression target shape in the WordPress
+  bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

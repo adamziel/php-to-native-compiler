@@ -134,6 +134,8 @@ Implemented now:
   `__construct` plus explicit parent/self method dispatch with scoped `$this`,
   parsed abstract/final/readonly class modifiers plus abstract/final method
   modifiers as metadata, with abstract class instantiation rejected at runtime,
+  bounded `new self`/`new parent`/`new static` class-name resolution in active
+  class contexts,
   bounded dynamic property-name reads/writes for existing public slots and
   `stdClass` public dynamic slots, and bounded `clone` expressions that allocate fresh handles and shallow-copy
   current property slots when no `__clone` method is declared

@@ -473,50 +473,14 @@ fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_magic_class_name_instantiation_has_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\necho new self();\n",
-            2,
-            10,
-            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
-        ),
-        (
-            "<?php\necho new parent();\n",
-            2,
-            10,
-            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
-        ),
-        (
-            "<?php\necho new static();\n",
-            2,
-            10,
-            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
-        ),
-        (
-            "<?php\necho new SELF();\n",
-            2,
-            10,
-            "unsupported magic class name: self, parent, and static class name resolution is not implemented",
-        ),
-    ];
-
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
-}
-
-#[test]
-fn emit_ir_rejects_magic_class_name_instantiation_at_parse_boundary() {
+fn emit_ir_rejects_magic_class_name_instantiation_after_parse() {
     let error = php_compiler::emit_ir_source("<?php\necho new self();\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported magic class name: self, parent, and static class name resolution is not implemented"
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering rejects"),
+        "{}",
+        error.message
     );
 }
 

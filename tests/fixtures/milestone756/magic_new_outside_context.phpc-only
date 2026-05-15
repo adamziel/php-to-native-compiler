@@ -1,0 +1,1 @@
+phpc reports a stable runtime boundary for new self outside class context; PHP Error objects and exact fatal diagnostics are not implemented.

@@ -1,0 +1,2 @@
+runtime error at 2:1: unsupported object instantiation for self: self requires active class context
+

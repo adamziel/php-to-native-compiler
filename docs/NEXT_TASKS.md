@@ -6909,17 +6909,20 @@ handled.
   instantiation as a runtime boundary, and advances the real bootstrap-shim
   probe to
   `parse error at <bootstrap-shim>:63:26: unsupported magic class name: self, parent, and static class name resolution is not implemented`.
-- [ ] Parser/object lane: implement or explicitly bound broader
+- [x] Parser/object lane: implement or explicitly bound broader
   `self::class`, `parent::class`, and `static::class` class-name resolution for
   the next real WordPress bootstrap-shim blocker at `<bootstrap-shim>:63:26`.
-  The first target should cover the reached WordPress class-name expression
-  without claiming full magic class name behavior in arbitrary parse/runtime
-  contexts.
+  Milestone 756 covers the reached magic class-name instantiation form by
+  resolving `new self`, `new parent`, and `new static` in active class/method
+  contexts and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:131:70: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
+- [ ] Parser/value-model lane: identify and implement or explicitly bound the
+  next assignment-expression target shape at `<bootstrap-shim>:131:70`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 755 checkpoint, the latest committed checkpoint
-  is `3b45941 parser: bound reference returns`, covering Milestone 754.
+- Before the current Milestone 756 checkpoint, the latest committed checkpoint
+  is `4af1587 parser: add class modifiers`, covering Milestone 755.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

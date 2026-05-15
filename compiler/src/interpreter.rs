@@ -16,8 +16,8 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
     ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, Program, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
+    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
+    Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -1869,16 +1869,17 @@ impl Interpreter {
 
     fn instantiate_object(
         &mut self,
-        class_name: &str,
+        class_name: &NewClassName,
         args: &[Expr],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        let class_name = self.resolve_new_class_name(class_name, span)?;
         let (class_id, declared_class_name) = {
             let class = self
                 .classes
-                .lookup_class(class_name)
-                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+                .lookup_class(&class_name)
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&class_name)))?;
             (class.id(), class.name().to_string())
         };
         if self.abstract_classes.contains(&class_id) {
@@ -1978,6 +1979,80 @@ impl Interpreter {
             Some(object.class_id()),
         )?;
         Ok(Value::Object(object))
+    }
+
+    fn resolve_new_class_name(
+        &self,
+        class_name: &NewClassName,
+        span: Span,
+    ) -> CompileResult<String> {
+        match class_name {
+            NewClassName::Named(name) => Ok(name.clone()),
+            NewClassName::SelfClass => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "self",
+                            "self requires active class context",
+                        ),
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata")
+                    .name()
+                    .to_string())
+            }
+            NewClassName::ParentClass => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "parent",
+                            "parent requires active class context",
+                        ),
+                    ));
+                };
+                let current_class = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata");
+                let Some(parent_class_id) = current_class.parent_id() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "parent",
+                            "parent requires a parent class",
+                        ),
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(parent_class_id)
+                    .expect("parent class id should resolve to class metadata")
+                    .name()
+                    .to_string())
+            }
+            NewClassName::StaticClass => {
+                let Some(called_class_id) = self.called_class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "static",
+                            "static requires method or static class context",
+                        ),
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(called_class_id)
+                    .expect("called class context should resolve to class metadata")
+                    .name()
+                    .to_string())
+            }
+        }
     }
 
     fn allocate_object_id(&mut self) -> i64 {

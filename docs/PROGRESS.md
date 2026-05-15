@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 756, bounded magic class-name instantiation for `new self`,
+  `new parent`, and `new static`. The parser now accepts those forms with or
+  without an empty argument list, and the interpreter resolves `self` from the
+  active class context, `parent` from the active class parent, and `static`
+  from the called-class context before reusing the existing object
+  instantiation path. Top-level or contextless forms report stable runtime
+  boundaries such as `unsupported object instantiation for self: self requires
+  active class context`. This is not full magic class-name behavior in every
+  expression context, dynamic class expressions, anonymous classes, exact PHP
+  `Error` objects, or native lowering. The real WordPress 6.9.4
+  bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:63:26` magic class-name blocker to
+  `parse error at <bootstrap-shim>:131:70: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model magic_class_names_in_new -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries magic_class_name_instantiation -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone756`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 755, class and method modifier parsing for the current object
   metadata subset. The parser now accepts `abstract`, `final`, and `readonly`
   class modifiers and accepts `abstract`/`final` method modifiers, including

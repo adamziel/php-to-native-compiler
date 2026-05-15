@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone756/magic_new_outside_context.php:2:1: unsupported object instantiation for self: self requires active class context
+--- stderr end ---

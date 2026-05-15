@@ -715,7 +715,7 @@ pub enum Expr {
         span: Span,
     },
     New {
-        class_name: String,
+        class_name: NewClassName,
         args: Vec<Expr>,
         span: Span,
     },
@@ -776,6 +776,14 @@ pub enum Expr {
         position: IncrementDecrementPosition,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NewClassName {
+    Named(String),
+    SelfClass,
+    ParentClass,
+    StaticClass,
 }
 
 #[derive(Debug, Clone, PartialEq)]

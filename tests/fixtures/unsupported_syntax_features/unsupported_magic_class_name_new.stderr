@@ -1,2 +1,2 @@
-parse error at 2:10: unsupported magic class name: self, parent, and static class name resolution is not implemented
+runtime error at 2:6: unsupported object instantiation for self: self requires active class context
 
