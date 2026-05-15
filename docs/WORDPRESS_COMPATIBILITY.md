@@ -1373,7 +1373,9 @@ historical blockers and remaining full-support gaps include:
   Milestone 889 adds deterministic `mysqli_get_client_info()` and
   `mysqli_get_proto_info()` placeholder client/protocol metadata without real
   client-library detection, protocol negotiation, host connection metadata, or
-  PHP deprecation/warning fidelity.
+  PHP deprecation/warning fidelity. Milestone 890 wires that placeholder
+  metadata through a synthetic WordPress-shaped `wpdb` connection-metadata
+  bookkeeping smoke without claiming real database client/protocol fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

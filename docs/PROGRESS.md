@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 890, a synthetic WordPress-shaped `wpdb` connection-metadata
+  bookkeeping smoke that calls the bounded
+  `mysqli_get_client_info($this->dbh)` and
+  `mysqli_get_proto_info($this->dbh)` placeholder paths, records deterministic
+  local client/protocol metadata, and verifies that the metadata boundary ran.
+  This is a harness smoke only; it does not add real WordPress database
+  client/protocol fidelity, client-library detection, protocol negotiation,
+  host database integration, PHP deprecation/warning fidelity, or native
+  database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone890`.
+
 - Added Milestone 889, bounded `mysqli_get_client_info()` and
   `mysqli_get_proto_info()` support for placeholder MySQLi metadata. The
   runtime now accepts `mysqli_get_client_info()` with no argument, `null`, or a

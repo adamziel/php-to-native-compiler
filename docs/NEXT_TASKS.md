@@ -8220,16 +8220,25 @@ handled.
   names are visible through runtime and native metadata lookup. This is not
   real client-library detection, protocol negotiation, host connection
   metadata, PHP deprecation/warning fidelity, or native database lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_get_client_info()`/`mysqli_get_proto_info()` placeholders
   through WordPress-shaped connection metadata bookkeeping without claiming
   real database client/protocol fidelity.
+  Milestone 890 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic placeholder client info and protocol version on local object
+  state and verifies that the metadata check ran. It is not real WordPress
+  database client/protocol fidelity, client-library detection, protocol
+  negotiation, host database integration, warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after
+  client/protocol placeholder metadata and choose a small tested slice, such as
+  deterministic `mysqli_get_client_version()` metadata or a sharper named
+  diagnostic, before broader SQL execution or real host state is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `14552d5 tests: add wordpress wpdb error state smoke`, covering
-  Milestone 888 before the current Milestone 889 candidate.
+  `392d6e6 runtime: add mysqli client protocol metadata`, covering
+  Milestone 889 before the current Milestone 890 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
