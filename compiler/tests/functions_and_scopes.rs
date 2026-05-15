@@ -890,6 +890,26 @@ echo $value->name;
 }
 
 #[test]
+fn reference_assignment_array_variable_source_to_variable_executes_current_subset() {
+    let execution = run_source(
+        r#"<?php
+function parse_args($args, $defaults) {
+    if (is_array($args)) {
+        $parsed_args =& $args;
+    }
+    return array_merge($defaults, $parsed_args);
+}
+$parsed = parse_args(["name" => "Ada"], ["role" => "admin"]);
+echo $parsed["role"], "|", $parsed["name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "admin|Ada");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_syntax_inside_unexecuted_function_body_is_registered() {
     let execution = run_source(
         r#"<?php

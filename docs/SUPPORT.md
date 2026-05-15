@@ -33,12 +33,15 @@
   object-property array-offset targets such as `$object->items[$key] =& $value`
   parses in statement position for direct variable, direct array-offset, and
   method-call sources plus the documented direct object-property array-offset
-  target shape. The only executing subset is direct variable sources holding a
-  current object value assigned into a direct variable or direct array offset;
-  this stores the same object handle under the current value model. Scalar and
-  array sources, array-offset and method-call sources, object-property array
+  target shape. The executing subset is direct variable sources holding a
+  current object or array value assigned into a direct variable; direct
+  variable sources holding current object values may also be assigned into
+  direct array offsets. These cases store the current value/object handle under
+  the current value model. Scalar sources, array-offset and method-call
+  sources, direct array-offset targets for array values, object-property array
   targets, source/target rebinding aliases, PHP reference containers,
-  copy-on-write, and native lowering remain unsupported and report
+  copy-on-write, mutation ordering beyond the stored value, and native lowering
+  remain unsupported and report
   `unsupported call reference assignment: references and aliasing are not
   implemented` when reached.
 - assignment statements, plus expression-position direct static-variable

@@ -144,6 +144,35 @@ injects this file into every prompt. Each Codex pass should update it with:
   copy-on-write, mutation ordering, exact PHP diagnostics, and native lowering
   named unless implemented.
 
+## Loop Event 2026-05-15T07:35:00Z
+
+- Checkpoint before this task:
+  `019053a runtime: add bounded call_user_func`, pushed to `origin/master`.
+- Task attempted: Milestone 765, bounded direct-variable array by-reference
+  assignment for the WordPress `$parsed_args =& $args;` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone765/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone765`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: this stores current array/object values for the
+  reached direct-variable path but does not implement alias cells, source or
+  target rebinding, scalar references, nested/array-offset reference sources,
+  direct array-offset targets for array values, object-property targets,
+  copy-on-write, exact PHP diagnostics, or native lowering. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:108:9: undefined function strcasecmp()`,
+  corresponding to `wp-includes/compat.php:108`.
+- Next concrete task: implement a bounded `strcasecmp()` builtin slice for the
+  reached charset comparison path while keeping broad scalar coercions,
+  array/object/resource operands, binary/locale edge cases, exact diagnostics,
+  and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

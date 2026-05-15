@@ -6994,17 +6994,27 @@ handled.
   `runtime error at <bootstrap-shim>:4955:3: unsupported call reference assignment: references and aliasing are not implemented`,
   corresponding to `$parsed_args =& $args;` in
   `wp-includes/functions.php:4955`.
-- [ ] Runtime/value-model lane: implement or honestly bound direct variable
+- [x] Runtime/value-model lane: implement or honestly bound direct variable
   array by-reference assignment for the next real WordPress bootstrap-shim
   blocker at `wp-includes/functions.php:4955`, while keeping alias rebinding,
   scalar references, nested/array-offset sources, copy-on-write, mutation
   ordering, exact PHP diagnostics, and native lowering named unless
   implemented.
+  Milestone 765 implements the direct-variable source to direct-variable target
+  subset when the source currently holds an array or object value. It advances
+  the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:108:9: undefined function strcasecmp()`,
+  corresponding to `wp-includes/compat.php:108`.
+- [ ] Builtin/runtime lane: implement a bounded `strcasecmp()` slice for the
+  next real WordPress bootstrap-shim blocker, covering the reached
+  case-insensitive string comparison path while documenting unsupported broad
+  scalar coercions, array/object/resource operands, binary/locale edge cases,
+  exact PHP diagnostics, and native lowering unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 764 checkpoint, the latest committed checkpoint
-  is `da54a60 runtime: add bounded str_replace`, covering Milestone 763.
+- Before the current Milestone 765 checkpoint, the latest committed checkpoint
+  is `019053a runtime: add bounded call_user_func`, covering Milestone 764.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

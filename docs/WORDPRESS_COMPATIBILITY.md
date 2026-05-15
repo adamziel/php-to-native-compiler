@@ -608,6 +608,17 @@ The first bootstrap probe is expected to fail. Known blockers include:
   closure invocation, `__invoke`, `call_user_func_array`, references, variadic
   unpacking, exact PHP warning behavior, native lowering, or WordPress
   bootstrap support.
+  Milestone 765 implements the bounded direct-variable array `=&` path needed
+  for that `wp_parse_args()` assignment. Direct variable sources holding
+  current array or object values can be assigned into direct variables; this
+  stores the current value under the existing no-reference/no-copy-on-write
+  value model. It advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:108:9: undefined function strcasecmp()`,
+  corresponding to `wp-includes/compat.php:108`. This is not alias cells,
+  source/target rebinding, scalar references, nested/array-offset reference
+  sources, direct array-offset targets for array values, object-property
+  targets, copy-on-write, exact PHP diagnostics, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

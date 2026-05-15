@@ -2335,7 +2335,8 @@ impl Interpreter {
 
         match target {
             AssignTarget::Variable { name, .. } => {
-                let value = self.evaluate_object_handle_reference_source(source, span, scope)?;
+                let value =
+                    self.evaluate_direct_variable_reference_source_value(source, span, scope)?;
                 scope.write_static(name, value);
                 Ok(())
             }
@@ -2394,6 +2395,37 @@ impl Interpreter {
 
         match value {
             Value::Object(_) => Ok(value),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "references and aliasing are not implemented",
+                ),
+            )),
+        }
+    }
+
+    fn evaluate_direct_variable_reference_source_value(
+        &mut self,
+        source: &ReferenceSource,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = match source {
+            ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
+            ReferenceSource::ArrayIndex { .. } | ReferenceSource::MethodCall { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "references and aliasing are not implemented",
+                    ),
+                ));
+            }
+        };
+
+        match value {
+            Value::Object(_) | Value::Array(_) => Ok(value),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(

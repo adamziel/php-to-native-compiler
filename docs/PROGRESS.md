@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 765, bounded direct-variable array `=&` assignment for the
+  current no-reference value model. Reached reference assignments now execute
+  when the source is a direct variable holding a current array or object value
+  and the target is a direct variable. This stores the current value and is
+  intended for the `wp_parse_args()` path where later alias rebinding is not
+  observed. Direct array-offset targets remain limited to object-handle sources
+  from the Milestone 762 slice. This does not create PHP alias cells,
+  source/target rebinding, scalar references, nested/array-offset sources,
+  direct array-offset targets for array values, object-property targets,
+  copy-on-write behavior, mutation-ordering guarantees, exact PHP diagnostics,
+  or native lowering. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past `$parsed_args =& $args;` in `wp-includes/functions.php:4955`
+  to
+  `runtime error at <bootstrap-shim>:108:9: undefined function strcasecmp()`,
+  corresponding to the charset check in `wp-includes/compat.php:108`. Direct
+  `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone765`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 764, bounded `call_user_func()` dispatch for string
   callables. The runtime now accepts `call_user_func($name, ...$args)` when
   `$name` is a string resolving to a current user function or documented

@@ -229,11 +229,13 @@ magic property hooks, resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
 
-By-reference assignment syntax has one executing object-handle slice: direct
-variable sources holding current object values may be assigned into direct
-variables or direct array offsets, storing the same object handle. Other
-reached `=&` assignments still fail with a stable unsupported diagnostic until
-reference containers, alias rebinding, and copy-on-write exist.
+By-reference assignment syntax has bounded value-model slices: direct variable
+sources holding current object or array values may be assigned into direct
+variables, and direct variable sources holding current object values may also be
+assigned into direct array offsets. These paths store the current value/object
+handle rather than creating PHP reference cells. Other reached `=&` assignments
+still fail with a stable unsupported diagnostic until reference containers,
+alias rebinding, mutation ordering, and copy-on-write exist.
 By-reference function and method return declarations also parse as runtime
 boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.
