@@ -715,15 +715,17 @@
   PHP's warning/notice/deprecation filtering, ini integration,
   disabled-function policy, non-integer coercions, exact diagnostics, and
   native lowering remain unsupported.
-  `str_replace($search, $replace, $subject, $count = null)` supports the
-  current scalar/null string-convertible subset for the first three arguments
-  and returns the subject unchanged for an empty search string. Direct calls
-  and string-valued dynamic calls may pass a direct variable as the fourth
-  `$count` output argument; the interpreter writes the non-overlapping
-  replacement count as an integer. This is a bounded output-parameter path, not
-  true PHP references. Array search/replace/subject forms, non-variable count
-  targets, indirect `call_user_func()` count output, object/resource coercions,
-  exact warning behavior, binary string edge cases, and native lowering remain
+  `str_replace($search, $replace, $subject, $count = null)` supports scalar or
+  array search values when each search value is scalar/null
+  string-convertible, a scalar/null string-convertible replacement, and a
+  scalar/null string-convertible subject. Search arrays apply each search
+  string sequentially. Direct calls and string-valued dynamic calls may pass a
+  direct variable as the fourth `$count` output argument; the interpreter
+  writes the aggregated non-overlapping replacement count as an integer. This
+  is a bounded output-parameter path, not true PHP references. Replacement
+  arrays, subject arrays, nested search arrays, non-variable count targets,
+  indirect `call_user_func()` count output, object/resource coercions, exact
+  warning behavior, binary string edge cases, and native lowering remain
   unsupported.
   `min($value, ...$values)` supports two or more integer arguments and returns
   the smallest integer. Array-form `min([..])`, mixed-type comparison rules,

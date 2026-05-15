@@ -13005,16 +13005,70 @@ fn str_replace_scalar_result(
     subject: &Value,
     span: Span,
 ) -> CompileResult<(String, i64)> {
-    let search = string_replace_argument("str_replace()", "search", search, span)?;
+    let search_values = string_replace_search_values(search, span)?;
+    if matches!(replace, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_replace()",
+                "replacement argument arrays are not implemented in the current subset",
+            ),
+        ));
+    }
     let replace = string_replace_argument("str_replace()", "replace", replace, span)?;
     let subject = string_replace_argument("str_replace()", "subject", subject, span)?;
-    if search.is_empty() {
-        return Ok((subject, 0));
+
+    let mut result = subject;
+    let mut total_count = 0;
+    for search in search_values {
+        if search.is_empty() {
+            continue;
+        }
+
+        let count = result.matches(&search).count() as i64;
+        if count > 0 {
+            result = result.replace(&search, &replace);
+            total_count += count;
+        }
     }
 
-    let count = subject.matches(&search).count() as i64;
-    let result = subject.replace(&search, &replace);
-    Ok((result, count))
+    Ok((result, total_count))
+}
+
+fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec<String>> {
+    match search {
+        Value::Array(array) => {
+            let mut values = Vec::with_capacity(array.len());
+            for entry in array.entries() {
+                match &entry.value {
+                    Value::Array(_) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "str_replace()",
+                                "search array values must be null, bool, int, float, or string in the current subset, got array",
+                            ),
+                        ));
+                    }
+                    value => {
+                        values.push(string_replace_argument(
+                            "str_replace()",
+                            "search array value",
+                            value,
+                            span,
+                        )?);
+                    }
+                }
+            }
+            Ok(values)
+        }
+        value => Ok(vec![string_replace_argument(
+            "str_replace()",
+            "search",
+            value,
+            span,
+        )?]),
+    }
 }
 
 fn string_replace_argument(

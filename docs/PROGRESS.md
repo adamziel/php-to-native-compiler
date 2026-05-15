@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 845, bounded `str_replace()` search-array support for the
+  same reached WordPress `_deep_replace()` path. The interpreter now accepts a
+  search array whose values are scalar/null string-convertible values,
+  applies those search strings sequentially to the scalar/null
+  string-convertible subject, and aggregates the non-overlapping replacement
+  count when a direct `$count` output variable is supplied. Replacement arrays,
+  subject arrays, nested search arrays, broad PHP reference semantics,
+  object/resource coercions, exact PHP warning behavior, binary string edge
+  cases, and native lowering remain unsupported. The real WordPress 6.9.4
+  bootstrap-shim probe now exits `0` with no stdout; with
+  `PHPC_TRACE_INCLUDES=1`, stderr contains only include trace lines ending at
+  `<wordpress-root>/wp-includes/pluggable.php`. Direct `wp-settings.php` still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test str_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone845`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 844, bounded `str_replace()` count-output support for the
   reached WordPress `_deep_replace()` path in `wp-includes/formatting.php:4440`.
   Direct `str_replace($search, $replace, $subject, $count)` calls and

@@ -62,6 +62,28 @@ echo str_replace("", "x", "banana", $count), "|", $count;
 }
 
 #[test]
+fn str_replace_executes_current_search_array_subset() {
+    let execution = run_source(
+        r#"<?php
+$count = 0;
+echo str_replace(["%0D", "%0A"], "", "%0%0DDD%0A", $count), "|", $count, "\n";
+function deep_replace($search, $subject) {
+    $count = 1;
+    while ($count) {
+        $subject = str_replace($search, "", $subject, $count);
+    }
+    return $subject;
+}
+echo deep_replace(["%0D", "%0A"], "%0%0DDD%0A");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "%0DD|2\nD");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn string_valued_str_replace_writes_count_to_direct_variable() {
     let execution = run_source(
         r#"<?php
@@ -115,16 +137,28 @@ echo call_user_func("str_replace", "a", "b", "abc", 0);
         "unsupported call str_replace(): count output requires a direct str_replace() call with a direct variable in the current subset"
     );
 
-    let array_search = runtime_error(
+    let array_replace = runtime_error(
         r#"<?php
-echo str_replace(["a"], "b", "abc");
+echo str_replace("a", ["b"], "abc");
 "#,
     );
-    assert_eq!(array_search.line, 2);
-    assert_eq!(array_search.column, 6);
+    assert_eq!(array_replace.line, 2);
+    assert_eq!(array_replace.column, 6);
     assert_eq!(
-        array_search.message,
-        "unsupported call str_replace(): search argument arrays are not implemented in the current subset"
+        array_replace.message,
+        "unsupported call str_replace(): replacement argument arrays are not implemented in the current subset"
+    );
+
+    let nested_array_search = runtime_error(
+        r#"<?php
+echo str_replace([["a"]], "b", "abc");
+"#,
+    );
+    assert_eq!(nested_array_search.line, 2);
+    assert_eq!(nested_array_search.column, 6);
+    assert_eq!(
+        nested_array_search.message,
+        "unsupported call str_replace(): search array values must be null, bool, int, float, or string in the current subset, got array"
     );
 
     let array_subject = runtime_error(

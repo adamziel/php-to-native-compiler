@@ -1244,6 +1244,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   exact warnings, binary string edge cases, or native lowering. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): search argument arrays are not implemented in the current subset`.
+  Milestone 845 adds bounded search-array support for the same `_deep_replace()`
+  path when each search value is scalar/null string-convertible and the
+  replacement and subject remain scalar/null string-convertible. This is not
+  replacement arrays, subject arrays, nested search arrays, exact warnings,
+  binary string edge cases, broad PHP references, or native lowering. The real
+  bootstrap-shim probe now exits `0` with no stdout; with include tracing
+  enabled, stderr contains include trace lines ending at
+  `<wordpress-root>/wp-includes/pluggable.php`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `a04f814 runtime: add wordpress str replace count`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 845, bounded `str_replace()` search-array support
+  for the reached WordPress `_deep_replace()` path in
+  `wp-includes/formatting.php:4440`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/str_replace_builtin.rs`,
+  `tests/fixtures/milestone845/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test str_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone845`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: replacement arrays, subject arrays, nested search
+  arrays, non-variable count targets, indirect callable count output, broad
+  references, exact PHP warning behavior, binary string edge cases, and native
+  lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim exits `0` with no stdout and include trace stderr ending
+  at `<wordpress-root>/wp-includes/pluggable.php`.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress str replace arrays"`.
+  The next milestone should expand the WordPress compatibility harness beyond
+  the current bootstrap shim before claiming broader WordPress support.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `8fc1b73 runtime: add wordpress preg replace cleanups`, pushed to
   `origin/master`.
 - Task attempted: Milestone 844, bounded `str_replace()` count-output support

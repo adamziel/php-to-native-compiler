@@ -7752,19 +7752,28 @@ handled.
   scalar/null string-convertible `str_replace()` subset. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): search argument arrays are not implemented in the current subset`.
-- [ ] Runtime/string lane: implement the reached `_deep_replace()` array-search
+- [x] Runtime/string lane: implement the reached `_deep_replace()` array-search
   shape for `str_replace($search, '', $subject, $count)` without claiming broad
   PHP array replacement behavior. Inspect WordPress' caller shapes, support
   only scalar/null subject and array search values if appropriate, update count
   aggregation, and keep replacement arrays, subject arrays, nested arrays,
   object/resource coercions, exact warnings, binary string edge cases, and
   native lowering named unless implemented.
+  Milestone 845 covers the reached scalar/null string-convertible search-array
+  values with scalar replacement/subject and direct-variable count output. The
+  real bootstrap-shim probe now exits `0` with no stdout.
+- [ ] WordPress harness lane: expand the compatibility target beyond the
+  current bootstrap shim. Add a committed, reproducible next probe for a real
+  WordPress entry flow, such as a `wp-load.php`/front-controller shaped harness
+  with documented minimal config and host assumptions, without claiming plugin,
+  theme, admin, REST, database, HTTP, or native WordPress support until those
+  flows have executable coverage.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 844 checkpoint, the latest committed checkpoint
-  is `8fc1b73 runtime: add wordpress preg replace cleanups`, covering
-  Milestone 843.
+- Before the current Milestone 845 checkpoint, the latest committed checkpoint
+  is `a04f814 runtime: add wordpress str replace count`, covering
+  Milestone 844.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

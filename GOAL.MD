@@ -135,9 +135,11 @@ function declaration registration for the reached guarded `wp_redirect()`
 declaration, plus bounded `preg_replace_callback()` for the reached
 `wp_sanitize_redirect()` UTF-8 sanitizer callback, plus bounded
 `preg_replace()` redirect sanitizer cleanup, mail-host cleanup, and KSES null
-cleanup patterns. As of Milestone 843, direct `wp-settings.php` still stops at
-missing `ABSPATH`, while the bootstrap shim now stops at
-`runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
+cleanup patterns, plus bounded `str_replace()` direct-variable count output
+and search-array replacement for the reached `_deep_replace()` path. As of
+Milestone 845, direct `wp-settings.php` still stops at missing `ABSPATH`, while
+the real WordPress 6.9.4 bootstrap shim exits `0` with no stdout under the
+current deterministic CLI/bootstrap assumptions.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -666,11 +668,11 @@ The repository already has a working Rust workspace with:
   `wp_sanitize_redirect()` UTF-8 sanitizer callback, and bounded
   `preg_replace()` covers the reached redirect sanitizer cleanup pattern,
   mail-host cleanup, and KSES null cleanup patterns, and bounded
-  `str_replace()` direct-variable count output covers the reached
-  `_deep_replace()` loop in `wp-includes/formatting.php:4440`. The next
-  bottleneck is the same WordPress path passing an array `$search` into
-  `str_replace()`, which needs a bounded array-search replacement/count path
-  before any broad PHP replacement-array or reference semantics are claimed.
+  `str_replace()` direct-variable count output plus search-array handling cover
+  the reached `_deep_replace()` loop in `wp-includes/formatting.php:4440`. The
+  bootstrap shim now exits `0`; the next WordPress-directed work is to broaden
+  the harness beyond that shim before claiming real front-end, admin, REST,
+  plugin/theme, database, HTTP, or native WordPress support.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
@@ -992,12 +994,14 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 844 is the active checkpoint candidate: bounded `str_replace()`
-  direct-variable count-output support advanced the real WordPress bootstrap
-  shim to the reached `_deep_replace()` array-search argument shape.
-- The next immediate WordPress-directed lane is to inspect and implement that
-  `str_replace()` array-search path without claiming broad replacement-array,
-  subject-array, or PHP reference semantics.
+- Milestone 845 is the active checkpoint candidate: bounded `str_replace()`
+  search-array support advanced the real WordPress bootstrap shim to an exit-0
+  bootstrap-shaped load.
+- The next immediate WordPress-directed lane is to expand the compatibility
+  harness beyond the bootstrap shim into a reproducible WordPress entry flow
+  with documented config and host assumptions, without claiming plugin, theme,
+  admin, REST, database, HTTP, or native WordPress support until those flows
+  have executable coverage.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and
