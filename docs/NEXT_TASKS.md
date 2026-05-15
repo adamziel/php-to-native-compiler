@@ -7057,7 +7057,7 @@ handled.
   bootstrap-shim probe past the missing-MySQL-extension guard to
   `runtime error at <bootstrap-shim>:39:6: undefined variable '$wp_filter'`,
   corresponding to `wp-includes/plugin.php:39`.
-- [ ] Runtime compatibility lane: implement or explicitly bound PHP-shaped
+- [x] Runtime compatibility lane: implement or explicitly bound PHP-shaped
   undefined-variable reads for the reached WordPress `if ( $wp_filter )` path,
   likely warning-plus-`null`/falsey behavior in `phpc run`, while preserving
   stable diagnostics and documenting unsupported warning reporting,
@@ -7086,16 +7086,26 @@ handled.
   advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1688:11: undefined function strtolower()`,
   corresponding to `wp-includes/load.php:1688`.
-- [ ] String builtin lane: implement a bounded `strtolower()` slice for the
+- [x] String builtin lane: implement a bounded `strtolower()` slice for the
   next WordPress bootstrap blocker, starting with ASCII/UTF-8 runtime strings
   used by `wp_convert_hr_to_bytes()`. Keep locale, binary string edge cases,
   array/object/resource coercions, exact diagnostics, and native lowering named
   unless implemented.
+  Milestone 774 implements the current scalar/null string-convertible
+  `strtolower()` slice with ASCII lowercase mapping and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1688:23: undefined function trim()`,
+  corresponding to `wp-includes/load.php:1688`.
+- [ ] String builtin lane: implement a bounded `trim()` slice for the next
+  WordPress bootstrap blocker, starting with the default character mask needed
+  by `wp_convert_hr_to_bytes()`. Keep custom character masks, binary string
+  edge cases, array/object/resource coercions, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 773 checkpoint, the latest committed checkpoint
-  is `2f0c39a runtime: add bounded microtime`, covering Milestone 772.
+- Before the current Milestone 774 checkpoint, the latest committed checkpoint
+  is `f45bcce runtime: add bounded ini_get`, covering Milestone 773.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

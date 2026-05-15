@@ -413,7 +413,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `strcasecmp`, `str_replace`,
+- builtins for the documented subset: `strlen`, `strtolower`, `strcasecmp`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `version_compare`, `microtime`, `ini_get`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -489,6 +489,12 @@
   locale behavior, argument reordering beyond `%N$s`, array/object/resource
   conversions, exact warning behavior, partial-output behavior, and native
   lowering remain unsupported.
+  `strtolower($value)` supports exactly one scalar/null string-convertible
+  argument and applies ASCII lowercase mapping over the current runtime UTF-8
+  string value. Locale-sensitive case mapping, full Unicode case folding,
+  binary string edge cases beyond valid UTF-8 runtime strings,
+  array/object/resource coercions, exact PHP diagnostics, and native lowering
+  remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
   string-convertible arguments, compares with ASCII case folding, and returns
   `-1`, `0`, or `1`. Array operands, object/resource coercions, binary string
@@ -1891,7 +1897,8 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `dirname`, `file_exists`, `mysqli_connect`, `array_change_key_case`, `array_column`, `array_is_list`,
+  `strtolower`, `dirname`, `file_exists`, `mysqli_connect`,
+  `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
@@ -2183,7 +2190,7 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `strcasecmp`,
+  one of the documented callable builtins: `strlen`, `strtolower`, `strcasecmp`,
   `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -2308,7 +2315,7 @@
   first-class callable syntax, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `strcasecmp`, `str_replace`, `sprintf`,
+- Builtins: `strlen`, `strtolower`, `strcasecmp`, `str_replace`, `sprintf`,
   `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -2409,6 +2416,10 @@
   builtin section above; direct native `ini_get(...)` calls still reject under
   the function-call boundary, while native function-table introspection
   recognizes the name.
+  `strtolower` accepts the same current scalar/null string-convertible subset
+  as the builtin section above; direct native `strtolower(...)` calls still
+  reject under the function-call boundary, while native function-table
+  introspection recognizes the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3946,6 +3957,11 @@
   string edge cases beyond valid UTF-8 runtime strings, locale-sensitive
   behavior, exact PHP diagnostics, and native lowering beyond function-table
   introspection
+- `strtolower()` outside the current one-argument scalar/null
+  string-convertible subset: locale-sensitive case mapping, full Unicode case
+  folding, binary string edge cases beyond valid UTF-8 runtime strings,
+  array/object/resource coercions, exact PHP diagnostics, and native lowering
+  beyond function-table introspection
 - `str_replace()` outside the current scalar/null string-convertible
   three-argument subset: array search/replace/subject forms, the fourth
   `$count` output argument, object/resource coercions, exact warning behavior,

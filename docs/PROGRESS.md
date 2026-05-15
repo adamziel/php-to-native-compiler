@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 774, bounded `strtolower()` for the current WordPress
+  `wp_convert_hr_to_bytes()` path. The runtime now accepts one current
+  scalar/null string-convertible value, applies ASCII lowercase mapping over
+  runtime UTF-8 strings, exposes the builtin through function/callability
+  metadata and dynamic string-valued calls, and keeps direct native calls
+  behind the generic function-call lowering boundary. Locale-sensitive case
+  mapping, full Unicode case folding, binary string edge cases beyond valid
+  UTF-8 runtime strings, array/object/resource coercions, exact PHP
+  diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the reached `strtolower()`
+  call to
+  `runtime error at <bootstrap-shim>:1688:23: undefined function trim()`,
+  corresponding to `wp-includes/load.php:1688`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_case_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone774`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 773, bounded deterministic `ini_get()` registry reads. The
   runtime now accepts one string option name, returns string values for a
   documented WordPress-oriented registry, returns `false` for unknown names,

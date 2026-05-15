@@ -892,6 +892,11 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
+`strtolower()` is an interpreter-only bounded case-mapping builtin for current
+scalar/null string-convertible values. It applies ASCII lowercase mapping over
+runtime UTF-8 strings so WordPress bootstrap can normalize simple option
+suffixes, while locale-sensitive casing, full Unicode case folding, binary
+string behavior beyond valid UTF-8, and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native

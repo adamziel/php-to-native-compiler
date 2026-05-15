@@ -685,6 +685,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   discovery, mutable INI state, `ini_set()`/`ini_get_all()`, SAPI differences,
   full option catalogs, exact diagnostics, native lowering, or WordPress
   bootstrap support.
+  Milestone 774 implements bounded `strtolower()` for current scalar/null
+  string-convertible values with ASCII lowercase mapping. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1688:23: undefined function trim()`,
+  corresponding to `wp-includes/load.php:1688`. This is not locale-sensitive
+  case mapping, full Unicode case folding, binary string compatibility beyond
+  valid UTF-8 runtime strings, array/object/resource coercions, exact
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

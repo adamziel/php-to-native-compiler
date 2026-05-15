@@ -5936,6 +5936,7 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
+            "strtolower" => call_strtolower(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "sprintf" => call_sprintf(&args, span),
@@ -9250,6 +9251,7 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "strtolower"
             | "strcasecmp"
             | "str_replace"
             | "sprintf"
@@ -9454,6 +9456,23 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
     matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
+}
+
+fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strtolower", args, 1, span)?;
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("strtolower()", "arrays are not supported"),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+
+    Ok(Value::String(value.to_ascii_lowercase()))
 }
 
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
