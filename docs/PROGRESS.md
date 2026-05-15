@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 868, a synthetic WordPress-shaped `wpdb::get_results()`
+  smoke that sets `$this->num_rows` from `mysqli_num_rows($this->result)` for
+  the exact empty-result placeholder and deterministic seed-post placeholder
+  before consuming rows through `mysqli_fetch_assoc()`. The fixture verifies
+  that the empty path reports `0`, the seed-post path reports `1`, and the
+  fetched row still carries the deterministic `ID` and `post_title` values.
+  This is a harness smoke only; it does not add real WordPress `wpdb` query
+  fidelity, SQL execution, database state, cache behavior, affected-row or
+  insert-id state, warnings/errors, broad result-count semantics, or native
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone868`.
+
 - Added Milestone 867, bounded `mysqli_num_rows()` support for interpreter
   placeholder result state. The runtime now accepts
   `mysqli_num_rows($result)` for current placeholder `mysqli_result` objects,

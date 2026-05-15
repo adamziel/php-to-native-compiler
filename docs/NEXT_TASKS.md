@@ -7990,15 +7990,27 @@ handled.
   and is visible through runtime and native metadata lookup. This is not real
   buffered/unbuffered result behavior, SQL execution, database state,
   affected-row/insert-id state, warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
   `mysqli_num_rows()` through a WordPress-shaped result-count path without
   claiming real `wpdb` database state or query fidelity.
+  Milestone 868 adds a `phpc-only` synthetic `wpdb::get_results($query,
+  ARRAY_A)` fixture that sets `$this->num_rows` from `mysqli_num_rows()` for
+  both the exact empty-result placeholder and deterministic seed-post
+  placeholder before consuming rows through `mysqli_fetch_assoc()`. It is not
+  real WordPress `wpdb` query fidelity, SQL execution, database state, cache
+  behavior, affected-row/insert-id state, warnings/errors, broad result-count
+  semantics, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next mutation/result metadata boundary
+  after placeholder row counts and choose a small tested slice, such as
+  deterministic `mysqli_affected_rows()`/`mysqli_insert_id()` state for
+  no-op placeholder queries or an explicit named boundary before broader SQL
+  execution.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5d172fe tests: add wordpress wpdb data seek smoke`, covering Milestone 866
-  before the current Milestone 867 candidate.
+  `3d9fb7e runtime: add mysqli num rows placeholder`, covering Milestone 867
+  before the current Milestone 868 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

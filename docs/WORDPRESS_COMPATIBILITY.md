@@ -1313,9 +1313,11 @@ historical blockers and remaining full-support gaps include:
   results, and Milestone 866 adds a synthetic `wpdb` smoke that rewinds and
   rereads the placeholder row. Milestone 867 adds bounded
   `mysqli_num_rows()` for the placeholder result row count without moving the
-  fetch cursor. These are still deterministic harness milestones, not SQL
-  execution, real database state, duplicate-column or warning/error fidelity,
-  real `wpdb` output-mode fidelity, affected-row/insert-id state,
+  fetch cursor, and Milestone 868 adds a synthetic `wpdb` smoke that records
+  that placeholder row count through `$this->num_rows`. These are still
+  deterministic harness milestones, not SQL execution, real database state,
+  duplicate-column or warning/error fidelity, real `wpdb` output-mode
+  fidelity, affected-row/insert-id state,
   plugin/theme/admin/REST, SAPI, rendered request, or native WordPress support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;

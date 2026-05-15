@@ -29,6 +29,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `3d9fb7e runtime: add mysqli num rows placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 868, a synthetic WordPress-shaped
+  `wpdb::get_results($query, ARRAY_A)` smoke that records placeholder result
+  counts through `$this->num_rows`.
+- Files changed so far: `tests/fixtures/milestone868/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone868`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb` path can now record the
+  placeholder row count for exact empty-result and seed-post result boundaries
+  before consuming rows.
+- Remaining semantic gaps: real WordPress `wpdb` query fidelity, SQL
+  execution, database state, cache behavior, affected-row/insert-id state,
+  broad result-count semantics, warnings/errors, and native database lowering
+  remain missing.
+- Next concrete task: run focused fixture verification, then whitespace checks
+  and the serialized checkpoint gate.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `5d172fe tests: add wordpress wpdb data seek smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 867, bounded `mysqli_num_rows()` support for
