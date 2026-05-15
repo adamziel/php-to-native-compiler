@@ -3854,6 +3854,78 @@ impl Interpreter {
         Ok(Value::String("8.0.0-phpc-placeholder".to_string()))
     }
 
+    fn call_mysqli_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_query()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        if args.len() == 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    "result mode arguments are not implemented; pass exactly two arguments in the current subset",
+                ),
+            ));
+        }
+
+        let Value::Object(handle) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {} object",
+                        handle.class_name()
+                    ),
+                ),
+            ));
+        }
+
+        let Value::String(query) = &args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    format!(
+                        "query argument must be string in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+
+        if query == "SELECT @@SESSION.sql_mode" {
+            return Ok(Value::Bool(false));
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "mysqli_query()",
+                "only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset",
+            ),
+        ))
+    }
+
     fn evaluate_array_index(
         &mut self,
         target: &Expr,
@@ -7541,6 +7613,7 @@ impl Interpreter {
             )),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
+            "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -10129,6 +10202,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_connect"
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
+            | "mysqli_query"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"

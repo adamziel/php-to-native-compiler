@@ -7395,7 +7395,7 @@ handled.
   reads the current caller scope, omits missing variables, returns an array
   keyed by found names, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:951:11: undefined function mysqli_query()`.
-- [ ] Runtime/database lane: add a bounded `mysqli_query()` boundary for the
+- [x] Runtime/database lane: add a bounded `mysqli_query()` boundary for the
   reached WordPress `set_sql_mode()` path. Start with the exact
   `SELECT @@SESSION.sql_mode` query shape and decide whether to return an
   empty/false result boundary or a placeholder result object that can feed the
@@ -7403,11 +7403,20 @@ handled.
   execution, result resources, row iteration, SQL errors/warnings, connection
   state, escaping, exact diagnostics, and native database lowering named
   unless implemented.
+  Milestone 807 accepts the placeholder `mysqli` object and exactly
+  `SELECT @@SESSION.sql_mode`, returns `false` as a deterministic
+  empty/no-result boundary, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1203:14: undefined function mysqli_select_db()`.
+- [ ] Runtime/database lane: add bounded `mysqli_select_db()` support for the
+  reached WordPress `select()` path. Start with the placeholder `mysqli` object
+  and scalar/null database-name argument shape reached by the probe; keep real
+  database selection, connection state, errors/warnings, exact diagnostics, and
+  native database lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 806 checkpoint, the latest committed checkpoint
-  is `7e7faab runtime: add bounded mysqli server info`, covering Milestone 805.
+- Before the current Milestone 807 checkpoint, the latest committed checkpoint
+  is `b2c047b runtime: add bounded compact`, covering Milestone 806.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

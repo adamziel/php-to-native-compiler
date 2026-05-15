@@ -941,6 +941,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full `compact()` array/nested argument behavior,
   variable-variable interaction, warning behavior, native lowering, real query
   execution, result resources, or WordPress bootstrap support.
+  Milestone 807 implements bounded `mysqli_query()` for the reached
+  `wpdb::set_sql_mode()` path. It accepts the placeholder `mysqli` object and
+  exactly `SELECT @@SESSION.sql_mode`, returning `false` as a deterministic
+  empty/no-result boundary. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1203:14: undefined function mysqli_select_db()`.
+  This is not real query execution, result resources, row iteration,
+  SQL errors/warnings, connection state, native database lowering, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

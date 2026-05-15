@@ -1,0 +1,1 @@
+Project-specific database boundary: phpc returns deterministic false for WordPress' SQL mode probe, while system PHP depends on a real host MySQL connection and query execution.

@@ -161,6 +161,31 @@ echo $call($handle);
 }
 
 #[test]
+fn mysqli_query_returns_false_for_current_wordpress_sql_mode_probe() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_query";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT @@SESSION.sql_mode");
+echo "|";
+echo $result === false ? "false" : "result";
+echo "|";
+echo empty($result) ? "empty" : "set";
+echo "|";
+echo $call($handle, "SELECT @@SESSION.sql_mode") === false ? "dynamic" : "result";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|false|empty|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_real_connect_rejects_forms_outside_current_boundary() {
     let error = run_source(
         r#"<?php
@@ -213,6 +238,40 @@ mysqli_get_server_info("not-a-handle");
 }
 
 #[test]
+fn mysqli_query_rejects_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_query("not-a-handle", "SELECT @@SESSION.sql_mode");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_query(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let unsupported_query = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_query($handle, "SELECT 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(unsupported_query.phase, Phase::Runtime);
+    assert_eq!(unsupported_query.line, 3);
+    assert_eq!(unsupported_query.column, 1);
+    assert_eq!(
+        unsupported_query.message,
+        "unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset"
+    );
+}
+
+#[test]
 fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
     let error = run_source(
         r#"<?php
@@ -241,6 +300,8 @@ echo function_exists("mysqli_real_connect") ? "1" : "0";
 echo is_callable("mysqli_real_connect") ? "1" : "0";
 echo function_exists("mysqli_get_server_info") ? "1" : "0";
 echo is_callable("mysqli_get_server_info") ? "1" : "0";
+echo function_exists("mysqli_query") ? "1" : "0";
+echo is_callable("mysqli_query") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -250,7 +311,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 11, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 13, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -294,6 +355,18 @@ mysqli_real_connect(mysqli_init(), "localhost");
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_server_info(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_query(mysqli_init(), "SELECT @@SESSION.sql_mode");
 "#,
     )
     .unwrap_err();

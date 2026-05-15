@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 807, a bounded `mysqli_query()` boundary for the current
+  WordPress `wpdb::set_sql_mode()` startup path. The runtime now exposes
+  `mysqli_query` through function/callability metadata and dynamic
+  string-valued calls, accepts the placeholder `mysqli` object and exactly
+  `SELECT @@SESSION.sql_mode`, and returns `false` as a deterministic
+  empty/no-result boundary so WordPress skips SQL mode normalization without
+  executing SQL. Other queries, result-mode arguments, result resources, row
+  iteration, real query execution, SQL errors/warnings, connection state,
+  escaping, exact PHP diagnostics, and native database lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `mysqli_query()` call to
+  `runtime error at <bootstrap-shim>:1203:14: undefined function mysqli_select_db()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone807`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 806, bounded `compact()` support for the current WordPress
   `wpdb::determine_charset()` startup path. The runtime now exposes `compact`
   through function/callability metadata and dynamic string-valued calls, routes

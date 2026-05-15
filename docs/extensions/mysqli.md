@@ -2,7 +2,7 @@
 
 Status: boundary only.
 
-`mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
+`mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
 `mysqli_report`, and `mysqli_init` are currently visible through
 `function_exists()`, `is_callable()`, dynamic string-valued function lookup,
 and native function-table introspection so WordPress' early database startup
@@ -28,6 +28,11 @@ select a database, negotiate charset, or produce real mysqli connection state.
 WordPress' `wpdb::db_version()` guard. It does not query a server or reflect
 real connection metadata.
 
+`mysqli_query($handle, 'SELECT @@SESSION.sql_mode')` accepts the placeholder
+object and that exact SQL mode probe, returning `false` as a deterministic
+empty/no-result boundary. This lets WordPress skip SQL mode normalization
+without executing SQL or producing a result resource.
+
 Calling `mysqli_connect(...)` is still a stable unsupported runtime boundary:
 
 ```text
@@ -36,6 +41,7 @@ unsupported call mysqli_connect(): mysqli/database connections are not implement
 
 No real mysqli extension behavior is implemented yet: no host connections, no
 real resources or connected objects beyond the placeholder shape, no real
-server metadata, no queries, no result sets, no escaping, no charset handling,
-no errors/warnings, no transactions, no configuration beyond the current
-report-mode flag, no PDO bridge, and no native database lowering.
+server metadata, no query execution beyond the current false SQL mode probe, no
+result sets, no escaping, no charset handling, no errors/warnings, no
+transactions, no configuration beyond the current report-mode flag, no PDO
+bridge, and no native database lowering.
