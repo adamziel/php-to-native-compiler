@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source_with_source_file};
 
-const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, and __METHOD__ until native source mapping, path canonicalization, and function/method-context lowering exist; phpc run handles current magic constant behavior";
+const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, __CLASS__, and __METHOD__ until native source mapping, path canonicalization, and function/class/method-context lowering exist; phpc run handles current magic constant behavior";
 
 #[test]
 fn phpc_run_still_handles_current_magic_constant_subset() {

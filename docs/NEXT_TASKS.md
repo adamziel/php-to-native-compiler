@@ -7293,16 +7293,25 @@ handled.
   variables, nulls the current visible property slot, and advances the real
   bootstrap-shim probe to
   `parse error at <bootstrap-shim>:4127:38: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented`.
-- [ ] Runtime/magic-constant lane: implement bounded `__CLASS__` evaluation in
+- [x] Runtime/magic-constant lane: implement bounded `__CLASS__` evaluation in
   class context for the reached WordPress startup path. Keep trait/namespace
   edge cases, closure rebinding, anonymous-class exact names, source mapping,
   native lowering, and other magic constants named unless implemented.
+  Milestone 797 evaluates executable `__CLASS__` to the active class name in
+  method context and to an empty string outside class context, advancing the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1970:3: undefined function mysqli_report()`.
+- [ ] Runtime/database lane: add a bounded `mysqli_report()` compatibility
+  boundary for the reached WordPress startup path. Keep real mysqli extension
+  state, report mode validation beyond the reached constants, connection/query
+  behavior, warning/error routing, exact diagnostics, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 796 checkpoint, the latest committed checkpoint
-  is `e30773d parser: add object property reference sources`, covering
-  Milestone 795.
+- Before the current Milestone 797 checkpoint, the latest committed checkpoint
+  is `b34f9ff parser: add object property unset operands`, covering
+  Milestone 796.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

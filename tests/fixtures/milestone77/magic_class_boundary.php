@@ -5,4 +5,4 @@ class Box {
     }
 }
 $box = new Box();
-echo "unreachable";
+echo $box->label();

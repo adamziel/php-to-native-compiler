@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Box--- stdout end ---
 stderr:
-parse error at tests/fixtures/milestone77/magic_class_boundary.php:4:16: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented
 --- stderr end ---

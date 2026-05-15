@@ -1,5 +1,5 @@
 <?php
 function current_label() {
-    return __CLASS__;
+    return __TRAIT__;
 }
 echo current_label();

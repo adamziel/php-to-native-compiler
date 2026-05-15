@@ -709,23 +709,27 @@ class Box {
 }
 
 #[test]
-fn magic_class_constant_is_rejected_until_class_context_tracking_exists() {
-    let error = parse_error(
+fn magic_class_constant_evaluates_from_current_class_context() {
+    let execution = run_source(
         r#"<?php
+echo "top:", __CLASS__, "\n";
+function label() {
+    return __CLASS__;
+}
+echo "function:", label(), "\n";
 class Box {
     public function label() {
         return __CLASS__;
     }
 }
+$box = new Box();
+echo "method:", $box->label(), "\n";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 16);
-    assert_eq!(
-        error.message,
-        "unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented"
-    );
+    assert_eq!(execution.stdout, "top:\nfunction:\nmethod:Box\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

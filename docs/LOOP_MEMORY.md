@@ -26,6 +26,50 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T09:36:40Z
+
+- Checkpoint before this task:
+  `b34f9ff parser: add object property unset operands`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 797, bounded executable `__CLASS__` evaluation for
+  the reached WordPress `wp_debug_backtrace_summary( __CLASS__ )` path in
+  `wp-includes/class-wpdb.php:4127`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/native_magic_constant_boundary.rs`,
+  `tests/fixtures/milestone76/*`, `tests/fixtures/milestone77/*`,
+  `tests/fixtures/milestone797/*`,
+  `tests/fixtures/unsupported_function_features/unsupported_magic_constant.*`,
+  `tests/fixtures/milestone171/native_magic_constant_boundary_emit_ir.cli`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes magic_class_constant_evaluates_from_current_class_context -- --exact`,
+  `cargo test -p phpc --test native_magic_constant_boundary`,
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone797`,
+  `cargo run -p phpc -- test tests/fixtures/milestone76`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:1970:3: undefined function mysqli_report()`.
+- Remaining semantic gaps: trait and namespace magic constants, trait method
+  context, anonymous-class exact names, source-map fidelity, original-case
+  details beyond current class metadata, and native lowering remain
+  unsupported.
+- Next concrete task: add a bounded `mysqli_report()` compatibility boundary
+  for the reached WordPress startup path while keeping real mysqli extension
+  state, report mode validation beyond the reached constants, connection/query
+  behavior, warning/error routing, exact diagnostics, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T09:22:10Z
 
 - Checkpoint before this task:

@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 797, bounded executable `__CLASS__` evaluation for the
+  current WordPress `wp_debug_backtrace_summary( __CLASS__ )` path in
+  `wp-includes/class-wpdb.php:4127`. The parser now accepts `__CLASS__` as an
+  expression, the interpreter returns the active class name when a method class
+  context exists, and it returns an empty string outside class context. This
+  mirrors the existing bounded `__METHOD__` context path without adding trait
+  method context, anonymous-class exact naming, closure rebinding behavior,
+  namespace/source mapping fidelity, `__TRAIT__`, `__NAMESPACE__`, or native
+  lowering. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `__CLASS__` expression to
+  `runtime error at <bootstrap-shim>:1970:3: undefined function mysqli_report()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes magic_class_constant_evaluates_from_current_class_context -- --exact`,
+  `cargo test -p phpc --test native_magic_constant_boundary`,
+  `cargo test -p phpc --test milestone1 milestone1_fixtures_pass -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone797`,
+  `cargo run -p phpc -- test tests/fixtures/milestone76`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 796, bounded direct and dynamic object-property
   `unset(...)` operands for the current WordPress `unset($this->$name)` path in
   `wp-includes/class-wpdb.php:832`. The parser now accepts

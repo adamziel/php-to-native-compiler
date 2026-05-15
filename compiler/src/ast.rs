@@ -625,6 +625,9 @@ pub enum Expr {
     MagicFunction {
         span: Span,
     },
+    MagicClass {
+        span: Span,
+    },
     MagicMethod {
         span: Span,
     },
@@ -885,6 +888,7 @@ impl Expr {
             | Expr::MagicFile { span }
             | Expr::MagicDir { span }
             | Expr::MagicFunction { span }
+            | Expr::MagicClass { span }
             | Expr::MagicMethod { span }
             | Expr::GlobalConstant { span, .. }
             | Expr::ClassNameConstant { span, .. }

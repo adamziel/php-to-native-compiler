@@ -852,6 +852,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not typed-property uninitialization, physical dynamic-slot removal,
   magic `__unset` dispatch, references/copy-on-write, native lowering, or
   WordPress bootstrap support.
+  Milestone 797 implements bounded executable `__CLASS__` evaluation in method
+  class context for the reached `wp_debug_backtrace_summary( __CLASS__ )` path
+  in `wp-includes/class-wpdb.php:4127`. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:1970:3: undefined function mysqli_report()`.
+  This is not trait/namespace magic-constant support, anonymous-class exact
+  names, source-mapping fidelity, native lowering, real mysqli extension
+  behavior, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

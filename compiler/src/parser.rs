@@ -3634,6 +3634,9 @@ impl Parser {
                     if magic_name == "__FUNCTION__" {
                         return Ok(Expr::MagicFunction { span: token.span });
                     }
+                    if magic_name == "__CLASS__" {
+                        return Ok(Expr::MagicClass { span: token.span });
+                    }
                     if magic_name == "__METHOD__" {
                         return Ok(Expr::MagicMethod { span: token.span });
                     }
@@ -4344,7 +4347,7 @@ impl Parser {
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
-            Expr::MagicMethod { .. } => Ok(()),
+            Expr::MagicClass { .. } | Expr::MagicMethod { .. } => Ok(()),
             Expr::SelfClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
@@ -4426,7 +4429,7 @@ impl Parser {
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
             Expr::MagicFunction { .. } => Ok(()),
-            Expr::MagicMethod { .. } => Ok(()),
+            Expr::MagicClass { .. } | Expr::MagicMethod { .. } => Ok(()),
             Expr::ClassConstant { .. } => Ok(()),
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
@@ -4573,6 +4576,7 @@ impl Parser {
             | Expr::MagicFile { .. }
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
+            | Expr::MagicClass { .. }
             | Expr::MagicMethod { .. }
             | Expr::GlobalConstant { .. }
             | Expr::ClassNameConstant { .. }
@@ -4701,6 +4705,7 @@ impl Parser {
             | Expr::MagicFile { .. }
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
+            | Expr::MagicClass { .. }
             | Expr::MagicMethod { .. }
             | Expr::GlobalConstant { .. }
             | Expr::ClassNameConstant { .. }
@@ -4800,6 +4805,7 @@ impl Parser {
             | Expr::MagicFile { .. }
             | Expr::MagicDir { .. }
             | Expr::MagicFunction { .. }
+            | Expr::MagicClass { .. }
             | Expr::MagicMethod { .. }
             | Expr::GlobalConstant { .. }
             | Expr::ClassNameConstant { .. }
@@ -5492,9 +5498,6 @@ fn magic_constant_name(name: &str) -> Option<&'static str> {
 fn unsupported_magic_constant_message(name: &str) -> String {
     if name == "__METHOD__" {
         return "unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented".to_string();
-    }
-    if name == "__CLASS__" {
-        return "unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented".to_string();
     }
     if name == "__TRAIT__" {
         return "unsupported magic constant __TRAIT__: trait context evaluation requires trait declarations, trait use, and trait-context tracking, which are not implemented".to_string();
