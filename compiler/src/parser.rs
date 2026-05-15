@@ -2318,6 +2318,7 @@ impl Parser {
         match target {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
@@ -2325,7 +2326,6 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
-            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
@@ -2416,18 +2416,33 @@ impl Parser {
     ) -> Result<AssignTarget, &'static str> {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
-            Expr::Index {
-                target,
-                index,
-                span,
-            } => match *target {
-                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
-                    name,
-                    index: Some(*index),
-                    span,
-                }),
-                _ => Err(unsupported_compound_assignment_target_message()),
-            },
+            Expr::Index { .. } => {
+                if let Some((object, property, indices, span)) =
+                    Self::object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                match expr {
+                    Expr::Index {
+                        target,
+                        index,
+                        span,
+                    } => match *target {
+                        Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
+                            name,
+                            index: Some(*index),
+                            span,
+                        }),
+                        _ => Err(unsupported_compound_assignment_target_message()),
+                    },
+                    _ => unreachable!("outer match already selected index expression"),
+                }
+            }
             Expr::AppendIndex { .. } => Err(unsupported_compound_assignment_target_message()),
             Expr::Property {
                 target,
@@ -5563,7 +5578,7 @@ fn unsupported_chained_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_compound_assignment_target_message() -> &'static str {
-    "unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented"
+    "unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented; append offsets and nested variable targets are not implemented"
 }
 
 fn unsupported_increment_decrement_expression_message() -> &'static str {

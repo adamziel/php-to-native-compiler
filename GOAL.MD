@@ -112,8 +112,9 @@ the reached `mysqli_real_connect()` placeholder-success path, and the reached
 provides the conventional `$table_prefix = 'wp_';` startup variable, and
 bounded `preg_match()` now covers the reached table-prefix validation guard;
 bounded `wpdb` dynamic table-name properties now cover the reached
-`wpdb::$categories` assignment path; it now stops at an unsupported
-compound-assignment target shape.
+`wpdb::$categories` assignment path; direct object-property array-offset
+compound assignment now covers the reached object-cache mutation path; it now
+stops at missing object-cache bootstrap state for `add_global_groups()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -377,8 +378,10 @@ placeholder handle. Milestone 809 added the conventional `$table_prefix`
 startup variable to the WordPress inventory bootstrap shim. The current
 Milestone 810 added the exact WordPress table-prefix validation
 `preg_match()` guard. Milestone 811 added bounded `wpdb` dynamic public
-table-name property materialization. The current frontier is now an
-unsupported compound-assignment target shape.
+table-name property materialization. Milestone 812 added direct
+object-property array-offset compound assignment for the reached object-cache
+mutation path. The current frontier is now missing object-cache bootstrap state
+for `add_global_groups()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -544,8 +547,10 @@ The repository already has a working Rust workspace with:
   shim now supplies `$table_prefix = 'wp_';` as startup state, and bounded
   `preg_match()` now covers the reached table-prefix validation guard. Bounded
   `wpdb` dynamic public table-name properties cover the reached
-  `wpdb::$categories` initialization path.
-  The next bottleneck is an unsupported compound-assignment target shape.
+  `wpdb::$categories` initialization path. Direct object-property array-offset
+  compound assignment covers the reached object-cache mutation path.
+  The next bottleneck is missing object-cache bootstrap state for
+  `add_global_groups()`.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

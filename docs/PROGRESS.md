@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 812, direct object-property array-offset compound assignment
+  for the reached WordPress object-cache mutation path. The parser and
+  interpreter now accept targets such as
+  `$object->cache[$group][$key] += $offset`, evaluate object-property array
+  keys left to right before the right-hand expression, read the existing nested
+  value before the right-hand expression, apply the existing compound
+  assignment operation, and write the updated value back through the
+  visibility-aware object-property path. This is not append-offset compound
+  assignment, nested variable compound assignment, missing-key materialization,
+  mixed object/property/ArrayAccess targets, references/copy-on-write, exact
+  diagnostics, or native lowering. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances past `WP_Object_Cache::incr()`'s reached
+  `$this->cache[ $group ][ $key ] += $offset;` path to
+  `runtime error at <bootstrap-shim>:359:2: unsupported call add_global_groups(): receiver must be object, got null`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test compound_assignment object_property_array_offset_compound_assignments -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone812`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 811, bounded dynamic public property materialization for the
   WordPress `wpdb` compatibility class. Dynamic property-name writes now
   materialize missing public slots on `wpdb`, matching the reached

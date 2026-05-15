@@ -192,6 +192,43 @@ echo $box->sum, ":", $box->i, "\n";
 }
 
 #[test]
+fn object_property_array_offset_compound_assignments_update_nested_values() {
+    let execution = run_source(
+        r#"<?php
+class Store {
+    public $cache;
+}
+
+$store = new Store();
+$store->cache = ['group' => ['key' => 4]];
+$group = 'group';
+$key = 'key';
+$store->cache[$group][$key] += 6;
+echo $store->cache['group']['key'], "\n";
+echo ($store->cache[$group][$key] *= 2), ":", $store->cache['group']['key'], "\n";
+
+function group_key() {
+    echo "group\n";
+    return 'group';
+}
+function item_key() {
+    echo "key\n";
+    return 'key';
+}
+function next_value() {
+    echo "rhs\n";
+    return 5;
+}
+$store->cache[group_key()][item_key()] += next_value();
+echo $store->cache['group']['key'];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "10\n20:20\ngroup\nkey\nrhs\n25");
+}
+
+#[test]
 fn bitwise_and_shift_compound_assignments_update_supported_targets() {
     let execution = run_source(
         r#"<?php

@@ -191,6 +191,11 @@ enum CompoundAssignmentPlace {
         object: String,
         property: String,
     },
+    ObjectPropertyArrayIndex {
+        object: String,
+        property: String,
+        keys: Vec<ArrayKey>,
+    },
     StaticProperty {
         declaring_class_id: ClassId,
         property: String,
@@ -2924,6 +2929,43 @@ impl Interpreter {
         Ok(())
     }
 
+    fn read_nested_array_value(
+        array: &PhpArray,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array access",
+                    "nested array access requires at least one key",
+                ),
+            ));
+        };
+
+        let value = array.get(key.clone()).cloned().ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_array_key(key.diagnostic_key()),
+            )
+        })?;
+        if rest.is_empty() {
+            return Ok(value);
+        }
+
+        match value {
+            Value::Array(child) => Self::read_nested_array_value(&child, rest, span),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot read offset from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
     fn write_nested_array_append(
         name: &str,
         keys: &[ArrayKey],
@@ -3108,7 +3150,6 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -3116,6 +3157,55 @@ impl Interpreter {
                     "nested array targets are not implemented",
                 ),
             )),
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                ..
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                match scope.read_static(object, span)? {
+                    Value::Object(object_value) => {
+                        let (current_class_id, protected_class_ids) =
+                            self.current_property_access_context();
+                        let property_value = object_value
+                            .read_property_from_context(
+                                property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(span, error))?;
+                        let Value::Array(array) = property_value else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::invalid_array_access(format!(
+                                    "cannot read offset from {}",
+                                    property_value.type_name()
+                                )),
+                            ));
+                        };
+                        let left = Self::read_nested_array_value(&array, &keys, span)?;
+                        Ok((
+                            CompoundAssignmentPlace::ObjectPropertyArrayIndex {
+                                object: object.clone(),
+                                property: property.clone(),
+                                keys,
+                            },
+                            left,
+                        ))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot read property ${property} from {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -3219,6 +3309,50 @@ impl Interpreter {
                             &protected_class_ids,
                         )
                         .map_err(|error| runtime_error(span, error)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_property_access(format!(
+                            "cannot write property ${property} on {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
+            CompoundAssignmentPlace::ObjectPropertyArrayIndex {
+                object,
+                property,
+                keys,
+            } => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                match scope.read_static(&object, span)? {
+                    Value::Object(object) => {
+                        let mut property_value = object
+                            .read_property_from_context(
+                                &property,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(span, error))?;
+                        let Value::Array(array) = &mut property_value else {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::invalid_array_access(format!(
+                                    "cannot write offset on {}",
+                                    property_value.type_name()
+                                )),
+                            ));
+                        };
+                        Self::write_nested_array_value(array, &keys, value, span)?;
+                        object
+                            .write_property_from_context(
+                                &property,
+                                property_value,
+                                current_class_id,
+                                &protected_class_ids,
+                            )
+                            .map_err(|error| runtime_error(span, error))
+                    }
                     other => Err(runtime_error(
                         span,
                         RuntimeError::invalid_property_access(format!(

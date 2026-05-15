@@ -128,6 +128,14 @@
   `$object->property >>= expr`, in statement position, expression position,
   and C-style `for` initializer/increment slots. In expressions, compound
   assignment returns the updated value.
+- direct object-property array-offset compound assignment such as
+  `$object->items[$outer][$inner] += expr` over an existing array-valued visible
+  property and existing integer/string keyed nested entries. The target keys
+  are evaluated left to right before the right-hand expression, the current
+  left value is read before the right-hand expression, and the updated value is
+  written back through the existing visibility-aware object-property path.
+  Append forms, missing-key materialization, mixed object/property/ArrayAccess
+  paths, references/copy-on-write, and native lowering remain unsupported.
 - direct array-offset pre/post increment and decrement in statement position,
   expression position, and C-style `for` initializer/increment slots:
   `++$array[$key]`, `$array[$key]++`, `--$array[$key]`, and
@@ -934,7 +942,8 @@
   object/property/ArrayAccess targets
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables, direct array offsets, direct object
-  properties, and supported static properties
+  properties, direct object-property array offsets, and supported static
+  properties
 - explicit parse diagnostics for unsupported increment/decrement targets
   outside direct static variables, direct array offsets, direct object
   properties, and supported static properties, plus chained

@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone812/wordpress_object_cache_nested_compound.php"
+  ],
+  "stdin": "",
+  "stdout": "5",
+  "stderr": "",
+  "exit": 0
+}

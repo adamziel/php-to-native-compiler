@@ -63,8 +63,11 @@ paths, direct-variable append-at-depth paths, and direct-object-property
 nested/append-at-depth array paths have explicit AST targets. The nested array
 targets keep a variable or object-property root plus evaluated index
 expressions so the interpreter can materialize missing array containers under
-the current no-reference/no-copy-on-write model. Mixed object/property/ArrayAccess
-paths and nested read-modify-write forms remain explicit boundaries.
+the current no-reference/no-copy-on-write model. Direct object-property
+array-offset compound assignment reuses the object-property root plus evaluated
+index path for the current read-modify-write slice. Mixed
+object/property/ArrayAccess paths and other nested read-modify-write forms
+remain explicit boundaries.
 Unset targets follow the same conservative pattern: direct variables,
 direct/nested array offsets, selected static-property diagnostics, and
 direct-object-property nested array offsets have explicit targets, while plain

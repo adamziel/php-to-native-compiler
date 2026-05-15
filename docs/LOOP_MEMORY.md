@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T15:50:00Z
+
+- Checkpoint before this task:
+  `7d99331 runtime: add bounded wpdb dynamic table slots`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 812, direct object-property array-offset compound
+  assignment for the reached WordPress object-cache mutation path.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/compound_assignment.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone812/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_compound_assignment.*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test compound_assignment object_property_array_offset_compound_assignments -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone812`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:359:2: unsupported call add_global_groups(): receiver must be object, got null`.
+- Remaining semantic gaps: append-offset compound assignment, nested variable
+  compound assignment, mixed object/property/ArrayAccess targets,
+  references/copy-on-write, exact diagnostics, native lowering, and WordPress
+  bootstrap support remain unsupported.
+- Next concrete task: model the reached object-cache bootstrap state so
+  `wp_cache_add_global_groups()` calls `add_global_groups()` on a real
+  `WP_Object_Cache` placeholder instead of `null`.
+
 ## Loop Event 2026-05-15T15:25:00Z
 
 - Checkpoint before this task:

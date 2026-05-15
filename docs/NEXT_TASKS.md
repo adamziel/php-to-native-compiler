@@ -7445,17 +7445,26 @@ handled.
   compatibility class for reached table-name assignments and advances the real
   bootstrap-shim probe to
   `parse error at <bootstrap-shim>:499:3: unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, and supported static properties are implemented; append offsets and nested targets are not implemented`.
-- [ ] Parser/runtime mutation lane: support the reached compound-assignment
+- [x] Parser/runtime mutation lane: support the reached compound-assignment
   target shape, likely an append or nested target in the next WordPress
   bootstrap path. Keep broad nested compound assignment, mixed
   object/property/ArrayAccess targets, references/copy-on-write, exact
   diagnostics, and native lowering named unless implemented.
+  Milestone 812 supports direct object-property array-offset compound
+  assignment for the reached `$this->cache[ $group ][ $key ] += $offset;`
+  object-cache path and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:359:2: unsupported call add_global_groups(): receiver must be object, got null`.
+- [ ] Runtime/object-cache lane: model the reached object-cache bootstrap state
+  so `wp_cache_add_global_groups()` calls `add_global_groups()` on a real
+  `WP_Object_Cache` placeholder instead of `null`. Keep real cache persistence,
+  cache groups, eviction, global/non-persistent group semantics, object-cache
+  drop-ins, exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 811 checkpoint, the latest committed checkpoint
-  is `133cde4 runtime: add bounded wordpress table prefix regex`, covering
-  Milestone 810.
+- Before the current Milestone 812 checkpoint, the latest committed checkpoint
+  is `7d99331 runtime: add bounded wpdb dynamic table slots`, covering
+  Milestone 811.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

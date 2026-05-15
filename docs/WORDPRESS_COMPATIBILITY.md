@@ -981,6 +981,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not general `#[AllowDynamicProperties]`, magic property behavior,
   non-public dynamic access, exact notices/deprecations, references,
   copy-on-write, native lowering, or WordPress bootstrap support.
+  Milestone 812 implements direct object-property array-offset compound
+  assignment for the reached `WP_Object_Cache::incr()` mutation
+  `$this->cache[ $group ][ $key ] += $offset;`. The real bootstrap-shim probe
+  now advances to
+  `runtime error at <bootstrap-shim>:359:2: unsupported call add_global_groups(): receiver must be object, got null`.
+  This is not append-offset compound assignment, nested variable compound
+  assignment, mixed object/property/ArrayAccess targets,
+  references/copy-on-write, native lowering, real object-cache bootstrap, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
