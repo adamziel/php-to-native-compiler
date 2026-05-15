@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `3c94ed9 tests: add wordpress wpdb autocommit smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 883, bounded `mysqli_begin_transaction()`
+  placeholder transaction-start boundary for current `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone883/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_begin_transaction -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone883`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi handles now expose a named
+  deterministic transaction-start boundary.
+- Remaining semantic gaps: real transaction state, autocommit state mutation,
+  commit/rollback behavior, savepoints, host database integration,
+  warning/error fidelity, real WordPress `wpdb` transaction behavior, database
+  state mutation, and native database lowering remain missing.
+- Next concrete task: run the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `dabac71 runtime: add mysqli autocommit placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 882, a synthetic WordPress-shaped `wpdb`

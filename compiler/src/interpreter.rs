@@ -4215,6 +4215,66 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_begin_transaction(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_begin_transaction()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        expect_mysqli_handle("mysqli_begin_transaction()", &args[0], span)?;
+        if let Some(flags) = args.get(1) {
+            match flags {
+                Value::Int(0) => {}
+                Value::Int(flags) => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_begin_transaction()",
+                            format!(
+                                "only flags value 0 is implemented in the current subset, got {flags}"
+                            ),
+                        ),
+                    ));
+                }
+                flags => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_begin_transaction()",
+                            format!(
+                                "flags argument must be int in the current subset, got {}",
+                                flags.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+        if let Some(name) = args.get(2) {
+            match name {
+                Value::Null | Value::String(_) => {}
+                name => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_begin_transaction()",
+                            format!(
+                                "name argument must be string or null in the current subset, got {}",
+                                name.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(Value::Bool(true))
+    }
+
     fn call_mysqli_set_charset(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_set_charset", args, 2, span)?;
         expect_mysqli_handle("mysqli_set_charset()", &args[0], span)?;
@@ -9044,6 +9104,7 @@ impl Interpreter {
             "mysqli_get_host_info" => self.call_mysqli_get_host_info(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
+            "mysqli_begin_transaction" => self.call_mysqli_begin_transaction(&args, span),
             "mysqli_set_charset" => self.call_mysqli_set_charset(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_errno" => self.call_mysqli_errno(&args, span),
@@ -11979,6 +12040,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_host_info"
             | "mysqli_stat"
             | "mysqli_autocommit"
+            | "mysqli_begin_transaction"
             | "mysqli_set_charset"
             | "mysqli_query"
             | "mysqli_errno"

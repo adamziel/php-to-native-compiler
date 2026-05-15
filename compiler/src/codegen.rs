@@ -6347,6 +6347,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_get_host_info"
             | "mysqli_stat"
             | "mysqli_autocommit"
+            | "mysqli_begin_transaction"
             | "mysqli_set_charset"
             | "mysqli_query"
             | "mysqli_errno"

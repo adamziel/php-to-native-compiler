@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 883, bounded `mysqli_begin_transaction()` support for
+  placeholder MySQLi handles. The runtime now accepts
+  `mysqli_begin_transaction($handle)`, plus optional flags value `0` and
+  optional null/string transaction names for current placeholder `mysqli`
+  objects, returns deterministic `true`, rejects non-`mysqli` handles,
+  nonzero flags, non-int flags, and unsupported name values with stable
+  diagnostics, and exposes the name through runtime and native metadata lookup.
+  This is not real transaction state, autocommit state mutation,
+  commit/rollback behavior, savepoint behavior, host database integration,
+  warning/error fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_begin_transaction -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone883`.
+
 - Added Milestone 882, a synthetic WordPress-shaped `wpdb`
   transaction/autocommit bookkeeping smoke that calls the bounded
   `mysqli_autocommit($this->dbh, false/true)` placeholder path, records local

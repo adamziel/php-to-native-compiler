@@ -513,7 +513,7 @@
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_get_host_info`, `mysqli_set_charset`,
-  `mysqli_stat`, `mysqli_autocommit`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -823,6 +823,11 @@
   boolean mode, returning deterministic `true` without changing real
   autocommit state, starting or ending transactions, committing, rolling back,
   or touching host database state.
+  `mysqli_begin_transaction($handle, 0, $name)` accepts the placeholder object,
+  optional flags value `0`, and optional null/string transaction names,
+  returning deterministic `true` without starting real transaction state,
+  changing autocommit state, committing, rolling back, or touching host
+  database state.
   `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder handle and
   returns deterministic `true` for the reached WordPress charset setup path
   without negotiating a real connection charset or collation state.
@@ -2362,7 +2367,7 @@
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_get_host_info`,
-  `mysqli_stat`, `mysqli_autocommit`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
   `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
   `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
@@ -2679,7 +2684,7 @@
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_autocommit`, `mysqli_query`,
+  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_query`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`,
@@ -2819,7 +2824,7 @@
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
   `uniqid`, `hash_hmac`,
   `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
-  `mysqli_get_server_info`, `mysqli_autocommit`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
+  `mysqli_get_server_info`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
   `mysqli_select_db`, `mysqli_real_escape_string`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
@@ -2884,7 +2889,7 @@
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_autocommit`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
+  `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
   `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
@@ -2896,7 +2901,9 @@
   placeholder host metadata, `mysqli_stat(...)` returns only deterministic
   zeroed server-status metadata, `mysqli_autocommit(...)` returns only
   deterministic success for boolean placeholder autocommit modes without real
-  transaction state, `mysqli_set_charset(...)` returns only deterministic
+  transaction state, `mysqli_begin_transaction(...)` returns only
+  deterministic transaction-start success for the current placeholder shape
+  without real transaction state, `mysqli_set_charset(...)` returns only deterministic
   success for the current `utf8mb4` placeholder charset, and
   `mysqli_query(...)` returns only the current false
   SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
@@ -2912,7 +2919,7 @@
   are still a stable unsupported runtime boundary, and direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
   `mysqli_get_server_info(...)`/`mysqli_get_host_info(...)`/
-  `mysqli_stat(...)`/`mysqli_autocommit(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
+  `mysqli_stat(...)`/`mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/`mysqli_set_charset(...)`/`mysqli_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/
   `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/`mysqli_ping(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
@@ -4561,7 +4568,7 @@
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
-  `mysqli_get_host_info()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_query()`/`mysqli_set_charset()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_get_host_info()`/`mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/`mysqli_query()`/`mysqli_set_charset()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
   `mysqli_affected_rows()`/`mysqli_insert_id()`/`mysqli_ping()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
@@ -4569,7 +4576,7 @@
   `mysqli_more_results()`/`mysqli_next_result()`/`mysqli_report()`/
   `mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
-  fake server-info/server-status/autocommit-success/SQL-mode-query/charset-setup/database-selection/escaping/
+  fake server-info/server-status/autocommit-success/begin-transaction-success/SQL-mode-query/charset-setup/database-selection/escaping/
   liveness-check/empty-result lifecycle boundary:
   mysqli extension loading, host/database connections,
   mysqli resources/objects with real connection state, host/transport/protocol

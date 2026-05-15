@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone883/mysqli_begin_transaction_placeholder.php
+yes|callable
+default
+named
+dynamic
