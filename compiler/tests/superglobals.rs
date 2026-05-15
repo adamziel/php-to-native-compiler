@@ -16,11 +16,13 @@ echo "|";
 echo $_SERVER["REQUEST_URI"];
 echo "|";
 echo $_SERVER["PHP_SELF"];
+echo "|";
+echo $_SERVER["SCRIPT_FILENAME"];
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "array|/|/index.php");
+    assert_eq!(execution.stdout, "array|/|/index.php|/index.php");
     assert_eq!(execution.exit_code, 0);
 }
 

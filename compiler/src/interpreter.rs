@@ -525,6 +525,7 @@ impl Interpreter {
         server.insert("REQUEST_URI", Value::String("/".to_string()));
         server.insert("PHP_SELF", Value::String("/index.php".to_string()));
         server.insert("SCRIPT_NAME", Value::String("/index.php".to_string()));
+        server.insert("SCRIPT_FILENAME", Value::String("/index.php".to_string()));
         server.insert("QUERY_STRING", Value::String(String::new()));
 
         self.global_symbols

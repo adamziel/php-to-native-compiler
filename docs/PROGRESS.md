@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 834, a bounded `$_SERVER['SCRIPT_FILENAME']` CLI startup
+  seed for the reached WordPress URL-guessing path. The runtime now seeds
+  `SCRIPT_FILENAME` as `/index.php` alongside the existing deterministic
+  `$_SERVER` CLI placeholders, so direct string-keyed reads and writes can
+  use that key without claiming a real SAPI request. Host web-server
+  population, CGI/FPM path translation, document-root/request mapping, upload
+  state, other superglobals, exact warnings, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone834`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 833, bounded dynamic static-receiver property support for
   the reached WordPress PHPMailer validator assignment. The parser and
   interpreter now accept `$object::$property` and `$className::$property`

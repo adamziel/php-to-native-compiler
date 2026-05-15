@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+script-set|/index.php
+--- stdout end ---
+stderr:
+--- stderr end ---

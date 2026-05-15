@@ -1175,6 +1175,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   autoload, exact diagnostics, or native lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
+  Milestone 834 seeds `$_SERVER['SCRIPT_FILENAME']` as a deterministic CLI
+  placeholder for the reached `wp_guess_url()` path. This is not a full
+  SAPI/request environment, host web-server state, CGI/FPM path translation,
+  document-root mapping, exact warnings, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

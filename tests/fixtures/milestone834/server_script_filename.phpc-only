@@ -1,0 +1,1 @@
+Project-specific runtime boundary: phpc seeds SCRIPT_FILENAME as a deterministic CLI placeholder for the WordPress bootstrap probe, while system PHP populates it from host SAPI/request state.

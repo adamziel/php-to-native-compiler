@@ -284,8 +284,9 @@
   interactions, copy-on-write, and native lowering remain unsupported.
 - `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
   deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
-  `PHP_SELF`, `SCRIPT_NAME`, and `QUERY_STRING`. Direct function-scope reads
-  and writes of `$_SERVER` route through the root symbol table without a
+  `PHP_SELF`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, and `QUERY_STRING`. Direct
+  function-scope reads and writes of `$_SERVER` route through the root symbol
+  table without a
   `global $_SERVER` declaration. Real SAPI request population, environment
   imports, complete server key catalogs, `$GLOBALS` aliasing, references,
   copy-on-write, mutation-ordering fidelity, `variables_order`, cookies,

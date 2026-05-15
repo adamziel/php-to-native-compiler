@@ -22355,6 +22355,38 @@ injects this file into every prompt. Each Codex pass should update it with:
   blocker.
 ## Loop Event 2026-05-15T00:00:00Z
 
+- Checkpoint before this task: `b0e289f runtime: add bounded object static
+  properties`, pushed to `origin/master`.
+- Task attempted: Milestone 834, bounded deterministic
+  `$_SERVER['SCRIPT_FILENAME']` CLI startup state for the reached WordPress
+  URL-guessing path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/superglobals.rs`, `tests/fixtures/milestone834/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone834`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: full SAPI/request population, web-server and CGI/FPM
+  environment differences, document-root/path translation, query/request
+  state, upload/session/cookie state, other superglobals, exact warnings, and
+  native lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
+- Next concrete task: run `git diff --check` and the full checkpoint gate, then
+  checkpoint with
+  `tools/checkpoint.sh "runtime: seed script filename server default"` if the
+  full gate passes. Milestone 835 should bound the reached `str_ends_with()`
+  path without claiming broad string builtin coverage.
+
+## Loop Event 2026-05-15T00:00:00Z
+
 - Checkpoint before this task: `9d1be0e runtime: add bounded wordpress empty
   paths`, pushed to `origin/master`.
 - Task attempted: Milestone 833, bounded dynamic static-receiver property

@@ -7650,17 +7650,25 @@ handled.
   reads/direct writes for current object and declared class-name string
   receivers. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
-- [ ] Runtime/superglobal lane: seed or otherwise bound the reached
+- [x] Runtime/superglobal lane: seed or otherwise bound the reached
   `$_SERVER['SCRIPT_FILENAME']` startup path in the WordPress bootstrap shim
   without claiming a full SAPI/request environment. Keep broader server
   variables, web-server request state, path translation, CGI/FPM differences,
   exact warning behavior, and native lowering named unless implemented.
+  Milestone 834 seeds `SCRIPT_FILENAME` as `/index.php` in the deterministic
+  CLI `$_SERVER` placeholder. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
+- [ ] Runtime/string lane: implement the reached bounded
+  `str_ends_with($_SERVER['SCRIPT_FILENAME'], 'php.cgi')` path from
+  `wp-includes/load.php:78`. Keep broad string coercions, binary/invalid UTF-8
+  behavior, array/object/resource operands, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 833 checkpoint, the latest committed checkpoint
-  is `9d1be0e runtime: add bounded wordpress empty paths`, covering
-  Milestone 832.
+- Before the current Milestone 834 checkpoint, the latest committed checkpoint
+  is `b0e289f runtime: add bounded object static properties`, covering
+  Milestone 833.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

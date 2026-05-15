@@ -436,8 +436,10 @@ MySQLi metadata-query placeholders for `SHOW FULL COLUMNS FROM ...` and
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
 writes. The current frontier is now missing `$_SERVER['SCRIPT_FILENAME']`
-startup state, reported by the bootstrap shim as
-`runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
+startup state. Milestone 834 seeds that deterministic CLI `$_SERVER` key, and
+the current frontier is now the reached `str_ends_with()` CGI guard, reported
+by the bootstrap shim as
+`runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -634,9 +636,9 @@ The repository already has a working Rust workspace with:
   paths cover the reached `wpdb::load_col_info()` shape, and deterministic
   empty MySQLi metadata-query placeholders cover reached `SHOW FULL COLUMNS`
   and `DESCRIBE` probes. Bounded dynamic static-receiver property reads/direct
-  writes cover the reached PHPMailer validator assignment. The next bottleneck
-  is missing `$_SERVER['SCRIPT_FILENAME']` startup state in the WordPress
-  bootstrap shim.
+  writes cover the reached PHPMailer validator assignment. A bounded
+  `SCRIPT_FILENAME` CLI seed covers the reached URL-guessing read. The next
+  bottleneck is `str_ends_with()` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
