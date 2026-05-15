@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone824/preg_match_ascii_check.php"
+  ],
+  "stdin": "",
+  "stdout": "0|1",
+  "stderr": "",
+  "exit": 0
+}

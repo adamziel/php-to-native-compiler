@@ -157,6 +157,22 @@ echo $matches[0];
 }
 
 #[test]
+fn preg_match_handles_wordpress_ascii_check_guard() {
+    let execution = run_source(
+        r#"<?php
+$pattern = '/[^\x00-\x7F]/';
+echo preg_match($pattern, "SELECT option_name");
+echo "|";
+echo preg_match($pattern, "café");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_rejects_forms_outside_current_subset() {
     let output_args = runtime_error(
         r#"<?php

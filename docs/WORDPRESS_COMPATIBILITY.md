@@ -1086,6 +1086,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`,
   corresponding to the adjacent ASCII-check pattern
   `/[^\x00-\x7F]/` in `wp-includes/class-wpdb.php:3474`.
+  Milestone 824 implements that exact `wpdb::check_ascii()` non-ASCII detector
+  over the current valid UTF-8 runtime string model. This is not broad
+  bracket-class support, arbitrary ranges, byte-level capture fidelity for
+  multi-byte characters, binary/invalid UTF-8 behavior, exact PCRE diagnostics,
+  or native lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -11458,6 +11458,7 @@ enum BoundedPregPattern {
     WordPressDbHostIpv6,
     WordPressTablePrefixInvalidChar,
     WordPressSafeCollationReadQuery,
+    WordPressNonAsciiByte,
 }
 
 impl BoundedPregPattern {
@@ -11479,6 +11480,9 @@ impl BoundedPregPattern {
             || pattern == "/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)s/i"
         {
             return Ok(Self::WordPressSafeCollationReadQuery);
+        }
+        if pattern == "/[^\\x00-\\x7F]/" || pattern == "/[^x00-x7F]/" {
+            return Ok(Self::WordPressNonAsciiByte);
         }
 
         let Some(body_and_modifiers) = pattern.strip_prefix('/') else {
@@ -11520,7 +11524,8 @@ impl BoundedPregPattern {
             Self::WordPressDbHostIpv4
             | Self::WordPressDbHostIpv6
             | Self::WordPressTablePrefixInvalidChar
-            | Self::WordPressSafeCollationReadQuery => self.captures(subject).is_some(),
+            | Self::WordPressSafeCollationReadQuery
+            | Self::WordPressNonAsciiByte => self.captures(subject).is_some(),
         }
     }
 
@@ -11540,6 +11545,7 @@ impl BoundedPregPattern {
             Self::WordPressDbHostIpv6 => wordpress_db_host_ipv6_captures(subject),
             Self::WordPressTablePrefixInvalidChar => wordpress_table_prefix_invalid_char(subject),
             Self::WordPressSafeCollationReadQuery => wordpress_safe_collation_read_query(subject),
+            Self::WordPressNonAsciiByte => wordpress_non_ascii_byte(subject),
             _ => None,
         }
     }
@@ -11591,6 +11597,11 @@ fn wordpress_safe_collation_read_query(subject: &str) -> Option<PhpArray> {
     }
 
     None
+}
+
+fn wordpress_non_ascii_byte(subject: &str) -> Option<PhpArray> {
+    let non_ascii = subject.chars().find(|ch| !ch.is_ascii())?;
+    Some(preg_match_single_capture(&non_ascii.to_string()))
 }
 
 fn wordpress_db_host_ipv4_captures(subject: &str) -> Option<PhpArray> {

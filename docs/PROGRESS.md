@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 824, a bounded `preg_match()` slice for WordPress'
+  `wpdb::check_ascii()` non-ASCII detector. The runtime now recognizes the
+  exact `/[^\x00-\x7F]/` pattern, including the current parser's single-quoted
+  representation, and reports whether a represented UTF-8 runtime string
+  contains any non-ASCII character. This is not broad bracket-class support,
+  arbitrary ranges, byte-level capture fidelity for multi-byte characters,
+  binary/invalid UTF-8 behavior, exact PCRE diagnostics, or native lowering.
+  The real WordPress 6.9.4 bootstrap-shim probe now advances past the ASCII
+  check at `wp-includes/class-wpdb.php:3474` to
+  `runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone824`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 823, a bounded `preg_match()` slice for WordPress'
   safe-collation read-query classifier. The runtime now recognizes the exact
   `wpdb::check_safe_collation()` pattern

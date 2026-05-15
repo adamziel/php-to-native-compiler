@@ -414,10 +414,11 @@ Milestone 821 covers strict identity for current ordered arrays, including the
 reached empty-array/list-shape comparisons. Milestone 822 covers bounded
 `ltrim()` for the reached `wpdb::check_safe_collation()` query trim. The
 Milestone 823 covers the exact case-insensitive `preg_match()` read-query
-classifier in that same WordPress path. The current frontier is now the
-adjacent `wpdb::check_ascii()` regex byte-range pattern, reported by the
+classifier in that same WordPress path. Milestone 824 covers the adjacent
+`wpdb::check_ascii()` regex byte-range pattern. The current frontier is now a
+reached `array_unshift()` call in the WordPress bootstrap path, reported by the
 bootstrap shim as
-`runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`.
+`runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.

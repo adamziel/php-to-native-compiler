@@ -624,7 +624,10 @@
   for conventional prefixes such as `wp_`. The exact WordPress safe-collation
   query classifier `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i` is supported
   with ASCII-case-insensitive keyword matching and one following ASCII
-  whitespace character. Non-direct matches outputs, flags, offsets, optional
+  whitespace character. The exact WordPress `wpdb::check_ascii()` non-ASCII
+  byte detector `/[^\x00-\x7F]/` is supported over the current valid UTF-8
+  runtime string model, returning whether any represented character is
+  non-ASCII. Non-direct matches outputs, flags, offsets, optional
   unmatched-group fidelity, broad named-capture support, full PCRE syntax,
   modifiers other than the documented exact WordPress `i` patterns and `u`,
   invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
@@ -4335,10 +4338,12 @@
 - `preg_match()` outside the current slash-delimited literal
   contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
   named-capture patterns, the exact WordPress table-prefix validation pattern
-  `|[^a-z0-9_]|i`, and the exact WordPress safe-collation query classifier:
-  non-direct matches outputs, flags, offsets, optional unmatched-group
-  fidelity, broad capture-group behavior, full PCRE syntax, modifiers other
-  than the documented exact WordPress `i` patterns and `u`,
+  `|[^a-z0-9_]|i`, the exact WordPress safe-collation query classifier, and
+  the exact WordPress ASCII-check byte-range pattern: non-direct matches
+  outputs, flags, offsets, optional unmatched-group fidelity, broad
+  capture-group behavior, full PCRE syntax, bracket classes and ranges beyond
+  the documented exact WordPress pattern, modifiers other than the documented
+  exact WordPress `i` patterns and `u`,
   invalid-pattern warnings, byte/Unicode behavior beyond the current valid
   UTF-8 string model, broad coercions, exact diagnostics, and native lowering
   beyond function-table introspection

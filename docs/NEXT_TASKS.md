@@ -7550,16 +7550,26 @@ handled.
   classifier and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`,
   corresponding to `wp-includes/class-wpdb.php:3474`.
-- [ ] Runtime/regex lane: implement the reached bounded ASCII-check
+- [x] Runtime/regex lane: implement the reached bounded ASCII-check
   `preg_match('/[^\x00-\x7F]/', $input_string)` path in
   `wpdb::check_ascii()`. Keep broad bracket classes, ranges beyond this exact
   byte range, binary/invalid UTF-8 behavior, exact PCRE diagnostics, and native
   lowering named unless implemented.
+  Milestone 824 covers the exact WordPress non-ASCII detector and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
+- [ ] Runtime/array lane: implement the reached bounded `array_unshift()`
+  behavior for direct variable arrays in the WordPress bootstrap path. Keep
+  broad by-reference argument handling, non-variable array targets, mixed
+  key-preservation edge cases beyond PHP's documented integer reindexing,
+  references/copy-on-write, exact warnings/errors, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 823 checkpoint, the latest committed checkpoint
-  is `732f75d runtime: add bounded ltrim`, covering Milestone 822.
+- Before the current Milestone 824 checkpoint, the latest committed checkpoint
+  is `a81fa78 runtime: add bounded safe-collation regex`, covering Milestone
+  823.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
