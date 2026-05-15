@@ -7251,16 +7251,25 @@ handled.
   Milestone 791 implements bounded `u`-modifier handling for the existing
   literal subset and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:71:2: undefined function restore_error_handler()`.
-- [ ] Error-handler runtime lane: implement bounded `restore_error_handler()`
+- [x] Error-handler runtime lane: implement bounded `restore_error_handler()`
   for the reached WordPress `_wp_can_use_pcre_u()` cleanup path. Keep true
   handler-stack behavior, handler invocation, warning/notice/deprecation
   routing, error-level filtering, shutdown/fatal interactions, exact PHP
   diagnostics, and native lowering named unless implemented.
+  Milestone 792 implements bounded cleanup and advances the real
+  bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:254:31: expected property name after '->', found public`.
+- [ ] Parser/object lane: accept keyword tokens as object property names after
+  `->` for the reached `$object->public` WordPress startup path. Keep keyword
+  method names, dynamic/static properties, visibility semantics, magic
+  property hooks, references/copy-on-write, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 791 checkpoint, the latest committed checkpoint
-  is `4a35cee runtime: add bounded closure captures`, covering Milestone 790.
+- Before the current Milestone 792 checkpoint, the latest committed checkpoint
+  is `c4fe9ca runtime: add bounded preg match u modifier`, covering
+  Milestone 791.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

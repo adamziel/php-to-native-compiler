@@ -44,6 +44,28 @@ echo "|body";
 }
 
 #[test]
+fn restore_error_handler_clears_current_bounded_handler() {
+    let execution = run_source(
+        r#"<?php
+function quiet_error_handler() {
+}
+set_error_handler("quiet_error_handler", E_WARNING);
+echo restore_error_handler() ? "true" : "false";
+$previous = set_error_handler("quiet_error_handler");
+echo "|";
+echo $previous === null ? "null" : "other";
+$call = "restore_error_handler";
+echo "|";
+echo $call() ? "dynamic" : "false";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "true|null|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn set_error_handler_rejects_forms_outside_current_subset() {
     let arity = runtime_error(
         r#"<?php
@@ -109,6 +131,21 @@ set_error_handler("quiet_error_handler", "warnings");
 }
 
 #[test]
+fn restore_error_handler_rejects_forms_outside_current_subset() {
+    let arity = runtime_error(
+        r#"<?php
+restore_error_handler("extra");
+"#,
+    );
+    assert_eq!(arity.line, 2);
+    assert_eq!(arity.column, 1);
+    assert_eq!(
+        arity.message,
+        "arity mismatch for restore_error_handler(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_set_error_handler_until_native_error_routing_exists() {
     let error = emit_ir_source(
         r#"<?php
@@ -121,19 +158,33 @@ set_error_handler("strlen", E_WARNING);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+restore_error_handler();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
-fn emit_ir_includes_set_error_handler_in_native_callable_lookup_table() {
+fn emit_ir_includes_error_handler_builtins_in_native_callable_lookup_table() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("set_error_handler") ? "1" : "0";
 echo is_callable("set_error_handler") ? "1" : "0";
+echo function_exists("restore_error_handler") ? "1" : "0";
+echo is_callable("restore_error_handler") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

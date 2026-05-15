@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 792, bounded `restore_error_handler()` cleanup for the
+  current WordPress `_wp_can_use_pcre_u()` path. The runtime now exposes
+  `restore_error_handler()` through function/callability metadata, accepts zero
+  arguments, clears the current bounded error-handler registration and mask,
+  returns `true`, and keeps direct native calls behind the generic
+  function-call lowering boundary. True PHP handler-stack behavior, handler
+  invocation, warning/notice/deprecation routing, error-level filtering,
+  shutdown/fatal interaction, exact diagnostics, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the cleanup call to
+  `parse error at <bootstrap-shim>:254:31: expected property name after '->', found public`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test error_handler_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone792`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 791, bounded `preg_match()` `u`-modifier handling for the
   current WordPress `_wp_can_use_pcre_u()` startup probe. The runtime now
   accepts the `u` pattern modifier as a no-op over the current valid UTF-8

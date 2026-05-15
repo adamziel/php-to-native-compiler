@@ -815,6 +815,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not captures/matches output, flags, offsets, broad PCRE/modifier
   support, warning/error-handler routing, native lowering, or WordPress
   bootstrap support.
+  Milestone 792 implements bounded `restore_error_handler()` cleanup for the
+  reached `_wp_can_use_pcre_u()` path. The real bootstrap-shim probe now
+  advances to
+  `parse error at <bootstrap-shim>:254:31: expected property name after '->', found public`.
+  This is not true handler-stack behavior, handler invocation,
+  warning/error-handler routing, native lowering, keyword-named object-property
+  parsing, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -80,7 +80,8 @@ deterministic CLI `$_SERVER`/`PHP_SAPI` startup state, bounded
 bounded braced dynamic object-property names, bounded `__METHOD__`
 magic-constant evaluation, bounded `set_error_handler()` registration, and
 bounded explicit closure capture binding for inert closure values, and bounded
-`preg_match()` `u`-modifier handling for the reached UTF-8 startup probe. The
+`preg_match()` `u`-modifier handling for the reached UTF-8 startup probe, and
+bounded `restore_error_handler()` cleanup. The
 current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
@@ -91,8 +92,9 @@ timezone setup, past the first request/SAPI startup state, and past the first
 regex startup guard, past the first error-reporting mask setup, and past the
 first startup directory check, the first braced dynamic object-property access,
 the first `__METHOD__` magic constant in method context, the first closure
-capture in the `set_error_handler()` path, and the reached `preg_match('//u',
-'')` UTF-8 probe; it now stops at missing `restore_error_handler()`.
+capture in the `set_error_handler()` path, the reached `preg_match('//u', '')`
+UTF-8 probe, and the following `restore_error_handler()` cleanup; it now stops
+when parsing a keyword-named object property, `$object->public`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -331,8 +333,9 @@ existing dynamic-property runtime subset. Milestone 788 added bounded
 Milestone 789 added bounded `set_error_handler()` registration. Milestone 790
 added explicit `use (...)` closure capture binding for inert closure values.
 Milestone 791 added bounded `preg_match()` `u`-modifier handling for the
-reached UTF-8 startup probe. The current frontier is now missing
-`restore_error_handler()` in WordPress startup error handling.
+reached UTF-8 startup probe. Milestone 792 added bounded
+`restore_error_handler()` cleanup. The current frontier is now parsing
+keyword-named object properties such as `$object->public` in WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -480,9 +483,9 @@ The repository already has a working Rust workspace with:
   `error_reporting()` mask state, bounded `is_dir()`, and bounded braced
   dynamic object-property names, and bounded `__METHOD__` magic-constant
   evaluation, bounded `set_error_handler()` registration, bounded explicit
-  closure capture binding, and bounded `preg_match()` `u`-modifier handling.
-  The next bottleneck is missing `restore_error_handler()` in the WordPress
-  bootstrap shim.
+  closure capture binding, bounded `preg_match()` `u`-modifier handling, and
+  bounded `restore_error_handler()` cleanup. The next bottleneck is
+  keyword-named object property parsing in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:50:36Z
+
+- Checkpoint before this task:
+  `c4fe9ca runtime: add bounded preg match u modifier`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 792, bounded `restore_error_handler()` cleanup for
+  the reached WordPress `_wp_can_use_pcre_u()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/error_handler_builtin.rs`,
+  `tests/fixtures/milestone792/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test error_handler_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone792`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `parse error at <bootstrap-shim>:254:31: expected property name after '->', found public`.
+- Remaining semantic gaps: true handler-stack behavior, handler invocation,
+  warning/notice/deprecation routing, error-level filtering,
+  shutdown/fatal interactions, exact diagnostics, and native lowering remain
+  unsupported.
+- Next concrete task: accept keyword tokens as object property names after
+  `->` for the reached `$object->public` startup path while keeping keyword
+  method names, visibility semantics, magic property hooks,
+  references/copy-on-write, exact diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T08:46:05Z
 
 - Checkpoint before this task:

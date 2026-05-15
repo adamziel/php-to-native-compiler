@@ -7307,6 +7307,7 @@ impl Interpreter {
                 }
             }
             "set_error_handler" => self.call_set_error_handler(args, span),
+            "restore_error_handler" => self.call_restore_error_handler(args, span),
             "header" => call_header(&args, span),
             "header_remove" => call_header_remove(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
@@ -8169,6 +8170,13 @@ impl Interpreter {
         self.error_handler = Some(args[0].clone());
         self.error_handler_mask = mask;
         Ok(previous)
+    }
+
+    fn call_restore_error_handler(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        expect_arity("restore_error_handler", &args, 0, span)?;
+        self.error_handler = None;
+        self.error_handler_mask = None;
+        Ok(Value::Bool(true))
     }
 
     fn call_error_reporting(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -9703,6 +9711,7 @@ fn is_builtin(name: &str) -> bool {
             | "is_readable"
             | "register_shutdown_function"
             | "set_error_handler"
+            | "restore_error_handler"
             | "header"
             | "header_remove"
             | "headers_sent"
