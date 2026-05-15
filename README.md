@@ -85,8 +85,8 @@ incorrect native code.
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
   coalescing forms
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
-  operators, shifts, `(string)`, `(int)`, `(bool)`, and `(float)`/`(double)`
-  casts over documented
+  operators, shifts, `(string)`, `(int)`, `(bool)`, `(float)`/`(double)`, and
+  `(array)` casts over documented
   current value boundaries, ternaries, increments/decrements, and PHP
   error-control syntax `@expr` as a transparent runtime wrapper without
   warning/notice suppression
@@ -176,7 +176,7 @@ include/require breadth beyond the current narrow local
 generators, closure invocation, explicit and implicit capture binding,
 callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, `(bool)`, and
-`(float)`/`(double)` slices,
+`(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
 interface inheritance/implementation enforcement, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,

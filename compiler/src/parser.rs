@@ -2871,9 +2871,10 @@ impl Parser {
             "int" | "integer" => Ok(Some(CastKind::Int)),
             "bool" | "boolean" => Ok(Some(CastKind::Bool)),
             "float" | "double" => Ok(Some(CastKind::Float)),
-            "real" | "array" | "object" | "unset" | "binary" => Err(self.error_at(
+            "array" => Ok(Some(CastKind::Array)),
+            "real" | "object" | "unset" | "binary" => Err(self.error_at(
                 self.peek().span,
-                "unsupported cast expression: only (string), (int), (bool), and (float) casts are implemented",
+                "unsupported cast expression: only (string), (int), (bool), (float), and (array) casts are implemented",
             )),
             _ => Ok(None),
         }

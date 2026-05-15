@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 722, a bounded `(array)` cast expression slice through
+  `phpc run`. The parser now accepts `(array)`, and the interpreter converts
+  `null` to an empty array, current scalar values to a one-element array at key
+  `0`, and existing arrays unchanged. Object-to-array property
+  materialization/mangled keys, Closure object behavior, resources,
+  references/copy-on-write, exact PHP diagnostics, partial-output behavior, and
+  native lowering remain unsupported. The direct WordPress probe still stops
+  at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past
+  `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47` and now stops at
+  `parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test scalar_casts cast -- --test-threads=1`,
+  `cargo test -p phpc --test array_casts_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone722`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone722`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 721, a bounded `(float)`/`(double)` cast expression slice
   through `phpc run`. The parser now accepts `(float)` and `(double)` as cast
   aliases, and the interpreter converts the current scalar/null subset:

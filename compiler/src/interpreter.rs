@@ -7176,6 +7176,31 @@ impl Interpreter {
                     ),
                 )),
             },
+            CastKind::Array => match value {
+                Value::Null => Ok(Value::Array(PhpArray::new())),
+                Value::Array(value) => Ok(Value::Array(value)),
+                Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                    let mut array = PhpArray::new();
+                    array
+                        .append(value)
+                        .expect("append into a fresh array should not fail");
+                    Ok(Value::Array(array))
+                }
+                Value::Object(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(array)",
+                        "object-to-array cast property materialization is not implemented",
+                    ),
+                )),
+                Value::Closure(_) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "(array)",
+                        "Closure object-to-array cast behavior is not implemented",
+                    ),
+                )),
+            },
         }
     }
 }

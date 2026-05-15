@@ -1162,10 +1162,14 @@
   `null` and `false` become `0.0`, `true` becomes `1.0`, integers convert to
   floats, floats are unchanged, well-formed finite numeric strings convert
   through the current float parser, and empty or non-numeric strings become
-  `0.0`. Array/object behavior for `(string)`, `(int)`, and `(float)`,
+  `0.0`. `(array)` is implemented for the current null/scalar/array subset:
+  `null` becomes an empty array, booleans/integers/floats/strings become a
+  one-element array at key `0`, and arrays are unchanged. Array/object behavior
+  for `(string)`, `(int)`, and `(float)`, object-to-array property
+  materialization and mangled visibility keys, Closure object array casts,
   leading-numeric string casts such as `"42abc"`, non-finite or out-of-range
-  float cast behavior, resources, `(real)`, `(array)`, `(object)`, `(unset)`,
-  and `(binary)` cast forms, exact PHP diagnostics, and native lowering remain
+  float cast behavior, resources, `(real)`, `(object)`, `(unset)`, and
+  `(binary)` cast forms, exact PHP diagnostics, and native lowering remain
   unsupported.
 - Scalar comparisons: loose equality and relational operators are implemented
   for the current scalar values using PHP 8-style behavior for booleans,

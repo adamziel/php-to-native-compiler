@@ -6618,19 +6618,29 @@ handled.
   partial-output behavior, and native lowering unsupported, and reveals that
   the current bootstrap-shim cast blocker is now `(array)` at
   `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47`.
-- [ ] Parser/runtime lane: implement or explicitly bound `(array)` casts for
+- [x] Parser/runtime lane: implement or explicitly bound `(array)` casts for
   the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:1015:20`, corresponding to
   `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47` and
   `return (array) $this->internalArray;`, with tests, CLI coverage, docs, and
   named unsupported edges for object property materialization/mangling,
   scalar-to-array rules, resources, references/copy-on-write, exact PHP
-  diagnostics, partial-output behavior, and native lowering.
+  diagnostics, partial-output behavior, and native lowering. The Milestone 722
+  slice supports null/scalar/array casts, keeps object/Closure/resource-heavy
+  behavior explicit, and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
+- [ ] Parser/runtime lane: implement or explicitly bound nested assignment
+  expression targets such as multi-level array offsets for the real WordPress
+  6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:1075:43`, with tests,
+  CLI coverage, docs, and named unsupported edges for references,
+  copy-on-write, append-at-depth, missing-container materialization, evaluation
+  order, object/ArrayAccess targets, exact PHP diagnostics, partial-output
+  behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 721 checkpoint, the latest committed checkpoint
-  is `8ff3e58 runtime: add error control syntax`, covering Milestone 720.
+- Before the current Milestone 722 checkpoint, the latest committed checkpoint
+  is `a15e8a2 runtime: add bounded float casts`, covering Milestone 721.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

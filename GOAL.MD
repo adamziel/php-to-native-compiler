@@ -58,6 +58,14 @@ about it. That means:
 This is not yet "a PHP compiler that runs WordPress." It is the foundation that
 lets the project move toward that goal while preserving correctness.
 
+Recent WordPress-directed milestones have been walking the real WordPress
+6.9.4 bootstrap-shim forward through concrete blockers: namespace-scoped
+functions, qualified constants, `assert()`, interpolated constant names,
+class-constant string lookup, error-control syntax, `(float)` casts, and now a
+bounded `(array)` cast slice. Each step is intentionally small because it only
+counts after parser/runtime code, tests, CLI fixtures, docs, and named
+unsupported edges are in place.
+
 ## Compatibility North Star
 
 The compatibility goal has three tiers.
@@ -179,6 +187,13 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
 6. Native execution: runtime ABI, linked binaries, boxed values, stack frames,
    heap/lifetime management, helper calls, and native diagnostics.
 
+For WordPress specifically, the next visible bootstrap-shim blocker after the
+Milestone 722 `(array)` cast slice is nested assignment targets:
+`parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
+That opens a broader lvalue lane: multi-level array offsets, append-at-depth,
+missing-container materialization, evaluation order, references/copy-on-write,
+and object/ArrayAccess boundaries.
+
 - Native execution is missing linked binaries, runtime ABI, boxed values in
   generated code, stack frames, heap management, runtime helper calls,
   process-level execution semantics, and native diagnostics.
@@ -224,10 +239,40 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
   environment APIs.
 - WordPress compatibility needs a pinned harness, bootstrap fixtures, database
   and filesystem integration strategy, hook/filter execution confidence,
-  extension coverage, and plugin/theme smoke targets.
+  extension coverage, request/server state, and plugin/theme smoke targets.
 - The support matrix must keep distinguishing four things: parsed syntax,
   `phpc run` interpreter support, native IR/assembly support, and future
   native executable support.
+
+## What Is Still Missing Before Full WordPress Support
+
+Full WordPress support is still missing at several layers:
+
+1. Bootstrap correctness: direct `wp-settings.php` still needs a faithful
+   entrypoint/environment policy for `ABSPATH`, include path, configuration,
+   source mapping, and autoload behavior.
+2. PHP language semantics: nested assignment targets, references,
+   copy-on-write, by-reference calls/returns, closures with capture and
+   invocation, generators, `match`, named arguments, spread/unpack, full
+   namespace/import forms, and version-specific parse/runtime behavior.
+3. Object model: full constructors/inheritance, interfaces, traits, enums,
+   magic methods, dynamic properties/methods, typed/default properties,
+   reflection, cloning/destructors, late static binding, and exact visibility
+   behavior.
+4. Error model: warnings/notices/deprecations, recoverable errors, `@`
+   suppression, exceptions and stack unwinding, output buffering, partial
+   output, stack traces, and PHP-shaped fatal behavior.
+5. Runtime services: filesystem and streams, JSON, XML/DOM/SimpleXML, regex,
+   mbstring/intl, date/time, password/hash/crypto, serialization, sessions,
+   cookies, headers, superglobals, ini/environment state, HTTP, database
+   access, object cache, options/transients, and extension constants/functions.
+6. WordPress flows: core bootstrap, installer/config loading, database-backed
+   requests, hooks/filters, plugin/theme discovery and loading, front-end,
+   admin, REST, cron, media/filesystem, blocks, and WP-CLI-like entrypoints.
+7. Native path: generated code for boxed values, arrays, objects, calls, stack
+   frames, heap/lifetime management, runtime helper ABI, diagnostics, linked
+   executable behavior, and stable rejection for every unsupported lowering
+   case.
 
 ## Current Baseline
 
@@ -251,9 +296,10 @@ The repository already has a working Rust workspace with:
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through early compatibility includes and the first
-  namespace/import slice, then stops at the next named blocker, interface
-  declarations.
+  probe currently advances through the bounded `(array)` cast slice and then
+  stops at nested assignment targets. The direct `wp-settings.php` probe still
+  stops at undefined `ABSPATH`, which is an entrypoint/environment issue rather
+  than proof of core bootstrap support.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

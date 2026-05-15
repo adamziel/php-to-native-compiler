@@ -143,15 +143,56 @@ fn float_casts_reject_unimplemented_warning_paths_for_now() {
 }
 
 #[test]
+fn array_casts_execute_for_current_null_scalar_and_array_subset() {
+    let execution = run_source(
+        r#"<?php
+print_r((array) null);
+print_r((array) false);
+print_r((array) 42);
+$items = ["name" => "Ada"];
+print_r((array) $items);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n)\nArray\n(\n    [0] => \n)\nArray\n(\n    [0] => 42\n)\nArray\n(\n    [name] => Ada\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_casts_reject_unimplemented_object_paths_for_now() {
+    let error = run_source(
+        r#"<?php
+class Box {
+    public $name;
+}
+echo (array) new Box();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call (array): object-to-array cast property materialization is not implemented"
+    );
+}
+
+#[test]
 fn remaining_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (array) \"1\";\n").unwrap_err();
+    let error = run_source("<?php\necho (object) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string), (int), (bool), and (float) casts are implemented"
+        "unsupported cast expression: only (string), (int), (bool), (float), and (array) casts are implemented"
     );
 }
 
@@ -178,6 +219,11 @@ fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
     assert_eq!(error.message, LLVM_UNARY_REJECTION);
 
     let error = emit_ir_source("<?php\necho (double) \"2.25\";\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+
+    let error = emit_ir_source("<?php\necho (array) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_UNARY_REJECTION);

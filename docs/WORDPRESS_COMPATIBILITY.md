@@ -206,6 +206,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   corresponding to the sodium compatibility `(array)` cast at
   `wp-includes/sodium_compat/src/PHP52/SplFixedArray.php:47` and
   `return (array) $this->internalArray;`.
+  Milestone 722 covers that current null/scalar/array `(array)` cast slice.
+  This is not object-to-array property materialization, mangled visibility-key
+  behavior, Closure object array-cast behavior, resources,
+  references/copy-on-write, exact PHP diagnostics, partial-output behavior, or
+  native lowering. The bootstrap-shim probe now reaches
+  `parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

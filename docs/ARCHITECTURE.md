@@ -62,11 +62,11 @@ a real diagnostic severity and suppression model.
 
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
 covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
-`(float)/(double)`. The interpreter owns PHP-shaped conversion for the current
-scalar/null subset and keeps warning-producing or object/array/resource-heavy
-cast behavior as runtime or parse boundaries. Native lowering rejects all cast
-expressions until generated code has scalar conversion, warning/recovery,
-allocation, and exact diagnostic behavior.
+`(float)/(double)`, and `(array)`. The interpreter owns PHP-shaped conversion
+for the current scalar/null/array subset and keeps warning-producing or
+object/resource-heavy cast behavior as runtime or parse boundaries. Native
+lowering rejects all cast expressions until generated code has scalar
+conversion, warning/recovery, allocation, and exact diagnostic behavior.
 
 ## Runtime Crate
 
@@ -1239,12 +1239,13 @@ exists yet.
 ## Cast Boundary
 
 Cast expressions are AST-backed, but execution is intentionally limited to the
-current scalar/null runtime value model. `(string)` handles scalar/null values
-through the runtime echo-string conversion boundary. `(int)`/`(integer)` handles
-scalar/null values through a narrow integer-cast policy for WordPress bootstrap
-parsing and focused fixtures. Array, object, resource, leading-numeric string,
-non-finite or out-of-range float behavior, exact PHP warning/error recovery,
-and native cast lowering remain explicit boundaries.
+current scalar/null/array runtime value model. `(string)` handles scalar/null
+values through the runtime echo-string conversion boundary. `(int)`/`(integer)`
+handles scalar/null values through a narrow integer-cast policy for WordPress
+bootstrap parsing and focused fixtures. `(array)` handles `null`, scalars, and
+already-array values only. Object-to-array property materialization, resources,
+leading-numeric string, non-finite or out-of-range float behavior, exact PHP
+warning/error recovery, and native cast lowering remain explicit boundaries.
 
 ## Exception Boundary
 
