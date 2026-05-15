@@ -313,6 +313,10 @@ pub enum ReferenceSource {
         index: Expr,
         span: Span,
     },
+    MethodCall {
+        expr: Expr,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

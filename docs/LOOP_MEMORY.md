@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T22:50:00Z
+
+- Checkpoint before this task:
+  `ea6f981 objects: add instance property defaults`, pushed to `origin/master`.
+- Task attempted: Milestone 752, by-reference assignment from direct
+  method-call sources as a runtime boundary.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone752/reference_assignment_method_call_*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries emit_ir_rejects_reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone752`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: method-call reference sources only parse as a
+  runtime boundary. Function-call sources, non-call object/property sources,
+  object-property array-offset reference-assignment targets, real PHP
+  references, by-reference returns, unset alias behavior, copy-on-write, exact
+  diagnostics, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `parse error at <bootstrap-shim>:302:38: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`,
+  corresponding to `$this->entries[ $entry->key() ] = &$entry;` in
+  `wp-includes/pomo/mo.php`.
+- Next concrete task: implement or explicitly bound by-reference assignment
+  into object-property array-offset targets, then rerun the WordPress bootstrap
+  shim.
+
 ## Loop Event 2026-05-15T22:25:00Z
 
 - Checkpoint before this task:

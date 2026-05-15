@@ -1,0 +1,1 @@
+phpc parses by-reference assignment from method-call sources as a runtime boundary; it does not implement PHP reference aliases, by-reference returns, or copy-on-write.

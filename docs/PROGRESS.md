@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 752, statement-form by-reference assignment syntax from
+  method-call sources as a runtime boundary. The parser now accepts
+  `$entry =& $this->make_entry(...)` and other direct method-call source forms
+  in statement position, including inside guarded or declaration-contained
+  WordPress methods, without implementing PHP references, by-reference
+  returns, or alias containers. If execution reaches the assignment,
+  `phpc run` reports the existing stable `unsupported call reference assignment:
+  references and aliasing are not implemented` diagnostic. Function-call
+  sources, non-call object/property sources, nested reference targets, real
+  reference return binding, unset alias behavior, copy-on-write, exact PHP
+  diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:301:46` method-call reference-source blocker to
+  `parse error at <bootstrap-shim>:302:38: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`,
+  corresponding to `$this->entries[ $entry->key() ] = &$entry;` in
+  `wp-includes/pomo/mo.php`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries emit_ir_rejects_reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone752`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 751, untyped instance property defaults for the current
   constant-expression subset. The parser now accepts defaults such as
   `public $_nplurals = 2;`, stores them on the existing class-property AST

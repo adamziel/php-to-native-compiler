@@ -251,7 +251,11 @@ defaults for the current constant-expression subset and advanced past
 bootstrap-shim blocker is now reference assignment from a method-call source at
 `<bootstrap-shim>:301:46`, corresponding to
 `$entry = &$this->make_entry( $original, $translation );` in
-`wp-includes/pomo/mo.php`.
+`wp-includes/pomo/mo.php`. Milestone 752 then parsed that method-call
+reference source as the existing runtime boundary; the current bootstrap-shim
+blocker is now by-reference assignment into an object-property array-offset
+target at `<bootstrap-shim>:302:38`, corresponding to
+`$this->entries[ $entry->key() ] = &$entry;` in `wp-includes/pomo/mo.php`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -379,8 +383,10 @@ The repository already has a working Rust workspace with:
   by-reference assignment from direct array-offset sources as a runtime
   boundary, append-at-depth assignment for direct-variable nested array paths,
   nested direct-variable array-offset `unset(...)`, and untyped instance
-  property defaults for the current constant-expression subset. The next
-  bottleneck is reference assignment from a method-call source in the
+  property defaults for the current constant-expression subset, plus
+  by-reference assignment from method-call sources as the same runtime
+  boundary. The next bottleneck is by-reference assignment into an
+  object-property array-offset target in the
   WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.

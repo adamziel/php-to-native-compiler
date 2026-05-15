@@ -458,6 +458,18 @@ The first bootstrap probe is expected to fail. Known blockers include:
   semantics, typed property support, multi-property defaults,
   copy-on-write, exact property initialization semantics, or WordPress
   bootstrap support.
+  Milestone 752 parses direct method-call reference-assignment sources as the
+  existing runtime boundary. After that slice, the direct `wp-settings.php`
+  probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:302:38: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented`,
+  corresponding to `wp-includes/pomo/mo.php` and
+  `$this->entries[ $entry->key() ] = &$entry;`. This is not object-property
+  array-offset assignment target support, real PHP alias/reference semantics,
+  copy-on-write, exact PHP diagnostics, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

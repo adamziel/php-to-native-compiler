@@ -216,7 +216,7 @@ magic property hooks, resources, and
 extension integration.
 
 By-reference assignment syntax is accepted only as a runtime boundary for
-direct variable and direct array-offset sources: guarded code can parse, but
+direct variable, direct array-offset, and method-call sources: guarded code can parse, but
 reached `=&` assignments fail with a stable unsupported diagnostic until
 reference containers and copy-on-write exist.
 By-reference `foreach` value syntax is also a runtime boundary: containing code

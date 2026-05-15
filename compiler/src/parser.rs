@@ -1970,41 +1970,26 @@ impl Parser {
     }
 
     fn parse_reference_assignment_source(&mut self) -> CompileResult<ReferenceSource> {
-        let token = self.advance().clone();
-        let (name, span) = match token.kind {
-            TokenKind::Variable(name) => (name, token.span),
-            _ => Err(self.error_at(
-                token.span,
-                unsupported_reference_assignment_source_message(),
-            ))?,
-        };
-
-        if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-            if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
-                return Err(self.error_at(
-                    self.previous().span,
-                    unsupported_reference_assignment_source_message(),
-                ));
-            }
-            let index = self.parse_expression()?;
-            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
-            if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_reference_assignment_source_message(),
-                ));
-            }
-            return Ok(ReferenceSource::ArrayIndex { name, index, span });
+        let expr = self.parse_expression()?;
+        let span = expr.span();
+        match expr {
+            Expr::Variable(name, span) => Ok(ReferenceSource::Variable { name, span }),
+            Expr::Index { target, index, .. } => match *target {
+                Expr::Variable(name, span) => Ok(ReferenceSource::ArrayIndex {
+                    name,
+                    index: *index,
+                    span,
+                }),
+                _ => Err(self.error_at(span, unsupported_reference_assignment_source_message())),
+            },
+            Expr::MethodCall { .. }
+            | Expr::ParentMethodCall { .. }
+            | Expr::SelfMethodCall { .. }
+            | Expr::StaticMethodCall { .. }
+            | Expr::ObjectStaticMethodCall { .. }
+            | Expr::LateStaticMethodCall { .. } => Ok(ReferenceSource::MethodCall { expr, span }),
+            _ => Err(self.error_at(span, unsupported_reference_assignment_source_message())),
         }
-
-        if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
-            return Err(self.error_at(
-                self.peek().span,
-                unsupported_reference_assignment_source_message(),
-            ));
-        }
-
-        Ok(ReferenceSource::Variable { name, span })
     }
 
     fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
@@ -5222,7 +5207,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable and direct array-offset reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {
