@@ -667,13 +667,15 @@
   invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
   diagnostics, and native lowering remain unsupported.
   `preg_replace($pattern, $replacement, $subject)` supports exactly the
-  WordPress database-version cleanup pattern `/[^0-9.].*/`, an empty
-  replacement string, and a scalar/null string-convertible subject. It returns
-  the leading ASCII digits/dots prefix used by `wpdb::db_version()`. Pattern or
+  WordPress database-version cleanup pattern `/[^0-9.].*/` and the WordPress
+  path-tail cleanup pattern `#/[^/]*$#i`, both with an empty replacement string
+  and a scalar/null string-convertible subject. The first returns the leading
+  ASCII digits/dots prefix used by `wpdb::db_version()`. The second removes
+  the final slash-delimited path segment used by `wp_guess_url()`. Pattern or
   replacement arrays, subject arrays, non-empty replacements, limit/count
-  arguments, callbacks, full PCRE replacement behavior, invalid-pattern
-  warnings, byte/Unicode edge cases, broad coercions, exact diagnostics, and
-  native lowering remain unsupported.
+  arguments, callbacks, full PCRE replacement behavior, captures/backrefs,
+  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
+  diagnostics, and native lowering remain unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
   integer mask and one integer argument to store a new current mask while
   returning the previous mask. The interpreter initializes the mask to `E_ALL`.
@@ -4493,12 +4495,13 @@
   UTF-8 string model, broad coercions, exact diagnostics, and native lowering
   beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
-  `/[^0-9.].*/` with an empty replacement and scalar/null subject:
-  pattern/replacement arrays, subject arrays, non-empty replacements,
-  limit/count arguments, callbacks, full PCRE replacement behavior,
-  invalid-pattern warnings, byte/Unicode behavior beyond the current valid
-  UTF-8 string model, broad coercions, exact diagnostics, and native lowering
-  beyond function-table introspection
+  `/[^0-9.].*/` and path-tail cleanup pattern `#/[^/]*$#i`, both with an empty
+  replacement and scalar/null subject: pattern/replacement arrays, subject
+  arrays, non-empty replacements, limit/count arguments, callbacks, full PCRE
+  replacement behavior, captures/backrefs, invalid-pattern warnings,
+  byte/Unicode behavior beyond the current valid UTF-8 string model, broad
+  coercions, exact diagnostics, and native lowering beyond function-table
+  introspection
 - `error_reporting()` outside the current no-argument read and one-integer
   mask-set subset: warning/notice/deprecation filtering, ini integration,
   disabled-function policy, non-integer coercions, exact diagnostics, and

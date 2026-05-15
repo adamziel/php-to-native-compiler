@@ -31,6 +31,26 @@ echo $call('/[^0-9.].*/', '', '8.3.1');
 }
 
 #[test]
+fn preg_replace_executes_current_wordpress_path_tail_cleanup() {
+    let execution = run_source(
+        r#"<?php
+echo preg_replace('#/[^/]*$#i', '', '/index.php');
+echo "|";
+echo preg_replace('#/[^/]*$#i', '', '/wp-admin/admin.php?page=site');
+echo "|";
+echo preg_replace('#/[^/]*$#i', '', 'index.php');
+echo "|";
+$call = "preg_replace";
+echo $call('#/[^/]*$#i', '', '/wp/wp-login.php');
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "|/wp-admin|index.php|/wp");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_replace_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
@@ -57,7 +77,7 @@ preg_replace('/[^a-z].*/', '', 'abc123');
     assert_eq!(unsupported_pattern.column, 1);
     assert_eq!(
         unsupported_pattern.message,
-        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset"
+        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset"
     );
 
     let unsupported_replacement = runtime_error(

@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 837, a bounded `preg_replace()` path-tail cleanup pattern for
+  the reached WordPress `wp_guess_url()` request-path normalization path. The
+  interpreter now accepts exactly `preg_replace('#/[^/]*$#i', '', $subject)`
+  alongside the earlier database-version cleanup pattern, removing the final
+  slash-delimited path segment from scalar/null string-convertible subjects.
+  Pattern arrays, replacement arrays, subject arrays, non-empty replacements,
+  captures/backrefs, callbacks, modifiers beyond this exact pattern, limit and
+  count output arguments, invalid-pattern warnings, broad PCRE replacement
+  behavior, exact diagnostics, and native lowering remain unsupported. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone837`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 836, bounded `substr()` support for the reached WordPress
   bootstrap string-slicing path. The interpreter now exposes `substr` through
   direct calls, string-valued dynamic calls, `function_exists`, and

@@ -12209,12 +12209,12 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     let replacement = string_contains_argument("preg_replace()", "replacement", &args[1], span)?;
     let subject = string_contains_argument("preg_replace()", "subject", &args[2], span)?;
 
-    if pattern != "/[^0-9.].*/" {
+    if pattern != "/[^0-9.].*/" && pattern != "#/[^/]*$#i" {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "preg_replace()",
-                "only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset",
+                "only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset",
             ),
         ));
     }
@@ -12228,10 +12228,15 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
         ));
     }
 
-    let end = subject
-        .bytes()
-        .position(|byte| !(byte.is_ascii_digit() || byte == b'.'))
-        .unwrap_or(subject.len());
+    if pattern == "/[^0-9.].*/" {
+        let end = subject
+            .bytes()
+            .position(|byte| !(byte.is_ascii_digit() || byte == b'.'))
+            .unwrap_or(subject.len());
+        return Ok(Value::String(subject[..end].to_string()));
+    }
+
+    let end = subject.rfind('/').unwrap_or(subject.len());
     Ok(Value::String(subject[..end].to_string()))
 }
 

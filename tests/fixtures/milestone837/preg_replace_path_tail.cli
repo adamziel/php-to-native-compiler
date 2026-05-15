@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+|/wp-admin|index.php
+--- stdout end ---
+stderr:
+--- stderr end ---

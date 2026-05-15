@@ -7676,16 +7676,25 @@ handled.
   and optional integer lengths over byte positions when the result remains
   valid UTF-8. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
-- [ ] Runtime/regex lane: widen the bounded `preg_replace()` implementation
+- [x] Runtime/regex lane: widen the bounded `preg_replace()` implementation
   for the next reached WordPress bootstrap pattern, without claiming broad PCRE
   replacement semantics. Keep callback replacement, arrays, captures/backrefs,
   modifiers, limits/count output, exact diagnostics, and native lowering named
   unless implemented.
+  Milestone 837 covers the exact `#/[^/]*$#i` empty-replacement path-tail
+  cleanup used by `wp_guess_url()`. The real bootstrap-shim probe now advances
+  to
+  `runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
+- [ ] Runtime/superglobal lane: seed or otherwise bound the reached
+  `$_SERVER['HTTP_HOST']` startup path in the WordPress bootstrap shim without
+  claiming a full SAPI/request environment. Keep host header validation,
+  proxy/web-server state, request routing, HTTPS/port handling, exact warnings,
+  and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 836 checkpoint, the latest committed checkpoint
-  is `601d0a8 runtime: add bounded str ends with`, covering Milestone 835.
+- Before the current Milestone 837 checkpoint, the latest committed checkpoint
+  is `186016e runtime: add bounded substr`, covering Milestone 836.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

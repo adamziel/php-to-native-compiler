@@ -1192,6 +1192,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   offset/length coercion, object/resource operands, exact diagnostics, or
   native lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
+  Milestone 837 widens bounded `preg_replace()` for the reached
+  `#/[^/]*$#i` empty-replacement path-tail cleanup used by `wp_guess_url()`.
+  This is not broad PCRE replacement, arrays, captures/backrefs, callbacks,
+  limit/count output, exact diagnostics, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6344:23: undefined array key "HTTP_HOST"`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
