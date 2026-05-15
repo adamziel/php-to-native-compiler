@@ -65,9 +65,9 @@ instantiation, direct-object-property nested array assignment, nested
 object-property array-offset `unset(...)`, expression-form `include`/`require`
 return values, skipped positional `list(...)` destructuring, class
 `implements` relationship metadata, bounded object-handle `=&`, bounded
-`str_replace()`, bounded `call_user_func()`, and a bounded direct-variable
-array `=&` path for `wp_parse_args()`. The current shim frontier is missing
-`strcasecmp()` at `wp-includes/compat.php:108`.
+`str_replace()`, bounded `call_user_func()`, a bounded direct-variable
+array `=&` path for `wp_parse_args()`, and bounded `strcasecmp()`. The current
+shim frontier is missing `headers_sent()` at `wp-includes/functions.php:3890`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -281,8 +281,9 @@ variable sources into direct array-offset targets, advancing past
 `str_replace()` builtin. Milestone 764 added bounded string-callable
 `call_user_func()` dispatch. Milestone 765 added a bounded direct-variable
 array `=&` path for `$parsed_args =& $args;` in
-`wp-includes/functions.php:4955`; the current bootstrap-shim blocker is now
-missing `strcasecmp()` at `wp-includes/compat.php:108`.
+`wp-includes/functions.php:4955`. Milestone 766 added bounded `strcasecmp()`;
+the current bootstrap-shim blocker is now missing `headers_sent()` at
+`wp-includes/functions.php:3890`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -417,8 +418,9 @@ The repository already has a working Rust workspace with:
   by-reference function/method return declarations as runtime boundaries, plus
   `abstract`/`final`/`readonly` class modifiers and `abstract`/`final` method
   modifiers as metadata, and `new self`/`new parent`/`new static` magic
-  class-name instantiation in active class/method contexts. The next bottleneck
-  is missing `strcasecmp()` in the WordPress bootstrap shim.
+  class-name instantiation in active class/method contexts, and bounded
+  `strcasecmp()`. The next bottleneck is missing `headers_sent()` in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

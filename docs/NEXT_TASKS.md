@@ -7005,16 +7005,28 @@ handled.
   the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:108:9: undefined function strcasecmp()`,
   corresponding to `wp-includes/compat.php:108`.
-- [ ] Builtin/runtime lane: implement a bounded `strcasecmp()` slice for the
+- [x] Builtin/runtime lane: implement a bounded `strcasecmp()` slice for the
   next real WordPress bootstrap-shim blocker, covering the reached
   case-insensitive string comparison path while documenting unsupported broad
   scalar coercions, array/object/resource operands, binary/locale edge cases,
   exact PHP diagnostics, and native lowering unless implemented.
+  Milestone 766 implements exact-two-argument scalar/null string-convertible
+  `strcasecmp()` with ASCII case folding and advances the real bootstrap-shim
+  probe to
+  `runtime error at <bootstrap-shim>:3890:10: undefined function headers_sent()`,
+  corresponding to `wp-includes/functions.php:3890`.
+- [ ] Web/SAPI runtime lane: implement a bounded `headers_sent()` slice for the
+  next real WordPress bootstrap-shim blocker, likely returning `false` for the
+  current no-header-state CLI shim unless output/header state is implemented.
+  Keep by-reference filename/line output arguments, output-buffer interaction,
+  header storage, SAPI differences, exact warnings, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 765 checkpoint, the latest committed checkpoint
-  is `019053a runtime: add bounded call_user_func`, covering Milestone 764.
+- Before the current Milestone 766 checkpoint, the latest committed checkpoint
+  is `311a670 runtime: add array variable reference assignment`, covering
+  Milestone 765.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

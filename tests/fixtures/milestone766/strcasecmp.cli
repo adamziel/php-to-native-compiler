@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+same
+lt
+gt
+coerced
+--- stdout end ---
+stderr:
+--- stderr end ---

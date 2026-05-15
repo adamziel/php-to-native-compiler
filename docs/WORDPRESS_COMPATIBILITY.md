@@ -619,6 +619,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   sources, direct array-offset targets for array values, object-property
   targets, copy-on-write, exact PHP diagnostics, native lowering, or WordPress
   bootstrap support.
+  Milestone 766 implements bounded `strcasecmp()` for exactly two scalar/null
+  string-convertible arguments with ASCII case folding. It advances the real
+  bootstrap-shim probe past `wp-includes/compat.php:108` to
+  `runtime error at <bootstrap-shim>:3890:10: undefined function headers_sent()`,
+  corresponding to `wp-includes/functions.php:3890`. This is not broad scalar
+  coercion, array/object/resource operands, binary/locale edge cases, exact PHP
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

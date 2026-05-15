@@ -173,6 +173,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   array/object/resource operands, binary/locale edge cases, exact diagnostics,
   and native lowering named unless implemented.
 
+## Loop Event 2026-05-15T07:56:00Z
+
+- Checkpoint before this task:
+  `311a670 runtime: add array variable reference assignment`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 766, bounded `strcasecmp()` for the WordPress
+  charset comparison blocker.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/strcasecmp_builtin.rs`,
+  `tests/fixtures/milestone766/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test strcasecmp_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone766`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: array operands, object/resource coercions, binary
+  string edge cases beyond valid UTF-8 runtime strings, locale-sensitive
+  behavior, exact PHP diagnostics, and native lowering remain unsupported.
+  Direct `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap
+  shim now reaches
+  `runtime error at <bootstrap-shim>:3890:10: undefined function headers_sent()`,
+  corresponding to `wp-includes/functions.php:3890`.
+- Next concrete task: implement a bounded `headers_sent()` web/SAPI slice for
+  the reached path while keeping by-reference filename/line output arguments,
+  output-buffer interaction, header storage, SAPI differences, exact warnings,
+  and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

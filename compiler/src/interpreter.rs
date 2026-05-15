@@ -5930,6 +5930,7 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
+            "strcasecmp" => call_strcasecmp(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -9231,6 +9232,7 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "strcasecmp"
             | "str_replace"
             | "sprintf"
             | "call_user_func"
@@ -9428,6 +9430,55 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
     matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
+}
+
+fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strcasecmp", args, 2, span)?;
+
+    let left = string_compare_argument("strcasecmp()", "first", &args[0], span)?;
+    let right = string_compare_argument("strcasecmp()", "second", &args[1], span)?;
+
+    Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
+}
+
+fn string_compare_argument(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn ascii_case_insensitive_compare(left: &str, right: &str) -> i64 {
+    for (left, right) in left.bytes().zip(right.bytes()) {
+        let left = left.to_ascii_lowercase();
+        let right = right.to_ascii_lowercase();
+        if left < right {
+            return -1;
+        }
+        if left > right {
+            return 1;
+        }
+    }
+
+    match left.len().cmp(&right.len()) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
 }
 
 fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {

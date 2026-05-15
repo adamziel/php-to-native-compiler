@@ -891,6 +891,11 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
+`strcasecmp()` is an interpreter-only bounded string comparison builtin for
+current scalar/null string-convertible values. It compares valid UTF-8 runtime
+strings by bytes with ASCII case folding and returns only sign values. Native
+function-table introspection recognizes the name, while direct native calls
+still reject until string comparison helpers and diagnostics are lowered.
 `str_replace()` is an interpreter-only bounded string replacement builtin for
 scalar/null string-convertible search, replacement, and subject values. Native
 function-table introspection recognizes the name, while direct native calls
