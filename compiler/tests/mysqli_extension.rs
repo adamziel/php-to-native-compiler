@@ -252,6 +252,28 @@ echo $call($handle, null) ? "dynamic" : "failed";
 }
 
 #[test]
+fn mysqli_mutation_metadata_returns_clean_placeholder_state() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+echo "|";
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+mysqli_query($handle, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'");
+echo mysqli_affected_rows($handle);
+echo "|";
+echo mysqli_insert_id($handle);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|0|0|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_real_escape_string_escapes_current_scalar_subset() {
     let execution = run_source(
         r#"<?php
@@ -757,6 +779,39 @@ mysqli_real_escape_string($handle, ["value"]);
 }
 
 #[test]
+fn mysqli_mutation_metadata_rejects_forms_outside_current_boundary() {
+    let bad_affected_rows_handle = run_source(
+        r#"<?php
+mysqli_affected_rows("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_affected_rows_handle.phase, Phase::Runtime);
+    assert_eq!(bad_affected_rows_handle.line, 2);
+    assert_eq!(bad_affected_rows_handle.column, 1);
+    assert_eq!(
+        bad_affected_rows_handle.message,
+        "unsupported call mysqli_affected_rows(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_insert_id_handle = run_source(
+        r#"<?php
+mysqli_insert_id("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_insert_id_handle.phase, Phase::Runtime);
+    assert_eq!(bad_insert_id_handle.line, 2);
+    assert_eq!(bad_insert_id_handle.column, 1);
+    assert_eq!(
+        bad_insert_id_handle.message,
+        "unsupported call mysqli_insert_id(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
 fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
     let error = run_source(
         r#"<?php
@@ -791,6 +846,10 @@ echo function_exists("mysqli_errno") ? "1" : "0";
 echo is_callable("mysqli_errno") ? "1" : "0";
 echo function_exists("mysqli_error") ? "1" : "0";
 echo is_callable("mysqli_error") ? "1" : "0";
+echo function_exists("mysqli_affected_rows") ? "1" : "0";
+echo is_callable("mysqli_affected_rows") ? "1" : "0";
+echo function_exists("mysqli_insert_id") ? "1" : "0";
+echo is_callable("mysqli_insert_id") ? "1" : "0";
 echo function_exists("mysqli_select_db") ? "1" : "0";
 echo is_callable("mysqli_select_db") ? "1" : "0";
 echo function_exists("mysqli_real_escape_string") ? "1" : "0";
@@ -829,7 +888,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 46, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 50, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

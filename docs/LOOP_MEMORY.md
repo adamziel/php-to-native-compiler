@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `0957c43 tests: add wordpress wpdb num rows smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 869, bounded clean-state
+  `mysqli_affected_rows()` and `mysqli_insert_id()` metadata for placeholder
+  handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone869/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_mutation_metadata -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone869`, and
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed.
+- Current WordPress frontier: placeholder MySQLi handles can report clean
+  mutation metadata as zero, giving WordPress-shaped query bookkeeping a named
+  boundary before real mutation SQL exists.
+- Remaining semantic gaps: mutation SQL execution, real affected-row and
+  insert-id state, transactions, warnings/errors, host database integration,
+  real WordPress `wpdb` fidelity, and native database lowering remain missing.
+- Next concrete task: run focused Rust and fixture verification, then
+  whitespace checks and the serialized checkpoint gate if focused checks pass.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `3d9fb7e runtime: add mysqli num rows placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 868, a synthetic WordPress-shaped

@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 869, bounded clean-state MySQLi mutation metadata for
+  placeholder handles. The runtime now accepts
+  `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` for current
+  placeholder `mysqli` objects, returns deterministic `0` before and after the
+  reached charset setup no-result query, rejects non-`mysqli` handles with
+  stable diagnostics, and exposes both names through runtime and native
+  metadata lookup. This is not mutation SQL execution, real affected-row or
+  insert-id state, transaction behavior, warning/error fidelity, host database
+  integration, or native database lowering. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_mutation_metadata -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone869`.
+
 - Added Milestone 868, a synthetic WordPress-shaped `wpdb::get_results()`
   smoke that sets `$this->num_rows` from `mysqli_num_rows($this->result)` for
   the exact empty-result placeholder and deterministic seed-post placeholder

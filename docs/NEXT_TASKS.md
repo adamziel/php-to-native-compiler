@@ -8000,17 +8000,28 @@ handled.
   real WordPress `wpdb` query fidelity, SQL execution, database state, cache
   behavior, affected-row/insert-id state, warnings/errors, broad result-count
   semantics, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next mutation/result metadata boundary
+- [x] Runtime/mysqli lane: inspect the next mutation/result metadata boundary
   after placeholder row counts and choose a small tested slice, such as
   deterministic `mysqli_affected_rows()`/`mysqli_insert_id()` state for
   no-op placeholder queries or an explicit named boundary before broader SQL
   execution.
+  Milestone 869 implements bounded clean-state `mysqli_affected_rows($handle)`
+  and `mysqli_insert_id($handle)` for placeholder `mysqli` objects. Both return
+  deterministic `0` before and after the reached charset setup no-result query,
+  reject non-`mysqli` handles with stable diagnostics, and are visible through
+  runtime and native metadata lookup. This is not mutation SQL execution, real
+  affected-row/insert-id state, transactions, warnings/errors, host database
+  integration, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_affected_rows()`/`mysqli_insert_id()` clean state through
+  WordPress-shaped query bookkeeping without claiming real mutation query
+  behavior.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3d9fb7e runtime: add mysqli num rows placeholder`, covering Milestone 867
-  before the current Milestone 868 candidate.
+  `0957c43 tests: add wordpress wpdb num rows smoke`, covering Milestone 868
+  before the current Milestone 869 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

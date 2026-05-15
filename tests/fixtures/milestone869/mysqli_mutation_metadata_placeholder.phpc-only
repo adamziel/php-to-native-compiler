@@ -1,0 +1,2 @@
+This fixture uses phpc's deterministic placeholder MySQLi connection state.
+System PHP would require a real MySQL server and real connection state.

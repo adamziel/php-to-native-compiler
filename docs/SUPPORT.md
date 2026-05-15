@@ -513,8 +513,9 @@
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
-  `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
-  `mysqli_real_escape_string`, `mysqli_fetch_object`,
+  `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
   `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
   `mysqli_data_seek`, `mysqli_free_result`, `mysqli_more_results`,
@@ -865,6 +866,8 @@
   non-empty `mysqli` result sets are not implemented in the current subset.
   For the same placeholder handle, `mysqli_errno($handle)` returns `0` and
   `mysqli_error($handle)` returns an empty string.
+  `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` return
+  deterministic `0` for the clean placeholder connection state.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.
@@ -875,7 +878,7 @@
   `wpdb::_real_escape()` option lookup path.
   Host connections, real mysqli resources/objects, real query execution,
   general non-empty result sets, real row/field metadata,
-  affected-row/insert-id state, connection charset state, binary or
+  real affected-row/insert-id state, connection charset state, binary or
   invalid-string behavior, exact escaping edge cases, errors/warnings,
   transactions, configuration beyond the report-mode flag, PDO behavior, and
   native database calls are not implemented.
@@ -2340,8 +2343,9 @@
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
-  `mysqli_real_escape_string`, `mysqli_fetch_object`,
+  `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_affected_rows`,
+  `mysqli_insert_id`, `mysqli_select_db`, `mysqli_real_escape_string`,
+  `mysqli_fetch_object`,
   `mysqli_fetch_assoc`, `mysqli_fetch_row`, `mysqli_fetch_array`,
   `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_num_rows`,
   `mysqli_data_seek`,
@@ -2873,14 +2877,17 @@
   SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
   synthetic empty-result boundaries;
   `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
-  diagnostics; `mysqli_select_db(...)` returns only deterministic
-  success for the placeholder handle; `mysqli_real_escape_string(...)` returns
+  diagnostics; `mysqli_affected_rows(...)` and `mysqli_insert_id(...)` expose
+  only deterministic zero clean-state metadata; `mysqli_select_db(...)`
+  returns only deterministic success for the placeholder handle;
+  `mysqli_real_escape_string(...)` returns
   only deterministic escaping over the placeholder handle and current
   scalar/null string-convertible values; direct `mysqli_connect(...)` calls
   are still a stable unsupported runtime boundary, and direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
   `mysqli_get_server_info(...)`/`mysqli_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/
+  `mysqli_affected_rows(...)`/`mysqli_insert_id(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
   `mysqli_fetch_object(...)`/`mysqli_fetch_assoc(...)`/
   `mysqli_fetch_row(...)`/`mysqli_fetch_array(...)`/
@@ -4528,6 +4535,7 @@
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_query()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_affected_rows()`/`mysqli_insert_id()`/
   `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
   `mysqli_fetch_row()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
   `mysqli_num_rows()`/`mysqli_data_seek()`/`mysqli_free_result()`/

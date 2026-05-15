@@ -4300,6 +4300,18 @@ impl Interpreter {
         Ok(Value::String(String::new()))
     }
 
+    fn call_mysqli_affected_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_affected_rows", args, 1, span)?;
+        expect_mysqli_handle("mysqli_affected_rows()", &args[0], span)?;
+        Ok(Value::Int(0))
+    }
+
+    fn call_mysqli_insert_id(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_insert_id", args, 1, span)?;
+        expect_mysqli_handle("mysqli_insert_id()", &args[0], span)?;
+        Ok(Value::Int(0))
+    }
+
     fn call_mysqli_select_db(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_select_db", args, 2, span)?;
         let Value::Object(handle) = &args[0] else {
@@ -8950,6 +8962,8 @@ impl Interpreter {
             "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_errno" => self.call_mysqli_errno(&args, span),
             "mysqli_error" => self.call_mysqli_error(&args, span),
+            "mysqli_affected_rows" => self.call_mysqli_affected_rows(&args, span),
+            "mysqli_insert_id" => self.call_mysqli_insert_id(&args, span),
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
@@ -11878,6 +11892,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_query"
             | "mysqli_errno"
             | "mysqli_error"
+            | "mysqli_affected_rows"
+            | "mysqli_insert_id"
             | "mysqli_select_db"
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"
