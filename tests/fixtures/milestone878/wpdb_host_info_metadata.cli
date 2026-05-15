@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone878/wpdb_host_info_metadata.php
+localhost via TCP/IP (phpc-placeholder)
+localhost via TCP/IP (phpc-placeholder)
+checked

@@ -1342,6 +1342,9 @@ historical blockers and remaining full-support gaps include:
   liveness behavior. Milestone 877 adds deterministic placeholder
   `mysqli_get_host_info()` metadata for current `mysqli` objects without
   inspecting a real host, transport, socket, protocol, or live connection.
+  Milestone 878 adds a synthetic WordPress-shaped `wpdb` host-info bookkeeping
+  smoke that records that deterministic metadata without claiming real
+  connection metadata fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

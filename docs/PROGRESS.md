@@ -1,5 +1,19 @@
 # Progress Log
 
+## 2026-05-16
+
+Implemented:
+
+- Added Milestone 878, a synthetic WordPress-shaped `wpdb` host-info metadata
+  smoke that calls the bounded `mysqli_get_host_info($this->dbh)` placeholder
+  path, records the deterministic metadata on local object state, and verifies
+  that the check was performed. This is a harness smoke only; it does not add
+  real WordPress connection metadata fidelity, real host/transport/socket
+  state, protocol metadata, live connection inspection, warnings/errors, host
+  database integration, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone878`.
+
 ## 2026-05-15
 
 Implemented:

@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic `mysqli_get_host_info()`
+placeholder through a WordPress-shaped `wpdb` connection metadata path.
+System PHP would require the mysqli extension and a real host connection to
+provide actual transport metadata.

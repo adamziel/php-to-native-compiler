@@ -171,7 +171,8 @@ reaches that mutation boundary through a WordPress-shaped `UPDATE wp_options`
 path, plus a deterministic `mysqli_ping()` placeholder liveness boundary for
 future WordPress-shaped connection checks, now wired through a synthetic
 `wpdb::check_connection()` smoke, plus deterministic
-`mysqli_get_host_info()` placeholder connection metadata. These are
+`mysqli_get_host_info()` placeholder connection metadata wired through a
+synthetic WordPress-shaped `wpdb` host-info bookkeeping smoke. These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
 or native WordPress compatibility.

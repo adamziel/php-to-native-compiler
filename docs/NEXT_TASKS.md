@@ -8091,15 +8091,25 @@ handled.
   stable diagnostics, and is visible through runtime and native metadata
   lookup. This is not real host, transport, socket, protocol,
   connection-liveness, reconnect, warning/error, or native database behavior.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records
   deterministic `mysqli_get_host_info()` through WordPress-shaped connection
   metadata bookkeeping without claiming real host or transport state.
+  Milestone 878 adds a `phpc-only` synthetic `wpdb` fixture that calls
+  `mysqli_get_host_info($this->dbh)`, records the deterministic placeholder
+  host-info string on local object state, and records that the check ran. It
+  is not real WordPress connection metadata fidelity, host/transport/socket
+  state, protocol metadata, live connection inspection, warnings/errors, host
+  database integration, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next connection metadata boundary after
+  host-info placeholders and choose a small tested slice, such as deterministic
+  `mysqli_stat()` metadata or a named transaction/autocommit boundary, before
+  broader SQL execution or real host state is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `90c290e tests: add wordpress wpdb ping smoke`, covering Milestone 876
-  before the current Milestone 877 candidate.
+  `4aef04a runtime: add mysqli host info placeholder`, covering Milestone 877
+  before the current Milestone 878 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
