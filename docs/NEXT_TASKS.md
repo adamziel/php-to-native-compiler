@@ -7825,17 +7825,28 @@ handled.
   source, plugin/theme/admin/REST flows, real database/result resources,
   HTTP/filesystem/SAPI behavior, and native lowering remain outside this
   smoke.
-- [ ] Runtime/mysqli lane: add the first deterministic `mysqli_result`
+- [x] Runtime/mysqli lane: add the first deterministic `mysqli_result`
   lifecycle boundary for reached WordPress-style empty result consumption,
   such as `mysqli_fetch_object()`, `mysqli_free_result()`,
   `mysqli_more_results()`, and `mysqli_next_result()` over placeholder empty
   results, without claiming real SQL execution or result resources.
+  Milestone 852 returns a placeholder `mysqli_result` object for the exact
+  synthetic empty result query `SELECT * FROM wp_posts WHERE 1 = 0`, with
+  `mysqli_num_fields()` returning `0`, `mysqli_fetch_field()` and
+  `mysqli_fetch_object()` returning `false`, `mysqli_free_result()` returning
+  `null`, and multi-result probes returning `false` on the placeholder
+  connection. Real SQL execution, non-empty rows, field metadata, result
+  resources, and native database calls remain unsupported.
+- [ ] WordPress harness lane: add a deterministic post-bootstrap synthetic
+  `wpdb::query()`/result-consumption smoke that exercises the empty
+  `mysqli_result` lifecycle through a WordPress-shaped class method without
+  real database state.
 
-## Latest Completed Checkpoint Before Milestone 851
+## Latest Completed Checkpoint Before Milestone 852
 
 - The latest committed checkpoint is
-  `dd47bca runtime: add wordpress mysqli charset setup`, covering Milestone
-  850.
+  `80288a1 tools: add wordpress front controller smoke`, covering Milestone
+  851.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

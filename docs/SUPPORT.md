@@ -514,7 +514,9 @@
   `function_exists`, `extension_loaded`, `mysqli_connect`,
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
   `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
-  `mysqli_real_escape_string`, `mysqli_report`,
+  `mysqli_real_escape_string`, `mysqli_fetch_object`,
+  `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_free_result`,
+  `mysqli_more_results`, `mysqli_next_result`, `mysqli_report`,
   `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
@@ -825,8 +827,15 @@
   `SELECT option_value FROM <prefix>options WHERE option_name = ... LIMIT 1`,
   plus reached empty WordPress metadata probes `SHOW FULL COLUMNS FROM ...`
   and `DESCRIBE ...`, returning deterministic empty boundaries without
-  executing SQL. For the same placeholder handle, `mysqli_errno($handle)`
-  returns `0` and `mysqli_error($handle)` returns an empty string.
+  executing SQL. For the exact synthetic empty result query
+  `SELECT * FROM wp_posts WHERE 1 = 0`, `mysqli_query()` returns a placeholder
+  `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
+  `mysqli_fetch_field($result)` and `mysqli_fetch_object($result)` return
+  `false`, and `mysqli_free_result($result)` returns `null` for that
+  placeholder empty result. `mysqli_more_results($handle)` and
+  `mysqli_next_result($handle)` return `false` for the placeholder connection.
+  For the same placeholder handle, `mysqli_errno($handle)` returns `0` and
+  `mysqli_error($handle)` returns an empty string.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
   string or null database name, returning deterministic `true` for the reached
   WordPress `wpdb::select()` path without selecting a real database.
@@ -835,12 +844,12 @@
   MySQL-style escaping for NUL, newline, carriage return, backslash, single
   quote, double quote, and Ctrl-Z characters for the reached
   `wpdb::_real_escape()` option lookup path.
-  Host connections, real mysqli
-  resources/objects, real query execution, result sets, row fetching,
-  affected-row/insert-id state, connection charset state, binary or
-  invalid-string behavior, exact escaping edge cases, errors/warnings,
-  transactions, configuration beyond the report-mode flag, PDO behavior, and
-  native database calls are not implemented.
+  Host connections, real mysqli resources/objects, real query execution,
+  non-empty result sets, real row/field metadata, affected-row/insert-id
+  state, connection charset state, binary or invalid-string behavior, exact
+  escaping edge cases, errors/warnings, transactions, configuration beyond the
+  report-mode flag, PDO behavior, and native database calls are not
+  implemented.
   `compact($name, ...$names)` supports one or more direct string variable-name
   arguments, reads the current caller scope, returns an array keyed by each
   found variable name, and omits missing variables. This covers the reached
@@ -2303,7 +2312,9 @@
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
-  `mysqli_real_escape_string`,
+  `mysqli_real_escape_string`, `mysqli_fetch_object`,
+  `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_free_result`,
+  `mysqli_more_results`, `mysqli_next_result`,
   `mysqli_report`, `mysqli_init`,
   `compact`, `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
@@ -2820,13 +2831,16 @@
   registry for already-lowerable string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
-  `mysqli_real_escape_string`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
+  `mysqli_real_escape_string`, `mysqli_fetch_object`,
+  `mysqli_fetch_field`, `mysqli_num_fields`, `mysqli_free_result`,
+  `mysqli_more_results`, `mysqli_next_result`, `mysqli_report`, and
+  `mysqli_init` are recognized for function/callability
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
   current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` returns only the current deterministic
   placeholder string, and `mysqli_query(...)` returns only the current false
-  SQL-mode-probe, true charset-setup, and WordPress empty-options-query
-  boundaries;
+  SQL-mode-probe, true charset-setup, WordPress empty-options-query, and exact
+  synthetic empty-result boundaries;
   `mysqli_errno(...)` and `mysqli_error(...)` expose only clean placeholder
   diagnostics; `mysqli_select_db(...)` returns only deterministic
   success for the placeholder handle; `mysqli_real_escape_string(...)` returns
@@ -2837,6 +2851,9 @@
   `mysqli_get_server_info(...)`/`mysqli_query(...)`/
   `mysqli_errno(...)`/`mysqli_error(...)`/
   `mysqli_select_db(...)`/`mysqli_real_escape_string(...)`/
+  `mysqli_fetch_object(...)`/`mysqli_fetch_field(...)`/
+  `mysqli_num_fields(...)`/`mysqli_free_result(...)`/
+  `mysqli_more_results(...)`/`mysqli_next_result(...)`/
   `mysqli_report(...)`/`mysqli_init(...)` calls still reject under the
   function-call boundary.
   `header` accepts the same current no-op header subset as the builtin section
@@ -4478,9 +4495,12 @@
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_query()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
+  `mysqli_fetch_object()`/`mysqli_fetch_field()`/`mysqli_num_fields()`/
+  `mysqli_free_result()`/`mysqli_more_results()`/`mysqli_next_result()`/
   `mysqli_report()`/`mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
-  fake server-info/SQL-mode-query/charset-setup/database-selection/escaping boundary:
+  fake server-info/SQL-mode-query/charset-setup/database-selection/escaping/
+  empty-result lifecycle boundary:
   mysqli extension loading, host/database connections,
   mysqli resources/objects with real connection state, queries, result sets,
   prepared statements, connection charset state, binary or invalid-string

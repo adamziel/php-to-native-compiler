@@ -1,0 +1,8 @@
+$ phpc run tests/fixtures/milestone852/mysqli_empty_result_lifecycle.php
+mysqli_result
+0
+no-field
+no-row
+freed
+done
+done

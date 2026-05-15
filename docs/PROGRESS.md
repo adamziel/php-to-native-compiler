@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 852, the first deterministic `mysqli_result` lifecycle
+  boundary for WordPress-style empty result consumption. `mysqli_query()` now
+  returns a placeholder `mysqli_result` object for the exact synthetic empty
+  result query `SELECT * FROM wp_posts WHERE 1 = 0`; `mysqli_num_fields()`
+  returns `0`, `mysqli_fetch_field()` and `mysqli_fetch_object()` return
+  `false`, `mysqli_free_result()` returns `null`, and
+  `mysqli_more_results()`/`mysqli_next_result()` return `false` for the
+  placeholder connection. The new functions are visible through
+  `function_exists()`/`is_callable()` and native function-table
+  introspection, but direct native calls still reject under the current
+  runtime-call lowering boundary. This is not real SQL execution, row/field
+  metadata, result resources, multi-result state, affected-row/insert-id
+  state, or database support. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension -- --nocapture` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone852`.
+  A normalized real WordPress 6.9.4 probe still reports direct
+  `wp-settings.php` failing on undefined `ABSPATH`, while the bootstrap-shim
+  and front-controller probes exit `0` with no stdout and include traces
+  ending at `wp-includes/pluggable.php`.
+
 - Added Milestone 851, a committed deterministic WordPress-shaped
   front-controller smoke fixture for the now-passing `wp-blog-header.php`
   probe. The new synthetic normalized inventory test loads

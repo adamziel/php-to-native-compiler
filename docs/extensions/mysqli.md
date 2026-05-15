@@ -3,7 +3,10 @@
 Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-`mysqli_query`, `mysqli_select_db`, `mysqli_report`, and `mysqli_init` are currently visible through
+`mysqli_query`, `mysqli_select_db`, `mysqli_real_escape_string`,
+`mysqli_fetch_object`, `mysqli_fetch_field`, `mysqli_num_fields`,
+`mysqli_free_result`, `mysqli_more_results`, `mysqli_next_result`,
+`mysqli_report`, and `mysqli_init` are currently visible through
 `function_exists()`, `is_callable()`, dynamic string-valued function lookup,
 and native function-table introspection so WordPress' early database startup
 paths can move to the next real bootstrap blocker.
@@ -33,6 +36,15 @@ object and that exact SQL mode probe, returning `false` as a deterministic
 empty/no-result boundary. This lets WordPress skip SQL mode normalization
 without executing SQL or producing a result resource.
 
+`mysqli_query($handle, 'SELECT * FROM wp_posts WHERE 1 = 0')` returns a
+placeholder `mysqli_result` object for the first deterministic empty result
+lifecycle boundary. `mysqli_num_fields($result)` returns `0`,
+`mysqli_fetch_field($result)` and `mysqli_fetch_object($result)` return
+`false`, and `mysqli_free_result($result)` returns `null`. For the placeholder
+connection, `mysqli_more_results($handle)` and `mysqli_next_result($handle)`
+return `false`. This does not execute SQL, store rows, expose real field
+metadata, or model real result resources.
+
 `mysqli_select_db($handle, $database)` accepts the placeholder object and a
 string or null database name, returning deterministic `true`. It does not
 select or validate a real database.
@@ -44,9 +56,9 @@ unsupported call mysqli_connect(): mysqli/database connections are not implement
 ```
 
 No real mysqli extension behavior is implemented yet: no host connections, no
-real resources or connected objects beyond the placeholder shape, no real
-server metadata, no query execution beyond the current false SQL mode probe, no
-real database selection beyond deterministic success, no result sets, no
-escaping, no charset handling, no errors/warnings, no transactions, no
-configuration beyond the current report-mode flag, no PDO bridge, and no
-native database lowering.
+real resources or connected objects beyond the placeholder shapes, no real
+server metadata, no query execution beyond the documented deterministic
+queries, no real database selection beyond deterministic success, no non-empty
+result sets, no real row/field metadata, no charset handling, no
+errors/warnings, no transactions, no configuration beyond the current
+report-mode flag, no PDO bridge, and no native database lowering.

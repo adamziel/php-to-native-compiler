@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `80288a1 tools: add wordpress front controller smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 852, the first deterministic `mysqli_result`
+  lifecycle boundary for WordPress-style empty result consumption.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone852/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension -- --nocapture` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone852`
+  passed with one phpc-only fixture skipped for system PHP comparison.
+  A normalized real WordPress 6.9.4 probe with include tracing also passed the
+  current boundary: direct `wp-settings.php` fails on undefined `ABSPATH`, and
+  both bootstrap-shim and front-controller probes exit `0` with no stdout.
+- Current WordPress frontier: the compiler now has a placeholder
+  `mysqli_result` object for the exact synthetic empty result query
+  `SELECT * FROM wp_posts WHERE 1 = 0`, plus empty fetch/field/free and
+  multi-result lifecycle functions. This is still not real SQL execution or
+  WordPress database support.
+- Remaining semantic gaps: non-empty result rows, field metadata, result
+  resources, real DB connections, WordPress query-state fidelity, plugin/theme
+  admin/REST flows, request rendering, HTTP/filesystem/SAPI behavior, and
+  native lowering remain unproven.
+- Next concrete task: run formatting/diff checks, then the full checkpoint
+  gate. The next milestone should add a synthetic `wpdb::query()`-style smoke
+  that consumes the empty result through WordPress-shaped object state.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `dd47bca runtime: add wordpress mysqli charset setup`, pushed to
   `origin/master`.
 - Task attempted: Milestone 851, a committed deterministic front-controller

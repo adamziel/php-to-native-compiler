@@ -347,6 +347,37 @@ echo $result === true ? "charset-ok" : "charset-result";
 }
 
 #[test]
+fn mysqli_query_returns_current_empty_result_placeholder() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT * FROM wp_posts WHERE 1 = 0");
+echo get_class($result);
+echo "|";
+echo mysqli_num_fields($result);
+echo "|";
+echo mysqli_fetch_field($result) === false ? "no-field" : "field";
+echo "|";
+echo mysqli_fetch_object($result) === false ? "no-row" : "row";
+echo "|";
+echo mysqli_free_result($result) === null ? "freed" : "value";
+echo "|";
+echo mysqli_more_results($handle) ? "more" : "done";
+echo "|";
+echo mysqli_next_result($handle) ? "next" : "done";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "mysqli_result|0|no-field|no-row|freed|done|done"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -392,6 +423,21 @@ mysqli_errno("not-a-handle");
     assert_eq!(
         bad_errno_handle.message,
         "unsupported call mysqli_errno(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_result_handle = run_source(
+        r#"<?php
+mysqli_fetch_object(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_result_handle.phase, Phase::Runtime);
+    assert_eq!(bad_result_handle.line, 2);
+    assert_eq!(bad_result_handle.column, 1);
+    assert_eq!(
+        bad_result_handle.message,
+        "unsupported call mysqli_fetch_object(): first argument must be mysqli_result object in the current subset, got mysqli object"
     );
 }
 
@@ -502,6 +548,18 @@ echo function_exists("mysqli_select_db") ? "1" : "0";
 echo is_callable("mysqli_select_db") ? "1" : "0";
 echo function_exists("mysqli_real_escape_string") ? "1" : "0";
 echo is_callable("mysqli_real_escape_string") ? "1" : "0";
+echo function_exists("mysqli_fetch_object") ? "1" : "0";
+echo is_callable("mysqli_fetch_object") ? "1" : "0";
+echo function_exists("mysqli_fetch_field") ? "1" : "0";
+echo is_callable("mysqli_fetch_field") ? "1" : "0";
+echo function_exists("mysqli_num_fields") ? "1" : "0";
+echo is_callable("mysqli_num_fields") ? "1" : "0";
+echo function_exists("mysqli_free_result") ? "1" : "0";
+echo is_callable("mysqli_free_result") ? "1" : "0";
+echo function_exists("mysqli_more_results") ? "1" : "0";
+echo is_callable("mysqli_more_results") ? "1" : "0";
+echo function_exists("mysqli_next_result") ? "1" : "0";
+echo is_callable("mysqli_next_result") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -511,7 +569,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 21, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 33, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

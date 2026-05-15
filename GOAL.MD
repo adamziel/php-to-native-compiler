@@ -998,13 +998,15 @@ unchecked work. Current state:
   boundary covers the reached WordPress charset setup statement and the real
   `wp-blog-header.php` front-controller probe exits `0` with no stdout under
   current placeholder database and CLI assumptions.
-- Milestone 851 is the active checkpoint candidate: turn that passing
-  front-controller probe into a committed deterministic smoke target while
-  preserving the distinction between placeholder CLI/bootstrap success and full
-  WordPress support.
-- The next immediate runtime lane after the smoke target is the first
-  deterministic empty `mysqli_result` lifecycle boundary for
-  WordPress-style result consumption.
+- Milestone 851 is committed: the passing front-controller probe has a
+  committed deterministic smoke target that preserves the distinction between
+  placeholder CLI/bootstrap success and full WordPress support.
+- Milestone 852 is the active checkpoint candidate: the first deterministic
+  empty `mysqli_result` lifecycle boundary for WordPress-style result
+  consumption.
+- The next immediate harness lane after Milestone 852 is a synthetic
+  `wpdb::query()`-style smoke that consumes the placeholder empty result
+  through WordPress-shaped object state.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

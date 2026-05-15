@@ -1,0 +1,2 @@
+Requires phpc's deterministic placeholder mysqli_result object; system PHP
+would require a real mysqli connection and database.

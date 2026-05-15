@@ -3969,6 +3969,26 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn create_mysqli_result_placeholder(&mut self, span: Span) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("mysqli_result")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("mysqli_result core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core mysqli_result class id should resolve");
+        Ok(Value::Object(PhpObject::from_class_with_id(
+            class, object_id,
+        )))
+    }
+
     fn call_mysqli_real_connect(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=8).contains(&args.len()) {
             return Err(runtime_error(
@@ -4111,7 +4131,7 @@ impl Interpreter {
         Ok(Value::String("8.0.0-phpc-placeholder".to_string()))
     }
 
-    fn call_mysqli_query(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_query(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(2..=3).contains(&args.len()) {
             return Err(runtime_error(
                 span,
@@ -4172,6 +4192,10 @@ impl Interpreter {
 
         if is_wordpress_charset_setup_query(query) {
             return Ok(Value::Bool(true));
+        }
+
+        if is_wordpress_empty_result_query(query) {
+            return self.create_mysqli_result_placeholder(span);
         }
 
         if query == "SELECT @@SESSION.sql_mode" || is_wordpress_empty_options_query(query) {
@@ -4285,6 +4309,42 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?;
 
         Ok(Value::String(mysql_escape_string(&value)))
+    }
+
+    fn call_mysqli_fetch_object(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_object", args, 1, span)?;
+        expect_mysqli_result_handle("mysqli_fetch_object()", &args[0], span)?;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_mysqli_fetch_field(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_field", args, 1, span)?;
+        expect_mysqli_result_handle("mysqli_fetch_field()", &args[0], span)?;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_mysqli_num_fields(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_num_fields", args, 1, span)?;
+        expect_mysqli_result_handle("mysqli_num_fields()", &args[0], span)?;
+        Ok(Value::Int(0))
+    }
+
+    fn call_mysqli_free_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_free_result", args, 1, span)?;
+        expect_mysqli_result_handle("mysqli_free_result()", &args[0], span)?;
+        Ok(Value::Null)
+    }
+
+    fn call_mysqli_more_results(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_more_results", args, 1, span)?;
+        expect_mysqli_handle("mysqli_more_results()", &args[0], span)?;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_mysqli_next_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_next_result", args, 1, span)?;
+        expect_mysqli_handle("mysqli_next_result()", &args[0], span)?;
+        Ok(Value::Bool(false))
     }
 
     fn evaluate_array_index(
@@ -8632,6 +8692,12 @@ impl Interpreter {
             "mysqli_error" => self.call_mysqli_error(&args, span),
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
+            "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
+            "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
+            "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
+            "mysqli_free_result" => self.call_mysqli_free_result(&args, span),
+            "mysqli_more_results" => self.call_mysqli_more_results(&args, span),
+            "mysqli_next_result" => self.call_mysqli_next_result(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -11549,6 +11615,12 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_error"
             | "mysqli_select_db"
             | "mysqli_real_escape_string"
+            | "mysqli_fetch_object"
+            | "mysqli_fetch_field"
+            | "mysqli_num_fields"
+            | "mysqli_free_result"
+            | "mysqli_more_results"
+            | "mysqli_next_result"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"
@@ -11801,6 +11873,10 @@ fn is_wordpress_charset_setup_query(query: &str) -> bool {
     query == "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'"
 }
 
+fn is_wordpress_empty_result_query(query: &str) -> bool {
+    query == "SELECT * FROM wp_posts WHERE 1 = 0"
+}
+
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {
     let Value::Object(handle) = value else {
         return Err(runtime_error(
@@ -11826,6 +11902,35 @@ fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileRes
             ),
         ));
     }
+    Ok(())
+}
+
+fn expect_mysqli_result_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {
+    let Value::Object(handle) = value else {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "first argument must be mysqli_result object in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        ));
+    };
+    if !handle.class_name().eq_ignore_ascii_case("mysqli_result") {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "first argument must be mysqli_result object in the current subset, got {} object",
+                    handle.class_name()
+                ),
+            ),
+        ));
+    }
+
     Ok(())
 }
 
