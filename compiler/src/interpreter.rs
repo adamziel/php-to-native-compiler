@@ -7166,6 +7166,38 @@ impl Interpreter {
                     )),
                 }
             }
+            "is_dir" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::String(path) => {
+                        if path.contains("://") {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    "is_dir()",
+                                    "stream wrappers are not supported in the current subset",
+                                ),
+                            ));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        Ok(Value::Bool(
+                            fs::metadata(&metadata_path)
+                                .map(|metadata| metadata.is_dir())
+                                .unwrap_or(false),
+                        ))
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "is_dir()",
+                            format!(
+                                "path argument must be string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             "is_readable" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9566,6 +9598,7 @@ fn is_builtin(name: &str) -> bool {
             | "extension_loaded"
             | "mysqli_connect"
             | "file_exists"
+            | "is_dir"
             | "is_readable"
             | "register_shutdown_function"
             | "header"

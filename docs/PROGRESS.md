@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 786, bounded `is_dir()` for the current WordPress startup
+  filesystem path. The runtime now accepts one string local path, rejects
+  stream-wrapper paths, returns `false` for missing paths and files, returns
+  `true` for host directories using the current filesystem metadata path
+  policy, exposes the builtin through function/callability metadata and
+  dynamic string-valued calls, and keeps direct native calls behind the generic
+  function-call lowering boundary. Include-path lookup, stream wrappers,
+  symlink/canonicalization policy, permission/open_basedir behavior, non-string
+  coercions, stat-cache behavior, exact diagnostics, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past the reached `is_dir()` call to
+  `parse error at <bootstrap-shim>:124:22: expected property name after '->', found {`,
+  corresponding to a braced dynamic object-property access path. Direct
+  `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test is_dir_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone786`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 785, bounded `error_reporting()` mask state for the current
   WordPress startup path. The runtime now exposes the reached `E_*` error mask
   constants, initializes the current reporting mask to `E_ALL`, returns the

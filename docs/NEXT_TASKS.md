@@ -7200,16 +7200,25 @@ handled.
   Milestone 785 implements bounded integer mask state plus reached `E_*`
   constants and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:666:10: undefined function is_dir()`.
-- [ ] Filesystem runtime lane: implement a bounded `is_dir()` slice for the
+- [x] Filesystem runtime lane: implement a bounded `is_dir()` slice for the
   reached WordPress startup path. Keep stream wrappers, include-path behavior,
   symlink/canonicalization policy, permission/open_basedir behavior,
   non-string coercions, stat-cache behavior, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 786 implements the local one-string path slice and advances the
+  real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:124:22: expected property name after '->', found {`.
+- [ ] Object/parser runtime lane: implement or explicitly bound braced dynamic
+  object-property access such as `$object->{$name}` for the reached WordPress
+  startup path. Keep arbitrary expressions, writes, unset/isset/empty/null
+  coalescing behavior, magic properties, non-public visibility context,
+  references/copy-on-write, exact diagnostics, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 785 checkpoint, the latest committed checkpoint
-  is `8756b29 runtime: add bounded preg match`, covering Milestone 784.
+- Before the current Milestone 786 checkpoint, the latest committed checkpoint
+  is `cd17eba runtime: add bounded error reporting`, covering Milestone 785.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

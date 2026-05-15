@@ -26,6 +26,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:14:37Z
+
+- Checkpoint before this task:
+  `cd17eba runtime: add bounded error reporting`, pushed to `origin/master`.
+- Task attempted: Milestone 786, bounded `is_dir()` for the reached WordPress
+  startup filesystem path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/is_dir_builtin.rs`,
+  `tests/fixtures/milestone786/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test is_dir_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone786`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: include-path lookup, stream wrappers,
+  symlink/canonicalization policy, permissions/open_basedir behavior,
+  non-string coercions, stat-cache behavior, exact diagnostics, native
+  lowering, and broad filesystem support remain unsupported.
+- Next concrete task: implement or explicitly bound braced dynamic
+  object-property access such as `$object->{$name}` for the reached WordPress
+  startup path while documenting arbitrary expressions, writes,
+  unset/isset/empty/null coalescing behavior, magic properties, non-public
+  visibility, references/copy-on-write, exact diagnostics, and native lowering
+  unless implemented.
+
 ## Loop Event 2026-05-15T08:08:36Z
 
 - Checkpoint before this task:

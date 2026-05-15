@@ -435,7 +435,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `preg_match`, `str_replace`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
-  `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
+  `is_dir`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -601,6 +601,13 @@
   fidelity, open_basedir, stat-cache behavior, TOCTOU semantics, host
   filesystem coupling, partial-output behavior, and native lowering remain
   unsupported.
+  `is_dir($path)` accepts one string local path, rejects stream-wrapper paths,
+  returns `true` for host directories, and returns `false` for missing paths or
+  non-directory paths. It shares the same current relative path policy as
+  `file_exists`. Include-path lookup, stream wrappers,
+  canonicalization/symlink policy, portable permissions, warning behavior,
+  non-string coercions, stat-cache behavior, open_basedir, partial-output
+  behavior, and native lowering remain unsupported.
   `is_readable($path)` accepts one string local path, rejects stream-wrapper
   paths, returns `false` for missing paths, and checks host readability for
   files with `File::open` and directories with `read_dir`. It shares the same
@@ -1971,7 +1978,7 @@
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
   `strtolower`, `trim`, `str_contains`, `preg_match`, `error_reporting`, `min`, `dirname`, `file_exists`,
-  `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
+  `is_dir`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`,
   `mysqli_connect`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
@@ -2267,7 +2274,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `preg_match`, `str_replace`, `error_reporting`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `min`, `count`,
+  `str_contains`, `preg_match`, `str_replace`, `error_reporting`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `is_dir`, `abs`, `microtime`, `ini_get`, `min`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2392,7 +2399,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -4091,6 +4098,10 @@
   canonicalization, symlink resolution, null-byte behavior, broad scalar
   coercions, exact `ValueError`/`TypeError` diagnostics, and native lowering
   beyond function-table introspection
+- `is_dir()` behavior beyond the current one-string local path metadata slice:
+  include-path lookup, stream wrappers, symlink/canonicalization policy,
+  permission/open_basedir behavior, non-string coercions, stat-cache behavior,
+  exact diagnostics, and native lowering beyond function-table introspection
 - `header()` behavior beyond accepting current string/bool/int arguments as a
   no-op returning `null`: response header storage, status-code parsing/state,
   replacement/removal behavior, output-sent warnings, SAPI/web-server

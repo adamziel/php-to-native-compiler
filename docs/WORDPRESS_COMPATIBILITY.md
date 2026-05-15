@@ -774,6 +774,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not PHP warning/notice/deprecation filtering, ini integration,
   disabled-function policy, exact diagnostics, native lowering, or WordPress
   bootstrap support.
+  Milestone 786 implements bounded `is_dir()` for local one-string paths. The
+  real bootstrap-shim probe now advances to
+  `parse error at <bootstrap-shim>:124:22: expected property name after '->', found {`,
+  corresponding to a braced dynamic object-property access path. This is not
+  full filesystem support, stream wrappers, symlink/canonicalization policy,
+  permissions/open_basedir behavior, stat-cache fidelity, native lowering,
+  dynamic object-property support, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
