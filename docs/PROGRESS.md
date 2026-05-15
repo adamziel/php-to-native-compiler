@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 853, a deterministic WordPress-shaped `wpdb::query()`
+  smoke fixture over the placeholder empty `mysqli_result` lifecycle. The
+  synthetic `wpdb` class initializes the placeholder connection, stores
+  `$this->result = mysqli_query(...)`, loops over
+  `mysqli_fetch_object($this->result)`, frees the result, drains placeholder
+  multi-result state, and records `last_result`/`num_rows` as empty. The
+  fixture is `phpc-only` because system PHP would require a real database.
+  This is a harness smoke only; it does not add real SQL execution, rows,
+  field metadata, result resources, WordPress query-state fidelity, or native
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone853`.
+
 - Added Milestone 852, the first deterministic `mysqli_result` lifecycle
   boundary for WordPress-style empty result consumption. `mysqli_query()` now
   returns a placeholder `mysqli_result` object for the exact synthetic empty

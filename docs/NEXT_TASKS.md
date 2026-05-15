@@ -7837,16 +7837,25 @@ handled.
   `null`, and multi-result probes returning `false` on the placeholder
   connection. Real SQL execution, non-empty rows, field metadata, result
   resources, and native database calls remain unsupported.
-- [ ] WordPress harness lane: add a deterministic post-bootstrap synthetic
+- [x] WordPress harness lane: add a deterministic post-bootstrap synthetic
   `wpdb::query()`/result-consumption smoke that exercises the empty
   `mysqli_result` lifecycle through a WordPress-shaped class method without
   real database state.
+  Milestone 853 adds a `phpc-only` synthetic `wpdb::query()` fixture that
+  stores `$this->result`, loops over `mysqli_fetch_object()`, frees the
+  placeholder result, drains placeholder multi-result state, and verifies
+  empty `last_result`/`num_rows` state. It is not real SQL execution,
+  non-empty row hydration, field metadata, WordPress query-state fidelity, or
+  native lowering.
+- [ ] Runtime/mysqli lane: inspect the next real WordPress database path after
+  empty result consumption and choose either a bounded row-shape fixture or an
+  explicit unsupported diagnostic for non-empty result sets.
 
-## Latest Completed Checkpoint Before Milestone 852
+## Latest Completed Checkpoint Before Milestone 853
 
 - The latest committed checkpoint is
-  `80288a1 tools: add wordpress front controller smoke`, covering Milestone
-  851.
+  `3354287 runtime: add wordpress mysqli result lifecycle`, covering
+  Milestone 852.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

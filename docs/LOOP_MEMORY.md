@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `3354287 runtime: add wordpress mysqli result lifecycle`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 853, a deterministic post-bootstrap synthetic
+  `wpdb::query()` smoke over the placeholder empty result lifecycle.
+- Files changed so far: `tests/fixtures/milestone853/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone853`
+  passed with one phpc-only fixture skipped for system PHP comparison.
+- Current WordPress frontier: the harness now proves a WordPress-shaped object
+  method can store a placeholder `mysqli_result`, consume it with
+  `mysqli_fetch_object()`, free it, drain placeholder multi-result state, and
+  preserve empty `last_result`/`num_rows` state.
+- Remaining semantic gaps: real SQL execution, non-empty result hydration,
+  field metadata, WordPress query-state fidelity, real DB resources,
+  plugin/theme/admin/REST flows, HTTP/filesystem/SAPI behavior, and native
+  lowering remain unproven.
+- Next concrete task: run formatting/diff checks and the full checkpoint gate.
+  The next runtime lane should inspect the next real WordPress database path
+  and either add a bounded row-shape fixture or a sharper unsupported boundary
+  for non-empty result sets.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `80288a1 tools: add wordpress front controller smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 852, the first deterministic `mysqli_result`

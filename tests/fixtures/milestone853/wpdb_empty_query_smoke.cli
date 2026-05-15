@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone853/wpdb_empty_query_smoke.php
+0
+0
+0

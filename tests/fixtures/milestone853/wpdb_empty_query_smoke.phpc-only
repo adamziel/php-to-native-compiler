@@ -1,0 +1,2 @@
+Requires phpc's deterministic placeholder mysqli connection and empty
+mysqli_result lifecycle; system PHP would require a real database.
