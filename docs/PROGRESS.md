@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 918, a synthetic WordPress-shaped `wpdb` connection
+  thread-lifecycle bookkeeping smoke that calls bounded
+  `mysqli_thread_id($this->dbh)`, `mysqli_kill($this->dbh, $thread_id)`,
+  `mysqli_kill($this->dbh, 99)`, and `mysqli_ping($this->dbh)`, records
+  deterministic local placeholder thread-kill metadata, and verifies that the
+  thread lifecycle boundary ran while the placeholder connection remains open.
+  This is a harness smoke only; it does not add real WordPress server-thread
+  killing, connection invalidation, reconnect behavior, host database state,
+  PHP warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone918`.
+
 - Added Milestone 917, bounded `mysqli_kill()` support for deterministic
   placeholder MySQLi thread-id kill metadata. The runtime accepts current
   placeholder `mysqli` handles plus integer process ids, returns `true` only

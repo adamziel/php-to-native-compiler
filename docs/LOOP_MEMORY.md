@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `8ee1a24 runtime: add mysqli kill placeholder`, pushed to `origin/master`.
+- Task attempted: Milestone 918, a synthetic WordPress-shaped `wpdb`
+  connection thread-lifecycle bookkeeping smoke over deterministic
+  `mysqli_kill()` placeholder support.
+- Files changed so far: `tests/fixtures/milestone918/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone918`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection thread lifecycle
+  method is being extended to record deterministic placeholder thread-id kill
+  metadata while confirming the placeholder connection remains open.
+- Remaining semantic gaps: real server-thread killing, connection
+  invalidation, reconnect behavior, warnings/errors, host database state, SQL
+  execution, and native database lowering remain missing.
+- Next concrete task: run whitespace checks, then the serialized checkpoint
+  gate under `umask 0022`; after checkpoint, inspect the next MySQLi connection
+  lifecycle boundary such as `mysqli_refresh()` or `mysqli_change_user()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `0cbbf94 tests: add wordpress wpdb result drain smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 917, bounded deterministic `mysqli_kill()`

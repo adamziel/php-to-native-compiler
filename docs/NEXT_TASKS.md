@@ -8504,16 +8504,26 @@ handled.
   through runtime and native metadata lookup. This is not real server-thread
   killing, connection invalidation, reconnect behavior, warnings/errors, host
   database state, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_kill()` placeholder through a WordPress-shaped connection
   thread lifecycle method without claiming real thread killing, reconnect, or
   connection invalidation fidelity.
+  Milestone 918 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic `mysqli_thread_id()` plus `mysqli_kill()` placeholder metadata
+  on local connection-thread bookkeeping and verifies that the placeholder
+  connection remains open. It is not real server-thread killing, connection
+  invalidation, reconnect behavior, warnings/errors, host database state, or
+  native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi connection lifecycle or
+  metadata boundary after placeholder thread-kill bookkeeping, such as
+  `mysqli_refresh()`/`mysqli_change_user()` or a sharper unsupported
+  diagnostic, before claiming broader connection lifecycle fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `0cbbf94 tests: add wordpress wpdb result drain smoke`, covering Milestone
-  916 before the current Milestone 917 candidate.
+  `8ee1a24 runtime: add mysqli kill placeholder`, covering Milestone 917
+  before the current Milestone 918 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

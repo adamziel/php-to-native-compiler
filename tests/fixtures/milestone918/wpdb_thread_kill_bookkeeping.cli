@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone918/wpdb_thread_kill_bookkeeping.php
+0
+1
+killed-placeholder
+no-thread
+still-open
+checked

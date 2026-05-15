@@ -1459,7 +1459,10 @@ historical blockers and remaining full-support gaps include:
   Milestone 917 adds deterministic `mysqli_kill()` placeholder thread-id kill
   metadata without real server-thread killing, connection invalidation,
   reconnect behavior, host database state, warning/error fidelity, or native
-  database lowering.
+  database lowering. Milestone 918 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` connection thread-lifecycle bookkeeping smoke
+  without claiming real thread killing, reconnect, or connection invalidation
+  fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

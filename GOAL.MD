@@ -199,9 +199,10 @@ now wired through a synthetic WordPress-shaped `wpdb` connection-statistics
 bookkeeping smoke, plus deterministic `mysqli_thread_id()` placeholder
 thread-id metadata, now wired through a synthetic WordPress-shaped `wpdb`
 thread-id bookkeeping smoke, plus bounded deterministic `mysqli_kill()`
-placeholder thread-id kill metadata without real server-thread killing,
-connection invalidation, reconnect behavior, host database state,
-warning/error fidelity, or native lowering, plus deterministic
+placeholder thread-id kill metadata, now wired through a synthetic
+WordPress-shaped `wpdb` connection thread-lifecycle bookkeeping smoke without
+real server-thread killing, connection invalidation, reconnect behavior, host
+database state, warning/error fidelity, or native lowering, plus deterministic
 `mysqli_get_charset()` placeholder charset/collation metadata, now wired
 through a synthetic WordPress-shaped `wpdb` charset/collation bookkeeping
 smoke, plus deterministic
