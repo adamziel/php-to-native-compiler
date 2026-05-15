@@ -1328,7 +1328,12 @@ historical blockers and remaining full-support gaps include:
   plugin/theme/admin/REST, SAPI, rendered request, or native WordPress support.
   Milestone 873 then sharpens mutation SQL into an explicit unsupported
   `mysqli_query()` boundary for leading `INSERT`/`UPDATE`/`DELETE`/`REPLACE`
-  statements instead of pretending those queries mutate placeholder state.
+  statements instead of pretending those queries mutate placeholder state, and
+  Milestone 874 adds a synthetic `wpdb::query()` bookkeeping smoke that reaches
+  that boundary through a WordPress-shaped `UPDATE wp_options ...` path. This
+  does not add real update/insert/delete execution, affected-row or insert-id
+  mutation, transactions, database state, partial-output fidelity, or native
+  lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

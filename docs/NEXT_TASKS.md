@@ -8053,15 +8053,26 @@ handled.
   generic query rejection. This is not mutation SQL execution, real
   affected-row/insert-id state, transactions, database state, warnings/errors,
   host database integration, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
   explicit mutation-SQL boundary through WordPress-shaped query bookkeeping
   without claiming real update/insert/delete behavior.
+  Milestone 874 adds a `phpc-only` synthetic `wpdb::query()` fixture that
+  records the attempted `UPDATE wp_options ...` query and then reaches the
+  stable `mysqli_query()` mutation-SQL unsupported diagnostic. It is not real
+  update/insert/delete behavior, SQL execution, affected-row or insert-id
+  mutation, transactions, database state, warnings/errors, host database
+  integration, partial-output fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next database boundary after explicit
+  mutation-query rejection and choose a small tested slice, such as
+  deterministic connection-state metadata (`mysqli_ping()`,
+  `mysqli_get_host_info()`, or `mysqli_stat()`) or a sharper named boundary
+  for transactions before broader SQL execution.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9242882 tests: add wordpress wpdb set charset smoke`, covering Milestone
-  872 before the current Milestone 873 candidate.
+  `e47ac2c runtime: add mysqli mutation query boundary`, covering Milestone
+  873 before the current Milestone 874 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 874, a synthetic WordPress-shaped `wpdb::query()` smoke that
+  reaches the explicit `mysqli_query()` mutation-SQL boundary through local
+  WordPress-style query bookkeeping. The fixture records the attempted
+  `UPDATE wp_options ...` query before the runtime rejects it, and pins the
+  stable diagnostic that mutation SQL is not implemented and placeholder
+  affected-row/insert-id state remains deterministic clean metadata only. This
+  is a harness smoke only; it does not add real update/insert/delete behavior,
+  SQL execution, affected-row or insert-id mutation, transactions, database
+  state, warnings/errors, host database integration, partial-output fidelity,
+  or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone874`.
+
 - Added Milestone 873, a sharper `mysqli_query()` mutation-SQL boundary for
   placeholder MySQLi handling. `INSERT`, `UPDATE`, `DELETE`, and `REPLACE`
   query strings now report a stable diagnostic that mutation SQL is not
