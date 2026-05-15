@@ -1,0 +1,1 @@
+phpc reports a stable project runtime diagnostic for non-array nested unset intermediates; exact PHP warning/fatal behavior is not implemented.

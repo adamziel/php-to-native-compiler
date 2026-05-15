@@ -6865,17 +6865,22 @@ handled.
   749 implements append-at-depth assignment for direct-variable nested array
   paths and advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:3149:47: unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented`.
-- [ ] Arrays/value-model lane: implement or explicitly bound nested
+- [x] Arrays/value-model lane: implement or explicitly bound nested
   direct-variable array-offset `unset(...)` for the next real WordPress
   bootstrap-shim blocker at `<bootstrap-shim>:3149:47`, corresponding to
   `unset( $new_allowed_options[ $option_group ][ $pos ] );` in
-  `wp-includes/option.php`.
+  `wp-includes/option.php`. Milestone 750 implements nested direct-variable
+  array-offset `unset(...)` and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:21:21: unsupported property default: instance property default values are not implemented`.
+- [ ] Object/runtime lane: implement or explicitly bound instance property
+  default values for the next real WordPress bootstrap-shim blocker at
+  `<bootstrap-shim>:21:21`, corresponding to `public $_nplurals = 2;` in
+  `wp-includes/pomo/mo.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 749 checkpoint, the latest committed checkpoint
-  is `edd19d8 parser: bound array reference assignment source`, covering
-  Milestone 748.
+- Before the current Milestone 750 checkpoint, the latest committed checkpoint
+  is `e255572 runtime: add append-at-depth assignment`, covering Milestone 749.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

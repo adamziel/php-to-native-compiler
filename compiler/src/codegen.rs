@@ -390,7 +390,7 @@ impl LlvmGenerator {
             | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::UnsetArrayIndex { span, .. } => {
+            Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { span, .. } => Err(self.unsupported(*span, LLVM_MUTATION_REJECTION)),
@@ -3170,7 +3170,7 @@ impl CGenerator {
             | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::UnsetArrayIndex { span, .. } => {
+            Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { span, .. } => {

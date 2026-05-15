@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 750, nested direct-variable array-offset `unset(...)` for the
+  current array value model. The parser now accepts
+  `unset($array[$outer][$inner])`, including multiple nested unset operands,
+  and the interpreter evaluates all index expressions left to right, removes
+  the final key when the path exists, preserves remaining insertion order and
+  the next append key, treats missing keys and missing/`null` paths as no-ops,
+  and reports a stable invalid-array-access runtime diagnostic for non-array
+  roots or intermediates. Object property unset, append-offset unset,
+  ArrayAccess/mixed object paths, references/copy-on-write, exact PHP
+  warning/fatal behavior, and native lowering remain unsupported. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:3149:47` nested unset blocker to
+  `parse error at <bootstrap-shim>:21:21: unsupported property default: instance property default values are not implemented`,
+  corresponding to `wp-includes/pomo/mo.php` and `public $_nplurals = 2;`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test array_unset -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_unset_forms -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone750`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 749, append-at-depth assignment expressions for the current
   direct-variable nested array path. The parser now accepts targets such as
   `$array[$outer][] = expr` and `$array[$outer][$inner][] = expr`, and the

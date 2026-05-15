@@ -1598,6 +1598,13 @@ impl Parser {
                 UnsetTarget::ArrayIndex { name, index, .. } => {
                     Ok(Stmt::UnsetArrayIndex { name, index, span })
                 }
+                UnsetTarget::NestedArrayIndex { name, indices, .. } => {
+                    Ok(Stmt::UnsetNestedArrayIndex {
+                        name,
+                        indices,
+                        span,
+                    })
+                }
                 UnsetTarget::StaticProperty {
                     class_name,
                     property,
@@ -1663,21 +1670,40 @@ impl Parser {
             return Err(self.error_at(bracket_span, unsupported_unset_message()));
         }
 
-        let index = self.parse_expression()?;
+        let first_index = self.parse_expression()?;
         self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        let mut indices = vec![first_index];
 
-        if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            let bracket_span = self.previous().span;
+            if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(bracket_span, unsupported_unset_message()));
+            }
+            let index = self.parse_expression()?;
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+            indices.push(index);
+        }
+
+        if self.check(|kind| matches!(kind, TokenKind::ObjectOperator)) {
             return Err(self.error_at(self.peek().span, unsupported_unset_message()));
         }
         if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
             return Err(self.error_at(self.peek().span, unsupported_unset_message()));
         }
 
-        Ok(UnsetTarget::ArrayIndex {
-            name,
-            index,
-            span: target_span,
-        })
+        if indices.len() == 1 {
+            Ok(UnsetTarget::ArrayIndex {
+                name,
+                index: indices.remove(0),
+                span: target_span,
+            })
+        } else {
+            Ok(UnsetTarget::NestedArrayIndex {
+                name,
+                indices,
+                span: target_span,
+            })
+        }
     }
 
     fn parse_static_property_unset_target(

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone750/nested_array_unset_non_array.php:3:1: invalid array access: cannot unset offset on int
+--- stderr end ---

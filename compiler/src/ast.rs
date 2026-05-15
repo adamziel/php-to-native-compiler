@@ -116,6 +116,11 @@ pub enum Stmt {
         index: Expr,
         span: Span,
     },
+    UnsetNestedArrayIndex {
+        name: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     UnsetStaticProperty {
         class_name: String,
         property: String,
@@ -211,6 +216,7 @@ impl Stmt {
             | Stmt::Foreach { span, .. }
             | Stmt::UnsetVariable { span, .. }
             | Stmt::UnsetArrayIndex { span, .. }
+            | Stmt::UnsetNestedArrayIndex { span, .. }
             | Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
@@ -332,6 +338,11 @@ pub enum UnsetTarget {
     ArrayIndex {
         name: String,
         index: Expr,
+        span: Span,
+    },
+    NestedArrayIndex {
+        name: String,
+        indices: Vec<Expr>,
         span: Span,
     },
     StaticProperty {

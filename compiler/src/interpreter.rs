@@ -938,6 +938,14 @@ impl Interpreter {
                 self.execute_unset_array_index(name, index, *span, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::UnsetNestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                self.execute_unset_nested_array_index(name, indices, *span, scope)?;
+                Ok(Flow::Normal)
+            }
             Stmt::UnsetStaticProperty {
                 class_name,
                 property,
@@ -1352,6 +1360,9 @@ impl Interpreter {
             UnsetTarget::ArrayIndex { name, index, .. } => {
                 self.execute_unset_array_index(name, index, span, scope)
             }
+            UnsetTarget::NestedArrayIndex { name, indices, .. } => {
+                self.execute_unset_nested_array_index(name, indices, span, scope)
+            }
             UnsetTarget::StaticProperty {
                 class_name,
                 property,
@@ -1393,6 +1404,68 @@ impl Interpreter {
                 )),
             )),
         }
+    }
+
+    fn execute_unset_nested_array_index(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let keys = indices
+            .iter()
+            .map(|index| self.evaluate_array_key(index, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+
+        match scope.read_named(name) {
+            Some(Value::Array(mut array)) => {
+                Self::unset_nested_array_value(&mut array, &keys, span)?;
+                scope.write_static(name, Value::Array(array));
+                Ok(())
+            }
+            Some(Value::Null) | None => Ok(()),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot unset offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn unset_nested_array_value(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Ok(());
+        };
+
+        if rest.is_empty() {
+            array.remove(key.clone());
+            return Ok(());
+        }
+
+        let mut child = match array.get(key.clone()).cloned() {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | None => return Ok(()),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot unset offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        Self::unset_nested_array_value(&mut child, rest, span)?;
+        array.insert(key.clone(), Value::Array(child));
+        Ok(())
     }
 
     fn execute_unset_named_static_property(

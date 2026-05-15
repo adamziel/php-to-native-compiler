@@ -106,9 +106,9 @@ incorrect native code.
   statements
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
   append writes, nested direct-variable array-offset assignment expressions,
-  append-at-depth assignment expressions, offset removal, array iteration, and
-  simple positional statement-form `list($a, $b) = expr;` assignment over
-  numeric keys
+  append-at-depth assignment expressions, direct/nested array offset removal,
+  array iteration, and simple positional statement-form `list($a, $b) = expr;`
+  assignment over numeric keys
 - top-level constants, namespace-scoped top-level `const` declarations in the
   current unbracketed namespace slice, selected built-in constants,
   runtime-defined constants with bounded qualified string names, simple

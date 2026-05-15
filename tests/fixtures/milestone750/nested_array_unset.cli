@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+first:unset
+second:second
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -190,24 +190,14 @@ fn emit_ir_rejects_array_destructuring_assignment_at_parse_boundary() {
 
 #[test]
 fn unsupported_unset_forms_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-$items = [[1]];
-unset($items[0][0]);
-"#,
-            3,
-            16,
-        ),
-        (
-            r#"<?php
+    let cases = [(
+        r#"<?php
 $items = [];
 UNSET($items[]);
 "#,
-            3,
-            13,
-        ),
-    ];
+        3,
+        13,
+    )];
 
     for (source, line, column) in cases {
         let error = parse_error(source);

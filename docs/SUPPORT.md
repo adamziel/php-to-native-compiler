@@ -341,9 +341,10 @@
 - array indexed reads: `$array[$key]` for existing integer/string keyed array
   entries
 - direct variable array writes: `$array[$key] = ...` and `$array[] = ...`
-- direct array offset removal: `unset($array[$key])` for direct array
-  variables over the current integer/string key subset; multiple supported
-  `unset(...)` operands execute left to right
+- direct and nested array offset removal: `unset($array[$key])` and
+  `unset($array[$outer][$inner])` for direct array variables over the current
+  integer/string key subset; multiple supported `unset(...)` operands execute
+  left to right
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)`
   iteration in insertion order over a snapshot of the current array entries
 - `isset($array[$key])` for direct array-variable offset operands over the
@@ -641,7 +642,8 @@
   `[$name] = $array`, expression-position `list(...)`, nested/keyed/skipped
   targets, references, and non-variable targets
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
-  current direct-variable and direct array-offset statement subset
+  current direct-variable, direct/nested array-offset, and static-property
+  diagnostic statement subset
 - explicit parse diagnostics for unsupported `unset($object->property)` before
   object property uninitialization semantics exist
 - explicit parse diagnostics for unsupported `foreach` key-by-reference forms,
@@ -1033,12 +1035,14 @@
   writes append at the next non-negative integer key. Direct variable offset
   writes update existing array variables, and writes to undefined or `null`
   variables materialize an array. Existing-key reads return the stored value.
-  Direct `unset($array[$key])` removes matching entries from existing arrays,
-  preserves the insertion order of remaining entries, does not rewind the next
-  append key, treats missing keys as no-ops, and treats undefined or `null`
-  target variables as no-ops. Multiple supported `unset(...)` operands execute
-  left to right, including any array-offset key expressions. Existing non-array
-  targets fail with a stable invalid-array-access diagnostic.
+  Direct `unset($array[$key])` and nested
+  `unset($array[$outer][$inner])` remove matching entries from existing arrays,
+  preserve the insertion order of remaining entries, do not rewind the next
+  append key, treat missing keys and missing/`null` paths as no-ops, and treat
+  undefined or `null` target variables as no-ops. Multiple supported
+  `unset(...)` operands execute left to right, including any array-offset key
+  expressions. Existing non-array targets or intermediates fail with a stable
+  invalid-array-access diagnostic.
   Direct `isset($array[$key])` checks return true for existing non-null slots
   and false for null slots, missing keys, undefined array variables, and
   non-array target variables. Direct `empty($array[$key])` checks return true
@@ -3092,10 +3096,10 @@
   specific codegen diagnostic until source mapping, path canonicalization, and
   function-context lowering exist.
 - array literal spread elements and array literal reference elements
-- `unset(...)` forms outside direct variables, direct array offsets, and
+- `unset(...)` forms outside direct variables, direct/nested array offsets, and
   static-property diagnostic operands, including object property removal,
-  append-offset unset, and nested/complex operands; these fail with stable
-  parse diagnostics
+  append-offset unset, and complex mixed object/property/ArrayAccess operands;
+  these fail with stable parse diagnostics
 - executable by-reference `foreach`, object iteration, destructuring loop
   targets, key-by-reference loop variables, and expression-form `foreach`
 - comma-separated `for` initializer, condition, or increment expression lists;

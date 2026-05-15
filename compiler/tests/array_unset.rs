@@ -75,8 +75,53 @@ if (isset($undefined)) {
 }
 
 #[test]
+fn unset_nested_array_offsets_removes_existing_keys_and_ignores_missing_paths() {
+    let source = r#"<?php
+$options = [];
+$options["group"]["first"] = "one";
+$options["group"]["second"] = "two";
+$options["other"] = null;
+
+unset($options["group"]["first"]);
+unset($options["group"]["missing"]);
+unset($options["missing"]["child"]);
+unset($options["other"]["child"]);
+unset($undefined["missing"]["child"]);
+
+if (array_key_exists("first", $options["group"])) {
+    echo "first:set\n";
+} else {
+    echo "first:unset\n";
+}
+echo "second:", $options["group"]["second"], "\n";
+if (isset($undefined)) {
+    echo "undefined:set";
+} else {
+    echo "undefined:unset";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "first:unset\nsecond:two\nundefined:unset");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unset_array_offset_rejects_non_array_targets() {
     let error = runtime_error("<?php\n$value = 1;\nunset($value[0]);\n");
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot unset offset on int"
+    );
+}
+
+#[test]
+fn unset_nested_array_offset_rejects_non_array_intermediate_values() {
+    let error =
+        runtime_error("<?php\n$items = ['outer' => 1];\nunset($items['outer']['inner']);\n");
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
