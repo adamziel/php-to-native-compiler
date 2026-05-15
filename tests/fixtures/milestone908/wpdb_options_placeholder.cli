@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone908/wpdb_options_placeholder.php
+connected
+native-types
+checked
+ready

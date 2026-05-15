@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `1611e04 runtime: add mysqli options placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 908, a synthetic WordPress-shaped `wpdb` options
+  bookkeeping smoke over deterministic `mysqli_options()` placeholder support.
+- Files changed so far: `tests/fixtures/milestone908/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone908`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- tests/fixtures/milestone908 docs/PROGRESS.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: a WordPress-shaped connection initialization
+  method is being extended to record deterministic placeholder
+  `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` option metadata.
+- Remaining semantic gaps: real client-option negotiation, result
+  type-conversion behavior, connection state mutation, host database
+  integration, warning/error fidelity, database state mutation, and native
+  database lowering remain missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi diagnostic or metadata boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `66548f5 tests: add wordpress wpdb close smoke`, pushed to `origin/master`.
 - Task attempted: Milestone 907, bounded deterministic `mysqli_options()`
   placeholder client-option support for `MYSQLI_OPT_INT_AND_FLOAT_NATIVE`.

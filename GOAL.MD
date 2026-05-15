@@ -208,7 +208,8 @@ wired through a synthetic WordPress-shaped `wpdb` field-count bookkeeping
 smoke, plus deterministic `mysqli_close()` placeholder lifecycle metadata,
 now wired through a synthetic WordPress-shaped `wpdb` close bookkeeping smoke,
 plus deterministic `mysqli_options()` client-option metadata for the reached
-`MYSQLI_OPT_INT_AND_FLOAT_NATIVE` placeholder boundary.
+`MYSQLI_OPT_INT_AND_FLOAT_NATIVE` placeholder boundary, now wired through a
+synthetic WordPress-shaped `wpdb` options bookkeeping smoke.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_options()`
+through a WordPress-shaped `wpdb` connection initialization method. System PHP
+needs a real mysqli connection and applies an option that affects result type
+conversion; phpc only records local `wpdb` bookkeeping around the placeholder
+true return value.

@@ -8409,15 +8409,25 @@ handled.
   and is visible through runtime and native metadata lookup. This is not real
   client-option negotiation, result type-conversion behavior, connection state
   mutation, warnings/errors, host database integration, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_options()` placeholder through a WordPress-shaped connection
   initialization method without claiming real client-option behavior.
+  Milestone 908 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  placeholder `MYSQLI_OPT_INT_AND_FLOAT_NATIVE` option result on local
+  connection-option bookkeeping before placeholder connect. It is not real
+  WordPress client-option behavior, result type-conversion behavior,
+  connection state mutation, host database integration, warnings/errors, or
+  native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi diagnostic or metadata
+  boundary used by WordPress after options setup, such as connect-time
+  errno/error state after option handling or a sharper unsupported diagnostic,
+  before claiming real host connection state.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `66548f5 tests: add wordpress wpdb close smoke`, covering Milestone 906
-  before the current Milestone 907 candidate.
+  `1611e04 runtime: add mysqli options placeholder`, covering Milestone 907
+  before the current Milestone 908 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

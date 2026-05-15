@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 908, a synthetic WordPress-shaped `wpdb` options
+  bookkeeping smoke that calls the bounded
+  `mysqli_options($this->dbh, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true)`
+  placeholder path before placeholder connection, records deterministic local
+  connection-option metadata, and verifies that the option boundary ran. This
+  is a harness smoke only; it does not add real WordPress client-option
+  behavior, result type-conversion behavior, connection state mutation, host
+  database integration, PHP warning/error fidelity, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone908`.
+
 - Added Milestone 907, bounded `mysqli_options()` support for deterministic
   placeholder MySQLi client-option metadata. The runtime accepts
   `mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, $value)` for

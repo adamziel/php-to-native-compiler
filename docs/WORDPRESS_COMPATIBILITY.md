@@ -1429,7 +1429,9 @@ historical blockers and remaining full-support gaps include:
   `mysqli_options(..., MYSQLI_OPT_INT_AND_FLOAT_NATIVE, ...)` placeholder
   client-option metadata without real option negotiation, result
   type-conversion behavior, connection state mutation, host database
-  integration, warning/error fidelity, or native database lowering.
+  integration, warning/error fidelity, or native database lowering. Milestone
+  908 wires that placeholder through a synthetic WordPress-shaped `wpdb`
+  options bookkeeping smoke without claiming real client-option behavior.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
