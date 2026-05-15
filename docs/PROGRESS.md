@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 893, bounded `mysqli_get_server_version()` support for
+  deterministic placeholder MySQLi server-version metadata. The runtime accepts
+  `mysqli_get_server_version($handle)` for current placeholder `mysqli`
+  objects, returns deterministic integer version `80000` to match the existing
+  `8.0.0-phpc-placeholder` server-info string, rejects non-`mysqli` handles
+  with stable diagnostics, and exposes the name through runtime and native
+  metadata lookup. This is not real server-version detection, host database
+  integration, protocol negotiation, server capability inspection, PHP
+  warning/error fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_get_server_info -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone893`.
+
 - Added Milestone 892, a synthetic WordPress-shaped `wpdb` connection-metadata
   bookkeeping smoke that calls the bounded `mysqli_get_client_version()`
   placeholder path, records deterministic local client-version metadata, and

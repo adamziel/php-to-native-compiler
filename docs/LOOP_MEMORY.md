@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `e00afc2 tests: add wordpress wpdb client version smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 893, bounded deterministic
+  `mysqli_get_server_version()` placeholder metadata for current `mysqli`
+  handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone893/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_get_server_info -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone893`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi metadata now includes a
+  deterministic server-version integer matching the fake server-info string.
+- Remaining semantic gaps: real server-version detection, host database
+  integration, protocol negotiation, server capability inspection,
+  warning/error fidelity, database state mutation, and native database lowering
+  remain missing.
+- Next concrete task: run focused MySQLi and fixture verification, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, add a synthetic WordPress-shaped `wpdb` server-version
+  bookkeeping smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `a5bd135 runtime: add mysqli client version metadata`, pushed to
   `origin/master`.
 - Task attempted: Milestone 892, a synthetic WordPress-shaped `wpdb`

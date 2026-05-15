@@ -8248,16 +8248,28 @@ handled.
   verifies that the metadata check ran. It is not real WordPress database
   client-version fidelity, client-library version detection, host database
   integration, extension configuration fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi metadata boundary after
+- [x] Runtime/mysqli lane: inspect the next MySQLi metadata boundary after
   client-version placeholders and choose a small tested slice, such as
   deterministic `mysqli_get_server_version()` metadata or a sharper named
   diagnostic, before broader SQL execution or real host state is claimed.
+  Milestone 893 implements bounded deterministic
+  `mysqli_get_server_version($handle)` metadata. It accepts current
+  placeholder `mysqli` handles, returns integer version `80000` matching the
+  existing `8.0.0-phpc-placeholder` server-info string, rejects non-`mysqli`
+  handles with stable diagnostics, and is visible through runtime and native
+  metadata lookup. This is not real server-version detection, host database
+  integration, protocol negotiation, server capability inspection,
+  warnings/errors, or native database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_get_server_version()` placeholder through WordPress-shaped
+  connection metadata bookkeeping without claiming real database server-version
+  fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a5bd135 runtime: add mysqli client version metadata`, covering
-  Milestone 891 before the current Milestone 892 candidate.
+  `e00afc2 tests: add wordpress wpdb client version smoke`, covering
+  Milestone 892 before the current Milestone 893 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

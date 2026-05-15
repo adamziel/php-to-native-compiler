@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone893/mysqli_server_version_metadata.php
+8.0.0-phpc-placeholder
+80000
+80000

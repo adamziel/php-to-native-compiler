@@ -3,7 +3,7 @@
 Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-`mysqli_get_host_info`, `mysqli_get_client_info`,
+`mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_stat`,
 `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
@@ -38,6 +38,11 @@ select a database, negotiate charset, or produce real mysqli connection state.
 `8.0.0-phpc-placeholder`, a deterministic fake server string used by
 WordPress' `wpdb::db_version()` guard. It does not query a server or reflect
 real connection metadata.
+
+`mysqli_get_server_version($handle)` accepts the placeholder object and returns
+deterministic integer version `80000`, matching the current fake server string.
+It does not query a server, negotiate protocol, inspect server capabilities, or
+reflect a real connection.
 
 `mysqli_get_host_info($handle)` accepts the placeholder object and returns
 `localhost via TCP/IP (phpc-placeholder)`, deterministic fake connection

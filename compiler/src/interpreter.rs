@@ -4180,6 +4180,12 @@ impl Interpreter {
         Ok(Value::String("8.0.0-phpc-placeholder".to_string()))
     }
 
+    fn call_mysqli_get_server_version(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_server_version", args, 1, span)?;
+        expect_mysqli_handle("mysqli_get_server_version()", &args[0], span)?;
+        Ok(Value::Int(80000))
+    }
+
     fn call_mysqli_get_host_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_host_info", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_host_info()", &args[0], span)?;
@@ -9232,6 +9238,7 @@ impl Interpreter {
             )),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
+            "mysqli_get_server_version" => self.call_mysqli_get_server_version(&args, span),
             "mysqli_get_host_info" => self.call_mysqli_get_host_info(&args, span),
             "mysqli_get_client_info" => self.call_mysqli_get_client_info(&args, span),
             "mysqli_get_client_version" => self.call_mysqli_get_client_version(&args, span),
@@ -12175,6 +12182,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_connect"
             | "mysqli_real_connect"
             | "mysqli_get_server_info"
+            | "mysqli_get_server_version"
             | "mysqli_get_host_info"
             | "mysqli_get_client_info"
             | "mysqli_get_client_version"

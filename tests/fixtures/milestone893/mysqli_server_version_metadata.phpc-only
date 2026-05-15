@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_server_version()` metadata boundary alongside the existing
+`mysqli_get_server_info()` placeholder. System PHP needs a real connection and
+reports the actual server version.

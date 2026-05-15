@@ -140,22 +140,29 @@ fn mysqli_get_server_info_returns_current_placeholder_version() {
     let execution = run_source(
         r#"<?php
 $call = "mysqli_get_server_info";
+$version = "mysqli_get_server_version";
 echo function_exists($call) ? "yes" : "no";
 echo "|";
 echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo is_callable($version) ? "version-callable" : "version-missing";
 $handle = mysqli_init();
 mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
 echo "|";
 echo mysqli_get_server_info($handle);
 echo "|";
 echo $call($handle);
+echo "|";
+echo mysqli_get_server_version($handle);
+echo "|";
+echo $version($handle);
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|8.0.0-phpc-placeholder|8.0.0-phpc-placeholder"
+        "yes|callable|version-callable|8.0.0-phpc-placeholder|8.0.0-phpc-placeholder|80000|80000"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -571,6 +578,21 @@ mysqli_get_server_info("not-a-handle");
     assert_eq!(
         error.message,
         "unsupported call mysqli_get_server_info(): argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_version_handle = run_source(
+        r#"<?php
+mysqli_get_server_version("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_version_handle.phase, Phase::Runtime);
+    assert_eq!(bad_version_handle.line, 2);
+    assert_eq!(bad_version_handle.column, 1);
+    assert_eq!(
+        bad_version_handle.message,
+        "unsupported call mysqli_get_server_version(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -1434,6 +1456,8 @@ echo function_exists("mysqli_real_connect") ? "1" : "0";
 echo is_callable("mysqli_real_connect") ? "1" : "0";
 echo function_exists("mysqli_get_server_info") ? "1" : "0";
 echo is_callable("mysqli_get_server_info") ? "1" : "0";
+echo function_exists("mysqli_get_server_version") ? "1" : "0";
+echo is_callable("mysqli_get_server_version") ? "1" : "0";
 echo function_exists("mysqli_get_host_info") ? "1" : "0";
 echo is_callable("mysqli_get_host_info") ? "1" : "0";
 echo function_exists("mysqli_get_client_info") ? "1" : "0";
@@ -1508,7 +1532,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 76, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 78, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1552,6 +1576,18 @@ mysqli_real_connect(mysqli_init(), "localhost");
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_server_info(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_server_version(mysqli_init());
 "#,
     )
     .unwrap_err();

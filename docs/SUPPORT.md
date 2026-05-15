@@ -512,7 +512,8 @@
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_get_host_info`,
+  `mysqli_real_connect`, `mysqli_get_server_info`,
+  `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_set_charset`,
   `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_commit`,
@@ -817,6 +818,10 @@
   not backed by a host connection. `mysqli_get_server_info($handle)` accepts
   the placeholder `mysqli` object and returns the deterministic placeholder
   string `8.0.0-phpc-placeholder` for WordPress version-guard exploration.
+  `mysqli_get_server_version($handle)` accepts the placeholder object and
+  returns deterministic integer version `80000`, matching the current fake
+  server string, without querying a server, negotiating protocol, inspecting
+  server capabilities, or reflecting a real connection.
   `mysqli_get_host_info($handle)` accepts the placeholder object and returns
   deterministic `localhost via TCP/IP (phpc-placeholder)` metadata without
   inspecting a real host, transport, socket, protocol, or live connection.
@@ -2389,7 +2394,7 @@
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_get_host_info`, `mysqli_get_client_info`,
+  `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
   `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -2710,7 +2715,8 @@
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_get_host_info`,
+  `mysqli_real_connect`, `mysqli_get_server_info`,
+  `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
@@ -2854,7 +2860,8 @@
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
   `uniqid`, `hash_hmac`,
   `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
-  `mysqli_get_server_info`, `mysqli_get_host_info`, `mysqli_get_client_info`,
+  `mysqli_get_server_info`, `mysqli_get_server_version`,
+  `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
   `mysqli_autocommit`, `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -2923,7 +2930,7 @@
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-  `mysqli_get_host_info`, `mysqli_get_client_info`,
+  `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
   `mysqli_stat`, `mysqli_autocommit`, `mysqli_begin_transaction`,
   `mysqli_commit`, `mysqli_rollback`, `mysqli_set_charset`, `mysqli_query`,
@@ -2935,8 +2942,9 @@
   `mysqli_next_result`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
   current placeholder-handle success boundary,
-  `mysqli_get_server_info(...)` returns only the current deterministic
-  placeholder string, `mysqli_get_host_info(...)` returns only deterministic
+  `mysqli_get_server_info(...)` and `mysqli_get_server_version(...)` return
+  only the current deterministic placeholder server metadata,
+  `mysqli_get_host_info(...)` returns only deterministic
   placeholder host metadata, `mysqli_get_client_info(...)` and
   `mysqli_get_client_version(...)` return only deterministic placeholder
   client-library metadata, `mysqli_get_proto_info(...)` returns only
@@ -2963,7 +2971,8 @@
   scalar/null string-convertible values; direct `mysqli_connect(...)` calls
   are still a stable unsupported runtime boundary, and direct native
   `mysqli_connect(...)`/`mysqli_real_connect(...)`/
-  `mysqli_get_server_info(...)`/`mysqli_get_host_info(...)`/
+  `mysqli_get_server_info(...)`/`mysqli_get_server_version(...)`/
+  `mysqli_get_host_info(...)`/
   `mysqli_get_client_info(...)`/`mysqli_get_client_version(...)`/
   `mysqli_get_proto_info(...)`/
   `mysqli_stat(...)`/`mysqli_autocommit(...)`/`mysqli_begin_transaction(...)`/
@@ -4617,7 +4626,7 @@
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
-  `mysqli_get_host_info()`/`mysqli_get_client_info()`/
+  `mysqli_get_server_version()`/`mysqli_get_host_info()`/`mysqli_get_client_info()`/
   `mysqli_get_client_version()`/`mysqli_get_proto_info()`/
   `mysqli_stat()`/`mysqli_autocommit()`/`mysqli_begin_transaction()`/
   `mysqli_commit()`/`mysqli_rollback()`/`mysqli_query()`/`mysqli_set_charset()`/
