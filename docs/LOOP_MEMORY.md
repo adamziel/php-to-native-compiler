@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `e0b8746 runtime: add mysqli ping placeholder`, pushed to `origin/master`.
+- Task attempted: Milestone 876, a synthetic WordPress-shaped
+  `wpdb::check_connection()` smoke over deterministic placeholder
+  `mysqli_ping()` success.
+- Files changed so far: `tests/fixtures/milestone876/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone876`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection-check method can
+  now record deterministic placeholder ping success and ready state.
+- Remaining semantic gaps: real connection liveness checks, reconnect
+  behavior, socket I/O, host database integration, warning/error fidelity,
+  real WordPress `wpdb` state fidelity, and native database lowering remain
+  missing.
+- Next concrete task: run whitespace checks and the serialized checkpoint gate
+  under `umask 0022`; after checkpoint, inspect deterministic host/stat
+  metadata boundaries.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `b4b574b tests: add wordpress wpdb mutation boundary smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 875, bounded `mysqli_ping()` support for current

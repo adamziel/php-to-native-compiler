@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone876/wpdb_ping_check_connection.php
+alive
+checked
+ready

@@ -8072,16 +8072,25 @@ handled.
   handles with stable diagnostics, and is visible through runtime and native
   metadata lookup. This is not a real liveness check, reconnect behavior,
   socket I/O, host database integration, warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
   deterministic `mysqli_ping()` placeholder through a WordPress-shaped
   connection-check method without claiming real reconnection or database
   liveness behavior.
+  Milestone 876 adds a `phpc-only` synthetic `wpdb::check_connection()`
+  fixture that calls `mysqli_ping($this->dbh)`, records that the check ran,
+  and records deterministic ready state after placeholder success. It is not
+  real WordPress reconnection behavior, socket I/O, host database integration,
+  warnings/errors, real `wpdb` state fidelity, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next connection metadata boundary after
+  placeholder ping and choose a small tested slice, such as deterministic
+  `mysqli_get_host_info()` or `mysqli_stat()` metadata, before any real host
+  database state is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `b4b574b tests: add wordpress wpdb mutation boundary smoke`, covering
-  Milestone 874 before the current Milestone 875 candidate.
+  `e0b8746 runtime: add mysqli ping placeholder`, covering Milestone 875
+  before the current Milestone 876 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

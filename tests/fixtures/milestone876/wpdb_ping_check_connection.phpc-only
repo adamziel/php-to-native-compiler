@@ -1,0 +1,3 @@
+This fixture exercises phpc's deterministic `mysqli_ping()` placeholder
+through a WordPress-shaped `wpdb::check_connection()` path. System PHP would
+require the mysqli extension and a real live connection to a host database.

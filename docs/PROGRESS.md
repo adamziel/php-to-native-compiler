@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 876, a synthetic WordPress-shaped
+  `wpdb::check_connection()` smoke that calls the bounded
+  `mysqli_ping($this->dbh)` placeholder path, records that the check ran, and
+  records deterministic ready state after placeholder success. This is a
+  harness smoke only; it does not add real WordPress reconnection behavior,
+  real connection liveness checks, socket I/O, host database integration,
+  warning/error fidelity, real `wpdb` state transitions, or native database
+  lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone876`.
+
 - Added Milestone 875, bounded `mysqli_ping()` support for placeholder MySQLi
   handles. The runtime now accepts `mysqli_ping($handle)` for current
   placeholder `mysqli` objects, returns deterministic `true`, rejects
