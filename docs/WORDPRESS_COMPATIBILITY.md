@@ -1404,7 +1404,10 @@ historical blockers and remaining full-support gaps include:
   899 adds deterministic `mysqli_get_charset()` placeholder charset/collation
   metadata without real charset negotiation, client-library/server metadata
   inspection, collation state, charset mutation tracking, escaping behavior
-  changes, warning/error fidelity, or native database lowering.
+  changes, warning/error fidelity, or native database lowering. Milestone 900
+  wires that placeholder through a synthetic WordPress-shaped `wpdb`
+  charset/collation bookkeeping smoke without claiming real WordPress
+  charset/collation negotiation or escaping fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

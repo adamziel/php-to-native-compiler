@@ -199,7 +199,8 @@ now wired through a synthetic WordPress-shaped `wpdb` connection-statistics
 bookkeeping smoke, plus deterministic `mysqli_thread_id()` placeholder
 thread-id metadata, now wired through a synthetic WordPress-shaped `wpdb`
 thread-id bookkeeping smoke, plus deterministic `mysqli_get_charset()`
-placeholder charset/collation metadata.
+placeholder charset/collation metadata, now wired through a synthetic
+WordPress-shaped `wpdb` charset/collation bookkeeping smoke.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

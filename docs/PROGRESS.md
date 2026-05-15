@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 900, a synthetic WordPress-shaped `wpdb` charset/collation
+  bookkeeping smoke that calls the bounded
+  `mysqli_get_charset($this->dbh)` placeholder path, records deterministic
+  local charset, collation, and charset-number metadata, and verifies that the
+  metadata boundary ran. This is a harness smoke only; it does not add real
+  WordPress charset/collation negotiation, connection charset state, escaping
+  fidelity, client-library/server metadata inspection, PHP warning/error
+  fidelity, host database integration, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone900`.
+
 - Added Milestone 899, bounded `mysqli_get_charset()` support for
   deterministic placeholder MySQLi charset metadata. The runtime accepts
   `mysqli_get_charset($handle)` for current placeholder `mysqli` objects,

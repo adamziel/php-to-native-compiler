@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone900/wpdb_charset_metadata.php
+4
+utf8mb4
+utf8mb4_unicode_520_ci
+246
+checked

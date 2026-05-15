@@ -8328,16 +8328,26 @@ handled.
   client-library/server metadata inspection, collation state, charset mutation
   tracking, escaping behavior changes, warnings/errors, or native database
   lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_get_charset()` placeholder through WordPress-shaped charset
   metadata bookkeeping without claiming real charset/collation negotiation or
   escaping fidelity.
+  Milestone 900 adds a `phpc-only` synthetic `wpdb` fixture that records
+  deterministic placeholder charset, collation, and charset-number metadata on
+  local object state and verifies that the metadata check ran. It is not real
+  WordPress charset/collation negotiation, connection charset state, escaping
+  fidelity, client-library/server metadata inspection, host database
+  integration, warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after charset
+  metadata placeholders and choose a small tested slice, such as deterministic
+  `mysqli_character_set_name()` metadata or a sharper named diagnostic, before
+  broader SQL execution or real host state is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5b34b7f tests: add wordpress wpdb thread id smoke`, covering
-  Milestone 898 before the current Milestone 899 candidate.
+  `dc9d6cb runtime: add mysqli charset metadata`, covering Milestone 899
+  before the current Milestone 900 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
