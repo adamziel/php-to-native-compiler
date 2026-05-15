@@ -182,6 +182,10 @@ By-reference function and method return declarations are represented as
 function metadata so declaration-contained code can register, but invoking such
 a function or method reports a stable runtime boundary before any return value
 or alias binding is produced.
+By-reference parameters are also metadata-first: omitted optional
+by-reference parameters can use their defaults as ordinary local values, while
+provided by-reference arguments still report a runtime boundary before alias
+binding or output-parameter writes are attempted.
 By-reference `foreach` value syntax is likewise represented only far enough to
 preserve a stable runtime boundary when reached; it does not mutate array slots
 through aliases, preserve lingering loop-variable references, or implement PHP

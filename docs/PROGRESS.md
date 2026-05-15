@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 816, omitted optional by-reference parameter defaults. User
+  function and method declarations may still contain by-reference parameters,
+  but invocation is now rejected only for by-reference parameters actually
+  supplied by the call; omitted optional by-reference parameters evaluate their
+  default expression into the callee's local scope without creating an alias.
+  This covers the reached `wp_cache_get( 'notoptions', 'options' )` call shape
+  where `$found` is declared as `&$found = null` but omitted. This is not real
+  reference parameter binding, output-parameter writes, alias cells,
+  references/copy-on-write, exact diagnostics, or native lowering. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past that omitted
+  `$found` call to
+  `runtime error at <bootstrap-shim>:154:9: unsupported call get(): reference parameter invocation is not implemented`,
+  corresponding to the later provided `$found` variable passed into
+  `WP_Object_Cache::get(...)`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes omitted_optional_reference_parameters -- --nocapture`,
+  `cargo test -p phpc --test functions_and_scopes reference_parameter_invocation -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone816`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 815, bounded `ksort()` support for the reached WordPress
   hook-priority ordering path. Direct calls to `ksort($array, SORT_NUMERIC)`
   now sort direct variable arrays in place by numeric key and return `true`;

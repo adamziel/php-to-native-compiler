@@ -1011,6 +1011,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   diagnostics, or native lowering. The real bootstrap-shim probe now advances
   to
   `runtime error at <bootstrap-shim>:1780:7: unsupported call wp_cache_get(): reference parameter invocation is not implemented`.
+  Milestone 816 allows omitted optional by-reference parameters to use their
+  default value without binding aliases, covering the reached
+  `wp_cache_get( 'notoptions', 'options' )` shape where `$found` is omitted.
+  This is not real reference parameter binding, output-parameter writes, alias
+  cells, references/copy-on-write, exact diagnostics, or native lowering. The
+  real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:154:9: unsupported call get(): reference parameter invocation is not implemented`,
+  corresponding to `WP_Object_Cache::get(..., $found)` with a provided direct
+  variable output parameter.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

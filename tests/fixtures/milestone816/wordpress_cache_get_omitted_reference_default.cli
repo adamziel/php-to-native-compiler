@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone816/wordpress_cache_get_omitted_reference_default.php"
+  ],
+  "stdin": "",
+  "stdout": "found-null|miss",
+  "stderr": "",
+  "exit": 0
+}

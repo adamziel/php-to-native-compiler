@@ -31,6 +31,11 @@
   if execution invokes one of them, `phpc run` reports `unsupported call
   <name>(): reference returns are not implemented`. This does not create PHP
   reference-return binding, alias cells, or copy-on-write containers.
+- by-reference function and method parameters may be declared. Calls that omit
+  an optional by-reference parameter use that parameter's default value in the
+  callee local scope without creating an alias. Calls that provide a
+  by-reference parameter still report `unsupported call <name>(): reference
+  parameter invocation is not implemented`.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
   object-property array-offset targets such as `$object->items[$key] =& $value`
@@ -3491,9 +3496,10 @@
 - required parameters after default parameters
 - variadic parameters outside the bounded final-parameter by-value slice, and
   variadic argument unpacking
-- reference parameter invocation, reference returns, executable reference
-  assignments, reference assignments from nested offsets/properties/static
-  members/function calls, by-reference iteration, and by-reference calls
+- provided reference parameter invocation, reference returns, executable
+  reference assignments, reference assignments from nested
+  offsets/properties/static members/function calls, by-reference iteration, and
+  by-reference calls
 - parameter/return type enforcement, coercion, exact `TypeError` behavior,
   `strict_types`, variance, reflection metadata, and native lowering for type
   declarations

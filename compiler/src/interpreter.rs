@@ -2222,7 +2222,7 @@ impl Interpreter {
         )?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -4511,7 +4511,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -4581,7 +4581,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -4676,7 +4676,7 @@ impl Interpreter {
             )?;
             let function = function.as_ref();
             ensure_user_function_arity(function, args.len(), span)?;
-            ensure_supported_function_signature(function, span)?;
+            ensure_supported_function_signature(function, args.len(), span)?;
             self.ensure_user_function_call_depth(function, span)?;
 
             let mut values = Vec::with_capacity(args.len());
@@ -4786,7 +4786,7 @@ impl Interpreter {
         )?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -5678,7 +5678,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -5771,7 +5771,7 @@ impl Interpreter {
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -6505,7 +6505,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
         let mut values = Vec::with_capacity(args.len());
@@ -6524,7 +6524,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = function.as_ref();
         ensure_user_function_arity(function, args.len(), span)?;
-        ensure_supported_function_signature(function, span)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
         self.call_user_function_with_checked_values(function, args, None, None, None)
     }
@@ -12220,7 +12220,11 @@ fn ensure_user_function_arity(
     Ok(())
 }
 
-fn ensure_supported_function_signature(function: &FunctionDecl, span: Span) -> CompileResult<()> {
+fn ensure_supported_function_signature(
+    function: &FunctionDecl,
+    actual: usize,
+    span: Span,
+) -> CompileResult<()> {
     if function.returns_by_reference {
         return Err(runtime_error(
             span,
@@ -12231,7 +12235,12 @@ fn ensure_supported_function_signature(function: &FunctionDecl, span: Span) -> C
         ));
     }
 
-    if function.params.iter().any(|param| param.by_reference) {
+    if function
+        .params
+        .iter()
+        .enumerate()
+        .any(|(index, param)| param.by_reference && (index < actual || param.is_variadic))
+    {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(

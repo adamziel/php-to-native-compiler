@@ -7477,18 +7477,25 @@ handled.
   and native lowering named unless implemented.
   Milestone 815 advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1780:7: unsupported call wp_cache_get(): reference parameter invocation is not implemented`.
-- [ ] Runtime/reference-parameter lane: handle the reached `wp_cache_get()`
+- [x] Runtime/reference-parameter lane: handle the reached `wp_cache_get()`
   call shape where the function declaration contains an optional by-reference
   `$found` parameter but the current `get_option()` call omits it. Keep real
   reference parameter binding, output-parameter writes, alias cells,
   copy-on-write, exact diagnostics, and native lowering named unless
   implemented.
+  Milestone 816 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:154:9: unsupported call get(): reference parameter invocation is not implemented`.
+- [ ] Runtime/reference-output lane: implement the reached provided direct
+  variable by-reference output-parameter shape for
+  `WP_Object_Cache::get(..., $found)` without claiming full aliasing. Keep
+  non-variable reference arguments, rebinding aliases, reference containers,
+  copy-on-write, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 815 checkpoint, the latest committed checkpoint
-  is `d457422 runtime: add bounded globals and hook isset`, covering
-  Milestones 813 and 814.
+- Before the current Milestone 816 checkpoint, the latest committed checkpoint
+  is `ecdaab9 runtime: add bounded numeric key sort`, covering Milestone 815.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T17:25:00Z
+
+- Checkpoint before this task:
+  `ecdaab9 runtime: add bounded numeric key sort`, pushed to `origin/master`.
+- Task attempted: Milestone 816, allow omitted optional by-reference
+  parameters to use defaults without creating aliases, for the reached
+  `wp_cache_get()` `$found` default path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone816/*`, `README.md`, `GOAL.MD`,
+  `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test functions_and_scopes omitted_optional_reference_parameters -- --nocapture`,
+  `cargo test -p phpc --test functions_and_scopes reference_parameter_invocation -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone816`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_function_features`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:154:9: unsupported call get(): reference parameter invocation is not implemented`.
+- Remaining semantic gaps: provided by-reference arguments, output-parameter
+  writes, alias cells, references/copy-on-write, exact diagnostics, native
+  lowering, and real WordPress bootstrap support remain unsupported.
+- Next concrete task: implement the reached direct-variable output-parameter
+  copy-back shape for `WP_Object_Cache::get(..., $found)` while keeping true
+  aliasing and broader reference semantics named unless implemented.
+
 ## Loop Event 2026-05-15T17:05:00Z
 
 - Checkpoint before this task:

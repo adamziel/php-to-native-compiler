@@ -500,6 +500,24 @@ mutate($value);
 }
 
 #[test]
+fn omitted_optional_reference_parameters_use_default_without_reference_binding() {
+    let execution = run_source(
+        r#"<?php
+function cache_get($key, &$found = null) {
+    echo isset($found) ? "found-set" : "found-null";
+    return $key;
+}
+
+echo "|", cache_get("notoptions");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "|found-nullnotoptions");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn static_local_declarations_persist_values_across_user_function_calls() {
     let execution = run_source(
         r#"<?php
