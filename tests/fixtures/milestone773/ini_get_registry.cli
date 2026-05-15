@@ -1,0 +1,4 @@
+exit code: 0
+stdout:
+string|not-false|missing-false
+stderr:

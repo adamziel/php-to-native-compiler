@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 773, bounded deterministic `ini_get()` registry reads. The
+  runtime now accepts one string option name, returns string values for a
+  documented WordPress-oriented registry, returns `false` for unknown names,
+  exposes the builtin through function/callability metadata and dynamic
+  string-valued calls, and keeps direct native calls behind the generic
+  function-call lowering boundary. Host php.ini discovery, mutable INI state,
+  `ini_set()`/`ini_restore()`, `ini_get_all()`, SAPI differences, extension
+  ownership/access metadata, exact option catalogs, coercions, exact PHP
+  diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the reached
+  `ini_get( 'memory_limit' )` call to
+  `runtime error at <bootstrap-shim>:1688:11: undefined function strtolower()`,
+  corresponding to `wp-includes/load.php:1688`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test ini_builtins`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone773`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 772, bounded `microtime(true)` for the current WordPress
   bootstrap timing path. The runtime returns a finite float seconds value from
   the host system clock when the sole argument is `true`, exposes the builtin

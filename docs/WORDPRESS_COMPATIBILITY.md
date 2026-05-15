@@ -677,6 +677,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not the no-argument/string-return `microtime()` format, deterministic
   time virtualization, precision/monotonicity guarantees, INI/timezone policy,
   exact diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 773 implements bounded deterministic `ini_get()` registry reads,
+  including the reached `memory_limit` option. The real bootstrap-shim probe
+  now advances to
+  `runtime error at <bootstrap-shim>:1688:11: undefined function strtolower()`,
+  corresponding to `wp-includes/load.php:1688`. This is not host php.ini
+  discovery, mutable INI state, `ini_set()`/`ini_get_all()`, SAPI differences,
+  full option catalogs, exact diagnostics, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

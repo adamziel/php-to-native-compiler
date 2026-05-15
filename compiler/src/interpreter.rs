@@ -6000,6 +6000,7 @@ impl Interpreter {
             "abs" => call_abs(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
+            "ini_get" => call_ini_get(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9258,6 +9259,7 @@ fn is_builtin(name: &str) -> bool {
             | "abs"
             | "version_compare"
             | "microtime"
+            | "ini_get"
             | "count"
             | "constant"
             | "defined"
@@ -9940,6 +9942,57 @@ fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
                 ),
             ),
         )),
+    }
+}
+
+fn call_ini_get(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("ini_get", args, 1, span)?;
+
+    let name = match &args[0] {
+        Value::String(name) => name,
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ini_get()",
+                    format!(
+                        "option argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    Ok(compat_ini_value(name)
+        .map(|value| Value::String(value.to_string()))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn compat_ini_value(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "arg_separator.output" => Some("&"),
+        "default_mimetype" => Some("text/html"),
+        "disable_functions" => Some(""),
+        "display_errors" => Some(""),
+        "error_append_string" => Some(""),
+        "error_log" => Some(""),
+        "error_prepend_string" => Some(""),
+        "html_errors" => Some("0"),
+        "mail.add_x_header" => Some("0"),
+        "max_execution_time" => Some("30"),
+        "mbstring.func_overload" => Some("0"),
+        "memory_limit" => Some("128M"),
+        "open_basedir" => Some(""),
+        "output_handler" => Some(""),
+        "post_max_size" => Some("8M"),
+        "sendmail_from" => Some(""),
+        "sendmail_path" => Some(""),
+        "upload_max_filesize" => Some("2M"),
+        "upload_tmp_dir" => Some(""),
+        "user_agent" => Some(""),
+        "zlib.output_compression" => Some("0"),
+        _ => None,
     }
 }
 

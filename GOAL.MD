@@ -69,11 +69,12 @@ return values, skipped positional `list(...)` destructuring, class
 array `=&` path for `wp_parse_args()`, bounded `strcasecmp()`, bounded
 no-argument `headers_sent()`, bounded `abs()`, bounded `header_remove()`, and
 a bounded `mysqli_connect` function-table boundary, top-level `global`
-null-materialization, and bounded `microtime(true)`. The current shim frontier
+null-materialization, bounded `microtime(true)`, and bounded deterministic
+`ini_get()` registry reads. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it now stops at an undefined
-`ini_get()` call on the bootstrap path.
+`strtolower()` call in `wp_convert_hr_to_bytes()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -292,8 +293,9 @@ Milestone 767 added bounded no-argument `headers_sent()`. Milestone 768 added
 bounded `abs()`. Milestone 769 added bounded `header_remove()`. Milestone 770
 added a `mysqli_connect` function-table boundary. Milestone 771 added
 top-level `global` null-materialization. Milestone 772 added bounded
-`microtime(true)`; the current bootstrap-shim frontier is now an undefined
-`ini_get()` call on the WordPress bootstrap path.
+`microtime(true)`. Milestone 773 added bounded deterministic `ini_get()`
+registry reads; the current bootstrap-shim frontier is now an undefined
+`strtolower()` call in `wp_convert_hr_to_bytes()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -431,8 +433,9 @@ The repository already has a working Rust workspace with:
   class-name instantiation in active class/method contexts, and bounded
   `strcasecmp()`, bounded no-argument `headers_sent()`, bounded `abs()`,
   bounded `header_remove()`, a `mysqli_connect` boundary, top-level `global`
-  null-materialization, and bounded `microtime(true)`. The next bottleneck is
-  an undefined `ini_get()` call in the WordPress bootstrap shim.
+  null-materialization, bounded `microtime(true)`, and bounded deterministic
+  `ini_get()` registry reads. The next bottleneck is an undefined
+  `strtolower()` call in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

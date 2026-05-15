@@ -936,6 +936,11 @@ timing checks. It returns a finite float seconds value from `SystemTime`, while
 the string-return forms stay unsupported until time virtualization, formatting,
 precision, monotonicity, INI/timezone policy, and native runtime calls are
 designed.
+`ini_get()` is an interpreter-only configuration boundary backed by a
+deterministic compatibility registry rather than host php.ini. It is intended
+to make bootstrap decisions reproducible while leaving mutable INI state,
+`ini_get_all()`, SAPI policy, extension-owned option catalogs, and native
+runtime integration explicit future work.
 `mysqli_connect()` is a database-extension boundary, not database support. The
 runtime and native function tables expose the name so early application
 extension guards can move to the next compatibility blocker, but direct or

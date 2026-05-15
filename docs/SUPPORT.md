@@ -415,7 +415,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strcasecmp`, `str_replace`,
   `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
-  `version_compare`, `microtime`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
+  `version_compare`, `microtime`, `ini_get`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -472,6 +472,15 @@
   clock. The no-argument and `false` string-return forms, exact string format,
   precision guarantees, monotonicity, deterministic virtual time, broad
   coercions, exact diagnostics, and native lowering remain unsupported.
+  `ini_get($option)` accepts one string option name and returns deterministic
+  string values from the current compatibility registry, or `false` for
+  unknown names. The registry currently covers WordPress-oriented options such
+  as `memory_limit`, `max_execution_time`, `disable_functions`,
+  `mbstring.func_overload`, upload/mail/error-output defaults, and related
+  bootstrap settings. Host php.ini discovery, mutable INI state,
+  `ini_set()`/`ini_restore()`, `ini_get_all()`, SAPI differences, extension
+  ownership/access metadata, exact option catalogs, coercions, exact
+  diagnostics, and native lowering remain unsupported.
   `sprintf($format, ...$values)` supports string format values with literal
   text, escaped percent signs `%%`, sequential `%s` string placeholders, and
   positional `%N$s` string placeholders. Placeholder values use the current
@@ -2175,7 +2184,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strcasecmp`,
-  `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `count`,
+  `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2300,7 +2309,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strcasecmp`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `abs`, `microtime`, `ini_get`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -2396,6 +2405,10 @@
   section above; direct native `microtime(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
+  `ini_get` accepts the same current deterministic registry subset as the
+  builtin section above; direct native `ini_get(...)` calls still reject under
+  the function-call boundary, while native function-table introspection
+  recognizes the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3968,6 +3981,11 @@
 - `microtime()` behavior beyond the current `microtime(true)` float-seconds
   subset: no-argument and `false` string-return format, exact formatting,
   precision guarantees, monotonicity, deterministic virtual time, broad
+  coercions, exact diagnostics, and native lowering beyond function-table
+  introspection
+- `ini_get()` behavior beyond the current deterministic registry: host php.ini
+  discovery, mutable INI state, `ini_set()`/`ini_restore()`, `ini_get_all()`,
+  SAPI differences, extension ownership/access metadata, exact option catalogs,
   coercions, exact diagnostics, and native lowering beyond function-table
   introspection
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:

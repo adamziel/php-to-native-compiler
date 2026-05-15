@@ -6217,6 +6217,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "abs"
             | "version_compare"
             | "microtime"
+            | "ini_get"
             | "count"
             | "constant"
             | "defined"

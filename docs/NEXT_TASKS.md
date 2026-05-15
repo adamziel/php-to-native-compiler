@@ -7077,16 +7077,25 @@ handled.
   seconds value and keeps the string-return forms unsupported. It advances the
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:42:23: undefined function ini_get()`.
-- [ ] INI/config lane: implement a bounded `ini_get()` slice for the next
+- [x] INI/config lane: implement a bounded `ini_get()` slice for the next
   WordPress bootstrap blocker, starting with the reached option name and a
   deterministic runtime configuration policy. Keep host php.ini discovery,
   mutable ini state, value typing/stringification, SAPI differences, exact
   false-vs-string behavior, and native lowering named unless implemented.
+  Milestone 773 implements a deterministic string registry for `ini_get()` and
+  advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1688:11: undefined function strtolower()`,
+  corresponding to `wp-includes/load.php:1688`.
+- [ ] String builtin lane: implement a bounded `strtolower()` slice for the
+  next WordPress bootstrap blocker, starting with ASCII/UTF-8 runtime strings
+  used by `wp_convert_hr_to_bytes()`. Keep locale, binary string edge cases,
+  array/object/resource coercions, exact diagnostics, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 772 checkpoint, the latest committed checkpoint
-  is `6f628da runtime: materialize top-level globals`, covering Milestone 771.
+- Before the current Milestone 773 checkpoint, the latest committed checkpoint
+  is `2f0c39a runtime: add bounded microtime`, covering Milestone 772.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
