@@ -255,7 +255,7 @@ pub enum AssignTarget {
         span: Span,
     },
     List {
-        names: Vec<String>,
+        names: Vec<Option<String>>,
         span: Span,
     },
     ArrayIndex {

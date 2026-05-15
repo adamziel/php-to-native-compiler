@@ -109,8 +109,8 @@ incorrect native code.
   append-at-depth assignment expressions, direct-object-property nested array
   assignment and append-at-depth expressions, direct/nested array offset
   removal, nested object-property array offset removal, array iteration, and
-  simple positional statement-form
-  `list($a, $b) = expr;` assignment over numeric keys
+  positional statement-form
+  `list($a, $b) = expr;` assignment over numeric keys, including skipped slots
 - top-level constants, namespace-scoped top-level `const` declarations in the
   current unbracketed namespace slice, selected built-in constants,
   runtime-defined constants with bounded qualified string names, simple
@@ -199,7 +199,8 @@ interface inheritance/implementation enforcement, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,
-array destructuring beyond simple positional statement-form `list(...)`,
+array destructuring beyond positional statement-form `list(...)` with skipped
+slots,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and

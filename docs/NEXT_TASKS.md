@@ -6942,18 +6942,25 @@ handled.
   include return values and `_once` loaded-file return values. It advances the
   real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:1557:9: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented`.
-- [ ] Parser/runtime lane: implement or explicitly bound the next array
+- [x] Parser/runtime lane: implement or explicitly bound the next array
   destructuring shape for the real WordPress bootstrap-shim blocker at
-  `<bootstrap-shim>:1557:9`, while preserving the existing simple positional
+  `<bootstrap-shim>:1557:9`, while preserving the existing positional
   `list($a, $b) = expr;` statement subset and documenting unsupported keyed,
-  nested, skipped-slot, reference, expression-position, and non-variable
-  target semantics.
+  nested, reference, expression-position, and non-variable target semantics.
+  Milestone 760 implements skipped positional slots in statement-form
+  `list(...) = expr;`, covering `list( , $textdomain, $language ) = $match;`
+  in `wp-includes/l10n.php`, and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:19:21: unsupported interface implementation: implements clauses are not implemented`.
+- [ ] Parser/object lane: implement or explicitly bound interface
+  implementation metadata for the next real WordPress bootstrap-shim blocker at
+  `<bootstrap-shim>:19:21`, while keeping interface method enforcement,
+  inheritance, constants, variance checks, autoload, and native lowering named
+  as unsupported unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 759 checkpoint, the latest committed checkpoint
-  is `5d54308 runtime: add object property nested unset`, covering Milestone
-  758.
+- Before the current Milestone 760 checkpoint, the latest committed checkpoint
+  is `b3e1eb1 runtime: add include expression returns`, covering Milestone 759.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

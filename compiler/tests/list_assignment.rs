@@ -12,12 +12,21 @@ echo $a, "|", $b, "\n";
 
 $items = ["name" => "Ada", 1 => "one", "0" => "zero"];
 list($first, $second) = $items;
-echo $first, "|", $second;
+echo $first, "|", $second, "\n";
+
+list(, $textdomain, $language) = ["full-match", "default", "en_US"];
+echo $textdomain, "|", $language, "\n";
+
+list($left, , $right,) = ["left", "skip", "right"];
+echo $left, "|", $right;
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "zero|one\nzero|one");
+    assert_eq!(
+        execution.stdout,
+        "zero|one\nzero|one\ndefault|en_US\nleft|right"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

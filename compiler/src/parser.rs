@@ -2146,6 +2146,14 @@ impl Parser {
 
         loop {
             match self.peek().kind.clone() {
+                TokenKind::Comma => {
+                    names.push(None);
+                    self.advance();
+                    if self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                        break;
+                    }
+                    continue;
+                }
                 TokenKind::Variable(name) => {
                     self.advance();
                     if !self.check(|kind| matches!(kind, TokenKind::Comma | TokenKind::RParen)) {
@@ -2154,7 +2162,7 @@ impl Parser {
                             unsupported_array_destructuring_assignment_message(),
                         ));
                     }
-                    names.push(name);
+                    names.push(Some(name));
                 }
                 _ => {
                     return Err(self.error_at(
@@ -2170,6 +2178,10 @@ impl Parser {
             if self.check(|kind| matches!(kind, TokenKind::RParen)) {
                 break;
             }
+        }
+
+        if names.iter().all(Option::is_none) {
+            return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
         }
 
         self.consume_keyword(
@@ -5458,7 +5470,7 @@ fn unsupported_array_reference_element_message() -> &'static str {
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
-    "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented"
+    "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented"
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {

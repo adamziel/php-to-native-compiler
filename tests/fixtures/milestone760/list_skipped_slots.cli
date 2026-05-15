@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+default|en_US
+left|right--- stdout end ---
+stderr:
+--- stderr end ---

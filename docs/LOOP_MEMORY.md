@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T05:55:00Z
+
+- Checkpoint before this task:
+  `b3e1eb1 runtime: add include expression returns`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 760, skipped positional slots in statement-form
+  `list(...) = expr;` for the WordPress `wp-includes/l10n.php:1557` blocker.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/list_assignment.rs`,
+  `compiler/tests/syntax_boundaries.rs`, `tests/fixtures/milestone760/*`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.*`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and
+  `GOAL.MD`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test list_assignment`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_array_destructuring_assignments_have_stable_parse_errors -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone760`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: short `[...]`, keyed, nested, reference,
+  expression-position, and non-variable destructuring remain unsupported; exact
+  PHP missing-offset warning behavior and native lowering are not implemented.
+  Direct `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap
+  shim now reaches
+  `parse error at <bootstrap-shim>:19:21: unsupported interface implementation: implements clauses are not implemented`.
+- Next concrete task: implement or explicitly bound interface implementation
+  metadata for reached `implements` clauses while keeping enforcement,
+  interface inheritance/constants, variance checks, autoload, and native
+  lowering named.
+
 ## Loop Event 2026-05-15T05:38:21Z
 
 - Checkpoint before this task:

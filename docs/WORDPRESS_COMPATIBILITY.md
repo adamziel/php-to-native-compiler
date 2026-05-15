@@ -555,6 +555,18 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `parse error at <bootstrap-shim>:1557:9: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented`.
   This is not full include-path lookup, stream wrapper, phar, autoload,
   opcache, exact warning/fatal, or WordPress bootstrap support.
+  Milestone 760 implements skipped positional slots in statement-form
+  `list(...) = expr;`, covering
+  `list( , $textdomain, $language ) = $match;` in `wp-includes/l10n.php`.
+  After that slice, the direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:19:21: unsupported interface implementation: implements clauses are not implemented`.
+  This is not short `[...]` destructuring, keyed/nested/reference
+  destructuring, exact missing-offset warning behavior, native array
+  destructuring lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

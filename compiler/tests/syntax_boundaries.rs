@@ -147,25 +147,25 @@ fn unsupported_array_destructuring_assignments_have_stable_parse_errors() {
             "<?php\n[$first] = [1];\n",
             2,
             10,
-            "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented",
+            "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented",
         ),
         (
             "<?php\necho list($first);\n",
             2,
             6,
-            "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented",
+            "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented",
         ),
         (
             "<?php\nlist($first[0]) = [1];\n",
             2,
             12,
-            "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented",
+            "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented",
         ),
         (
-            "<?php\nlist(, $second) = [1, 2];\n",
+            "<?php\nlist(,) = [1, 2];\n",
             2,
-            6,
-            "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented",
+            1,
+            "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented",
         ),
     ];
 
@@ -184,7 +184,7 @@ fn emit_ir_rejects_array_destructuring_assignment_at_parse_boundary() {
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(
         error.message,
-        "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented"
+        "unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented"
     );
 }
 

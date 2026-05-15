@@ -2749,7 +2749,7 @@ impl Interpreter {
 
     fn evaluate_list_assignment(
         &mut self,
-        names: &[String],
+        names: &[Option<String>],
         expr: &Expr,
         span: Span,
         scope: &mut SymbolTable,
@@ -2771,12 +2771,14 @@ impl Interpreter {
         let assignments: Vec<(String, Value)> = names
             .iter()
             .enumerate()
-            .map(|(index, name)| {
-                let element = array
-                    .get(ArrayKey::Int(index as i64))
-                    .cloned()
-                    .unwrap_or(Value::Null);
-                (name.clone(), element)
+            .filter_map(|(index, name)| {
+                name.as_ref().map(|name| {
+                    let element = array
+                        .get(ArrayKey::Int(index as i64))
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    (name.clone(), element)
+                })
             })
             .collect();
 

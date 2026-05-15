@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 760, skipped positional slots in statement-form
+  `list(...) = expr;` destructuring. The parser now accepts forms such as
+  `list( , $textdomain, $language ) = $match;`, stores skipped positions in the
+  list assignment target, and keeps the existing RHS-once, numeric-key lookup,
+  left-to-right write, and missing-offset-to-`null` behavior for variable
+  slots. Short `[...]` destructuring, expression-position `list(...)`, keyed
+  targets, nested targets, reference targets, non-variable targets, exact PHP
+  missing-offset warning behavior, and native lowering remain unsupported. The
+  real WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `wp-includes/l10n.php:1557` blocker to
+  `parse error at <bootstrap-shim>:19:21: unsupported interface implementation: implements clauses are not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test list_assignment`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_array_destructuring_assignments_have_stable_parse_errors -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone760`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 759, expression-form `include`, `include_once`, `require`,
   and `require_once` for the current local-file include subset. These
   constructs now evaluate a string path expression, execute in caller scope,

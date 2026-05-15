@@ -662,9 +662,9 @@
   current built-in/runtime-defined slice, such as `PHP_OS`
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported array/list destructuring beyond
-  the current simple positional `list($a, $b) = expr;` statement slice, such as
-  `[$name] = $array`, expression-position `list(...)`, nested/keyed/skipped
-  targets, references, and non-variable targets
+  the current positional `list($a, $b) = expr;` statement slice with variable
+  or skipped slots, such as `[$name] = $array`, expression-position
+  `list(...)`, nested/keyed targets, references, and non-variable targets
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
   current direct-variable, direct/nested array-offset,
   nested object-property array-offset, and static-property diagnostic statement
@@ -2990,11 +2990,11 @@
   precision edge-case coverage.
 - Array gaps: array spread elements, array reference elements, short
   `[...]` destructuring assignment targets, expression-position `list(...)`,
-  and keyed, nested, skipped-slot, reference, or non-variable list targets are
-  rejected with stable parse diagnostics. Simple positional statement-form
-  `list($a, $b) = expr;` is supported for direct variable targets only; exact
-  PHP warning/notice emission for missing offsets and non-array right-hand
-  sides is not implemented. `unset(...)` forms outside direct variables,
+  and keyed, nested, reference, or non-variable list targets are rejected with
+  stable parse diagnostics. Positional statement-form
+  `list($a, $b) = expr;` is supported for direct variable targets and skipped
+  slots only; exact PHP warning/notice emission for missing offsets and
+  non-array right-hand sides is not implemented. `unset(...)` forms outside direct variables,
   direct array-offset operands, and static-property diagnostic operands,
   comma-separated `for` header expression lists,
   expression-form `do ... while`, expression-form `switch`, malformed
@@ -3008,8 +3008,8 @@
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
   targets, array destructuring assignments with keyed, nested, reference,
-  skipped-slot, short-syntax, expression-position, or non-variable target
-  semantics, references, copy-on-write containers, and
+  short-syntax, expression-position, or non-variable target semantics,
+  references, copy-on-write containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full
   mutation/aliasing behavior while the iterated array is modified. Array keys

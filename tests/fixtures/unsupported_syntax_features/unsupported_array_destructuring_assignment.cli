@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.php:2:10: unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_array_destructuring_assignment.php:2:10: unsupported array destructuring: only positional statement-form list($a, $b) = expr targets with variable or skipped slots are implemented; short [...], expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented
 --- stderr end ---

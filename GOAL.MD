@@ -62,11 +62,11 @@ Recent WordPress-directed milestones have been walking the real WordPress
 6.9.4 bootstrap-shim forward through concrete blockers: references as explicit
 runtime boundaries, class modifiers, magic `new self`/`parent`/`static`
 instantiation, direct-object-property nested array assignment, nested
-object-property array-offset `unset(...)`, and expression-form
-`include`/`require` return values. The current shim frontier is short/non-simple
-array destructuring at `<bootstrap-shim>:1557:9`. Each step is intentionally
-small because it only counts after parser/runtime code, tests, CLI fixtures,
-docs, and named unsupported edges are in place.
+object-property array-offset `unset(...)`, expression-form `include`/`require`
+return values, and skipped positional `list(...)` destructuring. The current
+shim frontier is interface `implements` clauses at `<bootstrap-shim>:19:21`.
+Each step is intentionally small because it only counts after parser/runtime
+code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
 ## Compatibility North Star
 
@@ -268,8 +268,10 @@ class/method contexts. Milestone 757 added direct-object-property nested array
 assignment and append-at-depth assignment. Milestone 758 added nested
 object-property array-offset `unset(...)`. Milestone 759 then added
 expression-form `include`, `include_once`, `require`, and `require_once` return
-values for the current local-file subset; the current bootstrap-shim blocker is
-now short/non-simple array destructuring at `<bootstrap-shim>:1557:9`.
+values for the current local-file subset. Milestone 760 added skipped
+positional slots in statement-form `list(...) = expr;`; the current
+bootstrap-shim blocker is now unsupported interface implementation at
+`<bootstrap-shim>:19:21`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
