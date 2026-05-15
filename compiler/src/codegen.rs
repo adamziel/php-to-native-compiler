@@ -6351,6 +6351,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"
             | "mysqli_fetch_assoc"
+            | "mysqli_fetch_row"
             | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"

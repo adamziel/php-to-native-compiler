@@ -432,6 +432,32 @@ echo mysqli_fetch_assoc($result) === false ? "no-row" : "row";
 }
 
 #[test]
+fn mysqli_fetch_row_returns_current_seed_post_numeric_placeholder() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$row = mysqli_fetch_row($result);
+echo $row[0];
+echo "|";
+echo $row[1];
+echo "|";
+echo isset($row["ID"]) ? "assoc" : "no-assoc";
+echo "|";
+echo mysqli_fetch_row($result) === false ? "no-row" : "row";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1|Hello world placeholder|no-assoc|no-row"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_fetch_array_accepts_current_seed_row_modes() {
     let execution = run_source(
         r#"<?php
@@ -698,6 +724,8 @@ echo function_exists("mysqli_fetch_object") ? "1" : "0";
 echo is_callable("mysqli_fetch_object") ? "1" : "0";
 echo function_exists("mysqli_fetch_assoc") ? "1" : "0";
 echo is_callable("mysqli_fetch_assoc") ? "1" : "0";
+echo function_exists("mysqli_fetch_row") ? "1" : "0";
+echo is_callable("mysqli_fetch_row") ? "1" : "0";
 echo function_exists("mysqli_fetch_array") ? "1" : "0";
 echo is_callable("mysqli_fetch_array") ? "1" : "0";
 echo function_exists("mysqli_fetch_field") ? "1" : "0";
@@ -722,7 +750,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 40, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 42, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

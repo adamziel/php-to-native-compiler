@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 863, deterministic `mysqli_fetch_row()` support for the
+  seed-post placeholder result. The runtime now recognizes `mysqli_fetch_row()`
+  through runtime dispatch and native metadata lookup, returns one numeric PHP
+  array with keys `0` and `1` for the exact
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1` row, shares the
+  placeholder result cursor, and returns `false` after the one row is consumed.
+  This is not broad result fetching, arbitrary SQL row hydration, real database
+  state, real MySQLi warning/error behavior, cursor reset support, or native
+  database lowering. Focused verification so far: `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone863`.
+
 - Added Milestone 862, a synthetic WordPress-shaped `wpdb::get_results()`
   smoke that consumes the deterministic seed-post placeholder result through
   omitted-mode `mysqli_fetch_array($result)`, now defaulting to

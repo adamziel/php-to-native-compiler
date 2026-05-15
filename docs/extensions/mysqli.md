@@ -54,7 +54,9 @@ state: fields `ID` and `post_title`, plus one row where `ID` is `1` and
 those two fields and then `false`, and `mysqli_fetch_object()` returns one
 `stdClass` row object and then `false`. `mysqli_fetch_assoc()` uses the same
 row cursor and returns one associative PHP array with keys `ID` and
-`post_title` and then `false`. `mysqli_fetch_array($result, MYSQLI_ASSOC)`
+`post_title` and then `false`. `mysqli_fetch_row()` uses the same row cursor and
+returns one numeric PHP array with keys `0` and `1` and then `false`.
+`mysqli_fetch_array($result, MYSQLI_ASSOC)`
 returns the same associative row shape and then `false`;
 `mysqli_fetch_array($result, MYSQLI_NUM)` returns numeric keys `0` and `1`;
 `mysqli_fetch_array($result, MYSQLI_BOTH)` and omitted mode/default

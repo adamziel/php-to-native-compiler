@@ -158,7 +158,7 @@ the first placeholder empty `mysqli_result` lifecycle boundary, and Milestone
 drains that empty result through WordPress-shaped object state. Milestones 854
 through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
-object, associative, numeric, and mixed fetch-array paths, plus
+object, associative, numeric, fetch-row, and mixed fetch-array paths, plus
 synthetic `wpdb::get_results()` harnesses for those row shapes. These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone863/mysqli_fetch_row_seed_post.php
+1
+Hello world placeholder
+no-assoc
+no-row

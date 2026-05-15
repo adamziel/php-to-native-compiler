@@ -843,6 +843,8 @@
   `mysqli_fetch_assoc($result)` uses the same row cursor and returns one
   associative PHP array with `ID = 1` and
   `post_title = "Hello world placeholder"` before returning `false`.
+  `mysqli_fetch_row($result)` returns one numeric PHP array with keys `0` and
+  `1` over the same row cursor.
   `mysqli_fetch_array($result, MYSQLI_ASSOC)` returns the same associative
   array shape, `mysqli_fetch_array($result, MYSQLI_NUM)` returns numeric keys
   `0` and `1`, and `mysqli_fetch_array($result, MYSQLI_BOTH)` plus omitted

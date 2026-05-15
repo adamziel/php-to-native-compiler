@@ -4407,6 +4407,12 @@ impl Interpreter {
         self.fetch_mysqli_assoc_row("mysqli_fetch_assoc()", result_id, span)
     }
 
+    fn call_mysqli_fetch_row(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_row", args, 1, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_row()", &args[0], span)?;
+        self.fetch_mysqli_array_row("mysqli_fetch_row()", result_id, PHP_MYSQLI_NUM, span)
+    }
+
     fn call_mysqli_fetch_array(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=2).contains(&args.len()) {
             return Err(runtime_error(
@@ -8912,6 +8918,7 @@ impl Interpreter {
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
             "mysqli_fetch_assoc" => self.call_mysqli_fetch_assoc(&args, span),
+            "mysqli_fetch_row" => self.call_mysqli_fetch_row(&args, span),
             "mysqli_fetch_array" => self.call_mysqli_fetch_array(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
@@ -11837,6 +11844,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"
             | "mysqli_fetch_assoc"
+            | "mysqli_fetch_row"
             | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"

@@ -7940,17 +7940,25 @@ handled.
   multi-result state. It is not real WordPress `wpdb` output-mode fidelity,
   SQL execution, database state, cache behavior, duplicate-column behavior,
   warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next WordPress database-result boundary
+- [x] Runtime/mysqli lane: inspect the next WordPress database-result boundary
   after deterministic fetch-array modes and choose a small tested slice, such
   as scoped `mysqli_data_seek($result, 0)` cursor reset for placeholder
   results, deterministic `mysqli_fetch_row()`, or a sharper named boundary for
   unsupported cursor/result operations.
+  Milestone 863 chooses deterministic `mysqli_fetch_row()` for the seed-post
+  placeholder result. It returns numeric keys `0` and `1`, shares the result
+  cursor, returns `false` after the one row, and is visible through runtime and
+  native metadata lookup. It is not broad result fetching, cursor seeking, SQL
+  execution, real database state, warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+  `mysqli_fetch_row()` through a WordPress-shaped numeric-result branch without
+  claiming real `wpdb` output-mode fidelity or real database support.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `9297d63 runtime: add mysqli fetch array modes`, covering Milestone 861
-  before the current Milestone 862 candidate.
+  `22ca757 tests: add wordpress wpdb mixed fetch array smoke`, covering
+  Milestone 862 before the current Milestone 863 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

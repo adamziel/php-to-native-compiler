@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `22ca757 tests: add wordpress wpdb mixed fetch array smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 863, deterministic `mysqli_fetch_row()` support for
+  the seed-post placeholder result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone863/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone863`
+  passed.
+- Current WordPress frontier: the exact seed-post placeholder result can now be
+  consumed as a numeric row through `mysqli_fetch_row()` as well as through
+  existing object, associative, and fetch-array paths.
+- Remaining semantic gaps: arbitrary result schemas, cursor reset/seek
+  behavior, real SQL execution, database state, query parsing,
+  duplicate-column fidelity, MySQLi warnings/errors, real WordPress `wpdb`
+  fidelity, and native database lowering remain missing.
+- Next concrete task: run diff checks and the full serialized checkpoint gate.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `9297d63 runtime: add mysqli fetch array modes`, pushed to `origin/master`.
 - Task attempted: Milestone 862, a synthetic WordPress-shaped
   `wpdb::get_results($query, ARRAY_A)` smoke that consumes the deterministic
