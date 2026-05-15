@@ -268,6 +268,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   integration, exact diagnostics, partial-output behavior, or native lowering.
   The bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:195:8: undefined function implode()`.
+  Milestone 731 covers bounded `implode()` for current scalar/null array values
+  joined by an empty default separator or a string separator. This is not the
+  legacy reversed argument order, nested arrays, object/resource values, exact
+  warning behavior, partial-output behavior, or native lowering. The
+  bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:196:3: undefined function exit()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+abc
+a|2||1||3.5
+wp php--- stdout end ---
+stderr:
+--- stderr end ---

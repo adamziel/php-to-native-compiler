@@ -4702,6 +4702,7 @@ impl Interpreter {
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
             "sprintf" => call_sprintf(&args, span),
+            "implode" => call_implode(&args, span),
             "dirname" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -7900,6 +7901,7 @@ fn is_builtin(name: &str) -> bool {
         "define"
             | "strlen"
             | "sprintf"
+            | "implode"
             | "dirname"
             | "version_compare"
             | "count"
@@ -8202,6 +8204,84 @@ fn bounded_sprintf(format: &str, args: &[Value], span: Span) -> CompileResult<St
     }
 
     Ok(output)
+}
+
+fn call_implode(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "implode()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let (separator, array) = match args {
+        [Value::Array(array)] => ("", array),
+        [Value::String(separator), Value::Array(array)] => (separator.as_str(), array),
+        [other] => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "implode()",
+                    format!(
+                        "single argument must be array in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        [separator, Value::Array(_)] => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "implode()",
+                    format!(
+                        "separator argument must be string in the current subset, got {}",
+                        separator.type_name()
+                    ),
+                ),
+            ));
+        }
+        [_, value] => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "implode()",
+                    format!(
+                        "array argument must be array in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        }
+        _ => unreachable!("implode arity already checked"),
+    };
+
+    let mut parts = Vec::with_capacity(array.len());
+    for entry in array.entries() {
+        match &entry.value {
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                parts.push(entry.value.echo_string());
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "implode()",
+                        format!(
+                            "array values must be null, bool, int, float, or string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(Value::String(parts.join(separator)))
 }
 
 fn call_header(args: &[Value], span: Span) -> CompileResult<Value> {

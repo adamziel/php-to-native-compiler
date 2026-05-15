@@ -342,7 +342,7 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `sprintf`, `dirname`,
+- builtins for the documented subset: `strlen`, `sprintf`, `implode`, `dirname`,
   `version_compare`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -404,6 +404,12 @@
   locale behavior, argument reordering beyond `%N$s`, array/object/resource
   conversions, exact warning behavior, partial-output behavior, and native
   lowering remain unsupported.
+  `implode($array)` and `implode($separator, $array)` support current arrays
+  containing only `null`, bool, int, float, and string values, preserve
+  insertion order, ignore keys, and join values using PHP-shaped echo string
+  conversion with an empty default separator. The legacy reversed argument
+  order, nested arrays, object/resource values, exact warning behavior,
+  partial-output behavior, and native lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
@@ -2001,7 +2007,7 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `sprintf`, `count`,
+  one of the documented callable builtins: `strlen`, `sprintf`, `implode`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2124,7 +2130,7 @@
   first-class callable syntax, `call_user_func`, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `sprintf`, `isset`, `empty`, `count`, `define`, `constant`,
+- Builtins: `strlen`, `sprintf`, `implode`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
   `array_slice`, `array_chunk`, `array_pad`, `array_merge`, `array_replace`,
@@ -2202,6 +2208,10 @@
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
+  `implode` accepts the same current scalar/null array-value subset as the
+  builtin section above; direct native `implode(...)` calls still reject under
+  the function-call boundary, while native function-table introspection
+  recognizes the name.
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
@@ -3696,6 +3706,10 @@
   flags, locale behavior, broad argument reordering, array/object/resource
   conversions, exact warning behavior, partial-output behavior, and native
   lowering beyond function-table introspection
+- `implode()` outside the current scalar/null array-value subset: legacy
+  reversed argument order, nested arrays, object/resource values, exact warning
+  behavior, partial-output behavior, and native lowering beyond function-table
+  introspection
 - `dirname()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
   canonicalization, symlink resolution, null-byte behavior, broad scalar

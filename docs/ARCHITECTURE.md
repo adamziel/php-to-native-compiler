@@ -838,6 +838,12 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
+`implode()` is an interpreter-only bounded array-to-string builtin for current
+WordPress bootstrap message paths. It joins scalar/null array values in
+insertion order with either an empty default separator or a string separator.
+Native function-table introspection recognizes the name, while direct native
+calls reject until array iteration, string allocation, and conversion
+diagnostics have a lowered runtime model.
 `header()` is an interpreter-only no-op web/SAPI boundary for the current
 WordPress bootstrap path. It validates the current string/bool/int argument
 shape, returns `null`, and deliberately records no response state yet. Native
