@@ -3,8 +3,9 @@
 Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-`mysqli_get_host_info`, `mysqli_get_client_info`, `mysqli_get_proto_info`,
-`mysqli_stat`, `mysqli_autocommit`,
+`mysqli_get_host_info`, `mysqli_get_client_info`,
+`mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_stat`,
+`mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
@@ -47,6 +48,10 @@ transport, socket, protocol, or live connection.
 object and returns `mysqlnd 8.0.0-phpc-placeholder`. This is deterministic fake
 client-library metadata; it does not inspect the linked client library, model
 PHP 8.1 deprecation behavior for passing an argument, or reflect host state.
+
+`mysqli_get_client_version()` accepts no arguments and returns deterministic
+integer version `80000`. It does not inspect the linked client library or
+reflect extension build configuration.
 
 `mysqli_get_proto_info($handle)` accepts the placeholder object and returns
 deterministic protocol version `10`. It does not negotiate or inspect a real

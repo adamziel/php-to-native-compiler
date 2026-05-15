@@ -190,8 +190,11 @@ fn mysqli_client_and_protocol_metadata_return_current_placeholders() {
     let execution = run_source(
         r#"<?php
 $client = "mysqli_get_client_info";
+$version = "mysqli_get_client_version";
 $proto = "mysqli_get_proto_info";
 echo function_exists($client) ? "yes" : "no";
+echo "|";
+echo is_callable($version) ? "version-callable" : "version-missing";
 echo "|";
 echo is_callable($proto) ? "callable" : "missing";
 $handle = mysqli_init();
@@ -203,6 +206,10 @@ echo mysqli_get_client_info(null);
 echo "|";
 echo $client($handle);
 echo "|";
+echo mysqli_get_client_version();
+echo "|";
+echo $version();
+echo "|";
 echo mysqli_get_proto_info($handle);
 echo "|";
 echo $proto($handle);
@@ -212,7 +219,7 @@ echo $proto($handle);
 
     assert_eq!(
         execution.stdout,
-        "yes|callable|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|10|10"
+        "yes|version-callable|callable|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|80000|80000|10|10"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -618,6 +625,21 @@ mysqli_get_client_info("not-a-handle");
     assert_eq!(
         bad_client_arg.message,
         "unsupported call mysqli_get_client_info(): optional argument must be mysqli object or null in the current subset, got string"
+    );
+
+    let bad_client_version_arity = run_source(
+        r#"<?php
+mysqli_get_client_version(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_client_version_arity.phase, Phase::Runtime);
+    assert_eq!(bad_client_version_arity.line, 2);
+    assert_eq!(bad_client_version_arity.column, 1);
+    assert_eq!(
+        bad_client_version_arity.message,
+        "arity mismatch for mysqli_get_client_version(): expected 0 argument(s), got 1"
     );
 
     let bad_proto_handle = run_source(
@@ -1416,6 +1438,8 @@ echo function_exists("mysqli_get_host_info") ? "1" : "0";
 echo is_callable("mysqli_get_host_info") ? "1" : "0";
 echo function_exists("mysqli_get_client_info") ? "1" : "0";
 echo is_callable("mysqli_get_client_info") ? "1" : "0";
+echo function_exists("mysqli_get_client_version") ? "1" : "0";
+echo is_callable("mysqli_get_client_version") ? "1" : "0";
 echo function_exists("mysqli_get_proto_info") ? "1" : "0";
 echo is_callable("mysqli_get_proto_info") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
@@ -1484,7 +1508,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 74, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 76, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1564,6 +1588,18 @@ mysqli_stat(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_client_info();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_client_version();
 "#,
     )
     .unwrap_err();

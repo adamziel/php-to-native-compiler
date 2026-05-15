@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 891, bounded `mysqli_get_client_version()` support for
+  deterministic placeholder MySQLi client-library version metadata. The runtime
+  accepts the no-argument call, returns deterministic integer version `80000`,
+  rejects argument-bearing calls with stable arity diagnostics, and exposes the
+  name through runtime and native metadata lookup. This is not real
+  client-library version detection, host database integration, PHP extension
+  configuration fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_and_protocol_metadata -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone891`.
+
 - Added Milestone 890, a synthetic WordPress-shaped `wpdb` connection-metadata
   bookkeeping smoke that calls the bounded
   `mysqli_get_client_info($this->dbh)` and
