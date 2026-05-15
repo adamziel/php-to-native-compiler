@@ -84,6 +84,7 @@ struct Interpreter {
     enum_lookup: HashMap<String, Rc<EnumDecl>>,
     class_constants: HashMap<(ClassId, String), ClassConstantDecl>,
     static_properties: HashMap<(ClassId, String), Value>,
+    instance_property_defaults: HashMap<(ClassId, String), Value>,
     classes: PhpClassTable,
     constants: ConstantTable,
     required_once: HashSet<PathBuf>,
@@ -332,6 +333,7 @@ impl Interpreter {
         let mut methods = HashMap::new();
         let mut class_constants = HashMap::new();
         let mut static_properties = HashMap::new();
+        let instance_property_defaults = HashMap::new();
         let mut classes = PhpClassTable::with_core_classes();
         for stmt in &program.statements {
             match stmt {
@@ -419,6 +421,7 @@ impl Interpreter {
             enum_lookup,
             class_constants,
             static_properties,
+            instance_property_defaults,
             classes,
             constants: ConstantTable::new(),
             required_once: HashSet::new(),
@@ -439,6 +442,7 @@ impl Interpreter {
             exit_signal: None,
         };
         interpreter.initialize_static_property_defaults(program)?;
+        interpreter.initialize_instance_property_defaults(program)?;
         Ok(interpreter)
     }
 
@@ -471,6 +475,25 @@ impl Interpreter {
                 self.static_properties
                     .insert((class_id, property.name.clone()), value);
             }
+        }
+
+        Ok(())
+    }
+
+    fn initialize_instance_property_defaults(&mut self, program: &Program) -> CompileResult<()> {
+        for stmt in &program.statements {
+            let Stmt::Class(class) = stmt else {
+                continue;
+            };
+            if class.is_nested {
+                continue;
+            }
+            let class_id = self
+                .classes
+                .lookup_class_id(&class.name)
+                .expect("class registration should declare class id");
+
+            self.initialize_instance_property_defaults_for_class(class_id, class)?;
         }
 
         Ok(())
@@ -554,6 +577,7 @@ impl Interpreter {
         }
 
         self.initialize_static_property_defaults(program)
+            .and_then(|_| self.initialize_instance_property_defaults(program))
     }
 
     fn register_nested_class_declaration(&mut self, class: &ClassDecl) -> CompileResult<()> {
@@ -589,6 +613,18 @@ impl Interpreter {
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
         }
+        if let Err(error) = self.initialize_instance_property_defaults_for_class(class_id, class) {
+            remove_class_member_runtime_tables(
+                &mut self.class_constants,
+                &mut self.static_properties,
+                &mut self.methods,
+                class_id,
+            );
+            self.instance_property_defaults
+                .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
+        }
 
         Ok(())
     }
@@ -612,6 +648,34 @@ impl Interpreter {
             let mut default_scope = SymbolTable::new();
             let value = self.evaluate(default, &mut default_scope)?;
             self.static_properties
+                .insert((class_id, property.name.clone()), value);
+        }
+
+        Ok(())
+    }
+
+    fn initialize_instance_property_defaults_for_class(
+        &mut self,
+        class_id: ClassId,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        self.instance_property_defaults
+            .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+
+        for member in &class.members {
+            let ClassMember::Property(property) = member else {
+                continue;
+            };
+            if property.is_static {
+                continue;
+            }
+            let Some(default) = &property.default else {
+                continue;
+            };
+
+            let mut default_scope = SymbolTable::new();
+            let value = self.evaluate(default, &mut default_scope)?;
+            self.instance_property_defaults
                 .insert((class_id, property.name.clone()), value);
         }
 
@@ -1809,6 +1873,7 @@ impl Interpreter {
             &inherited_properties,
             object_id,
         );
+        self.apply_instance_property_defaults(&object, class_id)?;
         let Some((
             constructor_class_id,
             constructor_class_name,
@@ -1964,6 +2029,60 @@ impl Interpreter {
             }));
         }
         properties
+    }
+
+    fn apply_instance_property_defaults(
+        &self,
+        object: &PhpObject,
+        class_id: ClassId,
+    ) -> CompileResult<()> {
+        for declaring_class_id in self.instance_property_default_class_order(class_id) {
+            let Some(class) = self.classes.get(declaring_class_id) else {
+                continue;
+            };
+            for property in class.properties().iter().filter(|property| {
+                !property.is_static()
+                    && self
+                        .instance_property_defaults
+                        .contains_key(&(declaring_class_id, property.name().to_string()))
+            }) {
+                let value = self
+                    .instance_property_defaults
+                    .get(&(declaring_class_id, property.name().to_string()))
+                    .expect("default existence checked")
+                    .clone();
+                object
+                    .write_property_from_context(
+                        property.name(),
+                        value,
+                        Some(declaring_class_id),
+                        &[declaring_class_id],
+                    )
+                    .map_err(|error| runtime_error(Span::new(0, 0), error))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn instance_property_default_class_order(&self, class_id: ClassId) -> Vec<ClassId> {
+        let mut ancestors = Vec::new();
+        let mut current = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata")
+            .parent_id();
+        while let Some(ancestor_id) = current {
+            ancestors.push(ancestor_id);
+            current = self
+                .classes
+                .get(ancestor_id)
+                .expect("ancestor class id should resolve to metadata")
+                .parent_id();
+        }
+        ancestors.reverse();
+        ancestors.push(class_id);
+        ancestors
     }
 
     fn execute_assignment(
@@ -4606,7 +4725,18 @@ impl Interpreter {
             .expect("class id should resolve to class metadata");
         for property in class.properties() {
             if property.visibility() == Visibility::Public {
-                properties.insert(ArrayKey::from(property.name()), Value::Null);
+                let value = if property.is_static() {
+                    self.static_properties
+                        .get(&(class.id(), property.name().to_string()))
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                } else {
+                    self.instance_property_defaults
+                        .get(&(class.id(), property.name().to_string()))
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                };
+                properties.insert(ArrayKey::from(property.name()), value);
             }
         }
         if let Some(parent_id) = class.parent_id() {

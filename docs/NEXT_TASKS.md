@@ -6872,15 +6872,23 @@ handled.
   `wp-includes/option.php`. Milestone 750 implements nested direct-variable
   array-offset `unset(...)` and advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:21:21: unsupported property default: instance property default values are not implemented`.
-- [ ] Object/runtime lane: implement or explicitly bound instance property
+- [x] Object/runtime lane: implement or explicitly bound instance property
   default values for the next real WordPress bootstrap-shim blocker at
   `<bootstrap-shim>:21:21`, corresponding to `public $_nplurals = 2;` in
+  `wp-includes/pomo/mo.php`. Milestone 751 implements untyped instance
+  property defaults for the current constant-expression subset and advances the
+  real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:301:46: unsupported reference assignment: only direct variable and direct array-offset reference sources are parsed before reference semantics exist`.
+- [ ] Parser/reference lane: implement or explicitly bound by-reference
+  assignment from method-call sources for the next real WordPress
+  bootstrap-shim blocker at `<bootstrap-shim>:301:46`, corresponding to
+  `$entry = &$this->make_entry( $original, $translation );` in
   `wp-includes/pomo/mo.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 750 checkpoint, the latest committed checkpoint
-  is `e255572 runtime: add append-at-depth assignment`, covering Milestone 749.
+- Before the current Milestone 751 checkpoint, the latest committed checkpoint
+  is `0a8294d runtime: add nested array unset`, covering Milestone 750.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

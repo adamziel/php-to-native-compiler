@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added Milestone 751, untyped instance property defaults for the current
+  constant-expression subset. The parser now accepts defaults such as
+  `public $_nplurals = 2;`, stores them on the existing class-property AST
+  field, and validates them with the same bounded constant-expression surface
+  used by class constants and static property defaults. The interpreter
+  evaluates defaults during class registration, initializes object slots before
+  `__construct`, preserves separate object instances, applies inherited
+  defaults in parent-to-child order so compatible public/protected
+  redeclarations update the shared slot, and reports defaults through
+  `get_class_vars()`, `get_object_vars()`, and `get_mangled_object_vars()`.
+  Dynamic/non-constant defaults, typed property storage/enforcement,
+  multi-property declarations, exact PHP initialization edge cases,
+  references/copy-on-write, and native lowering remain unsupported. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:21:21` blocker in `wp-includes/pomo/mo.php` to
+  `parse error at <bootstrap-shim>:301:46: unsupported reference assignment: only direct variable and direct array-offset reference sources are parsed before reference semantics exist`,
+  corresponding to `$entry = &$this->make_entry( $original, $translation );`
+  in `wp-includes/pomo/mo.php`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone751`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 750, nested direct-variable array-offset `unset(...)` for the
   current array value model. The parser now accepts
   `unset($array[$outer][$inner])`, including multiple nested unset operands,

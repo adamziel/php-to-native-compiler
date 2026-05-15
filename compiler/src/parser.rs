@@ -574,14 +574,12 @@ impl Parser {
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
             let (name, span) = self.consume_variable_with_span("expected property name")?;
             let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-                if !is_static {
-                    return Err(self.error_at(
-                        self.previous().span,
-                        "unsupported property default: instance property default values are not implemented",
-                    ));
-                }
                 let expr = self.parse_expression()?;
-                self.ensure_supported_static_property_default_expr(&expr)?;
+                if is_static {
+                    self.ensure_supported_static_property_default_expr(&expr)?;
+                } else {
+                    self.ensure_supported_instance_property_default_expr(&expr)?;
+                }
                 Some(expr)
             } else {
                 None
@@ -4154,6 +4152,16 @@ impl Parser {
                 self.error_at(
                     expr.span(),
                     "static property default values only support constant expressions in the current subset",
+                )
+            })
+    }
+
+    fn ensure_supported_instance_property_default_expr(&self, expr: &Expr) -> CompileResult<()> {
+        self.ensure_supported_const_declaration_expr(expr)
+            .map_err(|_error| {
+                self.error_at(
+                    expr.span(),
+                    "instance property default values only support constant expressions in the current subset",
                 )
             })
     }

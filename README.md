@@ -207,7 +207,8 @@ properties, heredoc/nowdoc,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
-instance property defaults,
+property defaults beyond the current untyped constant-expression instance
+property slice,
 typed or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass`, non-public dynamic property access,
 magic property hooks, resources, and

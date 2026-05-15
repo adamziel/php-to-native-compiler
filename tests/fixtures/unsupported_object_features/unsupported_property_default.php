@@ -1,4 +1,4 @@
 <?php
 class Box {
-    public $name = "Ada";
+    public $name = make_name();
 }

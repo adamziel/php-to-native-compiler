@@ -1,0 +1,18 @@
+exit: 0
+stdout:
+3:Ada:ok:sealed
+2:Ada:ok:sealed
+Array
+(
+    [_nplurals] => 2
+    [name] => Ada
+)
+Array
+(
+    [_nplurals] => 2
+    [name] => Ada
+)
+done
+--- stdout end ---
+stderr:
+--- stderr end ---

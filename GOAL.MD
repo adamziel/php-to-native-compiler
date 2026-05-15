@@ -245,9 +245,13 @@ statement-form by-reference assignment syntax as a runtime boundary. Milestone
 748 added by-reference assignment from direct array-offset sources as the same
 runtime boundary. Milestone 749 added append-at-depth assignment for
 direct-variable nested array paths. Milestone 750 added nested direct-variable
-array-offset `unset(...)`; the current bootstrap-shim blocker is now instance
-property defaults at `<bootstrap-shim>:21:21`, corresponding to
-`public $_nplurals = 2;` in `wp-includes/pomo/mo.php`.
+array-offset `unset(...)`. Milestone 751 added untyped instance property
+defaults for the current constant-expression subset and advanced past
+`public $_nplurals = 2;` in `wp-includes/pomo/mo.php`; the current
+bootstrap-shim blocker is now reference assignment from a method-call source at
+`<bootstrap-shim>:301:46`, corresponding to
+`$entry = &$this->make_entry( $original, $translation );` in
+`wp-includes/pomo/mo.php`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -286,9 +290,10 @@ destructors/reuse, and exact PHP diagnostics.
   interfaces, traits, enums, object-receiver static properties/constants,
   non-static dynamic static dispatch, broader class constant semantics,
   clone behavior beyond the current shallow no-`__clone` slice, magic methods,
-  dynamic method/property names, typed property compatibility and instance
-  property defaults, broader constructor/inheritance rules, and native object
-  lowering are still missing.
+  dynamic method/property names, typed property compatibility, property
+  defaults beyond the current untyped constant-expression instance/static
+  subset, broader constructor/inheritance rules, and native object lowering are
+  still missing.
   The interpreter object-handle identity slice covers assignment,
   argument/return, array, foreach, strict identity, `spl_object_id`, and a
   current-subset `spl_object_hash`, and bounded clone expressions, but
@@ -316,7 +321,8 @@ Full WordPress support is still missing at several layers:
    named arguments, spread/unpack, full
    namespace/import forms, and version-specific parse/runtime behavior.
 3. Object model: full constructors/inheritance, interfaces, traits, enums,
-   magic methods, dynamic properties/methods, typed/default properties,
+   magic methods, dynamic properties/methods, typed properties and property
+   defaults beyond the current constant-expression subset,
    reflection, cloning/destructors, late static binding, and exact visibility
    behavior.
 4. Error model: warnings/notices/deprecations, recoverable errors, `@`
@@ -372,8 +378,10 @@ The repository already has a working Rust workspace with:
   by-reference `foreach` value syntax as a runtime boundary, and
   by-reference assignment from direct array-offset sources as a runtime
   boundary, append-at-depth assignment for direct-variable nested array paths,
-  and nested direct-variable array-offset `unset(...)`. The next bottleneck is
-  instance property defaults in the WordPress bootstrap shim.
+  nested direct-variable array-offset `unset(...)`, and untyped instance
+  property defaults for the current constant-expression subset. The next
+  bottleneck is reference assignment from a method-call source in the
+  WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

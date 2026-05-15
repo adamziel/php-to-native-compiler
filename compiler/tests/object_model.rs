@@ -3217,6 +3217,108 @@ echo Defaults::read();
 }
 
 #[test]
+fn instance_properties_support_current_default_value_subset() {
+    let execution = run_source(
+        r#"<?php
+class Defaults {
+    public $count = 2 + 3;
+    public $name = "Ada";
+    public $flag = true;
+    public $nothing = null;
+    protected $secret = "ok";
+    private $token = "sealed";
+
+    public function __construct() {
+        echo $this->count, ":", $this->secret, ":", $this->token, "\n";
+    }
+
+    public function read() {
+        return $this->count . ":" . $this->name . ":" . $this->flag . ":" . ($this->nothing === null);
+    }
+}
+
+$first = new Defaults();
+$second = new Defaults();
+$first->count = 9;
+echo $first->read(), "\n";
+echo $second->read();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "5:ok:sealed\n5:ok:sealed\n9:Ada:1:1\n5:Ada:1:1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn inherited_instance_property_defaults_initialize_visible_slots() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    public $name = "base";
+    protected $shared = "shared";
+    private $token = "base-token";
+
+    public function baseRead() {
+        return $this->name . ":" . $this->shared . ":" . $this->token;
+    }
+}
+
+class Child extends Base {
+    public $name = "child";
+    private $token = "child-token";
+
+    public function childRead() {
+        return $this->name . ":" . $this->shared . ":" . $this->token;
+    }
+}
+
+$child = new Child();
+echo $child->baseRead(), "\n";
+echo $child->childRead();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "child:shared:base-token\nchild:shared:child-token"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn property_introspection_reports_current_instance_defaults() {
+    let execution = run_source(
+        r#"<?php
+class Defaults {
+    public $count = 2;
+    public static $shared = "S";
+    protected $secret = "ok";
+    private $token = "sealed";
+}
+
+$object = new Defaults();
+print_r(get_class_vars("Defaults"));
+print_r(get_object_vars($object));
+$mangled = get_mangled_object_vars($object);
+$keys = array_keys($mangled);
+echo count($mangled), "|", $mangled[$keys[0]], "|", $mangled[$keys[1]], "|", $mangled[$keys[2]];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [count] => 2\n    [shared] => S\n)\nArray\n(\n    [count] => 2\n)\n3|2|ok|sealed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn static_properties_support_current_mutation_subset() {
     let execution = run_source(
         r#"<?php
@@ -4528,12 +4630,12 @@ class Value {
         (
             r#"<?php
 class Box {
-    public $name = "Ada";
+    public $name = make_name();
 }
 "#,
             3,
-            18,
-            "unsupported property default: instance property default values are not implemented",
+            20,
+            "instance property default values only support constant expressions in the current subset",
         ),
         (
             r#"<?php

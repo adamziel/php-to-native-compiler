@@ -1173,7 +1173,8 @@ inherited property metadata for current object values or string class names,
 with case-sensitive property names and no autoload side effects.
 `get_class_vars($class_name)` accepts declared string class names and returns
 public declared and inherited property names in child-to-parent declaration
-order with `null` values because property defaults are not implemented.
+order with supported constant-expression default values or `null` for
+properties without defaults.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values in
 parent-to-child slot order.
@@ -1181,7 +1182,7 @@ parent-to-child slot order.
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
 and private names as `\0ClassName\0name` using the declaring class name.
-Dynamic properties, property defaults, trait/interface properties, and
+Dynamic properties, non-constant or typed property defaults, trait/interface properties, and
 non-public property visibility-context behavior beyond same-declaring-class
 private access and class/ancestor protected access remain outside the current
 object model.

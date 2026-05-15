@@ -815,12 +815,13 @@
   execution reaches the statement, so false branches do not populate the class
   table and guarded declarations such as `if (!class_exists("Name")) { class
   Name {} }` can safely avoid repeated redeclaration in the current subset.
-  The accepted member subset records properties without defaults and methods
+  The accepted member subset records untyped properties with optional
+  constant-expression defaults and methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new
   ClassName(...)` looks up declared classes case-insensitively, initializes
-  inherited and exact-class instance properties to `null`, skips static
-  properties, collapses compatible public/protected inherited property
+  inherited and exact-class instance properties from supported defaults or
+  `null`, skips static properties, collapses compatible public/protected inherited property
   redeclarations into one shared runtime slot, keeps private parent property
   redeclarations as separate child slots, treats object values as truthy, and
   lets direct `isset($object_variable)` return true. Public
@@ -897,9 +898,9 @@
   through string-valued dynamic function calls.
   `get_class_vars($class_name)` accepts declared string class names and returns
   an array of public declared and inherited properties in child-to-parent
-  declaration order, including public static properties, with `null` values
-  because property defaults are not implemented. It is available through
-  string-valued dynamic function calls.
+  declaration order, including public static properties, with current supported
+  default values or `null` for properties without defaults. It is available
+  through string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
   of public exact and inherited instance property names in parent-to-child slot
   order with their current slot values. Compatible public redeclarations expose
@@ -915,7 +916,7 @@
   property keys are emitted as the declared name, protected property keys are
   emitted as `\0*\0name`, and private property keys are emitted with the
   declaring class name as `\0ClassName\0name`; static properties are omitted.
-  Dynamic properties, property defaults, trait/interface properties, and
+  Dynamic properties, trait/interface properties, and
   non-public visibility-context behavior beyond the current declaring-class
   method context are not represented yet. It is available through
   string-valued dynamic function calls.
@@ -2872,7 +2873,8 @@
   `abstract`/`final`/`readonly` class modifiers,
   `abstract`/`final`/`readonly` class member modifiers, abstract methods, final
   methods, readonly properties, typed property storage and enforcement,
-  property initialization rules, inheritance interactions, instance property defaults,
+  property initialization rules beyond the current untyped constant-expression
+  default subset, inheritance interactions,
   multiple properties in one declaration, per-property defaults in
   multi-property declarations, typed/multiple/final/interface/trait/enum class
   constants, typed static properties, static property storage removal, late
@@ -3051,7 +3053,7 @@
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
   autoload-triggered parent class resolution,
-  typed property storage/enforcement, instance property defaults, multiple properties in
+  typed property storage/enforcement, non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed/static/multi-declarator class constants, typed static properties,
   storage-removing static-property unset,
@@ -3682,7 +3684,8 @@
 - `get_class_methods` inheritance beyond current single-parent chain, traits,
   interfaces, aliases/imports, namespace-aware names, autoloading, non-public/context-sensitive visibility
   listing, exact native ordering and `TypeError` behavior, and native lowering
-- `get_class_vars` property defaults, inheritance, traits, interfaces,
+- `get_class_vars` property defaults beyond the current constant-expression
+  subset, inheritance beyond the current single-parent chain, traits, interfaces,
   aliases/imports, namespace-aware names, autoloading,
   non-public/context-sensitive visibility listing, exact native ordering and
   `TypeError` behavior, and native lowering
@@ -3690,7 +3693,8 @@
   properties, traits, interfaces, aliases/imports,
   namespace-aware names, references/copy-on-write, exact native ordering and
   `TypeError` behavior, and native lowering
-- `get_mangled_object_vars` dynamic properties, property defaults, traits,
+- `get_mangled_object_vars` dynamic properties, property defaults beyond the
+  current constant-expression subset, traits,
   interfaces, aliases/imports, namespace-aware names,
   non-public/context-sensitive visibility behavior beyond the current
   declaring-class slot ownership, references/copy-on-write, exact native

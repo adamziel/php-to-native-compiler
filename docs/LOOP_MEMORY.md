@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T22:25:00Z
+
+- Checkpoint before this task:
+  `0a8294d runtime: add nested array unset`, pushed to `origin/master`.
+- Task attempted: Milestone 751, untyped instance property defaults for the
+  current constant-expression subset.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/native_object_class_boundary.rs`,
+  `tests/fixtures/milestone751/instance_property_defaults.*`,
+  `tests/fixtures/unsupported_object_features/unsupported_property_default.*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/OBJECT_MODEL.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model -- --test-threads=1`,
+  `cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_object_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone751`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: instance defaults are limited to untyped
+  properties and the current constant-expression subset. Non-constant
+  defaults, typed property storage/enforcement, multi-property declarations,
+  exact PHP initialization edge cases, references/copy-on-write, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:301:46: unsupported reference assignment: only direct variable and direct array-offset reference sources are parsed before reference semantics exist`,
+  corresponding to `$entry = &$this->make_entry( $original, $translation );`
+  in `wp-includes/pomo/mo.php`.
+- Next concrete task: implement or explicitly bound by-reference assignment
+  from method-call sources, then rerun the WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T21:50:00Z
 
 - Checkpoint before this task:

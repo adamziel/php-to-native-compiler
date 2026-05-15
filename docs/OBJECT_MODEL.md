@@ -61,8 +61,8 @@ and walks the current single-parent metadata chain. `get_parent_class($object_or
 validates current object/declared-string inputs and returns the immediate
 parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared and inherited properties with `null` values because property defaults are not
-represented yet.
+public declared and inherited properties with supported constant-expression
+default values or `null` for properties without defaults.
 `interface_exists()`, `trait_exists()`, and `enum_exists()` check declared
 user interface, empty top-level trait, and top-level unit-enum metadata
 without triggering autoloading. `class_exists()` reports true for declared
@@ -370,7 +370,8 @@ static binding,
 `spl_object_hash` exact system PHP hash formatting, handle reuse after
 destruction, clone semantics, destructors,
 `get_class_methods` inheritance/trait/interface and non-public
-context-sensitive method listing, `get_class_vars` property defaults,
+context-sensitive method listing, `get_class_vars` property defaults beyond
+the current constant-expression subset,
 inheritance/trait/interface properties, context-sensitive visibility, object
 inputs, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
