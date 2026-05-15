@@ -108,8 +108,9 @@ and `substr_count()` matching, the reached `preg_match()` matches-output path,
 the reached `mysqli_real_connect()` placeholder-success path, and the reached
 `preg_replace()` database-version cleanup path, and the reached
 `mysqli_query()` SQL-mode empty-result boundary, and the reached
-`mysqli_select_db()` placeholder-success path; it now stops at undefined
-`$table_prefix` startup state.
+`mysqli_select_db()` placeholder-success path, and the bootstrap shim now
+provides the conventional `$table_prefix = 'wp_';` startup variable; it now
+stops at an unsupported `preg_match()` pattern delimiter shape.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -369,8 +370,10 @@ mysqli handle. Milestone 806 added bounded `compact()` caller-scope variable
 packing for the reached charset/collation path. Milestone 807 added bounded
 `mysqli_query()` false-result behavior for the reached SQL mode probe.
 Milestone 808 added bounded deterministic `mysqli_select_db()` success for the
-placeholder handle. The current frontier is now undefined `$table_prefix`
-startup state in WordPress startup.
+placeholder handle. Milestone 809 added the conventional `$table_prefix`
+startup variable to the WordPress inventory bootstrap shim. The current
+frontier is now a `preg_match()` pattern delimiter shape outside the current
+slash-delimited regex subset.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -532,9 +535,10 @@ The repository already has a working Rust workspace with:
   placeholder success, bounded `preg_replace()` database-version cleanup,
   bounded `mysqli_get_server_info()` placeholder metadata, bounded `compact()`
   caller-scope packing, bounded `mysqli_query()` false-result behavior, and
-  bounded `mysqli_select_db()` deterministic success.
-  The next bottleneck is `$table_prefix` startup state in the WordPress
-  bootstrap shim.
+  bounded `mysqli_select_db()` deterministic success. The inventory bootstrap
+  shim now supplies `$table_prefix = 'wp_';` as startup state.
+  The next bottleneck is a reached `preg_match()` call whose pattern delimiter
+  is not supported by the current slash-delimited regex subset.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 809, a WordPress inventory bootstrap-shim startup-state
+  update for the reached `$table_prefix` blocker. The shim now defines
+  `$table_prefix = 'wp_';` before requiring `wp-settings.php`, and the
+  synthetic inventory fixture proves included WordPress-shaped code can see
+  that variable. This is not real `wp-config.php` loading, database
+  credentials, salts/keys, multisite table-prefix validation, host-specific
+  settings, exact PHP diagnostics, native lowering, or WordPress bootstrap
+  support. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  `$table_prefix` startup state to
+  `runtime error at <bootstrap-shim>:1006:8: unsupported call preg_match(): only slash-delimited patterns are implemented in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 808, bounded `mysqli_select_db()` support for the current
   WordPress `wpdb::select()` startup path. The runtime now exposes
   `mysqli_select_db` through function/callability metadata and dynamic

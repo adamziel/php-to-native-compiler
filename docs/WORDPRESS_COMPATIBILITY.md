@@ -90,8 +90,9 @@ The first bootstrap probe is expected to fail. Known blockers include:
   forms are now executable or skippable in focused fixtures. Top-level
   `global ...;` declarations are accepted as no-ops. The inventory now reports
   both the direct `wp-settings.php` probe, which reaches undefined `ABSPATH`,
-  and a bootstrap-shim probe, which defines `ABSPATH` before loading
-  `wp-settings.php`. Against real WordPress 6.9.4, the previous
+  and a bootstrap-shim probe, which defines `ABSPATH` and the conventional
+  `$table_prefix = 'wp_';` startup variable before loading `wp-settings.php`.
+  Against real WordPress 6.9.4, the previous
   `goto invalid_utf8;` blocker in `wp-includes/compat-utf8.php` is covered by
   the bounded Milestone 686 `goto`/label runtime slice, and the previous
   `(string)` cast blocker in that file is covered by the bounded Milestone 687
@@ -956,6 +957,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not real database selection, database existence validation,
   connection state, host I/O, exact diagnostics, native database lowering, or
   WordPress bootstrap support.
+  Milestone 809 defines the conventional `$table_prefix = 'wp_';` startup
+  variable in the inventory bootstrap shim and proves it through the synthetic
+  included-file inventory fixture. The real bootstrap-shim probe now advances
+  to
+  `runtime error at <bootstrap-shim>:1006:8: unsupported call preg_match(): only slash-delimited patterns are implemented in the current subset`.
+  This is not real `wp-config.php` loading, database credentials, salts/keys,
+  multisite table-prefix validation, host-specific settings, native lowering,
+  or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

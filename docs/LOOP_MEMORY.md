@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T14:30:00Z
+
+- Checkpoint before this task:
+  `0e56bc7 runtime: add bounded mysqli select db`, pushed to `origin/master`.
+- Task attempted: Milestone 809, define the conventional `$table_prefix`
+  startup variable in the WordPress inventory bootstrap shim.
+- Files changed so far: `tools/wordpress-inventory.sh`,
+  `compiler/tests/wordpress_inventory_cli.rs`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `tests/fixtures/compat/wordpress/source-pin.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:1006:8: unsupported call preg_match(): only slash-delimited patterns are implemented in the current subset`.
+- Remaining semantic gaps: real `wp-config.php` loading, database credentials,
+  salts/keys, multisite table-prefix validation, host-specific settings,
+  exact diagnostics, native lowering, and WordPress bootstrap support remain
+  unsupported.
+- Next concrete task: widen bounded `preg_match()` for the reached WordPress
+  startup pattern delimiter shape while keeping broad PCRE syntax, warning
+  behavior, flags/offsets beyond the current slice, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T14:06:00Z
 
 - Checkpoint before this task:

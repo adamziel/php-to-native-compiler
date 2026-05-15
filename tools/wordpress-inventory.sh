@@ -140,6 +140,7 @@ escaped_wp_root=$(printf '%s/' "$wp_root" | sed "s#//*#/#g; s#'#\\\\'#g")
 cat >"$tmp_shim" <<EOF
 <?php
 define('ABSPATH', '$escaped_wp_root');
+\$table_prefix = 'wp_';
 require ABSPATH . 'wp-settings.php';
 EOF
 

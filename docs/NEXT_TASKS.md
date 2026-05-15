@@ -7416,18 +7416,26 @@ handled.
   database names, returns deterministic `true`, and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:143:28: undefined variable '$table_prefix'`.
-- [ ] WordPress/config lane: model the reached `$table_prefix` startup state in
+- [x] WordPress/config lane: model the reached `$table_prefix` startup state in
   the bootstrap-shim inventory path. Decide whether the inventory shim should
   define the WordPress config variable before loading `wp-settings.php`, or
   whether the runtime should provide a documented compatibility default. Keep
   real `wp-config.php` loading, secret/key constants, database credentials,
   multisite table-prefix validation, exact diagnostics, and native lowering
   named unless implemented.
+  Milestone 809 defines `$table_prefix = 'wp_';` in the inventory bootstrap
+  shim before requiring `wp-settings.php`, proves the synthetic included-file
+  path can see it, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1006:8: unsupported call preg_match(): only slash-delimited patterns are implemented in the current subset`.
+- [ ] Runtime/regex lane: widen bounded `preg_match()` for the reached
+  WordPress startup pattern delimiter shape while keeping broad PCRE syntax,
+  callbacks, flags/offsets beyond the existing slice, exact warnings, and
+  native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 808 checkpoint, the latest committed checkpoint
-  is `40c8e40 runtime: add bounded mysqli query`, covering Milestone 807.
+- Before the current Milestone 809 checkpoint, the latest committed checkpoint
+  is `0e56bc7 runtime: add bounded mysqli select db`, covering Milestone 808.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -43,5 +43,7 @@ Do not commit WordPress core source into this repository until a separate size,
 license, update, and checksum policy is accepted. The committed synthetic
 inventory fixture proves the output format, keeps the direct `wp-settings.php`
 probe visible, and adds a bootstrap-shim probe for the next compiler/runtime
-blocker after `ABSPATH` is defined. External WordPress source runs remain an
-operator-supplied compatibility measurement.
+blocker after `ABSPATH` and the conventional `$table_prefix = 'wp_';` startup
+state are defined. External WordPress source runs remain an operator-supplied
+compatibility measurement. The shim does not load a real `wp-config.php`,
+database credentials, salts, multisite constants, or host-specific settings.

@@ -21,7 +21,7 @@ fn wordpress_inventory_normalized_synthetic_snapshot_matches_fixture() {
     fs::create_dir_all(&wp_includes).expect("create synthetic wp-includes");
     fs::write(
         wp_root.join("wp-settings.php"),
-        "<?php\ndefine('WPINC', 'wp-includes');\nrequire ABSPATH . WPINC . '/load.php';\n",
+        "<?php\ndefine('WPINC', 'wp-includes');\nrequire ABSPATH . WPINC . '/load.php';\necho $table_prefix;\n",
     )
     .expect("write synthetic wp-settings.php");
     fs::write(
