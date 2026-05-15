@@ -1130,39 +1130,67 @@ impl Parser {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after for")?;
 
-        let initializer = self.parse_optional_for_action(TokenKind::Semicolon)?;
+        let initializers = self.parse_for_action_list(TokenKind::Semicolon)?;
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after for initializer")?;
 
-        let condition = if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
-            None
-        } else {
-            let condition = self.parse_expression()?;
-            self.reject_for_header_list_if_comma()?;
-            Some(condition)
-        };
+        let conditions = self.parse_for_condition_list()?;
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after for condition")?;
 
-        let increment = self.parse_optional_for_action(TokenKind::RParen)?;
+        let increments = self.parse_for_action_list(TokenKind::RParen)?;
         self.consume_keyword(TokenKind::RParen, "expected ')' after for increment")?;
 
         let body = self.parse_block_or_statement()?;
         Ok(Stmt::For {
-            initializer,
-            condition,
-            increment,
+            initializers,
+            conditions,
+            increments,
             body,
             span,
         })
     }
 
-    fn parse_optional_for_action(&mut self, end: TokenKind) -> CompileResult<Option<ForAction>> {
+    fn parse_for_action_list(&mut self, end: TokenKind) -> CompileResult<Vec<ForAction>> {
+        let mut actions = Vec::new();
         if self.check(|kind| same_variant(kind, &end)) {
-            return Ok(None);
+            return Ok(actions);
         }
 
-        let action = self.parse_for_action()?;
-        self.reject_for_header_list_if_comma()?;
-        Ok(Some(action))
+        loop {
+            actions.push(self.parse_for_action()?);
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| same_variant(kind, &end)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "expected expression after ',' in for header",
+                ));
+            }
+        }
+
+        Ok(actions)
+    }
+
+    fn parse_for_condition_list(&mut self) -> CompileResult<Vec<Expr>> {
+        let mut conditions = Vec::new();
+        if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+            return Ok(conditions);
+        }
+
+        loop {
+            conditions.push(self.parse_expression()?);
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "expected expression after ',' in for condition",
+                ));
+            }
+        }
+
+        Ok(conditions)
     }
 
     fn parse_for_action(&mut self) -> CompileResult<ForAction> {
@@ -1219,13 +1247,6 @@ impl Parser {
 
         let expr = self.parse_expression()?;
         Ok(ForAction::Expr { expr })
-    }
-
-    fn reject_for_header_list_if_comma(&self) -> CompileResult<()> {
-        if self.check(|kind| matches!(kind, TokenKind::Comma)) {
-            return Err(self.error_at(self.peek().span, unsupported_for_header_list_message()));
-        }
-        Ok(())
     }
 
     fn parse_foreach(&mut self) -> CompileResult<Stmt> {
@@ -5053,10 +5074,6 @@ fn unsupported_do_while_expression_message() -> &'static str {
 
 fn unsupported_for_expression_message() -> &'static str {
     "unsupported for: for loops are only supported as statements in the current subset"
-}
-
-fn unsupported_for_header_list_message() -> &'static str {
-    "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot"
 }
 
 fn unsupported_switch_expression_message() -> &'static str {

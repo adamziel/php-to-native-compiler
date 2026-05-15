@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T18:05:00Z
+
+- Checkpoint before this task:
+  `2ad1483 runtime: add bounded variadic params`, pushed to `origin/master`.
+- Task attempted: Milestone 743, bounded comma-separated `for` header
+  expression lists.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/for_loop.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone743/for_header_lists.php`,
+  `tests/fixtures/milestone743/for_header_lists.stdout`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_for.*`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and
+  `GOAL.MD`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test for_loop -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_for_forms -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone743`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone743`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: native lowering for `for` loops still rejects at
+  the existing control-flow boundary; expression/reference/copy-on-write
+  behavior remains limited by the current header expression/action subset.
+  Direct `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap
+  shim now reaches `parse error at <bootstrap-shim>:3909:1: expected
+  expression, found <`.
+- Next concrete task: diagnose and implement or explicitly bound the `<` parse
+  blocker, likely PHP close/open tag or inline HTML handling in the generated
+  include path.
+
 ## Loop Event 2026-05-15T17:15:00Z
 
 - Checkpoint before this task:

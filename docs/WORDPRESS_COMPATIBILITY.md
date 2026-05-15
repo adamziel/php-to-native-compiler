@@ -357,6 +357,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   implemented; use at most one assignment or expression per header slot`.
   Variadic argument unpacking, by-reference variadics, type enforcement, exact
   PHP diagnostics, and native lowering remain unsupported.
+  Milestone 743 adds comma-separated `for` header expression lists, executing
+  initializer, condition, and increment lists left to right and using the final
+  condition expression's truthiness. After that, the bootstrap-shim probe
+  advances to `parse error at <bootstrap-shim>:3909:1: expected expression,
+  found <`, likely around PHP close/open tag or inline HTML handling in the
+  generated include path.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

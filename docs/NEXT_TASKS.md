@@ -6827,16 +6827,20 @@ handled.
   arguments into a current ordered array, with system-PHP comparison coverage.
   Variadic argument unpacking, by-reference variadics, type enforcement, exact
   diagnostics, and native lowering remain unsupported.
-- [ ] Parser/runtime lane: implement or explicitly bound comma-separated
+- [x] Parser/runtime lane: implement or explicitly bound comma-separated
   `for` header expression lists. The real WordPress 6.9.4 bootstrap shim now
-  reaches `parse error at <bootstrap-shim>:2099:16: unsupported for:
-  comma-separated initializer, condition, or increment expression lists are not
-  implemented; use at most one assignment or expression per header slot`.
+  advances past the previous `parse error at <bootstrap-shim>:2099:16`
+  blocker.
+- [ ] Parser/runtime lane: diagnose and implement or explicitly bound the next
+  WordPress bootstrap-shim parse blocker. The real WordPress 6.9.4 bootstrap
+  shim now reaches `parse error at <bootstrap-shim>:3909:1: expected
+  expression, found <`, likely around PHP close/open tag or inline HTML
+  handling in the generated include path.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 742 checkpoint, the latest committed checkpoint
-  is `d767c07 tools: trace wordpress include frontier`, covering Milestone 741.
+- Before the current Milestone 743 checkpoint, the latest committed checkpoint
+  is `2ad1483 runtime: add bounded variadic params`, covering Milestone 742.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

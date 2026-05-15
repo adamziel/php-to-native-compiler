@@ -83,9 +83,9 @@ pub enum Stmt {
         span: Span,
     },
     For {
-        initializer: Option<ForAction>,
-        condition: Option<Expr>,
-        increment: Option<ForAction>,
+        initializers: Vec<ForAction>,
+        conditions: Vec<Expr>,
+        increments: Vec<ForAction>,
         body: Vec<Stmt>,
         span: Span,
     },

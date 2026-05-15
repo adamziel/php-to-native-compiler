@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 743, bounded comma-separated `for` header expression lists
+  through `phpc run`. The AST now stores initializer, condition, and increment
+  header slots as ordered lists. The interpreter executes initializer and
+  increment lists left to right, evaluates condition lists left to right, and
+  uses the final condition expression's truthiness to decide whether the loop
+  continues. Empty condition slots keep the previous infinite-loop-until-control
+  behavior. Native lowering still rejects `for` loops with the existing control
+  flow boundary, and broader PHP expression/reference/copy-on-write behavior
+  remains limited by the current expression and assignment subsets. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:2099:16` `for`-header-list blocker to
+  `parse error at <bootstrap-shim>:3909:1: expected expression, found <`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test for_loop -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_for_forms -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_syntax_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone743`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone743`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 742, parser-frontier tracing, a maintained lexer byte offset,
   and bounded final-position variadic user-function parameters. `PHPC_TRACE_PARSE=1`
   now emits parser frontier lines for top-level statements, class/interface/enum

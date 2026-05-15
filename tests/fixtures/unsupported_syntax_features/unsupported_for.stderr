@@ -1,2 +1,2 @@
-parse error at 3:12: unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot
+parse error at 2:6: unsupported for: for loops are only supported as statements in the current subset
 

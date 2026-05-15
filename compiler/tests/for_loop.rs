@@ -63,6 +63,26 @@ for ($i = 0; $i < 5; $i = $i + 1) {
 }
 
 #[test]
+fn for_loop_executes_comma_separated_header_lists_left_to_right() {
+    let execution = run_source(
+        r#"<?php
+$checks = 0;
+for ($i = 0, $j = 10; $checks = $checks + 1, $i < 3; $i = $i + 1, $j = $j + 10) {
+    echo $i, ":", $j, "\n";
+    if ($i == 1) {
+        continue;
+    }
+}
+echo "checks:", $checks;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0:10\n1:20\n2:30\nchecks:4");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn loop_depth_break_exits_nested_control_structures() {
     let execution = run_source(
         r#"<?php

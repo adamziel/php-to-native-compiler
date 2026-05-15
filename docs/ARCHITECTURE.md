@@ -84,6 +84,10 @@ whose depth is consumed one active `while`, `for`, `do ... while`, `foreach`,
 or `switch` level at a time. Plain `continue;` that targets a switch remains a
 runtime boundary, while `continue 2;` can pass through the switch to an outer
 loop. Native lowering rejects all current structured control flow.
+`for` headers store initializer, condition, and increment slots as ordered
+lists. The interpreter executes initializer and increment actions left to
+right; condition expressions also evaluate left to right and the final
+expression's truthiness controls the loop.
 
 Direct `exit()`/`die()` calls are treated as a bounded language-construct
 termination signal rather than as ordinary callable builtins. The interpreter

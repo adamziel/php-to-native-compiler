@@ -134,10 +134,13 @@
   `if (...) : ... elseif (...) : ... else: ... endif;` syntax
 - `while`
 - `for (initializer; condition; increment)` loops where each header slot is
-  optional and each initializer/increment slot contains at most one expression
-  or assignment from the current assignment subset, including direct
-  static-variable compound assignment, direct array-offset compound
-  assignment, and direct static-variable increment/decrement
+  optional and comma-separated header lists execute left to right. Initializer
+  and increment lists accept expressions and assignments from the current
+  assignment subset, including direct static-variable compound assignment,
+  direct array-offset compound assignment, and direct static-variable
+  increment/decrement. Condition lists evaluate all expressions left to right
+  and use the final expression's truthiness to decide whether the loop
+  continues; an empty condition slot loops until control flow exits.
 - `do ... while` loops with a block or single-statement body and a
   post-condition expression
 - `switch ($value) { case ...: ... default: ... }` and alternate

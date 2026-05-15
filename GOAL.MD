@@ -234,8 +234,9 @@ Milestone 742 added `PHPC_TRACE_PARSE=1`, fixed maintained lexer byte offsets
 so large files no longer repeatedly rescan consumed source for byte-prefix
 checks, and added bounded final-position variadic user-function parameters.
 The real bootstrap-shim probe now advances past the Sodium compatibility class
-and variadic parameter blocker to comma-separated `for` header expression lists
-at `<bootstrap-shim>:2099:16`.
+and variadic parameter blocker. Milestone 743 added comma-separated `for`
+header expression lists, and the next bootstrap-shim blocker is
+`parse error at <bootstrap-shim>:3909:1: expected expression, found <`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -355,8 +356,8 @@ The repository already has a working Rust workspace with:
   interpolation, bounded static-closure parsing, timeout-bounded WordPress
   inventory probes, include/parser tracing, maintained lexer byte offsets for
   large source files, and bounded final-position variadic parameters. The next
-  bottleneck is comma-separated `for` header expression lists in the WordPress
-  bootstrap shim.
+  bottleneck is the `<bootstrap-shim>:3909:1` parse error on `<`, likely around
+  PHP close/open tag or inline HTML handling in the generated include path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

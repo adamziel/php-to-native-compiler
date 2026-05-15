@@ -811,20 +811,24 @@ impl Interpreter {
                 Ok(Flow::Normal)
             }
             Stmt::For {
-                initializer,
-                condition,
-                increment,
+                initializers,
+                conditions,
+                increments,
                 body,
                 span,
             } => {
-                if let Some(initializer) = initializer {
+                for initializer in initializers {
                     self.execute_for_action(initializer, scope)?;
                 }
 
                 loop {
                     self.tick(*span)?;
-                    if let Some(condition) = condition {
-                        if !self.evaluate(condition, scope)?.is_truthy() {
+                    if !conditions.is_empty() {
+                        let mut keep_running = true;
+                        for condition in conditions {
+                            keep_running = self.evaluate(condition, scope)?.is_truthy();
+                        }
+                        if !keep_running {
                             break;
                         }
                     }
@@ -850,7 +854,7 @@ impl Interpreter {
                         }
                     }
 
-                    if let Some(increment) = increment {
+                    for increment in increments {
                         self.execute_for_action(increment, scope)?;
                     }
                 }

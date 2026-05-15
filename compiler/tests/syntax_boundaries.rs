@@ -1139,36 +1139,14 @@ echo foreach ($items as $item);
 
 #[test]
 fn unsupported_for_forms_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
-for ($i = 0, $j = 0; $i < 3; $i = $i + 1) {
-    echo $i;
-}
-"#,
-            2,
-            12,
-            "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot",
-        ),
-        (
-            r#"<?php
-for ($i = 0; $i < 3; $i = $i + 1, $j = $j + 1) {
-    echo $i;
-}
-"#,
-            2,
-            33,
-            "unsupported for: comma-separated initializer, condition, or increment expression lists are not implemented; use at most one assignment or expression per header slot",
-        ),
-        (
-            r#"<?php
+    let cases = [(
+        r#"<?php
 echo for ($i = 0; $i < 3; $i = $i + 1);
 "#,
-            2,
-            6,
-            "unsupported for: for loops are only supported as statements in the current subset",
-        ),
-    ];
+        2,
+        6,
+        "unsupported for: for loops are only supported as statements in the current subset",
+    )];
 
     for (source, line, column, message) in cases {
         let error = parse_error(source);
