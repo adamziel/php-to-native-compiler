@@ -4701,6 +4701,7 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
+            "sprintf" => call_sprintf(&args, span),
             "dirname" => {
                 if !(1..=2).contains(&args.len()) {
                     return Err(runtime_error(
@@ -7897,6 +7898,7 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "sprintf"
             | "dirname"
             | "version_compare"
             | "count"
@@ -8084,6 +8086,120 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
         Value::Object(_) => Some("object"),
         Value::Closure(_) => Some("closure"),
     }
+}
+
+fn call_sprintf(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch("sprintf()", ArityExpectation::AtLeast(1), args.len()),
+        ));
+    }
+
+    let format = match &args[0] {
+        Value::String(value) => value,
+        other => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sprintf()",
+                    format!(
+                        "format argument must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    };
+
+    bounded_sprintf(format, &args[1..], span).map(Value::String)
+}
+
+fn bounded_sprintf(format: &str, args: &[Value], span: Span) -> CompileResult<String> {
+    let mut output = String::new();
+    let bytes = format.as_bytes();
+    let mut index = 0;
+    let mut next_arg = 0;
+
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            let ch = format[index..].chars().next().expect("index is in bounds");
+            output.push(ch);
+            index += ch.len_utf8();
+            continue;
+        }
+
+        index += 1;
+        if index < bytes.len() && bytes[index] == b'%' {
+            output.push('%');
+            index += 1;
+            continue;
+        }
+
+        let placeholder_start = index - 1;
+        let digits_start = index;
+        while index < bytes.len() && bytes[index].is_ascii_digit() {
+            index += 1;
+        }
+
+        let positional = if index > digits_start && index < bytes.len() && bytes[index] == b'$' {
+            let position = format[digits_start..index].parse::<usize>().ok();
+            index += 1;
+            position.and_then(|position| position.checked_sub(1))
+        } else {
+            index = digits_start;
+            None
+        };
+
+        if index >= bytes.len() || bytes[index] != b's' {
+            let placeholder_end = if index < bytes.len() {
+                index
+                    + format[index..]
+                        .chars()
+                        .next()
+                        .expect("index is in bounds")
+                        .len_utf8()
+            } else {
+                index
+            };
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sprintf()",
+                    format!(
+                        "unsupported format placeholder {} in the current subset",
+                        &format[placeholder_start..placeholder_end.min(bytes.len())]
+                    ),
+                ),
+            ));
+        }
+        index += 1;
+
+        let arg_index = if let Some(position) = positional {
+            position
+        } else {
+            let position = next_arg;
+            next_arg += 1;
+            position
+        };
+
+        let Some(value) = args.get(arg_index) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sprintf()",
+                    format!("missing argument for placeholder {}", arg_index + 1),
+                ),
+            ));
+        };
+        output.push_str(
+            &value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?,
+        );
+    }
+
+    Ok(output)
 }
 
 fn call_version_compare(args: &[Value], span: Span) -> CompileResult<Value> {

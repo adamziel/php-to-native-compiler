@@ -832,6 +832,12 @@ bounded numeric-component version grammar for WordPress bootstrap guards, while
 native `function_exists("version_compare")` can see the name through the known
 function table and direct native calls still reject under the function-call
 boundary.
+`sprintf()` is an interpreter-only bounded string formatter for the current
+WordPress bootstrap guard/message paths. It supports literal text, `%%`, `%s`,
+and `%N$s` placeholders using runtime echo-string conversion for values. Native
+`function_exists("sprintf")` and `is_callable("sprintf")` can see the name
+through the known function table, but direct native calls still reject under
+the function-call boundary until varargs/string formatting helpers are lowered.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

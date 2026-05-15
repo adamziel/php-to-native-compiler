@@ -342,8 +342,8 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `dirname`, `version_compare`,
-  `isset`, `empty`, `count`, `define`, `constant`, `defined`,
+- builtins for the documented subset: `strlen`, `sprintf`, `dirname`,
+  `version_compare`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -396,6 +396,14 @@
   `==`/`=`/`eq`, and `!=`/`<>`/`ne`. PHP's full version grammar, pre-release
   labels, arbitrary separators, invalid-argument warnings, extension version
   coupling, and native lowering remain unsupported.
+  `sprintf($format, ...$values)` supports string format values with literal
+  text, escaped percent signs `%%`, sequential `%s` string placeholders, and
+  positional `%N$s` string placeholders. Placeholder values use the current
+  PHP-shaped echo string conversion. PHP's full format grammar, numeric
+  formats such as `%d`, width/precision/star modifiers, sign/padding flags,
+  locale behavior, argument reordering beyond `%N$s`, array/object/resource
+  conversions, exact warning behavior, partial-output behavior, and native
+  lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
   builtins, and rejects non-string names in the current subset.
@@ -1986,7 +1994,7 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `count`,
+  one of the documented callable builtins: `strlen`, `sprintf`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2109,7 +2117,7 @@
   first-class callable syntax, `call_user_func`, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `isset`, `empty`, `count`, `define`, `constant`,
+- Builtins: `strlen`, `sprintf`, `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
   `array_slice`, `array_chunk`, `array_pad`, `array_merge`, `array_replace`,
@@ -2180,6 +2188,10 @@
   accepts string extension names, returns `false` from the current deterministic
   empty extension registry, and rejects non-string names. Its native folding is
   limited to direct false folding for already-lowerable string names.
+  `sprintf` accepts the same current string-format subset as the builtin
+  section above; direct native `sprintf(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `dirname` accepts the same current lexical Unix-style local path subset as
   the builtin section above; direct native `dirname(...)` calls still reject
   under the function-call boundary.
@@ -3669,6 +3681,11 @@
 - `version_compare()` outside the current numeric-component subset: PHP's full
   version-string grammar, pre-release labels, arbitrary separators, invalid
   argument diagnostics, extension version coupling, and native lowering
+- `sprintf()` outside the current string-placeholder subset: PHP's full format
+  grammar, numeric formats, width/precision/star modifiers, sign/padding
+  flags, locale behavior, broad argument reordering, array/object/resource
+  conversions, exact warning behavior, partial-output behavior, and native
+  lowering beyond function-table introspection
 - `dirname()` path behavior outside the current lexical Unix-style local path
   subset, including Windows drive and UNC paths, stream wrappers, filesystem
   canonicalization, symlink resolution, null-byte behavior, broad scalar

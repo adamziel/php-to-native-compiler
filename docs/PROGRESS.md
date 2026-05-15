@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 729, bounded `sprintf()` execution through `phpc run` for the
+  string-format subset needed by the current WordPress bootstrap-shim path. The
+  builtin requires a string format and supports literal text, escaped percent
+  signs `%%`, sequential `%s` placeholders, and positional `%N$s` placeholders
+  using the current echo-string conversion for values. It is available through
+  string-valued dynamic calls and the current callable-name table. PHP's full
+  format grammar, numeric formats such as `%d`, width/precision/star
+  modifiers, sign/padding flags, locale behavior, broader argument reordering,
+  array/object/resource conversions, exact warning behavior, partial-output
+  behavior, and native lowering remain unsupported. The direct WordPress probe
+  still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `sprintf()` blocker at
+  `<bootstrap-shim>:183:28` and now stops at
+  `runtime error at <bootstrap-shim>:193:3: undefined function header()`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test sprintf_builtin -- --test-threads=1`,
+  `cargo test -p phpc --test sprintf_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone729`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone729`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 728, bounded `version_compare()` execution through
   `phpc run` for numeric version strings. The builtin accepts two or three
   arguments, requires the first two versions to be strings made of dot,

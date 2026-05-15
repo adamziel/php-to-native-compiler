@@ -255,6 +255,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   coupling, exact diagnostics, partial-output behavior, or native lowering.
   The bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:183:28: undefined function sprintf()`.
+  Milestone 729 covers bounded `sprintf()` for literal text, `%%`, `%s`, and
+  `%N$s` string placeholders used by the current bootstrap-shim message paths.
+  This is not PHP's full format grammar, numeric formatting, width/precision
+  handling, locale behavior, warning behavior, partial-output behavior, or
+  native lowering. The bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:193:3: undefined function header()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
