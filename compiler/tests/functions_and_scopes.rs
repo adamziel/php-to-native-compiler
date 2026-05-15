@@ -767,8 +767,8 @@ function &identity($value) {
 }
 
 #[test]
-fn reference_expressions_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn reference_assignment_executes_as_stable_runtime_boundary() {
+    let error = runtime_error(
         r#"<?php
 $value = 1;
 $alias =& $value;
@@ -776,7 +776,57 @@ $alias =& $value;
     );
 
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 9);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: references and aliasing are not implemented"
+    );
+}
+
+#[test]
+fn reference_assignment_syntax_inside_unexecuted_function_body_is_registered() {
+    let execution = run_source(
+        r#"<?php
+function parse_args($args) {
+    $parsed_args =& $args;
+    return $parsed_args;
+}
+echo "registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_source_boundary_is_stable() {
+    let error = parse_error(
+        r#"<?php
+$alias =& make_value();
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 11);
+    assert_eq!(
+        error.message,
+        "unsupported reference assignment: only direct variable reference sources are parsed before reference semantics exist"
+    );
+}
+
+#[test]
+fn standalone_reference_expressions_still_have_stable_parse_error() {
+    let error = parse_error(
+        r#"<?php
+$value = 1;
+echo &$value;
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
         "unsupported reference expression: references are not implemented"

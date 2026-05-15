@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/runtime_errors/reference_assignment.php:3:1: unsupported call reference assignment: references and aliasing are not implemented
+--- stderr end ---

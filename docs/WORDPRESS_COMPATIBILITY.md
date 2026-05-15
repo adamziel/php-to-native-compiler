@@ -381,6 +381,17 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `parse error at <bootstrap-shim>:4955:17: unsupported reference expression:
   references are not implemented`. This is not full dynamic-property support,
   reference support, or WordPress bootstrap support.
+  Milestone 746 accepts statement-form by-reference assignment syntax as a
+  runtime boundary for direct variable sources, which lets guarded and
+  declaration-contained `$alias =& $value;` code parse without implementing
+  aliasing. After that slice, the direct `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches `parse error at <bootstrap-shim>:5047:28: unsupported foreach:
+  by-reference iteration is not implemented; only by-value iteration is
+  supported`. This is not reference support, by-reference foreach support, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

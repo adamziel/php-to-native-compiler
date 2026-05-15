@@ -50,6 +50,7 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
         "<?php\n$value = null;\n$value ??= 2;\n",
         "<?php\n$value = 1;\n$value++;\n",
         "<?php\n$value = 1;\necho ($value = 2);\n",
+        "<?php\n$a = 1;\n$b = 2;\n$a =& $b;\n",
         "<?php\n$value = 1;\necho ($value += 2);\n",
         "<?php\n$value = null;\necho ($value ??= 2);\n",
         "<?php\n$value = 1;\necho ++$value;\n",

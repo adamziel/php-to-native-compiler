@@ -213,6 +213,10 @@ magic property hooks, resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
 
+By-reference assignment syntax is accepted only as a runtime boundary: guarded
+code can parse, but reached `=&` assignments fail with a stable unsupported
+diagnostic until reference containers and copy-on-write exist.
+
 ### Native Path
 
 `phpc compile --emit-ir` and `--emit-asm` are intentionally narrower than

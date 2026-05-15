@@ -22,6 +22,12 @@
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
+- by-reference assignment syntax `$alias =& $value;` parses in statement
+  position as a runtime boundary for direct variable sources. Guarded or
+  declaration-contained code can be loaded, but if execution reaches the
+  assignment, `phpc run` reports `unsupported call reference assignment:
+  references and aliasing are not implemented`. This does not create PHP
+  aliases or reference containers.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment
@@ -3042,8 +3048,8 @@
 - required parameters after default parameters
 - variadic parameters outside the bounded final-parameter by-value slice, and
   variadic argument unpacking
-- reference parameter invocation, reference returns, reference assignments, and
-  by-reference calls
+- reference parameter invocation, reference returns, executable reference
+  assignments, by-reference iteration, and by-reference calls
 - parameter/return type enforcement, coercion, exact `TypeError` behavior,
   `strict_types`, variance, reflection metadata, and native lowering for type
   declarations

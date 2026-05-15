@@ -146,6 +146,12 @@ Planned runtime values and semantics:
 - resources
 - references
 - copy-on-write containers
+
+By-reference assignment has syntax recognition only as a runtime boundary for
+statement-form direct variable sources. It deliberately does not add a
+`Reference` runtime value or alias-backed symbol-table slots. The current value
+model remains boxed values in materialized symbol tables; PHP reference
+containers and copy-on-write remain future runtime work.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods, typed/default property compatibility, broader

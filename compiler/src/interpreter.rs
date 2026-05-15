@@ -705,6 +705,13 @@ impl Interpreter {
                 self.execute_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::ReferenceAssign { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "references and aliasing are not implemented",
+                ),
+            )),
             Stmt::CompoundAssign {
                 target,
                 op,

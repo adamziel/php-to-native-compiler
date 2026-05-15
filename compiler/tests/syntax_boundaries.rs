@@ -969,6 +969,15 @@ fn emit_ir_rejects_assignment_expression_at_codegen_boundary() {
 }
 
 #[test]
+fn emit_ir_rejects_reference_assignment_at_codegen_boundary() {
+    let error =
+        php_compiler::emit_ir_source("<?php\n$value = 1;\n$alias =& $value;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+}
+
+#[test]
 fn unsupported_compound_assignments_have_stable_parse_errors() {
     let cases = [("<?php\n$items = [];\n$items[] += 2;\n", 3, 1)];
 

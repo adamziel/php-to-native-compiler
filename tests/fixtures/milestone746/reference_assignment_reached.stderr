@@ -1,0 +1,2 @@
+runtime error at 4:5: unsupported call reference assignment: references and aliasing are not implemented
+

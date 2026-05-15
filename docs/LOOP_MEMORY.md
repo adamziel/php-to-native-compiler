@@ -26,6 +26,48 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T19:55:00Z
+
+- Checkpoint before this task:
+  `2273e71 runtime: add bounded dynamic properties`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 746, statement-form by-reference assignment syntax
+  as a runtime boundary.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/native_mutation_boundary.rs`,
+  `tests/fixtures/runtime_errors/reference_assignment.*`,
+  `tests/fixtures/milestone746/reference_assignment_unreached.*`,
+  `tests/fixtures/milestone746/reference_assignment_reached.*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and `README.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo test -p phpc --test native_mutation_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone746`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: by-reference assignment is syntax-only plus runtime
+  boundary. Alias cells, reference containers, copy-on-write, by-reference
+  parameter invocation, reference returns, by-reference foreach, unset alias
+  behavior, `$GLOBALS` aliasing, exact warning/fatal behavior, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:5047:28: unsupported foreach:
+  by-reference iteration is not implemented; only by-value iteration is
+  supported`.
+- Next concrete task: implement or explicitly bound by-reference `foreach`
+  iteration for the current value model, then rerun the WordPress bootstrap
+  shim.
+
 ## Loop Event 2026-05-15T19:25:00Z
 
 - Checkpoint before this task:

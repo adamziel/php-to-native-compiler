@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added Milestone 746, statement-form by-reference assignment syntax as a
+  runtime boundary. The parser now accepts direct variable-source forms such as
+  `$alias =& $value;` in statement position and stores them as a distinct
+  reference-assignment statement so they cannot silently behave like value
+  copies. Guarded or declaration-contained reference assignments can now parse
+  without executing. If execution reaches the assignment, `phpc run` reports
+  `unsupported call reference assignment: references and aliasing are not
+  implemented`; native lowering rejects the statement through the existing
+  mutation boundary. Non-variable reference sources, standalone reference
+  expressions, reference parameter invocation, reference returns, by-reference
+  iteration, alias cells, references/copy-on-write, unset alias behavior,
+  `$GLOBALS` aliasing, exact warning/fatal behavior, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the previous `<bootstrap-shim>:4955:17` reference-expression blocker to
+  `parse error at <bootstrap-shim>:5047:28: unsupported foreach:
+  by-reference iteration is not implemented; only by-value iteration is
+  supported`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries reference_assignment -- --test-threads=1`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo test -p phpc --test native_mutation_boundary -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone746`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 745, bounded dynamic object-property names through
   `phpc run`. The parser now represents `$object->$name` reads and direct
   assignments as dynamic-property AST nodes when the object root is a direct

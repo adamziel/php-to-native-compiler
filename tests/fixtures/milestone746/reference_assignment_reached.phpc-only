@@ -1,0 +1,1 @@
+phpc parses statement-form by-reference assignment as a runtime boundary; it does not implement PHP reference aliases or copy-on-write.

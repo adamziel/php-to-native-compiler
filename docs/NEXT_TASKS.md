@@ -6843,14 +6843,18 @@ handled.
   `<bootstrap-shim>:4451:14` dynamic-property blocker and reaches
   `parse error at <bootstrap-shim>:4955:17: unsupported reference expression:
   references are not implemented`.
-- [ ] References/value-model lane: implement or explicitly bound reference
+- [x] References/value-model lane: implement or explicitly bound reference
   expressions for the next real WordPress bootstrap-shim blocker at
-  `<bootstrap-shim>:4955:17`.
+  `<bootstrap-shim>:4955:17`. Milestone 746 accepts statement-form
+  by-reference assignment as a runtime boundary for direct variable sources.
+- [ ] Foreach/value-model lane: implement or explicitly bound by-reference
+  `foreach` iteration for the next real WordPress bootstrap-shim blocker at
+  `<bootstrap-shim>:5047:28`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 745 checkpoint, the latest committed checkpoint
-  is `d90446b parser: add bounded inline html`, covering Milestone 744.
+- Before the current Milestone 746 checkpoint, the latest committed checkpoint
+  is `2273e71 runtime: add bounded dynamic properties`, covering Milestone 745.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

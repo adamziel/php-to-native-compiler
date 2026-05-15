@@ -1913,6 +1913,23 @@ impl Parser {
         }
 
         let span = target.span();
+        if self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
+            let source = self.parse_reference_assignment_source()?;
+            if self.check_low_precedence_logical_operator() {
+                self.current = saved;
+                return Ok(None);
+            }
+            self.consume_keyword(
+                TokenKind::Semicolon,
+                "expected ';' after reference assignment",
+            )?;
+            return Ok(Some(Stmt::ReferenceAssign {
+                target,
+                source,
+                span,
+            }));
+        }
+
         let expr = self.parse_assignment_expression()?;
         if self.check_low_precedence_logical_operator() {
             self.current = saved;
@@ -1926,6 +1943,17 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after assignment")?;
         Ok(Some(Stmt::Assign { target, expr, span }))
+    }
+
+    fn parse_reference_assignment_source(&mut self) -> CompileResult<String> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Variable(name) => Ok(name),
+            _ => Err(self.error_at(
+                token.span,
+                "unsupported reference assignment: only direct variable reference sources are parsed before reference semantics exist",
+            )),
+        }
     }
 
     fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {

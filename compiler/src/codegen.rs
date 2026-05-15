@@ -348,6 +348,9 @@ impl LlvmGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
+            Stmt::ReferenceAssign { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
             Stmt::CompoundAssign { span, .. }
             | Stmt::IncrementDecrement { span, .. }
             | Stmt::NullCoalesceAssign { span, .. } => {
@@ -3120,6 +3123,9 @@ impl CGenerator {
                 Ok(())
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
+            Stmt::ReferenceAssign { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
             Stmt::CompoundAssign { span, .. }
             | Stmt::IncrementDecrement { span, .. }
             | Stmt::NullCoalesceAssign { span, .. } => {

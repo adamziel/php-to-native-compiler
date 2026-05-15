@@ -38,6 +38,11 @@ pub enum Stmt {
         expr: Expr,
         span: Span,
     },
+    ReferenceAssign {
+        target: AssignTarget,
+        source: String,
+        span: Span,
+    },
     CompoundAssign {
         target: AssignTarget,
         op: CompoundAssignOp,
@@ -190,6 +195,7 @@ impl Stmt {
             | Stmt::Echo { span, .. }
             | Stmt::Print { span, .. }
             | Stmt::Assign { span, .. }
+            | Stmt::ReferenceAssign { span, .. }
             | Stmt::CompoundAssign { span, .. }
             | Stmt::IncrementDecrement { span, .. }
             | Stmt::NullCoalesceAssign { span, .. }
