@@ -122,6 +122,18 @@ run_probe() {
   else
     printf '<none>\n'
   fi
+  printf '  last_stderr_line: '
+  if [ -s "$tmp_stderr" ]; then
+    last_stderr_line=$(sed -n '$p' "$tmp_stderr")
+    if [ "$normalize" -eq 1 ]; then
+      last_stderr_line=$(printf '%s\n' "$last_stderr_line" |
+        sed "s#$wp_root#<wordpress-root>#g" |
+        sed "s#$tmp_shim#<bootstrap-shim>#g")
+    fi
+    printf '%s\n' "$last_stderr_line"
+  else
+    printf '<none>\n'
+  fi
 }
 
 escaped_wp_root=$(printf '%s/' "$wp_root" | sed "s#//*#/#g; s#'#\\\\'#g")

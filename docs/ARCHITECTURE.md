@@ -1040,6 +1040,9 @@ callable integration remain explicit runtime boundaries.
 `PHPC_MAX_EXECUTION_STEPS`; it is enforced at statement execution and loop
 iteration boundaries to diagnose runtime loops, but it intentionally does not
 count parser work, declaration registration, or native lowering.
+`PHPC_TRACE_INCLUDES=1` writes include/require target paths to process stderr
+before each target is parsed/executed so external timeout probes can retain the
+last include frontier.
 Magic class names in `new` expressions, including `new self()`,
 `new parent()`, and `new static()`, stop at a stable parse diagnostic until
 class context tracking, parent resolution, and late static binding exist.

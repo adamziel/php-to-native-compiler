@@ -109,6 +109,7 @@ fn run_options_from_env() -> CompileResult<RunOptions> {
 
     Ok(RunOptions {
         max_execution_steps,
+        trace_includes: env::var_os("PHPC_TRACE_INCLUDES").is_some(),
     })
 }
 

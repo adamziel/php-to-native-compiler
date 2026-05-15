@@ -22,6 +22,7 @@ direct_settings_probe:
   exit: 1
   stdout_bytes: 0
   first_stderr_line: runtime error at <wordpress-root>/wp-settings.php:3:9: undefined constant ABSPATH
+  last_stderr_line: runtime error at <wordpress-root>/wp-settings.php:3:9: undefined constant ABSPATH
 
 bootstrap_shim_probe:
   command: <phpc> run <bootstrap-shim>
@@ -30,3 +31,4 @@ bootstrap_shim_probe:
   exit: 0
   stdout_bytes: 0
   first_stderr_line: <none>
+  last_stderr_line: <none>

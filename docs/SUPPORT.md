@@ -1281,6 +1281,9 @@
   execution or empty loop-body iteration, it reports the last source location
   and current function context. This budget does not count parser work,
   declaration registration, or native lowering.
+  `PHPC_TRACE_INCLUDES=1` emits include/require target paths to stderr before
+  each target is parsed and executed; this is an operational trace facility,
+  not PHP-visible output.
   Exception syntax is rejected separately at parse time, and native lowering is
   not implemented.
 - Switch: statement-form brace `switch` and alternate

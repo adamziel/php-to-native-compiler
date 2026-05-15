@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 741, opt-in include tracing for `phpc run` plus
+  `last_stderr_line` reporting in `tools/wordpress-inventory.sh`. The CLI now
+  honors `PHPC_TRACE_INCLUDES=1` and emits `phpc trace include: <path>` to
+  stderr immediately before an include/require target is parsed and executed,
+  so an outer timeout still preserves the last include path. The inventory
+  output now records both first and last stderr lines. Focused tests cover CLI
+  include tracing and the updated synthetic WordPress inventory format. With
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100 PHPC_TRACE_INCLUDES=1`
+  against the local WordPress 6.9.4 tree, the bootstrap-shim probe times out
+  with first stderr
+  `phpc trace include: <wordpress-root>/wp-settings.php` and last stderr
+  `phpc trace include: <wordpress-root>/wp-includes/sodium_compat/src/Compat.php`.
+  Running that `Compat.php` file directly also times out under a 10s outer
+  timeout with no stderr, so the next lane should instrument parser/declaration
+  registration or profile that large Sodium compatibility class before adding
+  another PHP feature. Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test runtime_error_cli trace_includes -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`,
+  and
+  `timeout 10s target/debug/phpc run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/wp-includes/sodium_compat/src/Compat.php`.
+
 - Added Milestone 740, a bounded execution-step budget for `phpc run`. The
   interpreter now accepts `RunOptions { max_execution_steps }`, the CLI reads
   `PHPC_MAX_EXECUTION_STEPS`, and statement execution plus empty loop-body

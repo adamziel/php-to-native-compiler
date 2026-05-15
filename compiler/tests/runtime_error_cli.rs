@@ -73,6 +73,47 @@ fn cli_execution_step_budget_env_reports_source_location() {
     assert!(stderr.contains(":2:1\n"));
 }
 
+#[test]
+fn cli_trace_includes_env_reports_required_paths() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "phpc-include-trace-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("create include trace fixture root");
+    let main = root.join("main.php");
+    let included = root.join("included.php");
+    fs::write(
+        &main,
+        format!("<?php\nrequire '{}';\necho \"done\";\n", included.display()),
+    )
+    .expect("write include trace main fixture");
+    fs::write(&included, "<?php\n$value = 1;\n").expect("write included fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PHPC_TRACE_INCLUDES", "1")
+        .args(["run", main.to_str().expect("main path is UTF-8")])
+        .output()
+        .expect("run phpc with include tracing");
+
+    let _ = fs::remove_dir_all(&root);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "done");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        format!("phpc trace include: {}\n", included.display())
+    );
+}
+
 fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
     fs::read_dir(fixture_dir)
         .expect("runtime error fixture directory is readable")

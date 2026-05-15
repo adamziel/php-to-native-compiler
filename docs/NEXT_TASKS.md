@@ -6810,16 +6810,22 @@ handled.
   runtime loops, but the real bootstrap shim still times out at `30s` even
   with `PHPC_MAX_EXECUTION_STEPS=100`, so the long path is before normal
   statement execution budget exhaustion.
-- [ ] Parser/include diagnostics lane: add tracing or a bounded budget around
+- [x] Parser/include diagnostics lane: add tracing or a bounded budget around
   include parsing and declaration registration, then rerun the WordPress
   bootstrap shim to identify the current long path before implementing another
-  PHP feature.
+  PHP feature. Milestone 741 adds `PHPC_TRACE_INCLUDES=1` and inventory
+  `last_stderr_line`; the current timeout frontier is
+  `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`.
+- [ ] Parser/performance diagnostics lane: profile or budget parsing and
+  declaration registration for
+  `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`, which is a
+  4530-line Sodium compatibility class and currently times out when run
+  directly under a 10s outer timeout with no stderr.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 740 checkpoint, the latest committed checkpoint
-  is `2611266 tools: bound wordpress inventory probes`, covering Milestone
-  739.
+- Before the current Milestone 741 checkpoint, the latest committed checkpoint
+  is `b2f8c4d runtime: add execution step budget`, covering Milestone 740.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

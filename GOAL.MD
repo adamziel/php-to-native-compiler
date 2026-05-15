@@ -225,7 +225,11 @@ before the shim times out. Milestone 740 added `PHPC_MAX_EXECUTION_STEPS`,
 which catches statement-execution loops, but the bootstrap shim still times out
 at `30s` even with `PHPC_MAX_EXECUTION_STEPS=100`; the current long path is
 therefore before ordinary statement execution budget exhaustion and needs
-parser/include/declaration-registration tracing.
+parser/include/declaration-registration tracing. Milestone 741 added
+`PHPC_TRACE_INCLUDES=1` and inventory `last_stderr_line` reporting; the current
+bootstrap-shim timeout frontier is
+`<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`, and that file also
+times out when run directly under a 10s outer timeout with no stderr.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -345,7 +349,9 @@ The repository already has a working Rust workspace with:
   interpolation, bounded static-closure parsing, and timeout-bounded WordPress
   inventory probes. It still lacks a runtime trace or execution budget for the
   post-static-closure bootstrap-shim timeout that covers parser/include work;
-  the current execution-step budget only covers statement execution.
+  the current execution-step budget only covers statement execution. The next
+  bottleneck is parser/declaration performance or budgeting for WordPress'
+  4530-line Sodium compatibility `Compat.php`.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

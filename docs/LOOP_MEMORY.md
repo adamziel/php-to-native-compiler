@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T16:05:00Z
+
+- Checkpoint before this task:
+  `b2f8c4d runtime: add execution step budget`, pushed to `origin/master`.
+- Task attempted: Milestone 741, opt-in include tracing plus last-stderr
+  inventory reporting to identify the post-static-closure WordPress timeout
+  frontier.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/lib.rs`,
+  `compiler/src/main.rs`, `compiler/tests/runtime_error_cli.rs`,
+  `tools/wordpress-inventory.sh`,
+  `tests/fixtures/compat/wordpress/synthetic_inventory.expected`,
+  `tests/fixtures/compat/wordpress/source-pin.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and
+  `GOAL.MD`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test runtime_error_cli trace_includes -- --test-threads=1`,
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`,
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`,
+  and
+  `timeout 10s target/debug/phpc run /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1/wp-includes/sodium_compat/src/Compat.php`.
+- Remaining semantic gaps: the bootstrap-shim timeout frontier is now known:
+  first trace line is `wp-settings.php`, last trace line before timeout is
+  `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`. Running
+  `Compat.php` directly also times out under 10s with no stderr. No concrete
+  PHP semantic blocker has been identified past this parser/declaration
+  performance problem.
+- Next concrete task: profile or budget parsing/declaration registration for
+  the 4530-line Sodium compatibility `Compat.php` file.
+
 ## Loop Event 2026-05-15T15:25:00Z
 
 - Checkpoint before this task:

@@ -34,6 +34,7 @@ pub struct Execution {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RunOptions {
     pub max_execution_steps: Option<usize>,
+    pub trace_includes: bool,
 }
 
 pub fn run_program(program: &Program) -> CompileResult<Execution> {
@@ -91,6 +92,7 @@ struct Interpreter {
     global_symbols: Rc<RefCell<HashMap<String, Value>>>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
+    trace_includes: bool,
     execution_steps: usize,
     call_depth: usize,
     next_object_id: i64,
@@ -425,6 +427,7 @@ impl Interpreter {
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             source_file,
             max_execution_steps: options.max_execution_steps,
+            trace_includes: options.trace_includes,
             execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
@@ -1143,6 +1146,9 @@ impl Interpreter {
         };
 
         let path = self.resolve_required_path(&path_value, construct, span)?;
+        if self.trace_includes {
+            eprintln!("phpc trace include: {}", path.source_file.display());
+        }
         let once_key = if once {
             Some(fs::canonicalize(&path.read_path).unwrap_or_else(|_| path.read_path.clone()))
         } else {

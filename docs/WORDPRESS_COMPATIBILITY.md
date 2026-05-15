@@ -340,6 +340,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   means the current long path is not ordinary statement execution; the next
   measurement lane needs parser/include/declaration-registration tracing or a
   pre-execution budget.
+  Milestone 741 adds include tracing and records the inventory's last stderr
+  line. With `PHPC_TRACE_INCLUDES=1`, the current bootstrap-shim timeout's
+  last include frontier is
+  `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`; running that
+  file directly also times out under a 10s outer timeout with no stderr. The
+  next concrete compatibility lane is parser/declaration performance or
+  budgeting for that large Sodium compatibility class.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

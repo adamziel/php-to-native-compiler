@@ -39,6 +39,7 @@ pub fn run_source_with_execution_step_limit(
         &program,
         RunOptions {
             max_execution_steps: Some(max_execution_steps),
+            ..RunOptions::default()
         },
     )
 }
