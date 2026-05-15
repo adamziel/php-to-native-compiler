@@ -111,6 +111,65 @@ echo "|", $handle->connect_error === null ? "null" : "set";
 }
 
 #[test]
+fn mysqli_real_connect_accepts_current_wordpress_placeholder_shape() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_real_connect";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+echo "|";
+echo mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0) ? "connected" : "failed";
+echo "|";
+echo $handle->connect_errno;
+echo "|";
+echo $handle->connect_error === null ? "null" : "set";
+echo "|";
+echo $call($handle, null, null, null, null, null, null, 0) ? "dynamic" : "failed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|connected|0|null|dynamic");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn mysqli_real_connect_rejects_forms_outside_current_boundary() {
+    let error = run_source(
+        r#"<?php
+mysqli_real_connect("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_real_connect(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let error = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, "3306", null, 0);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call mysqli_real_connect(): port argument must be int or null in the current subset, got string"
+    );
+}
+
+#[test]
 fn dynamic_mysqli_connect_calls_use_the_same_database_boundary() {
     let error = run_source(
         r#"<?php
@@ -135,6 +194,8 @@ fn emit_ir_folds_mysqli_connect_metadata_but_rejects_direct_connection_calls() {
         r#"<?php
 echo function_exists("mysqli_connect") ? "1" : "0";
 echo is_callable("mysqli_connect") ? "1" : "0";
+echo function_exists("mysqli_real_connect") ? "1" : "0";
+echo is_callable("mysqli_real_connect") ? "1" : "0";
 echo function_exists("mysqli_report") ? "1" : "0";
 echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
@@ -144,7 +205,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 9, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -164,6 +225,18 @@ mysqli_report(MYSQLI_REPORT_OFF);
     let error = emit_ir_source(
         r#"<?php
 mysqli_connect("localhost");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_real_connect(mysqli_init(), "localhost");
 "#,
     )
     .unwrap_err();

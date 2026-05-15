@@ -465,8 +465,9 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `mysqli_connect`, `mysqli_report`,
-  `mysqli_init`, `header`, `header_remove`, `headers_sent`, `abs`, `assert`,
+  `function_exists`, `extension_loaded`, `mysqli_connect`,
+  `mysqli_real_connect`, `mysqli_report`, `mysqli_init`, `header`,
+  `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
@@ -618,8 +619,13 @@
   `mysqli_connect(...)` is currently a database-extension boundary only: the
   name is visible through function/callability metadata and dynamic
   string-valued calls, but any attempted connection call reports a stable
-  unsupported runtime diagnostic. `mysqli_report($mode)` accepts the current
-  WordPress startup modes `MYSQLI_REPORT_OFF` and
+  unsupported runtime diagnostic. `mysqli_real_connect($handle, ...)` accepts
+  the current WordPress startup shape for a placeholder `mysqli` object,
+  string/null hostname, username, password, and database arguments, int/null
+  port, string/null socket, and int flags. It performs no host I/O, writes
+  `connect_errno = 0` and `connect_error = null`, and returns `true` as a
+  deterministic compatibility boundary. `mysqli_report($mode)` accepts the
+  current WordPress startup modes `MYSQLI_REPORT_OFF` and
   `MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT`, stores the current mode, and
   returns `true`. `mysqli_init()` returns a current placeholder `mysqli` object
   with `connect_errno` set to `0` and `connect_error` set to `null`, but it is
@@ -2043,7 +2049,7 @@
   `strtolower`, `trim`, `str_contains`, `strpos`, `substr_count`, `preg_match`,
   `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
-  `mysqli_connect`, `mysqli_report`, `mysqli_init`,
+  `mysqli_connect`, `mysqli_real_connect`, `mysqli_report`, `mysqli_init`,
   `array_change_key_case`, `array_column`, `array_is_list`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
@@ -2353,7 +2359,8 @@
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
-  `mysqli_report`, `mysqli_init`, `header`, `header_remove`, `headers_sent`,
+  `mysqli_real_connect`, `mysqli_report`, `mysqli_init`, `header`,
+  `header_remove`, `headers_sent`,
   `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `get_class_methods`, `get_class_vars`,
@@ -2487,8 +2494,8 @@
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
-  `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_report`,
-  `mysqli_init`, `header`, `header_remove`, `headers_sent`, `assert`,
+  `dirname`, `extension_loaded`, `mysqli_connect`, `mysqli_real_connect`,
+  `mysqli_report`, `mysqli_init`, `header`, `header_remove`, `headers_sent`, `assert`,
   `spl_autoload_register`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`,
   `trait_exists`, `enum_exists`, `property_exists`, `method_exists`,
@@ -2550,11 +2557,13 @@
   current bounded compatibility registry, returns false for other names, and
   rejects non-string names. Its native folding uses the same direct string-name
   registry for already-lowerable string names.
-  `mysqli_connect`, `mysqli_report`, and `mysqli_init` are recognized for
-  function/callability metadata and dynamic lookup. Direct and dynamic
-  connection calls are a stable unsupported runtime boundary, and direct native
-  `mysqli_connect(...)`/`mysqli_report(...)`/`mysqli_init(...)` calls still
-  reject under the function-call boundary.
+  `mysqli_connect`, `mysqli_real_connect`, `mysqli_report`, and `mysqli_init`
+  are recognized for function/callability metadata and dynamic lookup.
+  `mysqli_real_connect(...)` executes only the current placeholder-handle
+  success boundary; direct `mysqli_connect(...)` calls are still a stable
+  unsupported runtime boundary, and direct native
+  `mysqli_connect(...)`/`mysqli_real_connect(...)`/`mysqli_report(...)`/
+  `mysqli_init(...)` calls still reject under the function-call boundary.
   `header` accepts the same current no-op header subset as the builtin section
   above; direct native `header(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
@@ -4137,9 +4146,9 @@
   extension-loaded functions beyond documented builtins, exact native
   `TypeError`/deprecation behavior, and native lowering beyond direct known
   string builtin/missing-name folding
-- `mysqli_connect()`/`mysqli_report()`/`mysqli_init()` beyond the current
-  metadata/report-mode/placeholder-object
-  boundary: mysqli extension loading, host/database connections,
+- `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_report()`/`mysqli_init()`
+  beyond the current metadata/report-mode/placeholder-object/fake successful
+  real-connect boundary: mysqli extension loading, host/database connections,
   mysqli resources/objects with real connection state, queries, result sets,
   prepared statements, escaping, charset handling, errors/warnings,
   transactions, configuration beyond the current report-mode flag, PDO

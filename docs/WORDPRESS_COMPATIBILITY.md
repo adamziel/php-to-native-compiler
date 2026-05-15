@@ -907,6 +907,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full PCRE, general capture-group behavior, flags, offsets,
   invalid-pattern warnings, full single-quoted string escape fidelity, native
   lowering, real database connectivity, or WordPress bootstrap support.
+  Milestone 803 implements a bounded `mysqli_real_connect()` placeholder
+  success boundary for the reached `wpdb::db_connect()` path. It accepts the
+  current WordPress call shape for the placeholder `mysqli` object, records
+  `connect_errno = 0` and `connect_error = null`, and returns `true` without
+  opening a host connection. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4138:10: undefined function preg_replace()`.
+  This is not real database connectivity, authentication, query/result
+  behavior, escaping, charset handling, warning/error routing, exact
+  diagnostics, PDO, native database lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

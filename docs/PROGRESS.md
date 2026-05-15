@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 803, a bounded `mysqli_real_connect()` placeholder-success
+  boundary for the current WordPress `wpdb::db_connect()` startup path. The
+  runtime now exposes `mysqli_real_connect` through function/callability
+  metadata and dynamic string-valued calls, accepts the current WordPress call
+  shape for the placeholder `mysqli` object returned by `mysqli_init()`,
+  validates string/null hostname, username, password, and database arguments,
+  int/null port, string/null socket, and int flags, writes
+  `connect_errno = 0` and `connect_error = null`, and returns `true`. This is
+  deterministic fake success for bootstrap exploration only, not host I/O,
+  authentication, socket/port behavior, database selection, charset
+  negotiation, real connection state, query/result behavior, escaping,
+  warning/error routing, exact PHP diagnostics, PDO, or native database
+  lowering. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `mysqli_real_connect()` call to
+  `runtime error at <bootstrap-shim>:4138:10: undefined function preg_replace()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone803`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 802, bounded `preg_match()` direct matches-output support
   for the current WordPress `wpdb::parse_db_host()` startup path. The
   interpreter now routes direct and dynamic `preg_match` calls through an

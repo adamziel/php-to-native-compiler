@@ -6311,6 +6311,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "function_exists"
             | "extension_loaded"
             | "mysqli_connect"
+            | "mysqli_real_connect"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"

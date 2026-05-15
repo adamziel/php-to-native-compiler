@@ -1,0 +1,1 @@
+Project-specific database boundary: phpc returns deterministic success for the current WordPress placeholder mysqli handle, while system PHP attempts a real host MySQL connection.

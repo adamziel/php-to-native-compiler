@@ -7351,7 +7351,7 @@ handled.
   exact WordPress db-host named-capture patterns reached in
   `class-wpdb.php`, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1997:5: undefined function mysqli_real_connect()`.
-- [ ] Runtime/database lane: add an honest bounded `mysqli_real_connect()`
+- [x] Runtime/database lane: add an honest bounded `mysqli_real_connect()`
   boundary for the reached WordPress startup path. Decide whether the current
   placeholder `mysqli` object should record deterministic connection state for
   the bootstrap path or whether the call should stop with a stable unsupported
@@ -7359,11 +7359,22 @@ handled.
   socket/port handling, database selection, warnings/errors, charset state,
   query/result behavior, escaping, exact diagnostics, PDO, and native database
   lowering named unless implemented.
+  Milestone 803 accepts the current WordPress call shape for the placeholder
+  `mysqli` object, writes `connect_errno = 0` and `connect_error = null`,
+  returns deterministic fake success without host I/O, and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:4138:10: undefined function preg_replace()`.
+- [ ] Runtime/regex lane: add bounded `preg_replace()` support for the reached
+  WordPress `wp_debug_backtrace_summary()` startup path. Start from the exact
+  call shape and pattern/replacement subject semantics reached by the probe;
+  keep full PCRE replacement behavior, arrays of patterns/replacements,
+  callbacks, limits/count output, invalid-pattern warnings, encoding edge
+  cases, exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 802 checkpoint, the latest committed checkpoint
-  is `5a006e3 runtime: add bounded substr_count`, covering Milestone 801.
+- Before the current Milestone 803 checkpoint, the latest committed checkpoint
+  is `d96023d runtime: add bounded preg_match captures`, covering Milestone 802.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

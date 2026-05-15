@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+connected|mysqli|0|null
+--- stdout end ---
+stderr:
+--- stderr end ---

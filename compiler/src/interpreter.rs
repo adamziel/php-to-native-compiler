@@ -3712,6 +3712,118 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn call_mysqli_real_connect(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=8).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_real_connect()",
+                    ArityExpectation::Between { min: 1, max: 8 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Value::Object(handle) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_connect()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_connect()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {} object",
+                        handle.class_name()
+                    ),
+                ),
+            ));
+        }
+
+        for (index, label) in ["hostname", "username", "password", "database"]
+            .iter()
+            .enumerate()
+        {
+            let arg_index = index + 1;
+            if let Some(value) = args.get(arg_index) {
+                if !matches!(value, Value::String(_) | Value::Null) {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "mysqli_real_connect()",
+                            format!(
+                                "{label} argument must be string or null in the current subset, got {}",
+                                value.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        if let Some(port) = args.get(5) {
+            if !matches!(port, Value::Int(_) | Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_real_connect()",
+                        format!(
+                            "port argument must be int or null in the current subset, got {}",
+                            port.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        if let Some(socket) = args.get(6) {
+            if !matches!(socket, Value::String(_) | Value::Null) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_real_connect()",
+                        format!(
+                            "socket argument must be string or null in the current subset, got {}",
+                            socket.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        if let Some(flags) = args.get(7) {
+            if !matches!(flags, Value::Int(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_real_connect()",
+                        format!(
+                            "flags argument must be int in the current subset, got {}",
+                            flags.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        handle
+            .write_public_property("connect_errno", Value::Int(0))
+            .map_err(|error| runtime_error(span, error))?;
+        handle
+            .write_public_property("connect_error", Value::Null)
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Bool(true))
+    }
+
     fn evaluate_array_index(
         &mut self,
         target: &Expr,
@@ -7338,6 +7450,7 @@ impl Interpreter {
                     "mysqli/database connections are not implemented in the current subset",
                 ),
             )),
+            "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -9922,6 +10035,7 @@ fn is_builtin(name: &str) -> bool {
             | "function_exists"
             | "extension_loaded"
             | "mysqli_connect"
+            | "mysqli_real_connect"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"
