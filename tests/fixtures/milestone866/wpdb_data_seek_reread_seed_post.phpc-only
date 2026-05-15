@@ -1,0 +1,2 @@
+Uses phpc's deterministic placeholder mysqli result for the exact seed-post
+query; system PHP requires a real MySQL database and WordPress schema.

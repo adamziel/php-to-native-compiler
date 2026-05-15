@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone866/wpdb_data_seek_reread_seed_post.php
+1
+1
+1|Hello world placeholder
+1
+1|Hello world placeholder

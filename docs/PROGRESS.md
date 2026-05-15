@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 866, a synthetic WordPress-shaped `wpdb::get_results()`
+  smoke that reads the deterministic seed-post placeholder result, rewinds it
+  with `mysqli_data_seek($result, 0)`, and reads the same placeholder row again
+  through `mysqli_fetch_row()`. The fixture stores the first associative pass in
+  `$this->last_result`, stores the rewound numeric pass in
+  `$this->rewound_result`, updates `$this->num_rows`, frees the placeholder
+  result, drains placeholder multi-result state, and verifies both row shapes.
+  This is a harness smoke only; it does not add real WordPress `wpdb` result
+  caching, SQL execution, database state, cache behavior, real post content,
+  warnings/errors, broad cursor semantics, or native lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone866`.
+
 - Added Milestone 865, bounded `mysqli_data_seek()` support for interpreter
   placeholder result state. The runtime now accepts
   `mysqli_data_seek($result, $offset)` with an integer offset, resets the

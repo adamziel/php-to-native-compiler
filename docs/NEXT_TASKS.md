@@ -7970,15 +7970,26 @@ handled.
   remain a named unsupported boundary. This is not real buffered/unbuffered
   result behavior, SQL execution, database state, warnings/errors, or native
   lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
   cursor reset/re-read behavior through `mysqli_data_seek($result, 0)` without
   claiming real `wpdb` result caching or database support.
+  Milestone 866 adds a `phpc-only` synthetic `wpdb::get_results($query,
+  ARRAY_A)` fixture that consumes the exact seed-post placeholder result once
+  through `mysqli_fetch_assoc()`, rewinds it with `mysqli_data_seek($result,
+  0)`, consumes it again through `mysqli_fetch_row()`, frees the placeholder
+  result, and drains placeholder multi-result state. It is not real WordPress
+  `wpdb` result caching, SQL execution, database state, cache behavior,
+  warnings/errors, broad cursor semantics, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next result/database boundary after
+  placeholder cursor reset and choose a small tested slice, such as deterministic
+  `mysqli_num_rows()` for placeholder results or a named boundary for affected
+  rows/insert IDs before any broader SQL execution.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d2fef77 tests: add wordpress wpdb fetch row smoke`, covering Milestone 864
-  before the current Milestone 865 candidate.
+  `660e122 runtime: add mysqli data seek placeholder`, covering Milestone 865
+  before the current Milestone 866 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
