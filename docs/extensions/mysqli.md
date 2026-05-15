@@ -45,6 +45,12 @@ connection, `mysqli_more_results($handle)` and `mysqli_next_result($handle)`
 return `false`. This does not execute SQL, store rows, expose real field
 metadata, or model real result resources.
 
+Other `SELECT` statements are rejected with a specific non-empty-result-set
+diagnostic. For example, `SELECT * FROM wp_posts WHERE ID = 1` reports that
+non-empty `mysqli` result sets are not implemented. This is an explicit
+compatibility boundary before row storage, cursors, field metadata, object
+hydration, and database-backed WordPress queries exist.
+
 `mysqli_select_db($handle, $database)` accepts the placeholder object and a
 string or null database name, returning deterministic `true`. It does not
 select or validate a real database.

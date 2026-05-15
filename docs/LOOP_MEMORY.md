@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `f4b7243 tests: add wordpress wpdb empty query smoke`, pushed to
+  `origin/master`.
+- Task attempted: reconcile the full PHP/WordPress compatibility objective
+  into `GOAL.MD`, then take the next runtime lane by sharpening the MySQLi
+  non-empty result-set boundary.
+- Files changed so far: `GOAL.MD`, `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone854/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone854`
+  passed.
+- Current WordPress frontier: placeholder empty result consumption is covered;
+  non-empty `SELECT` queries now fail with a specific unsupported diagnostic
+  instead of a generic unsupported-query message.
+- Remaining semantic gaps: real row hydration, field metadata, result cursors,
+  SQL execution, database state, host-backed connections, WordPress
+  query-state fidelity, and native database lowering remain missing.
+- Next concrete task: run diff checks and the full checkpoint gate. The next
+  lane should design the first deterministic non-empty result row shape before
+  implementing row-returning queries.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `3354287 runtime: add wordpress mysqli result lifecycle`, pushed to
   `origin/master`.
 - Task attempted: Milestone 853, a deterministic post-bootstrap synthetic

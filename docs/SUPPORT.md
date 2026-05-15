@@ -834,6 +834,8 @@
   `false`, and `mysqli_free_result($result)` returns `null` for that
   placeholder empty result. `mysqli_more_results($handle)` and
   `mysqli_next_result($handle)` return `false` for the placeholder connection.
+  Other `SELECT` statements fail with an explicit unsupported diagnostic that
+  non-empty `mysqli` result sets are not implemented in the current subset.
   For the same placeholder handle, `mysqli_errno($handle)` returns `0` and
   `mysqli_error($handle)` returns an empty string.
   `mysqli_select_db($handle, $database)` accepts the placeholder handle and a
@@ -845,11 +847,11 @@
   quote, double quote, and Ctrl-Z characters for the reached
   `wpdb::_real_escape()` option lookup path.
   Host connections, real mysqli resources/objects, real query execution,
-  non-empty result sets, real row/field metadata, affected-row/insert-id
-  state, connection charset state, binary or invalid-string behavior, exact
-  escaping edge cases, errors/warnings, transactions, configuration beyond the
-  report-mode flag, PDO behavior, and native database calls are not
-  implemented.
+  non-empty result sets, real row/field metadata, result cursors,
+  affected-row/insert-id state, connection charset state, binary or
+  invalid-string behavior, exact escaping edge cases, errors/warnings,
+  transactions, configuration beyond the report-mode flag, PDO behavior, and
+  native database calls are not implemented.
   `compact($name, ...$names)` supports one or more direct string variable-name
   arguments, reads the current caller scope, returns an array keyed by each
   found variable name, and omits missing variables. This covers the reached

@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 854, a sharper deterministic MySQLi boundary for non-empty
+  `SELECT` queries. After the documented WordPress SQL-mode, charset setup,
+  empty options/metadata, and exact empty-result placeholders are checked,
+  `mysqli_query()` now reports a specific unsupported diagnostic for remaining
+  `SELECT` statements: non-empty `mysqli` result sets are not implemented.
+  This keeps future WordPress database work visible instead of falling through
+  to the generic unsupported-query message. Added a `phpc-only` CLI fixture
+  for `SELECT * FROM wp_posts WHERE ID = 1`; system PHP comparison is skipped
+  because it would require a real database. This does not implement row
+  hydration, field metadata, result resources, SQL execution, or database
+  state. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension -- --nocapture` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone854`.
+
 - Added Milestone 853, a deterministic WordPress-shaped `wpdb::query()`
   smoke fixture over the placeholder empty `mysqli_result` lifecycle. The
   synthetic `wpdb` class initializes the placeholder connection, stores

@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone854/mysqli_non_empty_select_boundary.php
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone854/mysqli_non_empty_select_boundary.php:4:1: unsupported call mysqli_query(): non-empty mysqli result sets are not implemented in the current subset; only deterministic WordPress SQL mode, charset setup, empty options, metadata, and exact empty-result placeholders are supported; got SELECT * FROM wp_posts WHERE ID = 1
+--- stderr end ---

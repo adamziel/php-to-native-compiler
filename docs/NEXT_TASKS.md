@@ -7847,15 +7847,25 @@ handled.
   empty `last_result`/`num_rows` state. It is not real SQL execution,
   non-empty row hydration, field metadata, WordPress query-state fidelity, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next real WordPress database path after
+- [x] Runtime/mysqli lane: inspect the next real WordPress database path after
   empty result consumption and choose either a bounded row-shape fixture or an
   explicit unsupported diagnostic for non-empty result sets.
+  Milestone 854 chooses the explicit boundary: after recognized deterministic
+  SQL-mode, charset setup, empty options/metadata, and exact empty-result
+  placeholders, remaining `SELECT` queries now fail with a specific
+  non-empty-result-set diagnostic. A `phpc-only` fixture covers
+  `SELECT * FROM wp_posts WHERE ID = 1`; real row hydration, field metadata,
+  result resources, SQL execution, and database state remain unsupported.
+- [ ] Runtime/mysqli lane: design the first real row-shape representation for
+  deterministic `mysqli_fetch_object()` results, including how rows, fields,
+  result cursors, object hydration, and error state will be represented before
+  implementing any non-empty query.
 
-## Latest Completed Checkpoint Before Milestone 853
+## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3354287 runtime: add wordpress mysqli result lifecycle`, covering
-  Milestone 852.
+  `f4b7243 tests: add wordpress wpdb empty query smoke`, covering Milestone
+  853.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

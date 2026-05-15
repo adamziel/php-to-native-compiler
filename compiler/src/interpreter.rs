@@ -4202,6 +4202,18 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         }
 
+        if is_mysqli_select_query(query) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_query()",
+                    format!(
+                        "non-empty mysqli result sets are not implemented in the current subset; only deterministic WordPress SQL mode, charset setup, empty options, metadata, and exact empty-result placeholders are supported; got {query}"
+                    ),
+                ),
+            ));
+        }
+
         Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -11875,6 +11887,14 @@ fn is_wordpress_charset_setup_query(query: &str) -> bool {
 
 fn is_wordpress_empty_result_query(query: &str) -> bool {
     query == "SELECT * FROM wp_posts WHERE 1 = 0"
+}
+
+fn is_mysqli_select_query(query: &str) -> bool {
+    query
+        .trim_start()
+        .split_whitespace()
+        .next()
+        .is_some_and(|keyword| keyword.eq_ignore_ascii_case("SELECT"))
 }
 
 fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {

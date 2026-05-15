@@ -140,6 +140,25 @@ and search-array replacement for the reached `_deep_replace()` path. As of
 Milestone 845, direct `wp-settings.php` still stops at missing `ABSPATH`, while
 the real WordPress 6.9.4 bootstrap shim exits `0` with no stdout under the
 current deterministic CLI/bootstrap assumptions.
+Milestones 846 through 853 then broadened that work from the bootstrap shim
+into a front-controller and database-consumption smoke path without pretending
+that placeholder behavior is real WordPress support. Milestone 846 added a
+separate `wp-blog-header.php` front-controller probe. Milestones 847 and 848
+covered the reached `wpdb::prepare()` placeholder-normalization
+`preg_replace()` and placeholder-extraction `preg_split()` shapes. Milestone
+849 added bounded `vsprintf()` support for the reached `wpdb::prepare()`
+formatting path. Milestone 850 added a deterministic `mysqli_query()` success
+boundary for the exact charset setup statement
+`SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'`, after which the real
+WordPress 6.9.4 front-controller probe exits `0` with no stdout under the
+current placeholder database and CLI assumptions. Milestone 851 committed a
+synthetic normalized front-controller smoke for that path. Milestone 852 added
+the first placeholder empty `mysqli_result` lifecycle boundary, and Milestone
+853 added a synthetic `wpdb::query()` smoke that stores, fetches, frees, and
+drains that empty result through WordPress-shaped object state. These are
+evidence that the compiler can walk farther through WordPress-shaped execution;
+they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
+or native WordPress compatibility.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -263,6 +282,50 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
    cookies, superglobals, and ini/environment state.
 6. Native execution: runtime ABI, linked binaries, boxed values, stack frames,
    heap/lifetime management, helper calls, and native diagnostics.
+
+Reconciliation into concrete workstreams:
+
+- **PHP conformance harness:** add a committed PHP-version manifest, pin a
+  small imported or mirrored php-src-style behavior subset where licensing and
+  scope allow, and record expected deviations per PHP branch. Current artifact:
+  fixture runner plus optional system PHP comparison. Missing artifact:
+  versioned conformance manifest and suite.
+- **Reference/COW value model:** replace the bounded copy/copy-back and
+  no-alias reference slices with reference cells, alias-aware symbol slots,
+  array/object copy-on-write, by-reference foreach semantics, and mutation
+  ordering tests. Current artifact: documented runtime boundaries and focused
+  reference fixtures. Missing artifact: runtime reference container and COW
+  tests that compare against PHP.
+- **Object/runtime semantics:** turn metadata-heavy class support into full
+  execution semantics for magic methods, typed properties, trait composition,
+  interface enforcement, enum cases, destructors, reflection, and exact
+  visibility. Current artifact: tested minimal object/class model. Missing
+  artifact: executable object compatibility matrix.
+- **Error model:** implement PHP-shaped warnings/notices/deprecations,
+  exception objects and unwinding, `@` suppression, stack traces, output
+  buffers, and partial-output behavior. Current artifact: stable project
+  diagnostics and bounded `throw`/`try` boundaries. Missing artifact:
+  recoverable warning/error execution tests.
+- **Runtime services/extensions:** move from placeholder extension boundaries
+  to focused implementations for filesystem/streams, JSON, XML, mbstring/intl,
+  HTTP/curl, crypto/password, date/time, serialization, sessions/cookies,
+  headers, ini/environment state, MySQLi/PDO/SQLite, and cache APIs. Current
+  artifact: selected builtins plus `docs/extensions/`. Missing artifact:
+  extension-specific compatibility docs with real host-backed or deterministic
+  substitute tests.
+- **WordPress harness:** replace placeholder-only progress with pinned,
+  committed WordPress core targets that cover bootstrap, front-end, admin,
+  REST, WP-CLI-like execution, plugin/theme loading, database-backed queries,
+  filesystem/media, object cache, options/transients, hooks, filters, and
+  block registration. Current artifact: external WordPress 6.9.4 inventory and
+  synthetic front-controller/`wpdb` smokes. Missing artifact: committed
+  WordPress core compatibility harness with documented host assumptions.
+- **Native runtime integration:** add linked native executable support with
+  boxed values, runtime helper calls, stack frames, heap/lifetime management,
+  diagnostics, and explicit fallback/rejection policy for dynamic PHP. Current
+  artifact: LLVM IR/assembly for a narrow scalar subset plus scalar ABI seed.
+  Missing artifact: linked native execution compared against `phpc run` and
+  system PHP for a non-trivial program.
 
 For WordPress specifically, Milestone 724 advanced the bootstrap-shim probe
 past `clone` expressions by adding fresh object handles and shallow property
@@ -669,12 +732,17 @@ The repository already has a working Rust workspace with:
   `preg_replace()` covers the reached redirect sanitizer cleanup pattern,
   mail-host cleanup, and KSES null cleanup patterns, and bounded
   `str_replace()` direct-variable count output plus search-array handling cover
-  the reached `_deep_replace()` loop in `wp-includes/formatting.php:4440`. The
-  bootstrap shim now exits `0`; the next WordPress-directed work is to broaden
-  the harness beyond that shim before claiming real front-end, admin, REST,
-  plugin/theme, database, HTTP, or native WordPress support.
-  The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
-  entrypoint/environment issue rather than proof of core bootstrap support.
+  the reached `_deep_replace()` loop in `wp-includes/formatting.php:4440`.
+  The bootstrap shim now exits `0`. Milestones 846-853 additionally add a
+  front-controller probe, bounded `wpdb::prepare()` regex/formatting support,
+  the reached MySQLi charset setup boundary, a committed silent
+  front-controller smoke, a placeholder empty `mysqli_result` lifecycle, and a
+  synthetic `wpdb::query()` empty-result smoke. The real WordPress 6.9.4
+  front-controller probe exits `0` with no stdout under deterministic
+  placeholder database and CLI assumptions. The direct `wp-settings.php` probe
+  still stops at undefined `ABSPATH`, which is an entrypoint/environment issue.
+  Real front-end/admin/REST/plugin/theme flows, real database state,
+  HTTP/filesystem/SAPI behavior, and native WordPress support remain missing.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,
@@ -1003,12 +1071,14 @@ unchecked work. Current state:
   placeholder CLI/bootstrap success and full WordPress support.
 - Milestone 852 is committed: the first deterministic empty `mysqli_result`
   lifecycle boundary for WordPress-style result consumption.
-- Milestone 853 is the active checkpoint candidate: a synthetic
-  `wpdb::query()`-style smoke that consumes the placeholder empty result
-  through WordPress-shaped object state.
-- The next immediate runtime lane after Milestone 853 is to inspect the next
-  real WordPress database path and either add a bounded row-shape fixture or a
-  sharper unsupported boundary for non-empty result sets.
+- Milestone 853 is committed: a synthetic `wpdb::query()`-style smoke consumes
+  the placeholder empty result through WordPress-shaped object state.
+- Milestone 854 is the active checkpoint candidate: remaining `SELECT`
+  statements after the deterministic placeholder cases fail with a specific
+  non-empty `mysqli` result-set diagnostic.
+- The next runtime lane after Milestone 854 is to design the first
+  deterministic non-empty result row shape before implementing row-returning
+  queries.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

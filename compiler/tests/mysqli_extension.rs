@@ -407,7 +407,23 @@ mysqli_query($handle, "SELECT 1");
     assert_eq!(unsupported_query.column, 1);
     assert_eq!(
         unsupported_query.message,
-        "unsupported call mysqli_query(): only the WordPress SQL mode probe, charset setup query, and empty wp_options SELECT placeholders are implemented in the current subset; got SELECT 1"
+        "unsupported call mysqli_query(): non-empty mysqli result sets are not implemented in the current subset; only deterministic WordPress SQL mode, charset setup, empty options, metadata, and exact empty-result placeholders are supported; got SELECT 1"
+    );
+
+    let non_empty_wordpress_select = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_query($handle, "SELECT * FROM wp_posts WHERE ID = 1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(non_empty_wordpress_select.phase, Phase::Runtime);
+    assert_eq!(non_empty_wordpress_select.line, 3);
+    assert_eq!(non_empty_wordpress_select.column, 1);
+    assert_eq!(
+        non_empty_wordpress_select.message,
+        "unsupported call mysqli_query(): non-empty mysqli result sets are not implemented in the current subset; only deterministic WordPress SQL mode, charset setup, empty options, metadata, and exact empty-result placeholders are supported; got SELECT * FROM wp_posts WHERE ID = 1"
     );
 
     let bad_errno_handle = run_source(
