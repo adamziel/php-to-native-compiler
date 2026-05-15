@@ -8429,16 +8429,25 @@ handled.
   This is not failed connection tracking, host extension error state,
   report-mode behavior, warnings/errors/exceptions, or native database
   lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_connect_errno()`/`mysqli_connect_error()` placeholders
   through a WordPress-shaped connection error-state method without claiming real
   connection failure fidelity.
+  Milestone 910 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  deterministic clean procedural connect-error placeholders on local
+  connection error bookkeeping after placeholder options/connect. It is not
+  real WordPress connection failure fidelity, host extension error state,
+  report-mode behavior, warnings/errors/exceptions, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi diagnostic or metadata
+  boundary used by WordPress after clean connect-error state, such as
+  `mysqli_info()` or a sharper unsupported diagnostic, before claiming real SQL
+  execution metadata.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `668552c tests: add wordpress wpdb options smoke`, covering Milestone 908
-  before the current Milestone 909 candidate.
+  `41f305b runtime: add mysqli connect error metadata`, covering Milestone 909
+  before the current Milestone 910 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

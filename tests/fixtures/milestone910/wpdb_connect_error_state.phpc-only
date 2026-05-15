@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_connect_errno()` and `mysqli_connect_error()` metadata through a
+WordPress-shaped `wpdb` connection error-state method. System PHP needs a real
+mysqli connection attempt and reports host extension connection errors; phpc
+only records local `wpdb` bookkeeping around clean placeholder state.

@@ -1436,7 +1436,9 @@ historical blockers and remaining full-support gaps include:
   `mysqli_connect_errno()`/`mysqli_connect_error()` clean connect-error
   metadata without failed connection tracking, host extension error state,
   report-mode behavior, PHP warning/error/exception fidelity, or native
-  database lowering.
+  database lowering. Milestone 910 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` connection error-state bookkeeping smoke without
+  claiming real connection failure fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

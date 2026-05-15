@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone910/wpdb_connect_error_state.php
+0
+0
+clean
+checked

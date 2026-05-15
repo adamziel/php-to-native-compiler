@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `41f305b runtime: add mysqli connect error metadata`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 910, a synthetic WordPress-shaped `wpdb`
+  connect-error bookkeeping smoke over deterministic
+  `mysqli_connect_errno()`/`mysqli_connect_error()` placeholders.
+- Files changed so far: `tests/fixtures/milestone910/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone910`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- tests/fixtures/milestone910 docs/PROGRESS.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: a WordPress-shaped connection error-state method
+  is being extended to record deterministic clean procedural connect-error
+  metadata.
+- Remaining semantic gaps: real WordPress connection failure fidelity, host
+  extension error state, report-mode behavior, warning/error/exception
+  fidelity, database state mutation, and native database lowering remain
+  missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi diagnostic or metadata boundary such as `mysqli_info()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `668552c tests: add wordpress wpdb options smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 909, bounded deterministic

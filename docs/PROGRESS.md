@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 910, a synthetic WordPress-shaped `wpdb` connect-error
+  bookkeeping smoke that calls the bounded `mysqli_connect_errno()` and
+  `mysqli_connect_error()` placeholder paths after placeholder options/connect,
+  records deterministic local connection error metadata, and verifies that the
+  diagnostic boundary ran. This is a harness smoke only; it does not add real
+  WordPress connection failure fidelity, host extension error state,
+  report-mode behavior, PHP warning/error/exception fidelity, or native
+  database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone910`.
+
 - Added Milestone 909, bounded `mysqli_connect_errno()` and
   `mysqli_connect_error()` support for deterministic placeholder MySQLi clean
   connect-error metadata. The runtime accepts the no-argument calls, returns
