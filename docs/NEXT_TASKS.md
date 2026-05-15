@@ -8455,16 +8455,25 @@ handled.
   `mysqli_info()` placeholder metadata after a placeholder charset setup query.
   It is not real SQL statement information, mutation summaries, warnings,
   errors, host database state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi warning or diagnostic
+- [x] Runtime/mysqli lane: inspect the next MySQLi warning or diagnostic
   boundary used by WordPress after clean statement-information state, such as
   `mysqli_get_warnings()` or a sharper unsupported diagnostic, before claiming
   real warning metadata.
+  Milestone 913 implements bounded deterministic `mysqli_get_warnings($handle)`
+  clean warning-chain support. It accepts current placeholder `mysqli` handles,
+  returns `false`, rejects non-`mysqli` handles with stable diagnostics, and is
+  visible through runtime and native metadata lookup. This is not real warning
+  objects, warning iteration, SQL warning metadata, host database state,
+  warnings/errors, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_get_warnings()` placeholder through a WordPress-shaped query
+  warning bookkeeping method without claiming real SQL warning metadata.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `dc195fe runtime: add mysqli info placeholder`, covering Milestone 911 before
-  the current Milestone 912 candidate.
+  `1f87f2f tests: add wordpress wpdb info smoke`, covering Milestone 912 before
+  the current Milestone 913 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

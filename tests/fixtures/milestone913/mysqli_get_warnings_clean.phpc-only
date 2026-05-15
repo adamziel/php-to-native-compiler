@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_warnings()` clean warning-chain state after a placeholder
+WordPress charset setup query. System PHP needs a real mysqli connection and
+host extension warning state; phpc only returns clean placeholder state.

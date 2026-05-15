@@ -1443,7 +1443,10 @@ historical blockers and remaining full-support gaps include:
   statement-info tracking, mutation summaries, host database state,
   warning/error fidelity, or native database lowering. Milestone 912 wires
   that placeholder through a synthetic WordPress-shaped `wpdb` query-info
-  bookkeeping smoke without claiming real SQL statement information.
+  bookkeeping smoke without claiming real SQL statement information. Milestone
+  913 adds deterministic `mysqli_get_warnings()` clean warning-chain metadata
+  without real warning objects, warning iteration, SQL warning metadata, host
+  database state, warning/error fidelity, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -4692,6 +4692,12 @@ impl Interpreter {
         Ok(Value::Null)
     }
 
+    fn call_mysqli_get_warnings(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_warnings", args, 1, span)?;
+        expect_mysqli_handle("mysqli_get_warnings()", &args[0], span)?;
+        Ok(Value::Bool(false))
+    }
+
     fn call_mysqli_affected_rows(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_affected_rows", args, 1, span)?;
         expect_mysqli_handle("mysqli_affected_rows()", &args[0], span)?;
@@ -9383,6 +9389,7 @@ impl Interpreter {
             "mysqli_sqlstate" => self.call_mysqli_sqlstate(&args, span),
             "mysqli_warning_count" => self.call_mysqli_warning_count(&args, span),
             "mysqli_info" => self.call_mysqli_info(&args, span),
+            "mysqli_get_warnings" => self.call_mysqli_get_warnings(&args, span),
             "mysqli_affected_rows" => self.call_mysqli_affected_rows(&args, span),
             "mysqli_insert_id" => self.call_mysqli_insert_id(&args, span),
             "mysqli_ping" => self.call_mysqli_ping(&args, span),
@@ -12337,6 +12344,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_sqlstate"
             | "mysqli_warning_count"
             | "mysqli_info"
+            | "mysqli_get_warnings"
             | "mysqli_affected_rows"
             | "mysqli_insert_id"
             | "mysqli_ping"

@@ -11,7 +11,8 @@ Status: boundary only.
 `mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
-`mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`, `mysqli_affected_rows`,
+`mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_info`,
+`mysqli_get_warnings`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
@@ -139,6 +140,10 @@ an empty string, `00000`, `0`, and `null`. They do not track real host
 database SQLSTATE, warnings, warning counts, statement information strings, or
 PHP warning/error behavior.
 
+`mysqli_get_warnings($handle)` accepts the placeholder object and returns
+deterministic `false` for clean warning-chain state. It does not expose warning
+objects, warning iteration, real SQL warning metadata, or host database state.
+
 `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder object and
 returns deterministic `true` for the reached WordPress charset setup shape.
 Charset values other than `utf8mb4`, collation state, charset negotiation,
@@ -226,7 +231,7 @@ deterministic zero clean state, no real connection liveness checks or
 reconnect behavior beyond deterministic ping success, no real
 autocommit or transaction state beyond deterministic autocommit and
 begin-transaction/commit/rollback success, no
-charset/collation negotiation, no SQLSTATE or warning-count tracking, no
-errors/warnings, no commit/rollback behavior, no
+charset/collation negotiation, no SQLSTATE, warning-count, or warning-chain
+tracking, no errors/warnings, no commit/rollback behavior, no
 configuration beyond the current report-mode flag, no PDO bridge, and no
 native database lowering.

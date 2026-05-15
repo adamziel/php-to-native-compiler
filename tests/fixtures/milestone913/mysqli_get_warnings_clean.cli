@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone913/mysqli_get_warnings_clean.php
+yes
+callable
+false
+false

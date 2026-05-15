@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 913, bounded `mysqli_get_warnings()` support for
+  deterministic placeholder MySQLi clean warning-chain metadata. The runtime
+  accepts current placeholder `mysqli` handles, returns deterministic clean
+  state (`false`), rejects non-`mysqli` handles with stable diagnostics, and
+  exposes the name through runtime and native metadata lookup. This is not real
+  warning objects, warning iteration, SQL warning metadata, host database
+  state, PHP warning/error fidelity, or native database lowering.
+  Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_error_state_metadata -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone913`.
+
 - Added Milestone 912, a synthetic WordPress-shaped `wpdb` query-info
   bookkeeping smoke that calls the bounded `mysqli_info($this->dbh)`
   placeholder after the deterministic charset setup query, records clean local

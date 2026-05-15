@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `1f87f2f tests: add wordpress wpdb info smoke`, pushed to `origin/master`.
+- Task attempted: Milestone 913, bounded deterministic
+  `mysqli_get_warnings()` clean warning-chain metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone913/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_error_state_metadata -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone913`
+  passed with one `phpc-only` fixture skipped for system PHP comparison. Full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed with
+  55 tests, and
+  `git diff --check -- compiler/src/interpreter.rs compiler/src/codegen.rs compiler/tests/mysqli_extension.rs tests/fixtures/milestone913 docs/PROGRESS.md docs/SUPPORT.md docs/extensions/mysqli.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: placeholder MySQLi diagnostic metadata is being
+  extended from clean statement-information state to clean warning-chain state.
+- Remaining semantic gaps: real warning objects, warning iteration, SQL warning
+  metadata, host database state, SQL execution, and native database lowering
+  remain missing.
+- Next concrete task: run the full focused MySQLi test, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, add a
+  synthetic WordPress-shaped `wpdb` query warning bookkeeping smoke for
+  `mysqli_get_warnings()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `dc195fe runtime: add mysqli info placeholder`, pushed to `origin/master`.
 - Task attempted: Milestone 912, a synthetic WordPress-shaped `wpdb`
   query-info bookkeeping smoke over deterministic `mysqli_info()` placeholder
