@@ -1417,7 +1417,9 @@ historical blockers and remaining full-support gaps include:
   deterministic `mysqli_field_count()` clean field-count metadata without
   most-recent-query tracking, result metadata tracking, SQL execution state,
   warning/error fidelity, host database integration, or native database
-  lowering.
+  lowering. Milestone 904 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` field-count bookkeeping smoke without claiming real
+  last-query field-count fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

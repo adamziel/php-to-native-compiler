@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_field_count()` metadata through a WordPress-shaped `wpdb` query
+metadata bookkeeping path. System PHP needs a real mysqli connection and
+reports the most recent query's field count on that connection.

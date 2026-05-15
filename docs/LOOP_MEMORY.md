@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `6f0a3f0 runtime: add mysqli field count metadata`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 904, a synthetic WordPress-shaped `wpdb`
+  field-count bookkeeping smoke over deterministic `mysqli_field_count()`
+  placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone904/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone904`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- tests/fixtures/milestone904 docs/PROGRESS.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: a WordPress-shaped query metadata path is being
+  extended to record deterministic clean field-count metadata.
+- Remaining semantic gaps: real last-query field-count fidelity, result
+  metadata tracking, SQL execution state, host database integration,
+  warning/error fidelity, database state mutation, and native database lowering
+  remain missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi lifecycle boundary such as `mysqli_close()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `3a981ab tests: add wordpress wpdb character set name smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 903, bounded deterministic

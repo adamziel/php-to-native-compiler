@@ -8371,15 +8371,24 @@ handled.
   lookup. This is not most-recent-query tracking, result metadata tracking,
   SQL execution state, host database integration, warnings/errors, or native
   database lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_field_count()` placeholder through WordPress-shaped query
   metadata bookkeeping without claiming real last-query field-count fidelity.
+  Milestone 904 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  deterministic clean field-count placeholder on local query metadata and
+  verifies that the metadata check ran. It is not real WordPress last-query
+  field-count fidelity, result metadata tracking, SQL execution state, host
+  database integration, warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi connection or result
+  lifecycle boundary used by WordPress, such as `mysqli_close()` or sharper
+  result-state diagnostics, before claiming real connection teardown or host
+  database state.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3a981ab tests: add wordpress wpdb character set name smoke`, covering
-  Milestone 902 before the current Milestone 903 candidate.
+  `6f0a3f0 runtime: add mysqli field count metadata`, covering Milestone 903
+  before the current Milestone 904 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

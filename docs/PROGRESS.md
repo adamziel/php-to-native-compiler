@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 904, a synthetic WordPress-shaped `wpdb` field-count
+  bookkeeping smoke that calls the bounded `mysqli_field_count($this->dbh)`
+  placeholder path, records deterministic local query metadata, and verifies
+  that the metadata boundary ran. This is a harness smoke only; it does not
+  add real WordPress last-query field-count fidelity, result metadata tracking,
+  SQL execution state, host database integration, PHP warning/error fidelity,
+  or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone904`.
+
 - Added Milestone 903, bounded `mysqli_field_count()` support for
   deterministic placeholder MySQLi clean field-count metadata. The runtime
   accepts `mysqli_field_count($handle)` for current placeholder `mysqli`

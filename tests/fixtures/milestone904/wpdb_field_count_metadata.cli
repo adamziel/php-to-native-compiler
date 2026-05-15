@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone904/wpdb_field_count_metadata.php
+0
+0
+checked
