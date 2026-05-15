@@ -312,6 +312,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   handling, arbitrary label whitespace, malformed-label recovery, exact
   diagnostics, or native lowering. The bootstrap-shim probe now reaches
   `lex error at <bootstrap-shim>:7267:17: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented`.
+  Milestone 737 adds bounded chained property/array-offset interpolation for
+  shapes such as `{$block->context['displayLayout']['columns']}`. This is not
+  dynamic property names, static properties, `${...}`, variable variables,
+  arbitrary expression interpolation, exact diagnostics, or native lowering.
+  The bootstrap-shim probe now reaches
+  `parse error at <bootstrap-shim>:856:4: expected expression, found static`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

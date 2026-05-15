@@ -6774,18 +6774,28 @@ handled.
   terminator, evaluates heredoc with the current interpolation subset, keeps
   nowdoc literal, and advances the real bootstrap-shim probe to
   `lex error at <bootstrap-shim>:7267:17: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented`.
-- [ ] Parser/string lane: implement or explicitly bound the next WordPress
+- [x] Parser/string lane: implement or explicitly bound the next WordPress
   6.9.4 bootstrap-shim nested interpolation blocker at `<bootstrap-shim>:7267:17`,
   likely covering chained object-property/array-offset interpolation such as
   `{$block->context['displayLayout']['columns']}`, with tests, CLI coverage,
   docs, and named unsupported edges for chain parsing, null/non-array/non-object
   diagnostics, dynamic properties, static properties, `${...}`, exact
-  diagnostics, and native lowering.
+  diagnostics, and native lowering. The Milestone 737 slice supports chained
+  property/array-offset interpolation over current arrays and objects, keeps
+  dynamic properties, static properties, `${...}`, arbitrary expression
+  interpolation, exact diagnostics, and native lowering unsupported, and
+  advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:856:4: expected expression, found static`.
+- [ ] Parser/function lane: implement or explicitly bound the next WordPress
+  6.9.4 bootstrap-shim `static function (...)` closure blocker at
+  `<bootstrap-shim>:856:4`, with tests, CLI coverage, docs, and named
+  unsupported edges for static closure binding, capture semantics, invocation,
+  type declarations, callbacks, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 736 checkpoint, the latest committed checkpoint
-  is `7d41fcb parser: add bounded interpolated offsets`, covering Milestone 735.
+- Before the current Milestone 737 checkpoint, the latest committed checkpoint
+  is `e810d72 parser: add bounded heredoc strings`, covering Milestone 736.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

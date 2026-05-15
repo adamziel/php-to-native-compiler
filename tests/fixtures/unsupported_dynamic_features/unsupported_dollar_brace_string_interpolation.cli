@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-lex error at tests/fixtures/unsupported_dynamic_features/unsupported_dollar_brace_string_interpolation.php:2:6: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented
+lex error at tests/fixtures/unsupported_dynamic_features/unsupported_dollar_brace_string_interpolation.php:2:6: unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented
 --- stderr end ---

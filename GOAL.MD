@@ -212,9 +212,11 @@ then advanced past the first filesystem drop-in probe with bounded
 advanced past the first complex string interpolation blocker with bounded
 direct array-offset and object-property interpolation. Milestone 736 then
 advanced past the first heredoc/nowdoc blocker with bounded unindented
-identifier-label heredoc/nowdoc syntax. The next visible bootstrap-shim blocker
-is now nested interpolation:
-`lex error at <bootstrap-shim>:7267:17: unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented`.
+identifier-label heredoc/nowdoc syntax. Milestone 737 then advanced past the
+first nested interpolation blocker with bounded chained property/array-offset
+interpolation. The next visible bootstrap-shim blocker is now `static
+function` closure syntax:
+`parse error at <bootstrap-shim>:856:4: expected expression, found static`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -329,8 +331,8 @@ The repository already has a working Rust workspace with:
   the first bounded `version_compare()` slice, and the first bounded
   `sprintf()`, `header()`, `implode()`, `exit()`, `extension_loaded()`, and
   `file_exists()` slices, plus bounded direct array-offset/object-property
-  string interpolation and bounded heredoc/nowdoc syntax, then stops at
-  unsupported nested interpolation.
+  string interpolation, bounded heredoc/nowdoc syntax, and bounded chained
+  interpolation, then stops at unsupported `static function` closure syntax.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

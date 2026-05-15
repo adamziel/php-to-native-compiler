@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T13:05:00Z
+
+- Checkpoint before this task:
+  `e810d72 parser: add bounded heredoc strings`, pushed to `origin/master`.
+- Task attempted: Milestone 737, bounded chained property/array-offset
+  double-quoted string interpolation for the real WordPress 6.9.4
+  bootstrap-shim blocker at `<bootstrap-shim>:7267:17`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/nested_interpolated_string_cli.rs`,
+  `tests/fixtures/milestone737/*`,
+  `tests/fixtures/unsupported_dynamic_features/*`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo test -p phpc --test nested_interpolated_string_cli -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone737`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: dynamic property names, static properties,
+  `${...}`, variable variables, arbitrary expression interpolation, exact
+  diagnostics, and native lowering remain unsupported. The direct WordPress
+  probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe now reaches
+  `parse error at <bootstrap-shim>:856:4: expected expression, found static`.
+- Next concrete task: implement or explicitly bound `static function (...)`
+  closures while keeping static-closure binding, capture behavior, invocation,
+  type declarations, callbacks, and native lowering explicit.
+
 ## Loop Event 2026-05-15T12:05:00Z
 
 - Checkpoint before this task:

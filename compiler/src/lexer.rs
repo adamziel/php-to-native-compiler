@@ -1,4 +1,4 @@
-use crate::ast::{InterpolatedArrayKey, InterpolatedStringPart, Span};
+use crate::ast::{InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, Span};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -688,31 +688,57 @@ impl<'a> Lexer<'a> {
         name: String,
         span: Span,
     ) -> CompileResult<InterpolatedStringPart> {
-        if self.peek() == Some('[') {
-            let key = self.lex_interpolated_array_key(span)?;
-            return Ok(InterpolatedStringPart::ArrayOffset {
-                variable: name,
-                key,
-            });
-        }
+        let mut segments = Vec::new();
 
-        if self.starts_with("->") {
-            self.advance();
-            self.advance();
-            let Some(first) = self.peek() else {
-                return Err(self.error_at(span, "unterminated string literal"));
-            };
-            if !is_identifier_start(first) {
-                return Err(self.error_at(span, unsupported_string_interpolation_message()));
+        loop {
+            if self.peek() == Some('[') {
+                let key = self.lex_interpolated_array_key(span)?;
+                segments.push(InterpolatedAccessSegment::ArrayOffset(key));
+                continue;
             }
-            let property = self.lex_identifier_name();
-            return Ok(InterpolatedStringPart::ObjectProperty {
-                variable: name,
-                property,
-            });
+
+            if self.starts_with("->") {
+                self.advance();
+                self.advance();
+                let Some(first) = self.peek() else {
+                    return Err(self.error_at(span, "unterminated string literal"));
+                };
+                if !is_identifier_start(first) {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+                let property = self.lex_identifier_name();
+                segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                continue;
+            }
+
+            break;
         }
 
-        Ok(InterpolatedStringPart::Variable(name))
+        if segments.is_empty() {
+            return Ok(InterpolatedStringPart::Variable(name));
+        }
+
+        if segments.len() == 1 {
+            return match segments.remove(0) {
+                InterpolatedAccessSegment::ArrayOffset(key) => {
+                    Ok(InterpolatedStringPart::ArrayOffset {
+                        variable: name,
+                        key,
+                    })
+                }
+                InterpolatedAccessSegment::ObjectProperty(property) => {
+                    Ok(InterpolatedStringPart::ObjectProperty {
+                        variable: name,
+                        property,
+                    })
+                }
+            };
+        }
+
+        Ok(InterpolatedStringPart::AccessChain {
+            variable: name,
+            segments,
+        })
     }
 
     fn lex_interpolated_array_key(&mut self, span: Span) -> CompileResult<InterpolatedArrayKey> {
@@ -965,7 +991,7 @@ fn is_identifier_part(ch: char) -> bool {
 }
 
 fn unsupported_string_interpolation_message() -> &'static str {
-    "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
+    "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
 }
 
 fn unsupported_heredoc_message() -> &'static str {

@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 737, bounded chained property/array-offset double-quoted
+  string interpolation through `phpc run` for the real WordPress 6.9.4
+  bootstrap-shim blocker at `<bootstrap-shim>:7267:17`. The lexer/AST now
+  represents multi-step access chains such as
+  `{$block->context['displayLayout']['columns']}` and nested array offsets such
+  as `{$attributes['layout']['columns']}`; the interpreter evaluates each
+  segment left to right with the current array-key and object-property read
+  semantics before PHP-shaped echo conversion. Dynamic property names, static
+  properties, `${...}`, variable variables, arbitrary expression
+  interpolation, exact diagnostics, and native lowering remain unsupported. The
+  direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous nested-interpolation
+  blocker and now stops at
+  `parse error at <bootstrap-shim>:856:4: expected expression, found static`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo test -p phpc --test nested_interpolated_string_cli -- --test-threads=1`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone737`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 736, bounded heredoc/nowdoc string syntax through `phpc run`
   for the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:4225:9`. The lexer now accepts unindented identifier-label

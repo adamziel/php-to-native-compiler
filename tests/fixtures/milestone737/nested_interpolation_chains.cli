@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+columns-3|columns-4--- stdout end ---
+stderr:
+--- stderr end ---

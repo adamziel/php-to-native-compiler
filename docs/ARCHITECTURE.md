@@ -56,14 +56,14 @@ object/property/ArrayAccess paths, append-at-depth, and nested read-modify-write
 forms remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
-the current simple `$name`, `{$name}`, direct array-offset, and direct
-object-property slices instead of being rewritten to ordinary string
+the current simple `$name`, `{$name}`, array-offset, object-property, and
+chained access slices instead of being rewritten to ordinary string
 concatenation. The runtime evaluates those parts left to right through the
 active symbol table and PHP-shaped echo-string conversion. Native lowering
 rejects the interpolated form, including `defined("SODIUM_$constant")`, until
 native constant tables and runtime string lookup semantics exist. `${...}`,
-nested offsets, dynamic properties, static properties, and arbitrary complex
-expressions remain lexer boundaries.
+dynamic properties, static properties, and arbitrary complex expressions remain
+lexer boundaries.
 
 PHP error-control syntax is represented as an explicit AST wrapper for
 `@expr`. The interpreter currently evaluates the wrapped expression normally

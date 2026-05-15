@@ -678,6 +678,16 @@ pub enum InterpolatedStringPart {
         variable: String,
         property: String,
     },
+    AccessChain {
+        variable: String,
+        segments: Vec<InterpolatedAccessSegment>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolatedAccessSegment {
+    ArrayOffset(InterpolatedArrayKey),
+    ObjectProperty(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -16,8 +16,8 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
     ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterpolatedArrayKey, InterpolatedStringPart, Program, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
+    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, Program, Span,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -3258,9 +3258,41 @@ impl Interpreter {
                         .map_err(|error| runtime_error(span, error))?;
                     output.push_str(&text);
                 }
+                InterpolatedStringPart::AccessChain { variable, segments } => {
+                    let value =
+                        self.evaluate_interpolated_access_chain(variable, segments, span, scope)?;
+                    let text = value
+                        .try_echo_string()
+                        .map_err(|error| runtime_error(span, error))?;
+                    output.push_str(&text);
+                }
             }
         }
         Ok(Value::String(output))
+    }
+
+    fn evaluate_interpolated_access_chain(
+        &self,
+        variable: &str,
+        segments: &[InterpolatedAccessSegment],
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let mut value = scope.read_static(variable, span)?;
+
+        for segment in segments {
+            value = match segment {
+                InterpolatedAccessSegment::ArrayOffset(key) => {
+                    let key = self.evaluate_interpolated_array_key(key, span, scope)?;
+                    self.read_interpolated_array_offset(value, key, span)?
+                }
+                InterpolatedAccessSegment::ObjectProperty(property) => {
+                    self.read_interpolated_object_property(value, property, span)?
+                }
+            };
+        }
+
+        Ok(value)
     }
 
     fn evaluate_interpolated_array_offset(
@@ -3271,15 +3303,32 @@ impl Interpreter {
         scope: &SymbolTable,
     ) -> CompileResult<Value> {
         let array = scope.read_static(variable, span)?;
-        let key = match key {
+        let key = self.evaluate_interpolated_array_key(key, span, scope)?;
+        self.read_interpolated_array_offset(array, key, span)
+    }
+
+    fn evaluate_interpolated_array_key(
+        &self,
+        key: &InterpolatedArrayKey,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<ArrayKey> {
+        Ok(match key {
             InterpolatedArrayKey::Int(value) => ArrayKey::Int(*value),
             InterpolatedArrayKey::String(value) => ArrayKey::String(value.clone()),
             InterpolatedArrayKey::Variable(name) => {
                 let value = scope.read_static(name, span)?;
                 ArrayKey::from_value(&value).map_err(|error| runtime_error(span, error))?
             }
-        };
+        })
+    }
 
+    fn read_interpolated_array_offset(
+        &self,
+        array: Value,
+        key: ArrayKey,
+        span: Span,
+    ) -> CompileResult<Value> {
         match array {
             Value::Array(array) => array.get(key.clone()).cloned().ok_or_else(|| {
                 runtime_error(
@@ -3305,6 +3354,15 @@ impl Interpreter {
         scope: &SymbolTable,
     ) -> CompileResult<Value> {
         let object = scope.read_static(variable, span)?;
+        self.read_interpolated_object_property(object, property, span)
+    }
+
+    fn read_interpolated_object_property(
+        &self,
+        object: Value,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
         match object {
             Value::Object(object) => {
                 let (current_class_id, protected_class_ids) =

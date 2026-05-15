@@ -990,24 +990,28 @@ echo "{{$term_count}}", "\n";
 fn double_quoted_strings_interpolate_current_array_offsets_and_object_properties() {
     let execution = run_source(
         r#"<?php
-$attributes = ["textAlign" => "center"];
+$attributes = ["textAlign" => "center", "layout" => ["columns" => 3]];
 $key = "textAlign";
 class Partial {
     public $id;
+    public $context;
 }
 $partial = new Partial();
 $partial->id = "header";
+$partial->context = ["displayLayout" => ["columns" => 4]];
 echo "has-text-align-{$attributes['textAlign']}";
 echo "|has-text-align-{$attributes[$key]}";
 echo "|has-text-align-$attributes[textAlign]";
 echo "|customize_partial_render_{$partial->id}";
+echo "|columns-{$attributes['layout']['columns']}";
+echo "|columns-{$partial->context['displayLayout']['columns']}";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "has-text-align-center|has-text-align-center|has-text-align-center|customize_partial_render_header"
+        "has-text-align-center|has-text-align-center|has-text-align-center|customize_partial_render_header|columns-3|columns-4"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1024,20 +1028,24 @@ echo "${name}";
     assert_eq!(dollar_brace.column, 6);
     assert_eq!(
         dollar_brace.message,
-        "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
+        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 
-    let nested = lex_error(
+    let dynamic_property = lex_error(
         r#"<?php
-$attributes = ["textAlign" => ["mobile" => "center"]];
-echo "has-text-align-{$attributes['textAlign']['mobile']}";
+class Partial {
+    public $id;
+}
+$partial = new Partial();
+$property = "id";
+echo "customize_partial_render_{$partial->{$property}}";
 "#,
     );
-    assert_eq!(nested.line, 3);
-    assert_eq!(nested.column, 6);
+    assert_eq!(dynamic_property.line, 7);
+    assert_eq!(dynamic_property.column, 6);
     assert_eq!(
-        nested.message,
-        "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
+        dynamic_property.message,
+        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 }
 

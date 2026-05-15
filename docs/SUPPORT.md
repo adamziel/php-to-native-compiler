@@ -672,12 +672,13 @@
   `$$name` and `${...}`
 - double-quoted string interpolation for simple `$name`, braced `{$name}`,
   direct array offsets such as `{$items['name']}`, `{$items[$key]}`, and
-  `$items[name]`, and direct object properties such as `{$partial->id}`. Array
-  keys may currently be string literals, integer literals, bare string keys, or
-  variable keys that coerce through the current array-key rules. Nested
-  offsets, dynamic property names, static properties, `${...}`, variable
-  variables, arbitrary expression interpolation, exact diagnostics, and native
-  lowering remain unsupported.
+  `$items[name]`, direct object properties such as `{$partial->id}`, and
+  chained property/offset reads such as
+  `{$block->context['displayLayout']['columns']}`. Array keys may currently be
+  string literals, integer literals, bare string keys, or variable keys that
+  coerce through the current array-key rules. Dynamic property names, static
+  properties, `${...}`, variable variables, arbitrary expression
+  interpolation, exact diagnostics, and native lowering remain unsupported.
 - syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
   before functions, classes, class members, and parameters. Attribute metadata,
   reflection visibility, target validation, namespace-aware attribute names,
