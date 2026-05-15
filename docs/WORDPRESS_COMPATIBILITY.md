@@ -1352,7 +1352,9 @@ historical blockers and remaining full-support gaps include:
   claiming real server status fidelity. Milestone 881 adds bounded
   deterministic `mysqli_autocommit($handle, bool $mode)` placeholder success
   without real autocommit state, transactions, commit/rollback behavior, or
-  host database integration.
+  host database integration. Milestone 882 wires that placeholder through a
+  synthetic WordPress-shaped `wpdb` autocommit bookkeeping smoke without
+  claiming real WordPress transaction fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic `mysqli_autocommit()` placeholder
+through a WordPress-shaped `wpdb` transaction/autocommit bookkeeping path.
+System PHP would require the mysqli extension and a real host connection to
+mutate actual autocommit or transaction state.

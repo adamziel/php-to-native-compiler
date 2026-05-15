@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 882, a synthetic WordPress-shaped `wpdb`
+  transaction/autocommit bookkeeping smoke that calls the bounded
+  `mysqli_autocommit($this->dbh, false/true)` placeholder path, records local
+  autocommit state, and verifies that the placeholder boundary ran twice. This
+  is a harness smoke only; it does not add real WordPress transaction fidelity,
+  real autocommit state, commit/rollback behavior, host database integration,
+  warning/error fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone882`.
+
 - Added Milestone 881, bounded `mysqli_autocommit()` support for placeholder
   MySQLi handles. The runtime now accepts
   `mysqli_autocommit($handle, false)` and

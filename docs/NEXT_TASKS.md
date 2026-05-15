@@ -8130,16 +8130,27 @@ handled.
   lookup. This is not real autocommit state, transaction start/end,
   commit/rollback behavior, host database integration, warnings/errors, or
   native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
   bounded `mysqli_autocommit()` placeholder through a WordPress-shaped
   transaction/autocommit bookkeeping method without claiming real transaction
   or database-state behavior.
+  Milestone 882 adds a `phpc-only` synthetic `wpdb` fixture that toggles
+  placeholder autocommit off and on through `mysqli_autocommit($this->dbh,
+  false/true)`, records local bookkeeping state, and records that both
+  placeholder calls ran. It is not real WordPress transaction behavior, real
+  autocommit state, commit/rollback behavior, host database integration,
+  warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next database boundary after
+  autocommit placeholders and choose a small tested slice, such as a named
+  `mysqli_begin_transaction()`/`mysqli_commit()`/`mysqli_rollback()` boundary
+  or deterministic placeholder error-state metadata, before broader SQL
+  execution is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `cf22320 tests: add wordpress wpdb stat smoke`, covering Milestone 880
-  before the current Milestone 881 candidate.
+  `dabac71 runtime: add mysqli autocommit placeholder`, covering Milestone 881
+  before the current Milestone 882 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

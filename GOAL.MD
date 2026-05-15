@@ -176,7 +176,8 @@ synthetic WordPress-shaped `wpdb` host-info bookkeeping smoke, plus
 deterministic zeroed `mysqli_stat()` placeholder server-status metadata wired
 through a synthetic WordPress-shaped `wpdb` server-status bookkeeping smoke,
 plus a bounded deterministic `mysqli_autocommit()` placeholder transaction
-boundary for boolean modes.
+boundary for boolean modes wired through a synthetic WordPress-shaped `wpdb`
+autocommit bookkeeping smoke.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone882/wpdb_autocommit_boundary.php
+disabled
+enabled
+checked
+on
+2
