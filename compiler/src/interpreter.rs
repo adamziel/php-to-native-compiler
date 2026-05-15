@@ -1070,6 +1070,22 @@ impl Interpreter {
                 self.execute_unset_nested_array_index(name, indices, *span, scope)?;
                 Ok(Flow::Normal)
             }
+            Stmt::UnsetObjectProperty {
+                object,
+                property,
+                span,
+            } => {
+                self.execute_unset_object_property(object, property, *span, scope)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::UnsetDynamicObjectProperty {
+                object,
+                property,
+                span,
+            } => {
+                self.execute_unset_dynamic_object_property(object, property, *span, scope)?;
+                Ok(Flow::Normal)
+            }
             Stmt::UnsetStaticProperty {
                 class_name,
                 property,
@@ -1503,6 +1519,12 @@ impl Interpreter {
             UnsetTarget::NestedArrayIndex { name, indices, .. } => {
                 self.execute_unset_nested_array_index(name, indices, span, scope)
             }
+            UnsetTarget::ObjectProperty {
+                object, property, ..
+            } => self.execute_unset_object_property(object, property, span, scope),
+            UnsetTarget::DynamicObjectProperty {
+                object, property, ..
+            } => self.execute_unset_dynamic_object_property(object, property, span, scope),
             UnsetTarget::ObjectPropertyArrayIndex {
                 object,
                 property,
@@ -1526,6 +1548,56 @@ impl Interpreter {
                 self.execute_unset_late_static_property(property, span)
             }
         }
+    }
+
+    fn execute_unset_object_property(
+        &mut self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match scope.read_static(object_name, span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot unset property ${property} on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        if object
+            .read_property_for_isset_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?
+            .is_none()
+        {
+            return Ok(());
+        }
+
+        object
+            .write_property_from_context(
+                property,
+                Value::Null,
+                current_class_id,
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn execute_unset_dynamic_object_property(
+        &mut self,
+        object_name: &str,
+        property: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let property_name = self.evaluate_dynamic_property_name(property, span, scope)?;
+        self.execute_unset_object_property(object_name, &property_name, span, scope)
     }
 
     fn execute_unset_array_index(

@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T09:22:10Z
+
+- Checkpoint before this task:
+  `e30773d parser: add object property reference sources`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 796, bounded direct and dynamic object-property
+  `unset(...)` operands for the reached WordPress `unset($this->$name)` path in
+  `wp-includes/class-wpdb.php:832`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/milestone796/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_property_unset -- --nocapture`,
+  `cargo test -p phpc --test object_model dynamic_object_property_unset_uses_current_property_name -- --exact`,
+  `cargo test -p phpc --test syntax_boundaries emit_ir_rejects_object_property_unset_lowering -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone796`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `parse error at <bootstrap-shim>:4127:38: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented`.
+- Remaining semantic gaps: true property removal/uninitialization,
+  typed-property behavior, physical dynamic-slot removal, magic `__unset`
+  dispatch, non-public visibility behavior beyond the current visible-slot
+  lookup, mixed object/property/ArrayAccess unset targets,
+  references/copy-on-write, exact diagnostics, and native lowering remain
+  unsupported.
+- Next concrete task: implement bounded `__CLASS__` evaluation in class
+  context for the reached WordPress startup path while keeping trait/namespace
+  edge cases, closure rebinding, anonymous-class exact names, source mapping,
+  native lowering, and other magic constants named unless implemented.
+
 ## Loop Event 2026-05-15T09:07:20Z
 
 - Checkpoint before this task:

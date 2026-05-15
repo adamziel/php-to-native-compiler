@@ -121,6 +121,16 @@ pub enum Stmt {
         indices: Vec<Expr>,
         span: Span,
     },
+    UnsetObjectProperty {
+        object: String,
+        property: String,
+        span: Span,
+    },
+    UnsetDynamicObjectProperty {
+        object: String,
+        property: Expr,
+        span: Span,
+    },
     UnsetStaticProperty {
         class_name: String,
         property: String,
@@ -217,6 +227,8 @@ impl Stmt {
             | Stmt::UnsetVariable { span, .. }
             | Stmt::UnsetArrayIndex { span, .. }
             | Stmt::UnsetNestedArrayIndex { span, .. }
+            | Stmt::UnsetObjectProperty { span, .. }
+            | Stmt::UnsetDynamicObjectProperty { span, .. }
             | Stmt::UnsetStaticProperty { span, .. }
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
@@ -369,6 +381,16 @@ pub enum UnsetTarget {
         object: String,
         property: String,
         indices: Vec<Expr>,
+        span: Span,
+    },
+    ObjectProperty {
+        object: String,
+        property: String,
+        span: Span,
+    },
+    DynamicObjectProperty {
+        object: String,
+        property: Expr,
         span: Span,
     },
     StaticProperty {

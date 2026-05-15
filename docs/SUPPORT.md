@@ -406,8 +406,11 @@
   `unset($array[$outer][$inner])` for direct array variables, plus nested
   object-property array offset removal such as
   `unset($object->items[$outer][$inner])` for direct object variables and named
-  properties, over the current integer/string key subset; multiple supported
-  `unset(...)` operands execute left to right
+  properties, over the current integer/string key subset. Direct and dynamic
+  object-property removal such as `unset($object->property)` and
+  `unset($object->$name)` are supported for direct object variables by writing
+  `null` into the visible property slot in the current value model; multiple
+  supported `unset(...)` operands execute left to right
 - `foreach ($array as $value)` and `foreach ($array as $key => $value)`
   iteration in insertion order over a snapshot of the current array entries
 - `isset($array[$key])` and nested direct-variable rooted array offset paths
@@ -830,11 +833,9 @@
   or skipped slots, such as `[$name] = $array`, expression-position
   `list(...)`, nested/keyed targets, references, and non-variable targets
 - explicit parse diagnostics for unsupported `unset(...)` forms outside the
-  current direct-variable, direct/nested array-offset,
-  nested object-property array-offset, and static-property diagnostic statement
-  subset
-- explicit parse diagnostics for unsupported `unset($object->property)` before
-  object property uninitialization semantics exist
+  current direct-variable, direct/nested array-offset, direct/dynamic
+  object-property, nested object-property array-offset, and static-property
+  diagnostic statement subset
 - explicit parse diagnostics for unsupported `foreach` key-by-reference forms,
   destructuring loop targets, and expression-position `foreach`
 - explicit parse diagnostics for unsupported expression-position `for` and
@@ -2119,11 +2120,12 @@
   layout, loop control flow, switch fallthrough, references/copy-on-write
   side-effect behavior, and exact native error objects.
   Native compound assignment, null coalescing assignment,
-  increment/decrement, assignment expressions, direct variable unset, static
-  property unset, and multiple-operand unset are rejected before operand or
-  mutation-target lowering with a specific codegen diagnostic until generated
-  code has read-modify-write ordering, null-aware mutation, unset symbol-table
-  effects, references/copy-on-write, and exact native error objects.
+  increment/decrement, assignment expressions, direct variable unset, object
+  property unset, static property unset, and multiple-operand unset are
+  rejected before operand or mutation-target lowering with a specific codegen
+  diagnostic until generated code has read-modify-write ordering, null-aware
+  mutation, unset symbol-table effects, references/copy-on-write, and exact
+  native error objects.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset. CLI coverage for
   `phpc compile --emit-asm` records a normalized success summary for the current
@@ -3253,12 +3255,13 @@
   `list($a, $b) = expr;` is supported for direct variable targets and skipped
   slots only; exact PHP warning/notice emission for missing offsets and
   non-array right-hand sides is not implemented. `unset(...)` forms outside direct variables,
-  direct array-offset operands, and static-property diagnostic operands,
+  direct/nested array-offset operands, direct/dynamic object-property operands,
+  nested object-property array-offset operands, and static-property diagnostic operands,
   comma-separated `for` header expression lists,
   expression-form `do ... while`, expression-form `switch`, malformed
   alternate switch bodies, and exponentiation syntax `**`/`**=` are rejected
-  with stable parse diagnostics; object property removal, append-offset unset,
-  and nested/complex unset operands are not implemented.
+  with stable parse diagnostics; append-offset unset and complex mixed
+  object/property/ArrayAccess unset operands are not implemented.
   Complex assignment lvalues outside the documented direct-variable,
   direct/nested array-offset, append/append-at-depth, direct object-property,
   and supported static-property target subset, nested/complex
@@ -3385,8 +3388,8 @@
   canonicalization, and function/method-context lowering exist.
 - array literal spread elements and array literal reference keys
 - `unset(...)` forms outside direct variables, direct/nested array offsets,
-  nested object-property array offsets, and static-property diagnostic
-  operands, including plain object property removal, append-offset unset, and
+  direct/dynamic object properties, nested object-property array offsets, and
+  static-property diagnostic operands, including append-offset unset and
   complex mixed object/property/ArrayAccess operands;
   these fail with stable parse diagnostics
 - executable by-reference `foreach`, object iteration, destructuring loop
@@ -3995,10 +3998,11 @@
 - `empty($object->name)` dynamic property names, non-public visibility
   context, complex lvalues, magic `__isset`/`__get` behavior,
   references/copy-on-write, exact native error behavior, and native lowering
-- `unset($object->name)` property uninitialization, typed/uninitialized
-  property behavior, dynamic property names, non-public visibility context,
-  magic `__unset` behavior, references/copy-on-write, exact native error
-  behavior, and native lowering
+- `unset($object->name)`/`unset($object->$name)` true property removal and
+  property uninitialization, typed/uninitialized property behavior,
+  non-public visibility context beyond the current visible-slot lookup, magic
+  `__unset` behavior, references/copy-on-write, exact native error behavior,
+  and native lowering
 - `is_a` inheritance beyond current single-parent class chain, interfaces,
   traits, aliases/imports, namespace-aware names, autoloading, exact native `TypeError` behavior, object handle
   identity beyond current class ids, object operands, and native lowering

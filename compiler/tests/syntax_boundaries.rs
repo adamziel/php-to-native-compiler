@@ -2,7 +2,7 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
@@ -196,43 +196,17 @@ UNSET($items[]);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented"
+            "unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), direct object properties like unset($object->property), and direct static property operands like unset(ClassName::$property) are implemented; dynamic property offsets, append, and broader nested unset forms are not implemented"
         );
     }
 }
 
 #[test]
-fn object_property_unset_has_stable_parse_boundary() {
-    let error = parse_error(
-        r#"<?php
-class Box {
-    public $name;
-}
-$box = new Box();
-unset($box->name);
-"#,
-    );
+fn emit_ir_rejects_object_property_unset_lowering() {
+    let error = php_compiler::emit_ir_source("<?php\nunset($box->name);\n").unwrap_err();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 11);
-    assert_eq!(
-        error.message,
-        "unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled"
-    );
-}
-
-#[test]
-fn emit_ir_rejects_object_property_unset_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source(
-        "<?php\nclass Box { public $name; }\n$box = new Box();\nunset($box->name);\n",
-    )
-    .unwrap_err();
-
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 
 #[test]

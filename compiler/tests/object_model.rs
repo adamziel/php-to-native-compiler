@@ -293,6 +293,71 @@ unset($bag->items["key"]["child"]);
 }
 
 #[test]
+fn object_property_unset_nulls_visible_property_slot() {
+    let source = r#"<?php
+class Box {
+    public $name;
+    public $other;
+}
+
+$box = new Box();
+$box->name = "Ada";
+$box->other = "kept";
+unset($box->name);
+echo isset($box->name) ? "set" : "unset";
+echo "|", empty($box->name) ? "empty" : "filled";
+echo "|", $box->other;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "unset|empty|kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn multiple_object_property_unset_operands_run_left_to_right() {
+    let source = r#"<?php
+class Box {
+    public $first;
+    public $second;
+}
+
+$box = new Box();
+$box->first = "one";
+$box->second = "two";
+unset($box->first, $box->second, $box->missing);
+echo isset($box->first) ? "first" : "no-first";
+echo "|", isset($box->second) ? "second" : "no-second";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "no-first|no-second");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_object_property_unset_uses_current_property_name() {
+    let source = r#"<?php
+class Box {
+    public $name;
+    public $other;
+}
+
+$box = new Box();
+$property = "name";
+$box->name = "Ada";
+$box->other = "kept";
+unset($box->$property);
+echo isset($box->name) ? "set" : "unset";
+echo "|", $box->other;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "unset|kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn dynamic_public_property_names_read_write_existing_slots_and_stdclass_slots() {
     let source = r#"<?php
 class Account {

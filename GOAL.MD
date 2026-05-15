@@ -85,7 +85,9 @@ bounded `restore_error_handler()` cleanup, and keyword-named object-property
 reads/writes after `->`, and bounded array literal reference elements that
 currently evaluate the referenced value without aliasing, and bounded
 object-property reference-assignment sources that copy current array/object
-values without aliasing. The
+values without aliasing, and bounded direct/dynamic object-property
+`unset(...)` operands that currently null visible property slots instead of
+modeling true property uninitialization. The
 current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
@@ -99,7 +101,8 @@ the first `__METHOD__` magic constant in method context, the first closure
 capture in the `set_error_handler()` path, the reached `preg_match('//u', '')`
 UTF-8 probe, the following `restore_error_handler()` cleanup, and the reached
 array literal reference element, and the reached object-property
-reference-assignment source; it now stops at object-property `unset(...)`.
+reference-assignment source and the reached `unset($this->$name)` path; it now
+stops at executable `__CLASS__` in class context.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -342,8 +345,9 @@ reached UTF-8 startup probe. Milestone 792 added bounded
 `restore_error_handler()` cleanup. Milestone 793 added keyword-named
 object-property reads/writes after `->`. Milestone 794 added bounded array
 literal reference elements without aliasing. Milestone 795 added bounded
-object-property reference-assignment sources without aliasing. The current
-frontier is now object-property `unset(...)` in WordPress startup.
+object-property reference-assignment sources without aliasing, and bounded
+direct/dynamic object-property `unset(...)` operands that null visible slots.
+The current frontier is now executable `__CLASS__` in WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -495,8 +499,9 @@ The repository already has a working Rust workspace with:
   bounded `restore_error_handler()` cleanup, and keyword-named object-property
   parsing after `->`, and bounded array literal reference elements without
   aliasing, and bounded object-property reference-assignment sources without
-  aliasing. The next bottleneck is object-property `unset(...)` in the
-  WordPress bootstrap shim.
+  aliasing, and bounded direct/dynamic object-property `unset(...)` operands
+  that null visible property slots. The next bottleneck is executable
+  `__CLASS__` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

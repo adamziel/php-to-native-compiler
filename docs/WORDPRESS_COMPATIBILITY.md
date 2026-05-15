@@ -843,6 +843,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `parse error at <bootstrap-shim>:832:15: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
   This is not true reference aliasing, reference containers, copy-on-write,
   object-property unset, native lowering, or WordPress bootstrap support.
+  Milestone 796 implements bounded direct and dynamic object-property
+  `unset(...)` operands for the reached `unset($this->$name)` path in
+  `wp-includes/class-wpdb.php:832`. It nulls the current visible property slot
+  instead of modeling true property removal or uninitialization. The real
+  bootstrap-shim probe now advances to
+  `parse error at <bootstrap-shim>:4127:38: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented`.
+  This is not typed-property uninitialization, physical dynamic-slot removal,
+  magic `__unset` dispatch, references/copy-on-write, native lowering, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

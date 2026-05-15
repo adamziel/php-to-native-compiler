@@ -7283,18 +7283,26 @@ handled.
   current array/object values without aliasing, advancing the real
   bootstrap-shim probe to
   `parse error at <bootstrap-shim>:832:15: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
-- [ ] Parser/object lane: implement bounded `unset($object->property)` for the
+- [x] Parser/object lane: implement bounded `unset($object->property)` for the
   reached WordPress startup path. Keep typed-property uninitialization, magic
-  `__unset`, visibility context beyond the current direct-property slice,
-  dynamic property unset, array/object mixed unset targets,
-  references/copy-on-write, exact diagnostics, and native lowering named unless
-  implemented.
+  `__unset`, visibility context beyond the current visible-property slice,
+  array/object mixed unset targets, references/copy-on-write, exact
+  diagnostics, and native lowering named unless implemented.
+  Milestone 796 accepts direct and dynamic object-property unset operands such
+  as `unset($object->property)` and `unset($object->$name)` for direct object
+  variables, nulls the current visible property slot, and advances the real
+  bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:4127:38: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented`.
+- [ ] Runtime/magic-constant lane: implement bounded `__CLASS__` evaluation in
+  class context for the reached WordPress startup path. Keep trait/namespace
+  edge cases, closure rebinding, anonymous-class exact names, source mapping,
+  native lowering, and other magic constants named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 795 checkpoint, the latest committed checkpoint
-  is `f7157c5 parser: add bounded array reference elements`, covering
-  Milestone 794.
+- Before the current Milestone 796 checkpoint, the latest committed checkpoint
+  is `e30773d parser: add object property reference sources`, covering
+  Milestone 795.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

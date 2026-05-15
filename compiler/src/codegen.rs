@@ -40,8 +40,8 @@ const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if
 const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -388,6 +388,10 @@ impl LlvmGenerator {
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
             | Stmt::UnsetLateStaticProperty { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Stmt::UnsetObjectProperty { span, .. }
+            | Stmt::UnsetDynamicObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {
@@ -3175,6 +3179,10 @@ impl CGenerator {
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
             | Stmt::UnsetLateStaticProperty { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
+            Stmt::UnsetObjectProperty { span, .. }
+            | Stmt::UnsetDynamicObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Stmt::UnsetArrayIndex { span, .. } | Stmt::UnsetNestedArrayIndex { span, .. } => {

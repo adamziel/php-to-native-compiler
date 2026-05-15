@@ -4,4 +4,5 @@ class Box {
 }
 
 $box = new Box();
-unset($box->name);
+$name = "name";
+unset($box->$name["x"]);

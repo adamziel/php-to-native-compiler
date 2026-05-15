@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 796, bounded direct and dynamic object-property
+  `unset(...)` operands for the current WordPress `unset($this->$name)` path in
+  `wp-includes/class-wpdb.php:832`. The parser now accepts
+  `unset($object->property)` and `unset($object->$name)` for direct object
+  variables, including multiple supported operands. The interpreter evaluates
+  dynamic property names through the existing current string/integer property
+  name subset and writes `null` into the visible property slot, which gives the
+  current `isset`/`empty` behavior without modeling true property
+  uninitialization. Typed/uninitialized properties, physical dynamic-slot
+  removal, magic `__unset` dispatch, non-public visibility behavior beyond the
+  current visible-slot lookup, mixed object/property/ArrayAccess unset targets,
+  references/copy-on-write, exact diagnostics, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `unset($this->$name)` path to
+  `parse error at <bootstrap-shim>:4127:38: unsupported magic constant __CLASS__: class context evaluation requires class-context tracking, which is not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model object_property_unset -- --nocapture`,
+  `cargo test -p phpc --test object_model dynamic_object_property_unset_uses_current_property_name -- --exact`,
+  `cargo test -p phpc --test syntax_boundaries emit_ir_rejects_object_property_unset_lowering -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone796`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 795, bounded object-property reference-assignment sources for
   the current WordPress `$GLOBALS['posts'] = & $wp_query->posts` startup path.
   The parser now accepts direct and dynamic object-property expressions as

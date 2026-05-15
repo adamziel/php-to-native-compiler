@@ -1719,6 +1719,20 @@ impl Parser {
                         span,
                     })
                 }
+                UnsetTarget::ObjectProperty {
+                    object, property, ..
+                } => Ok(Stmt::UnsetObjectProperty {
+                    object,
+                    property,
+                    span,
+                }),
+                UnsetTarget::DynamicObjectProperty {
+                    object, property, ..
+                } => Ok(Stmt::UnsetDynamicObjectProperty {
+                    object,
+                    property,
+                    span,
+                }),
                 target @ UnsetTarget::ObjectPropertyArrayIndex { .. } => Ok(Stmt::UnsetMany {
                     targets: vec![target],
                     span,
@@ -1771,16 +1785,27 @@ impl Parser {
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let operator_span = self.previous().span;
-                if matches!(self.peek().kind, TokenKind::Variable(_)) {
-                    return Err(
-                        self.error_at(operator_span, unsupported_object_property_unset_message())
-                    );
+                if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
+                    let property = self.parse_dynamic_property_name_expr(operator_span)?;
+                    if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+                        return Ok(UnsetTarget::DynamicObjectProperty {
+                            object: name,
+                            property,
+                            span: target_span,
+                        });
+                    }
+                    return Err(self.error_at(target_span, unsupported_unset_message()));
                 }
                 let (property, _) = self.consume_object_property_name(operator_span)?;
                 if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
-                    return Err(
-                        self.error_at(operator_span, unsupported_object_property_unset_message())
-                    );
+                    if self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+                        return Ok(UnsetTarget::ObjectProperty {
+                            object: name,
+                            property,
+                            span: target_span,
+                        });
+                    }
+                    return Err(self.error_at(target_span, unsupported_unset_message()));
                 }
                 let bracket_span = self.previous().span;
                 if self.check(|kind| matches!(kind, TokenKind::RBracket)) {
@@ -5591,11 +5616,7 @@ fn unsupported_first_class_callable_message() -> &'static str {
 }
 
 fn unsupported_unset_message() -> &'static str {
-    "unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented"
-}
-
-fn unsupported_object_property_unset_message() -> &'static str {
-    "unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled"
+    "unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), direct object properties like unset($object->property), and direct static property operands like unset(ClassName::$property) are implemented; dynamic property offsets, append, and broader nested unset forms are not implemented"
 }
 
 fn unsupported_foreach_expression_message() -> &'static str {
