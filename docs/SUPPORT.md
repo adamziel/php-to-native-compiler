@@ -83,7 +83,10 @@
   `$object->$name = expr`, and `$object->{$expr} = expr` are supported for
   direct object variables when the property-name expression evaluates to a
   string or integer name and resolves to an existing public slot; writes can
-  also materialize public dynamic slots on `stdClass` objects. Nested compound
+  also materialize public dynamic slots on `stdClass` objects. Array literal
+  reference elements such as `array(&$value)` and keyed values like
+  `array('name' => &$value)` are parsed and evaluate the current value, but do
+  not create PHP reference aliases yet. Nested compound
   assignment, nested `??=`, nested
   increment/decrement, mixed object/property/ArrayAccess
   targets, non-`stdClass` missing property materialization,
@@ -817,7 +820,8 @@
   dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
   current built-in/runtime-defined slice, such as `PHP_OS`
-- explicit parse diagnostics for unsupported array spread/reference elements
+- explicit parse diagnostics for unsupported array spread elements and
+  reference array keys
 - explicit parse diagnostics for unsupported array/list destructuring beyond
   the current positional `list($a, $b) = expr;` statement slice with variable
   or skipped slots, such as `[$name] = $array`, expression-position
@@ -3234,10 +3238,12 @@
   runtime diagnostics. Float identity currently follows Rust/PHP-style `f64`
   equality for representable literals and does not claim broader `NAN`/`INF`
   precision edge-case coverage.
-- Array gaps: array spread elements, array reference elements, short
-  `[...]` destructuring assignment targets, expression-position `list(...)`,
-  and keyed, nested, reference, or non-variable list targets are rejected with
-  stable parse diagnostics. Positional statement-form
+- Array gaps: array spread elements, reference array keys, short `[...]`
+  destructuring assignment targets, expression-position `list(...)`, and
+  keyed, nested, reference, or non-variable list targets are rejected with
+  stable parse diagnostics. Array literal reference values are parsed and
+  evaluated by current value only; real aliases, reference containers, and
+  copy-on-write are not implemented. Positional statement-form
   `list($a, $b) = expr;` is supported for direct variable targets and skipped
   slots only; exact PHP warning/notice emission for missing offsets and
   non-array right-hand sides is not implemented. `unset(...)` forms outside direct variables,
@@ -3371,7 +3377,7 @@
   magic constants `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, and
   `__METHOD__` with a specific codegen diagnostic until source mapping, path
   canonicalization, and function/method-context lowering exist.
-- array literal spread elements and array literal reference elements
+- array literal spread elements and array literal reference keys
 - `unset(...)` forms outside direct variables, direct/nested array offsets,
   nested object-property array offsets, and static-property diagnostic
   operands, including plain object property removal, append-offset unset, and

@@ -82,7 +82,8 @@ magic-constant evaluation, bounded `set_error_handler()` registration, and
 bounded explicit closure capture binding for inert closure values, and bounded
 `preg_match()` `u`-modifier handling for the reached UTF-8 startup probe, and
 bounded `restore_error_handler()` cleanup, and keyword-named object-property
-reads/writes after `->`. The
+reads/writes after `->`, and bounded array literal reference elements that
+currently evaluate the referenced value without aliasing. The
 current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
@@ -94,8 +95,9 @@ regex startup guard, past the first error-reporting mask setup, and past the
 first startup directory check, the first braced dynamic object-property access,
 the first `__METHOD__` magic constant in method context, the first closure
 capture in the `set_error_handler()` path, the reached `preg_match('//u', '')`
-UTF-8 probe, and the following `restore_error_handler()` cleanup; it now stops
-at an array element reference syntax boundary.
+UTF-8 probe, the following `restore_error_handler()` cleanup, and the reached
+array literal reference element; it now stops at the next reference assignment
+syntax boundary.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -336,8 +338,9 @@ added explicit `use (...)` closure capture binding for inert closure values.
 Milestone 791 added bounded `preg_match()` `u`-modifier handling for the
 reached UTF-8 startup probe. Milestone 792 added bounded
 `restore_error_handler()` cleanup. Milestone 793 added keyword-named
-object-property reads/writes after `->`. The current frontier is now an array
-element reference syntax boundary in WordPress startup.
+object-property reads/writes after `->`. Milestone 794 added bounded array
+literal reference elements without aliasing. The current frontier is now a
+reference assignment syntax boundary in WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -487,8 +490,9 @@ The repository already has a working Rust workspace with:
   evaluation, bounded `set_error_handler()` registration, bounded explicit
   closure capture binding, bounded `preg_match()` `u`-modifier handling, and
   bounded `restore_error_handler()` cleanup, and keyword-named object-property
-  parsing after `->`. The next bottleneck is array element reference syntax in
-  the WordPress bootstrap shim.
+  parsing after `->`, and bounded array literal reference elements without
+  aliasing. The next bottleneck is reference assignment syntax in the WordPress
+  bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

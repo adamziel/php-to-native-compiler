@@ -114,15 +114,6 @@ $items = array(...$values);
         ),
         (
             r#"<?php
-$value = "Ada";
-$items = array(&$value);
-"#,
-            3,
-            16,
-            "unsupported array reference element: references are not implemented",
-        ),
-        (
-            r#"<?php
 $values = [1, 2];
 $items = [...$values];
 "#,

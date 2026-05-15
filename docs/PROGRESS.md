@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 794, bounded array literal reference elements for the current
+  WordPress `array( &$this )` startup path. The parser now accepts unkeyed
+  array reference values and keyed reference values such as `array('name' =>
+  &$value)`, records the reference marker on the array item, and the
+  interpreter evaluates the current value into the ordered array without
+  creating an alias. Reference array keys, true PHP reference containers,
+  aliasing, copy-on-write, by-reference hook argument mutation, by-reference
+  iteration/returns, destructuring references, exact diagnostics, and native
+  lowering remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe
+  now advances past the reached array reference element to
+  `parse error at <bootstrap-shim>:671:32: unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test array_reference_literals`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_array_item_forms_are_rejected_with_stable_parse_error -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone794`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 793, keyword-named object-property parsing for the current
   WordPress `$object->public` startup path. The parser now accepts reserved
   keyword tokens as direct object-property names after `->` for the existing

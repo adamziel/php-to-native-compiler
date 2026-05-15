@@ -829,6 +829,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not keyword method calls, full dynamic property behavior,
   references/aliasing, copy-on-write, native lowering, or WordPress bootstrap
   support.
+  Milestone 794 implements bounded array literal reference elements for the
+  reached `array( &$this )` path by evaluating the current value without
+  creating an alias. The real bootstrap-shim probe now advances to
+  `parse error at <bootstrap-shim>:671:32: unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist`.
+  This is not true reference aliasing, reference containers, copy-on-write,
+  by-reference hook argument mutation, native lowering, or WordPress bootstrap
+  support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

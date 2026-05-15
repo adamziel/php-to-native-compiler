@@ -572,6 +572,7 @@ pub struct ClosureCapture {
 pub struct ArrayItem {
     pub key: Option<Expr>,
     pub value: Expr,
+    pub by_reference: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

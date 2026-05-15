@@ -7267,17 +7267,23 @@ handled.
   Milestone 793 implements keyword-named direct object-property parsing and
   advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:418:48: unsupported array reference element: references are not implemented`.
-- [ ] Parser/reference lane: implement or explicitly bound array element
+- [x] Parser/reference lane: implement or explicitly bound array element
   reference syntax for the reached WordPress startup path. Keep aliasing,
   reference containers, copy-on-write, by-reference iteration/returns,
   destructuring references, exact diagnostics, and native lowering named unless
   implemented.
+  Milestone 794 parses array literal reference values and evaluates their
+  current values without aliasing, advancing the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:671:32: unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist`.
+- [ ] Parser/reference lane: widen reference-assignment parsing for the reached
+  WordPress startup path. Keep true aliases, reference containers,
+  copy-on-write, object/static/dynamic lvalues, by-reference return sources,
+  exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 793 checkpoint, the latest committed checkpoint
-  is `14cea9d runtime: add bounded restore error handler`, covering
-  Milestone 792.
+- Before the current Milestone 794 checkpoint, the latest committed checkpoint
+  is `06ea607 parser: add keyword object properties`, covering Milestone 793.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -4188,17 +4188,26 @@ impl Parser {
 
         loop {
             self.reject_unsupported_array_item_syntax()?;
+            let first_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
             let first = self.parse_expression()?;
             let item = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
-                self.reject_unsupported_array_item_syntax()?;
+                if first_by_reference {
+                    return Err(self.error_at(
+                        first.span(),
+                        "unsupported array reference key: reference keys are not implemented",
+                    ));
+                }
+                let by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
                 ArrayItem {
                     key: Some(first),
                     value: self.parse_expression()?,
+                    by_reference,
                 }
             } else {
                 ArrayItem {
                     key: None,
                     value: first,
+                    by_reference: first_by_reference,
                 }
             };
             items.push(item);
@@ -4221,9 +4230,7 @@ impl Parser {
             TokenKind::Ellipsis => {
                 Err(self.error_at(token.span, unsupported_array_spread_message()))
             }
-            TokenKind::Ampersand => {
-                Err(self.error_at(token.span, unsupported_array_reference_element_message()))
-            }
+            TokenKind::Ampersand => Ok(()),
             _ => Ok(()),
         }
     }
@@ -5566,10 +5573,6 @@ fn unsupported_namespace_qualified_function_name_message() -> &'static str {
 
 fn unsupported_array_spread_message() -> &'static str {
     "unsupported array spread: spread elements are not implemented"
-}
-
-fn unsupported_array_reference_element_message() -> &'static str {
-    "unsupported array reference element: references are not implemented"
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
