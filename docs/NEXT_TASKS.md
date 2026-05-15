@@ -8033,15 +8033,25 @@ handled.
   diagnostics, and is visible through runtime and native metadata lookup. This
   is not real connection charset negotiation, collation state, escaping charset
   fidelity, warnings/errors, host database integration, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
   `mysqli_set_charset()` through a WordPress-shaped charset setup method
   without claiming real charset/collation behavior.
+  Milestone 872 adds a `phpc-only` synthetic `wpdb::set_charset()` fixture that
+  calls `mysqli_set_charset($this->dbh, "utf8mb4")`, records the requested
+  charset/collation properties, and records the successful placeholder result.
+  It is not real WordPress charset negotiation, collation behavior, connection
+  state, SQL escaping charset fidelity, warnings/errors, host database
+  integration, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next database boundary after charset
+  setup and choose a small tested slice, such as a named unsupported diagnostic
+  for mutation SQL (`INSERT`/`UPDATE`/`DELETE`) or a deterministic placeholder
+  for one reached WordPress metadata/update query before broader SQL execution.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `a2ac217 tests: add wordpress wpdb mutation metadata smoke`, covering
-  Milestone 870 before the current Milestone 871 candidate.
+  `84dca7d runtime: add mysqli set charset placeholder`, covering Milestone 871
+  before the current Milestone 872 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

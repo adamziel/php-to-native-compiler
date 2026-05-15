@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `84dca7d runtime: add mysqli set charset placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 872, a synthetic WordPress-shaped
+  `wpdb::set_charset()` smoke for the bounded `mysqli_set_charset()`
+  placeholder path.
+- Files changed so far: `tests/fixtures/milestone872/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone872`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb` charset setup method can
+  record the requested `utf8mb4` charset/collation and the successful
+  placeholder `mysqli_set_charset()` result.
+- Remaining semantic gaps: real WordPress charset negotiation, collation
+  behavior, connection state, SQL escaping charset fidelity, warnings/errors,
+  host database integration, and native database lowering remain missing.
+- Next concrete task: run focused fixture verification, then whitespace checks
+  and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `a2ac217 tests: add wordpress wpdb mutation metadata smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 871, bounded `mysqli_set_charset()` placeholder

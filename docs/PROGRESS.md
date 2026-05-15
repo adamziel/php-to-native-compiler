@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 872, a synthetic WordPress-shaped `wpdb::set_charset()`
+  smoke that calls the bounded `mysqli_set_charset($this->dbh, "utf8mb4")`
+  placeholder path, records the requested charset/collation on the local
+  object, records the successful placeholder result, and verifies that state
+  through public properties. This is a harness smoke only; it does not add real
+  WordPress charset negotiation, collation behavior, connection state, SQL
+  escaping charset fidelity, warnings/errors, host database integration, or
+  native lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone872`.
+
 - Added Milestone 871, bounded `mysqli_set_charset()` support for placeholder
   MySQLi handles. The runtime now accepts
   `mysqli_set_charset($handle, "utf8mb4")` case-insensitively for current

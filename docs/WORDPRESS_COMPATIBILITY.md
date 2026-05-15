@@ -1319,7 +1319,9 @@ historical blockers and remaining full-support gaps include:
   metadata for placeholder handles, and Milestone 870 adds a synthetic `wpdb`
   smoke that records that zero metadata through query bookkeeping. Milestone
   871 adds bounded `mysqli_set_charset("utf8mb4")` placeholder success for the
-  reached charset setup shape. These are still deterministic harness
+  reached charset setup shape, and Milestone 872 adds a synthetic `wpdb`
+  smoke that records that placeholder charset setup through local
+  charset/collation bookkeeping. These are still deterministic harness
   milestones, not SQL execution, real database state, duplicate-column or
   warning/error fidelity, real `wpdb` output-mode fidelity, real
   affected-row/insert-id state, real charset/collation behavior,

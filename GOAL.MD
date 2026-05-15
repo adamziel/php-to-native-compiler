@@ -164,7 +164,8 @@ numeric `ARRAY_N`-style smoke, bounded cursor reset/re-read paths, and bounded
 placeholder row-count reads wired through a WordPress-shaped `$num_rows` path,
 plus clean-state affected-row and insert-id metadata boundaries wired through
 WordPress-shaped query bookkeeping, and a bounded `mysqli_set_charset()`
-placeholder charset boundary. These are
+placeholder charset boundary wired through a WordPress-shaped setup method.
+These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
 or native WordPress compatibility.

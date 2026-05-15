@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone872/wpdb_set_charset_placeholder.php
+set
+utf8mb4
+utf8mb4_unicode_520_ci
+recorded
