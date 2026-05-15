@@ -7721,19 +7721,28 @@ handled.
   pattern and `_wp_sanitize_utf8_in_redirect` string callback. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:1566:15: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset`.
-- [ ] Runtime/regex lane: widen bounded `preg_replace()` only for the reached
+- [x] Runtime/regex lane: widen bounded `preg_replace()` only for the reached
   WordPress redirect sanitizer cleanup pattern
   `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i` with an empty replacement string.
   Keep pattern arrays, replacement arrays, subject arrays, callbacks,
   captures/backrefs, limit/count output, invalid-pattern warnings,
   byte/Unicode edge cases, exact diagnostics, and native lowering named unless
   implemented.
+  Milestone 842 covers this exact redirect sanitizer cleanup pattern. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:2018:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i are implemented in the current subset`.
+- [ ] Runtime/regex lane: inspect the reached `preg_replace()` at
+  `<bootstrap-shim>:2018:13`, identify the originating WordPress source path,
+  and implement only the exact next pattern/replacement shape if it is a small
+  honest subset. Keep broad PCRE replacement support, replacement backrefs,
+  arrays, callbacks, limit/count output, exact diagnostics, and native lowering
+  named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 841 checkpoint, the latest committed checkpoint
-  is `831a2e8 runtime: register conditional functions`, covering
-  Milestone 840.
+- Before the current Milestone 842 checkpoint, the latest committed checkpoint
+  is `7b31a6e runtime: add wordpress preg replace callback`, covering
+  Milestone 841.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

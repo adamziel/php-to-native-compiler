@@ -693,10 +693,13 @@
   remain unsupported.
   `preg_replace($pattern, $replacement, $subject)` supports exactly the
   WordPress database-version cleanup pattern `/[^0-9.].*/` and the WordPress
-  path-tail cleanup pattern `#/[^/]*$#i`, both with an empty replacement string
-  and a scalar/null string-convertible subject. The first returns the leading
-  ASCII digits/dots prefix used by `wpdb::db_version()`. The second removes
-  the final slash-delimited path segment used by `wp_guess_url()`. Pattern or
+  path-tail cleanup pattern `#/[^/]*$#i`, and the WordPress redirect sanitizer
+  cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, all with an empty
+  replacement string and a scalar/null string-convertible subject. The first
+  returns the leading ASCII digits/dots prefix used by `wpdb::db_version()`.
+  The second removes the final slash-delimited path segment used by
+  `wp_guess_url()`. The third removes characters outside the current ASCII
+  redirect allowlist while preserving already-percent-encoded bytes. Pattern or
   replacement arrays, subject arrays, non-empty replacements, limit/count
   arguments, callbacks, full PCRE replacement behavior, captures/backrefs,
   invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
@@ -4531,10 +4534,11 @@
   UTF-8 string model, broad coercions, exact diagnostics, and native lowering
   beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
-  `/[^0-9.].*/` and path-tail cleanup pattern `#/[^/]*$#i`, both with an empty
-  replacement and scalar/null subject: pattern/replacement arrays, subject
-  arrays, non-empty replacements, limit/count arguments, callbacks, full PCRE
-  replacement behavior, captures/backrefs, invalid-pattern warnings,
+  `/[^0-9.].*/`, path-tail cleanup pattern `#/[^/]*$#i`, and redirect
+  sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, all with an
+  empty replacement and scalar/null subject: pattern/replacement arrays,
+  subject arrays, non-empty replacements, limit/count arguments, callbacks,
+  full PCRE replacement behavior, captures/backrefs, invalid-pattern warnings,
   byte/Unicode behavior beyond the current valid UTF-8 string model, broad
   coercions, exact diagnostics, and native lowering beyond function-table
   introspection

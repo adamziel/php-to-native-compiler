@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+/wp-admin/install.php|/path/badquote|/p%C3%A5th/%C3%A9.php
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -12315,12 +12315,15 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     let replacement = string_contains_argument("preg_replace()", "replacement", &args[1], span)?;
     let subject = string_contains_argument("preg_replace()", "subject", &args[2], span)?;
 
-    if pattern != "/[^0-9.].*/" && pattern != "#/[^/]*$#i" {
+    if pattern != "/[^0-9.].*/"
+        && pattern != "#/[^/]*$#i"
+        && !is_wordpress_redirect_sanitizer_cleanup_pattern(&pattern)
+    {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "preg_replace()",
-                "only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset",
+                "only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i are implemented in the current subset",
             ),
         ));
     }
@@ -12342,8 +12345,48 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
         return Ok(Value::String(subject[..end].to_string()));
     }
 
+    if is_wordpress_redirect_sanitizer_cleanup_pattern(&pattern) {
+        let sanitized: String = subject
+            .chars()
+            .filter(|ch| is_wordpress_redirect_sanitizer_allowed_char(*ch))
+            .collect();
+        return Ok(Value::String(sanitized));
+    }
+
     let end = subject.rfind('/').unwrap_or(subject.len());
     Ok(Value::String(subject[..end].to_string()))
+}
+
+fn is_wordpress_redirect_sanitizer_cleanup_pattern(pattern: &str) -> bool {
+    pattern == "|[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i"
+        || pattern == "|[^a-z0-9-~+_.?#=&;,/:%!*[]()@]|i"
+}
+
+fn is_wordpress_redirect_sanitizer_allowed_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric()
+        || matches!(
+            ch,
+            '-' | '~'
+                | '+'
+                | '_'
+                | '.'
+                | '?'
+                | '#'
+                | '='
+                | '&'
+                | ';'
+                | ','
+                | '/'
+                | ':'
+                | '%'
+                | '!'
+                | '*'
+                | '['
+                | ']'
+                | '('
+                | ')'
+                | '@'
+        )
 }
 
 impl Interpreter {

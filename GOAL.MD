@@ -133,10 +133,11 @@ bounded `substr()` string slicing for the following bootstrap path, and bounded
 state, plus bounded `rtrim()` path normalization, plus conditional/nested
 function declaration registration for the reached guarded `wp_redirect()`
 declaration, plus bounded `preg_replace_callback()` for the reached
-`wp_sanitize_redirect()` UTF-8 sanitizer callback. As of Milestone 841, direct
+`wp_sanitize_redirect()` UTF-8 sanitizer callback, plus bounded
+`preg_replace()` redirect sanitizer cleanup. As of Milestone 842, direct
 `wp-settings.php` still stops at missing `ABSPATH`, while the bootstrap shim
 now stops at
-`runtime error at <bootstrap-shim>:1566:15: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ and path-tail pattern #/[^/]*$#i are implemented in the current subset`.
+`runtime error at <bootstrap-shim>:2018:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i are implemented in the current subset`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -662,10 +663,11 @@ The repository already has a working Rust workspace with:
   path normalization, and conditional/nested function declaration registration
   covers the guarded `wp_redirect()` declaration in `pluggable.php`, and
   bounded `preg_replace_callback()` covers the reached
-  `wp_sanitize_redirect()` UTF-8 sanitizer callback. The next bottleneck is a
-  new `preg_replace()` sanitizer cleanup pattern in the WordPress bootstrap
-  shim, which should be implemented only for the reached exact pattern before
-  claiming broad PCRE replacement support.
+  `wp_sanitize_redirect()` UTF-8 sanitizer callback, and bounded
+  `preg_replace()` covers the reached redirect sanitizer cleanup pattern. The
+  next bottleneck is another `preg_replace()` path in the WordPress bootstrap
+  shim at `<bootstrap-shim>:2018:13`, which should be traced to source and
+  implemented only if the exact shape is a small honest subset.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
@@ -987,11 +989,12 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 841 is the active checkpoint candidate: bounded
-  `preg_replace_callback()` support advanced the real WordPress bootstrap shim
-  to the next unsupported `preg_replace()` sanitizer cleanup pattern.
-- The next immediate WordPress-directed lane is to widen `preg_replace()` only
-  for the reached exact redirect sanitizer cleanup pattern.
+- Milestone 842 is the active checkpoint candidate: bounded `preg_replace()`
+  redirect sanitizer cleanup support advanced the real WordPress bootstrap shim
+  to another unsupported `preg_replace()` path at `<bootstrap-shim>:2018:13`.
+- The next immediate WordPress-directed lane is to trace that reached
+  `preg_replace()` to the originating WordPress source and implement only the
+  exact next pattern/replacement shape if it remains a small subset.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and
