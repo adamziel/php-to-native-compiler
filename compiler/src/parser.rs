@@ -2143,6 +2143,9 @@ impl Parser {
                 }),
                 _ => Err(self.error_at(span, unsupported_reference_assignment_source_message())),
             },
+            Expr::Property { .. } | Expr::DynamicProperty { .. } => {
+                Ok(ReferenceSource::Property { expr, span })
+            }
             Expr::MethodCall { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::SelfMethodCall { .. }
@@ -5580,7 +5583,7 @@ fn unsupported_array_destructuring_assignment_message() -> &'static str {
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {
-    "unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist"
+    "unsupported reference assignment: only direct variable, direct array-offset, object-property, and method-call reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

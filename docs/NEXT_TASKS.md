@@ -7275,15 +7275,26 @@ handled.
   Milestone 794 parses array literal reference values and evaluates their
   current values without aliasing, advancing the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:671:32: unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist`.
-- [ ] Parser/reference lane: widen reference-assignment parsing for the reached
+- [x] Parser/reference lane: widen reference-assignment parsing for the reached
   WordPress startup path. Keep true aliases, reference containers,
   copy-on-write, object/static/dynamic lvalues, by-reference return sources,
   exact diagnostics, and native lowering named unless implemented.
+  Milestone 795 parses object-property reference-assignment sources and copies
+  current array/object values without aliasing, advancing the real
+  bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:832:15: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+- [ ] Parser/object lane: implement bounded `unset($object->property)` for the
+  reached WordPress startup path. Keep typed-property uninitialization, magic
+  `__unset`, visibility context beyond the current direct-property slice,
+  dynamic property unset, array/object mixed unset targets,
+  references/copy-on-write, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 794 checkpoint, the latest committed checkpoint
-  is `06ea607 parser: add keyword object properties`, covering Milestone 793.
+- Before the current Milestone 795 checkpoint, the latest committed checkpoint
+  is `f7157c5 parser: add bounded array reference elements`, covering
+  Milestone 794.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

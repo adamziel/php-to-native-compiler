@@ -836,6 +836,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not true reference aliasing, reference containers, copy-on-write,
   by-reference hook argument mutation, native lowering, or WordPress bootstrap
   support.
+  Milestone 795 implements bounded object-property reference-assignment sources
+  for the reached `$GLOBALS['posts'] = & $wp_query->posts` path by copying the
+  current array/object value without creating an alias. The real bootstrap-shim
+  probe now advances to
+  `parse error at <bootstrap-shim>:832:15: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+  This is not true reference aliasing, reference containers, copy-on-write,
+  object-property unset, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -86,7 +86,10 @@
   also materialize public dynamic slots on `stdClass` objects. Array literal
   reference elements such as `array(&$value)` and keyed values like
   `array('name' => &$value)` are parsed and evaluate the current value, but do
-  not create PHP reference aliases yet. Nested compound
+  not create PHP reference aliases yet. Reference assignment sources support
+  direct variables, direct array offsets as a runtime boundary, method calls as
+  a runtime boundary, and direct/dynamic object-property reads that copy current
+  array/object values without aliasing. Nested compound
   assignment, nested `??=`, nested
   increment/decrement, mixed object/property/ArrayAccess
   targets, non-`stdClass` missing property materialization,
@@ -3243,7 +3246,10 @@
   keyed, nested, reference, or non-variable list targets are rejected with
   stable parse diagnostics. Array literal reference values are parsed and
   evaluated by current value only; real aliases, reference containers, and
-  copy-on-write are not implemented. Positional statement-form
+  copy-on-write are not implemented. Object-property reference-assignment
+  sources are parsed and copy current array/object values only; scalar sources,
+  real aliases, reference containers, and copy-on-write are not implemented.
+  Positional statement-form
   `list($a, $b) = expr;` is supported for direct variable targets and skipped
   slots only; exact PHP warning/notice emission for missing offsets and
   non-array right-hand sides is not implemented. `unset(...)` forms outside direct variables,

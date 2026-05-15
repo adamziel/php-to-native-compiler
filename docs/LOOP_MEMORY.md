@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T09:07:20Z
+
+- Checkpoint before this task:
+  `f7157c5 parser: add bounded array reference elements`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 795, bounded object-property reference-assignment
+  sources for the reached WordPress `$GLOBALS['posts'] = & $wp_query->posts`
+  startup path.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone795/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_object_property_source -- --nocapture`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_source_boundary_is_stable -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone795`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `parse error at <bootstrap-shim>:832:15: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+- Remaining semantic gaps: scalar object-property reference sources, true PHP
+  reference containers, aliasing, copy-on-write, object/static/dynamic
+  reference targets beyond existing slices, by-reference return sources, exact
+  diagnostics, and native lowering remain unsupported.
+- Next concrete task: implement bounded `unset($object->property)` for the
+  reached WordPress startup path while keeping typed-property uninitialization,
+  magic `__unset`, visibility context beyond the current direct-property slice,
+  dynamic property unset, array/object mixed unset targets,
+  references/copy-on-write, exact diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T09:01:37Z
 
 - Checkpoint before this task:

@@ -325,6 +325,10 @@ pub enum ReferenceSource {
         index: Expr,
         span: Span,
     },
+    Property {
+        expr: Expr,
+        span: Span,
+    },
     MethodCall {
         expr: Expr,
         span: Span,

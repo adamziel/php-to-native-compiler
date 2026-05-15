@@ -1075,6 +1075,48 @@ $catalog->run();
 }
 
 #[test]
+fn reference_assignment_object_property_source_inside_unexecuted_body_is_registered() {
+    let execution = run_source(
+        r#"<?php
+class Query {
+    public $posts;
+
+    public function register() {
+        $GLOBALS["posts"] =& $this->posts;
+    }
+}
+echo "loaded";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "loaded");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_property_source_copies_current_container_value() {
+    let execution = run_source(
+        r#"<?php
+class Query {
+    public $posts;
+}
+
+$query = new Query();
+$query->posts = ["first"];
+$GLOBALS["posts"] =& $query->posts;
+echo $GLOBALS["posts"][0];
+$query->posts[0] = "changed";
+echo "|", $GLOBALS["posts"][0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|first");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_source_boundary_is_stable() {
     let error = parse_error(
         r#"<?php
@@ -1086,7 +1128,7 @@ $alias =& make_value();
     assert_eq!(error.column, 11);
     assert_eq!(
         error.message,
-        "unsupported reference assignment: only direct variable, direct array-offset, and method-call reference sources are parsed before reference semantics exist"
+        "unsupported reference assignment: only direct variable, direct array-offset, object-property, and method-call reference sources are parsed before reference semantics exist"
     );
 }
 

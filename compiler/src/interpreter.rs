@@ -2387,7 +2387,7 @@ impl Interpreter {
                 ..
             } => {
                 let key = self.evaluate_array_key(index, scope)?;
-                let value = self.evaluate_object_handle_reference_source(source, span, scope)?;
+                let value = self.evaluate_container_reference_source_value(source, span, scope)?;
                 let mut slot = scope
                     .read_named(name)
                     .unwrap_or_else(|| Value::Array(PhpArray::new()));
@@ -2415,7 +2415,7 @@ impl Interpreter {
         }
     }
 
-    fn evaluate_object_handle_reference_source(
+    fn evaluate_container_reference_source_value(
         &mut self,
         source: &ReferenceSource,
         span: Span,
@@ -2423,6 +2423,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let value = match source {
             ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
+            ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
             ReferenceSource::ArrayIndex { .. } | ReferenceSource::MethodCall { .. } => {
                 return Err(runtime_error(
                     span,
@@ -2435,7 +2436,7 @@ impl Interpreter {
         };
 
         match value {
-            Value::Object(_) => Ok(value),
+            Value::Object(_) | Value::Array(_) => Ok(value),
             _ => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -2454,6 +2455,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let value = match source {
             ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
+            ReferenceSource::Property { expr, .. } => self.evaluate(expr, scope)?,
             ReferenceSource::ArrayIndex { .. } | ReferenceSource::MethodCall { .. } => {
                 return Err(runtime_error(
                     span,

@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 795, bounded object-property reference-assignment sources for
+  the current WordPress `$GLOBALS['posts'] = & $wp_query->posts` startup path.
+  The parser now accepts direct and dynamic object-property expressions as
+  reference-assignment sources, and the interpreter copies the current
+  array/object value into direct-variable and direct array-offset targets
+  without creating a PHP reference alias. Direct array-offset and method-call
+  reference sources remain runtime boundaries; scalar object-property sources,
+  true aliases, reference containers, copy-on-write, object/static/dynamic
+  reference targets beyond existing slices, by-reference return sources, exact
+  diagnostics, and native lowering remain unsupported. The real WordPress 6.9.4
+  bootstrap-shim probe now advances past the reached object-property reference
+  source to
+  `parse error at <bootstrap-shim>:832:15: unsupported unset: object property unset is not implemented; property uninitialization, magic methods, and typed property semantics are not modeled`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_object_property_source -- --nocapture`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment_source_boundary_is_stable -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone795`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 794, bounded array literal reference elements for the current
   WordPress `array( &$this )` startup path. The parser now accepts unkeyed
   array reference values and keyed reference values such as `array('name' =>
