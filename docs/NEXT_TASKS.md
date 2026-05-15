@@ -7950,15 +7950,26 @@ handled.
   cursor, returns `false` after the one row, and is visible through runtime and
   native metadata lookup. It is not broad result fetching, cursor seeking, SQL
   execution, real database state, warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises
   `mysqli_fetch_row()` through a WordPress-shaped numeric-result branch without
   claiming real `wpdb` output-mode fidelity or real database support.
+  Milestone 864 adds a `phpc-only` synthetic `wpdb::get_results($query,
+  ARRAY_N)` fixture that consumes the exact seed-post placeholder result
+  through `mysqli_fetch_row()`, stores the numeric row in `$this->last_result`,
+  increments `$this->num_rows`, frees the placeholder result, and drains
+  placeholder multi-result state. It is not real WordPress `wpdb` output-mode
+  fidelity, WordPress core constants, SQL execution, database state, cache
+  behavior, warnings/errors, cursor seeking, or native lowering.
+- [ ] Runtime/mysqli lane: add the next cursor/result operation as a
+  deterministic slice or explicit named boundary, with `mysqli_data_seek()` on
+  placeholder results as the likely next small target before broadening query
+  execution.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `22ca757 tests: add wordpress wpdb mixed fetch array smoke`, covering
-  Milestone 862 before the current Milestone 863 candidate.
+  `2668078 runtime: add mysqli fetch row seed result`, covering Milestone 863
+  before the current Milestone 864 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

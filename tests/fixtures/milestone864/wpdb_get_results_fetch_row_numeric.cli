@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone864/wpdb_get_results_fetch_row_numeric.php
+1
+1
+1
+Hello world placeholder
+no-assoc
+Hello world placeholder

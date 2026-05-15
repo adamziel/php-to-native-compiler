@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 864, a synthetic WordPress-shaped `wpdb::get_results()`
+  smoke that consumes the deterministic seed-post placeholder result through
+  `mysqli_fetch_row()` in a local `ARRAY_N` branch. The fixture stores the
+  numeric row in `$this->last_result`, increments `$this->num_rows`, frees the
+  placeholder result, drains placeholder multi-result state, and verifies the
+  returned numeric row plus recorded query state. This is a harness smoke only;
+  it does not add real WordPress `wpdb` output-mode fidelity, WordPress core
+  constants, SQL execution, database state, cache behavior, real post content,
+  warnings/errors, cursor seeking, or native lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone864`.
+
 - Added Milestone 863, deterministic `mysqli_fetch_row()` support for the
   seed-post placeholder result. The runtime now recognizes `mysqli_fetch_row()`
   through runtime dispatch and native metadata lookup, returns one numeric PHP

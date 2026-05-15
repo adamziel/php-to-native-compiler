@@ -159,7 +159,8 @@ drains that empty result through WordPress-shaped object state. Milestones 854
 through 862 then moved the database-consumption smoke from an explicit
 non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
 object, associative, numeric, fetch-row, and mixed fetch-array paths, plus
-synthetic `wpdb::get_results()` harnesses for those row shapes. These are
+synthetic `wpdb::get_results()` harnesses for those row shapes, including a
+numeric `ARRAY_N`-style smoke. These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
 or native WordPress compatibility.
