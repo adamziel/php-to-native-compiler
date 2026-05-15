@@ -104,7 +104,10 @@ incorrect native code.
 - top-level constants, namespace-scoped top-level `const` declarations in the
   current unbracketed namespace slice, selected built-in constants,
   runtime-defined constants with bounded qualified string names, simple
-  interpolated runtime string names for `defined()`/`constant()`, and
+  interpolated runtime string names for `defined()`/`constant()`, bounded
+  runtime string lookup of declared public class constants through
+  `defined("ClassName::CONST")` and declared visible class constants through
+  `constant("ClassName::CONST")`, and
   executable magic constants documented in the support matrix
 - statement-form `throw expr;` as a bounded exception boundary: guarded throws
   can parse and be skipped, while reached throws report a stable runtime
@@ -183,7 +186,8 @@ exact PHP nested class declaration timing and fatal behavior, real
 `Exception` constructor state/methods, `Throwable`, stack traces, exception
 throw/catch execution,
 bare namespace constant fallback reads, class-constant lookup through
-`defined()`/`constant()`, full extension constant catalogs,
+`defined()`/`constant()` beyond the current declared-class/public-visibility
+string-name slice, full extension constant catalogs,
 complex double-quoted string interpolation such as array offsets or object
 properties, heredoc/nowdoc,
 visibility enforcement beyond the current public and

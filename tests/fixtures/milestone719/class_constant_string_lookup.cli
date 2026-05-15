@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+1|7
+1|ok
+1|7
+0|0
+--- stdout end ---
+stderr:
+--- stderr end ---

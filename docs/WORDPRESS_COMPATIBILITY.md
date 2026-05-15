@@ -177,8 +177,18 @@ The first bootstrap probe is expected to fail. Known blockers include:
   covered by Milestone 718 for simple `{$name}` parts only. This is not full
   complex interpolation, array-offset/object/static-property interpolation,
   `${...}`, heredoc/nowdoc, or native lowering. The bootstrap-shim probe now
+  passes the `ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`
+  class-constant string lookup at `<bootstrap-shim>:106:41` through Milestone
+  719's bounded `defined("ClassName::CONST")`/`constant("ClassName::CONST")`
+  runtime slice for declared class metadata. This is not full class-constant
+  string lookup for `self`/`parent`/`static`, autoload-triggered class
+  discovery, enum cases/interface constants beyond current metadata,
+  typed/static/multi-declarator class constants, exact PHP diagnostics,
+  partial-output behavior, or native lowering. The bootstrap-shim probe now
   reaches
-  `runtime error at <bootstrap-shim>:106:41: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`.
+  `lex error at <bootstrap-shim>:665:56: unexpected character '@'`,
+  corresponding to `wp-includes/sodium_compat/src/Core/Util.php:605` and
+  `$c = (int) @($c & -1);`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

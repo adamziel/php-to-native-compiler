@@ -738,6 +738,69 @@ echo count($filtered), "|", $filtered["name"], "\n";
 }
 
 #[test]
+fn constant_builtin_resolves_declared_class_constant_string_names() {
+    let execution = run_source(
+        r#"<?php
+class ParagonIE_Sodium_Compat {
+    const LIBRARY_VERSION_MAJOR = 9;
+    public const LIBRARY_VERSION_MINOR = 99;
+}
+class Child_Compat extends ParagonIE_Sodium_Compat {}
+
+$constant = "LIBRARY_VERSION_MAJOR";
+echo defined("ParagonIE_Sodium_Compat::$constant") ? "1" : "0";
+echo "|", constant("ParagonIE_Sodium_Compat::$constant"), "\n";
+echo defined("\\ParagonIE_Sodium_Compat::LIBRARY_VERSION_MINOR") ? "1" : "0";
+echo "|", constant("\\ParagonIE_Sodium_Compat::LIBRARY_VERSION_MINOR"), "\n";
+echo defined("Child_Compat::LIBRARY_VERSION_MAJOR") ? "1" : "0";
+echo "|", constant("Child_Compat::LIBRARY_VERSION_MAJOR"), "\n";
+echo defined("ParagonIE_Sodium_Compat::MISSING") ? "1" : "0";
+echo "|", defined("Missing_Compat::LIBRARY_VERSION_MAJOR") ? "1" : "0", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|9\n1|99\n1|9\n0|0\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn defined_class_constant_string_names_report_only_public_constants() {
+    let execution = run_source(
+        r#"<?php
+class SecretBox {
+    private const SECRET = "secret";
+    protected const HIDDEN = "hidden";
+    public const OPEN = "open";
+}
+echo defined("SecretBox::SECRET") ? "1" : "0";
+echo "|", defined("SecretBox::HIDDEN") ? "1" : "0";
+echo "|", defined("SecretBox::OPEN") ? "1" : "0", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|0|1\n");
+    assert_eq!(execution.exit_code, 0);
+
+    let private_error = runtime_error(
+        r#"<?php
+class SecretBox {
+    private const SECRET = "secret";
+}
+echo constant("SecretBox::SECRET");
+"#,
+    );
+
+    assert_eq!(private_error.line, 5);
+    assert_eq!(private_error.column, 6);
+    assert_eq!(
+        private_error.message,
+        "unsupported call SecretBox::SECRET: private class constant is not visible from the current class context"
+    );
+}
+
+#[test]
 fn constant_builtin_rejects_unknown_constant_names() {
     let error = runtime_error(
         r#"<?php
@@ -751,6 +814,17 @@ echo constant("PHP_VERSION");
         error.message,
         "unsupported call constant(): constant PHP_VERSION is not defined in the current runtime-defined or built-in constant subset"
     );
+
+    let class_constant = runtime_error(
+        r#"<?php
+class Box {}
+echo constant("Box::MISSING");
+"#,
+    );
+
+    assert_eq!(class_constant.line, 3);
+    assert_eq!(class_constant.column, 6);
+    assert_eq!(class_constant.message, "undefined constant Box::MISSING");
 }
 
 #[test]

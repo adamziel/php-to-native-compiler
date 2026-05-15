@@ -266,7 +266,11 @@
   whether a supported unqualified or qualified name exists in the current
   built-in/runtime-defined constant table; simple double-quoted `$name`
   interpolation can build those runtime string names, and string-valued dynamic
-  calls to `define`, `constant`, and `defined` use the same path
+  calls to `define`, `constant`, and `defined` use the same path. Runtime
+  string lookup also accepts declared class-constant names in the form
+  `ClassName::CONST` or `\ClassName::CONST`: `defined($name)` reports true
+  only for declared public class constants, and `constant($name)` resolves the
+  declared constant through the existing class-constant visibility checks.
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
 - top-level single and grouped `const NAME = value;` declarations for
@@ -873,8 +877,10 @@
   or inherited class constants case-sensitively through `phpc run` with
   public/protected/private visibility checks in the current active class
   context. Typed constants, multiple constants in one class declaration,
-  dynamic `constant("Class::CONST")`/`defined("Class::CONST")` lookup, and
-  native lowering remain unsupported.
+  broader string-name lookup for `self::CONST`, `parent::CONST`,
+  `static::CONST`, autoload-triggered class discovery, enum cases/interface
+  constants beyond the current metadata, typed constants, multiple constants
+  in one class declaration, and native lowering remain unsupported.
   Static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
   for PHP-forbidden `unset(...)` through
@@ -2572,8 +2578,9 @@
   by the parser before runtime constant lookup. Constant names that are lexed
   as language keywords or literals cannot be read bare, and bare namespace
   constant fallback reads, full extension constant catalogs, host
-  extension/module discovery, class constants through `constant(...)` or
-  `defined(...)`, nested declarations, dynamic declaration values,
+  extension/module discovery, class-constant string lookup beyond declared
+  `ClassName::CONST`/`\ClassName::CONST` names in the current loaded class
+  metadata, nested declarations, dynamic declaration values,
   references/copy-on-write behavior, and broader native lowering are not
   implemented.
   Array/object callables, closures, first-class callables, method calls,
@@ -3582,8 +3589,8 @@
   metadata, full extension constant catalogs, unsupported `define(...)` names
   or values, case-insensitive legacy constants, bare namespace constant
   fallback reads, nested `const` declarations, dynamic declaration values,
-  `constant()`/`defined()` lookup for class constants, names lexed as language
-  keywords or literals for bare reads, magic constants other than `__LINE__`,
+  broader `constant()`/`defined()` lookup for class constants, names lexed as
+  language keywords or literals for bare reads, magic constants other than `__LINE__`,
   `__FILE__`, `__DIR__`, and `__FUNCTION__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported

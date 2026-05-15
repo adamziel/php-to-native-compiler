@@ -6584,19 +6584,33 @@ handled.
   heredoc/nowdoc, exact PHP diagnostics, partial-output behavior, and native
   lowering unsupported, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:106:41: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`.
-- [ ] Runtime/constants lane: implement or explicitly bound class-constant
+- [x] Runtime/constants lane: implemented bounded class-constant
   string names for `defined($name)`/`constant($name)` in the real WordPress
   6.9.4 bootstrap-shim sodium compatibility guard, starting with
   `ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR` at
-  `<bootstrap-shim>:106:41`, with tests, CLI coverage, docs, and named
-  unsupported edges for broader dynamic class-constant lookup, autoload,
-  visibility, extension constants, exact PHP diagnostics, partial-output
-  behavior, and native lowering.
+  `<bootstrap-shim>:106:41`. The Milestone 719 slice accepts
+  `ClassName::CONST` and `\ClassName::CONST` runtime strings for declared
+  class metadata, reports `defined(...)` true only for public constants, reuses
+  existing visibility checks for `constant(...)`, keeps broader `self`,
+  `parent`, and `static` string names, autoload-triggered discovery,
+  enum/interface constants beyond current metadata, typed/static/multi
+  declarators, exact PHP diagnostics, partial-output behavior, and native
+  lowering unsupported, and advances the bootstrap-shim probe to
+  `lex error at <bootstrap-shim>:665:56: unexpected character '@'`.
+- [ ] Parser/runtime lane: implement or explicitly bound PHP error-control
+  syntax `@expr` for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:665:56`, corresponding to
+  `wp-includes/sodium_compat/src/Core/Util.php:605` and
+  `$c = (int) @($c & -1);`, with tests, CLI coverage, docs, and named
+  unsupported edges for actual warning/notice suppression, recoverable
+  diagnostics, expression-specific recovery values, exact PHP warning/fatal
+  behavior, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 718 work, the latest committed checkpoint is
-  `5bd9d3e runtime: add simple string interpolation`, covering Milestone 717.
+- Before the current Milestone 719 checkpoint, the latest committed checkpoint
+  is `e448452 runtime: add braced string interpolation`, covering Milestone
+  718.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

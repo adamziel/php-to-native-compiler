@@ -808,9 +808,14 @@ Runtime-backed constant behavior currently lives in the interpreter's
 declarations store canonical qualified names such as
 `Sodium\CRYPTO_AUTH_BYTES`. String-name `defined(...)` and `constant(...)`
 lookups accept qualified names with an optional leading global namespace
-separator and answer only from that deterministic table. This does not model
-bare namespace constant fallback reads, class constants through
-`defined(...)`/`constant(...)`, host extension loading, full extension constant
+separator and answer from that deterministic table. Runtime string lookups for
+declared class constants use the interpreter class metadata instead:
+`ClassName::CONST` and `\ClassName::CONST` are split at runtime,
+`defined(...)` reports true only for public declared or inherited constants,
+and `constant(...)` resolves through the same class-constant visibility checks
+as direct `ClassName::CONST`. This does not model bare namespace constant
+fallback reads, autoload-triggered class discovery, broader `self`/`parent`/
+`static` string names, host extension loading, full extension constant
 inventories, or native lowering.
 Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`
 PHP 8.3 compatibility-target constant in the built-in answer table. Bare global
@@ -1128,8 +1133,9 @@ nested calls.
 instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
 `parent::CONST`, and late-bound `static::CONST` resolve declared or inherited
 class constants through runtime class metadata in the interpreter; typed
-constants, multiple constants in one declaration, and dynamic class-constant
-string lookup remain unsupported. Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
+constants, multiple constants in one declaration, and broader dynamic
+class-constant string lookup beyond loaded `ClassName::CONST` names remain
+unsupported. Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
 and late-bound `static::$prop` resolve untyped static properties through
 interpreter-owned class-level storage, initialize from the current
 constant-expression default subset or `null`, and support direct reads/writes,

@@ -1,5 +1,37 @@
 # Progress Log
 
+## 2026-05-15
+
+Implemented:
+
+- Added Milestone 719, a bounded runtime class-constant string lookup slice for
+  the real WordPress 6.9.4 bootstrap-shim sodium compatibility guard at
+  `<bootstrap-shim>:106:41`, corresponding to
+  `defined("ParagonIE_Sodium_Compat::$constant")` after interpolation builds
+  `ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`. Runtime `defined($name)`
+  and `constant($name)` now recognize `ClassName::CONST` and
+  `\ClassName::CONST` string names for already-declared class metadata.
+  `defined(...)` reports true only for declared public class constants, while
+  `constant(...)` reuses the existing class-constant resolver and visibility
+  diagnostics. Broader `self::CONST`, `parent::CONST`, and `static::CONST`
+  string names, autoload-triggered class discovery, enum cases/interface
+  constants beyond current metadata, typed/static/multi-declarator class
+  constants, exact PHP diagnostics, partial-output behavior, and native
+  lowering remain unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe advances to
+  `lex error at <bootstrap-shim>:665:56: unexpected character '@'`,
+  corresponding to `wp-includes/sodium_compat/src/Core/Util.php:605` and
+  `$c = (int) @($c & -1);`. Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features class_constant -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary class_constant -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone719`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone719`,
+  and `cargo test -p phpc --test user_constants_cli -- --test-threads=1`
+  passed.
+
 ## 2026-05-14
 
 Implemented:

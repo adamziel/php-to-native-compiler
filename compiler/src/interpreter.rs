@@ -3443,6 +3443,17 @@ impl Interpreter {
         self.evaluate_resolved_class_constant(class_id, class_name, constant, span)
     }
 
+    fn class_constant_lookup_string_is_defined(&self, class_name: &str, constant: &str) -> bool {
+        let Some(class_id) = self.classes.lookup_class_id(class_name) else {
+            return false;
+        };
+
+        matches!(
+            self.resolve_class_constant(class_id, constant),
+            Some((_, _, Visibility::Public, _))
+        )
+    }
+
     fn evaluate_self_class_constant(&mut self, constant: &str, span: Span) -> CompileResult<Value> {
         let Some(current_class_id) = self.class_context.last().copied() else {
             return Err(runtime_error(
@@ -4517,6 +4528,12 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
                     Value::String(name) => {
+                        if let Some((class_name, constant)) =
+                            normalize_runtime_class_constant_lookup_name(name)
+                        {
+                            return self.evaluate_named_class_constant(class_name, constant, span);
+                        }
+
                         let Some(normalized) = normalize_runtime_constant_lookup_name(name) else {
                             return Err(runtime_error(
                                 span,
@@ -4557,6 +4574,14 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
                     Value::String(name) => {
+                        if let Some((class_name, constant)) =
+                            normalize_runtime_class_constant_lookup_name(name)
+                        {
+                            return Ok(Value::Bool(
+                                self.class_constant_lookup_string_is_defined(class_name, constant),
+                            ));
+                        }
+
                         let Some(normalized) = normalize_runtime_constant_lookup_name(name) else {
                             return Err(runtime_error(
                                 span,
@@ -7701,6 +7726,18 @@ fn normalize_runtime_constant_lookup_name(name: &str) -> Option<&str> {
     let normalized = name.strip_prefix('\\').unwrap_or(name);
     if is_supported_qualified_runtime_constant_name(normalized) {
         Some(normalized)
+    } else {
+        None
+    }
+}
+
+fn normalize_runtime_class_constant_lookup_name(name: &str) -> Option<(&str, &str)> {
+    let normalized = name.strip_prefix('\\').unwrap_or(name);
+    let (class_name, constant) = normalized.split_once("::")?;
+    if is_supported_qualified_runtime_constant_name(class_name)
+        && is_supported_runtime_constant_name(constant)
+    {
+        Some((class_name, constant))
     } else {
         None
     }

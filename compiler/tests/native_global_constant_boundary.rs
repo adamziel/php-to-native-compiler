@@ -57,6 +57,7 @@ fn emit_ir_rejects_constant_table_builtins_before_lowering_arguments() {
         "<?php\necho constant([]);\n",
         "<?php\necho constant(\"\\\\PHP_VERSION_ID\");\n",
         "<?php\necho constant(\"\\\\Sodium\\\\CRYPTO_AUTH_BYTES\");\n",
+        "<?php\necho constant(\"ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR\");\n",
         "<?php\necho defined(42);\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
@@ -64,6 +65,54 @@ fn emit_ir_rejects_constant_table_builtins_before_lowering_arguments() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_rejects_class_constant_string_lookup_before_native_constant_tables() {
+    for source in [
+        "<?php\necho constant(\"ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR\");\n",
+        "<?php\necho constant(\"\\\\ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR\");\n",
+        "<?php\necho defined(\"ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR\");\n",
+        "<?php\necho defined(\"\\\\ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR\");\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.line, 2);
+        assert_eq!(error.column, 6);
+        assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_rejects_tracked_class_constant_defined_names_before_native_constant_tables() {
+    let error = emit_ir_source(
+        r#"<?php
+$name = "ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR";
+echo defined($name);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_class_constant_string_lookup_before_backend_execution() {
+    let error = emit_asm_source(
+        r#"<?php
+echo constant("ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
 }
 
 #[test]
@@ -131,6 +180,7 @@ fn emit_ir_rejects_unsupported_defined_forms() {
         "<?php\necho defined(\"\\\\PHP_VERSION_ID\");\n",
         "<?php\necho defined(\"\\\\Sodium\\\\CRYPTO_AUTH_BYTES\");\n",
         "<?php\necho defined(\"Sodium\\\\CRYPTO_AUTH_BYTES\");\n",
+        "<?php\necho defined(\"ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR\");\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

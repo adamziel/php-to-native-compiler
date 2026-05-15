@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T00:22:05Z
+
+- Checkpoint before this task: `e448452 runtime: add braced string
+  interpolation`, pushed to `origin/master`.
+- Task attempted: Milestone 719, bounded runtime class-constant string lookup
+  for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:106:41`, where interpolation builds
+  `ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR` for `defined(...)`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `compiler/tests/user_constants_cli.rs`,
+  `tests/fixtures/milestone719/*`, `README.md`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features class_constant -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary class_constant -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone719`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone719`,
+  and `cargo test -p phpc --test user_constants_cli -- --test-threads=1`
+  passed.
+- Remaining semantic gaps: `self::CONST`, `parent::CONST`, and
+  `static::CONST` string names, autoload-triggered class discovery, enum
+  cases/interface constants beyond current metadata, typed/static/multiple
+  class-constant declarations, exact PHP diagnostics, partial-output behavior,
+  and native lowering remain unsupported. The direct WordPress probe still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `lex error at <bootstrap-shim>:665:56: unexpected character '@'`.
+- Next concrete task: implement or explicitly bound PHP error-control syntax
+  `@expr` for the WordPress sodium compatibility expression
+  `$c = (int) @($c & -1);`, while keeping actual warning/notice suppression
+  and native lowering unsupported.
+
 ## Loop Event 2026-05-15T00:13:11Z
 
 - Checkpoint before this task: `5bd9d3e runtime: add simple string
