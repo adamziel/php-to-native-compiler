@@ -1,1 +1,1 @@
-Project-specific extension policy: phpc currently exposes an empty extension registry so WordPress compatibility probes take fallback paths.
+Project-specific extension policy: phpc currently keeps mbstring unloaded in its bounded compatibility registry so this WordPress-shaped probe takes the fallback path.

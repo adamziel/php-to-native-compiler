@@ -204,8 +204,11 @@ Milestone 731 then advanced past the first missing-extension `implode()` path
 with a bounded scalar/null array join builtin. Milestone 732 then advanced past
 the first `exit(1)` termination path with a bounded direct `exit()`/`die()`
 construct. The bootstrap-shim now reaches WordPress' missing-extension guard
-and exits with code `1`, stdout, and no stderr because `extension_loaded()`
-still reports an empty extension registry.
+and exits with code `1`, stdout, and no stderr. Milestone 733 then replaced
+the empty `extension_loaded()` registry with a bounded compatibility registry
+for the current `json` and `hash` WordPress requirement checks. The next
+visible bootstrap-shim blocker is now missing `file_exists()`:
+`runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -318,7 +321,7 @@ The repository already has a working Rust workspace with:
   function-scope `global` imports, the `PHP_VERSION` compatibility constant,
   the first bounded `version_compare()` slice, and the first bounded
   `sprintf()`, `header()`, `implode()`, and `exit()` slices, then stops at
-  WordPress' missing-extension guard under the current empty extension registry.
+  missing `file_exists()` after the bounded `json`/`hash` extension registry.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

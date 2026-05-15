@@ -449,11 +449,11 @@
   integration, exact diagnostics, partial-output behavior, and native lowering
   remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
-  answers from a deterministic empty compiler/runtime extension registry. It
-  returns `false` for all names, including WordPress probe names such as
-  `mbstring`, `json`, `hash`, and `sodium`, without querying host PHP modules,
-  `php.ini`, SAPI state, or dynamically loading extensions; non-string names
-  are rejected in the current subset.
+  answers from a deterministic bounded compiler/runtime compatibility registry.
+  It returns `true` for `json` and `hash`, and `false` for other names,
+  including WordPress probe names such as `mbstring` and `sodium`, without
+  querying host PHP modules, `php.ini`, SAPI state, or dynamically loading
+  extensions; non-string names are rejected in the current subset.
   `get_class` returns the declared class name for current minimal object
   values, `is_object` reports whether a value is one of those current object
   values, `get_debug_type` returns scalar/array type names or the current
@@ -1730,9 +1730,10 @@
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`, and
   `array_filter`, fold to `true`, and missing names fold to `false`.
   Direct `extension_loaded($name)` calls with already-lowerable string names
-  fold to `false` under the same empty extension-registry policy. Native code
-  does not model host extension discovery, ini state, dynamic module loading,
-  or extension side effects.
+  fold against the same bounded compatibility registry: `json` and `hash`
+  fold to `true`, while other names fold to `false`. Native code does not
+  model host extension discovery, ini state, dynamic module loading, or
+  extension side effects.
   Direct calls to array builtins such as `array_change_key_case(...)`,
   `array_column(...)`, `array_sum(...)`, `array_product(...)`, and
   callback-driven forms such as `array_reduce(...)` and `array_filter(...)`
@@ -2208,9 +2209,10 @@
   `Throwable` descriptions, exact warning/fatal behavior, PHP 8.3
   deprecations, partial-output behavior, and native lowering are not
   implemented. `extension_loaded`
-  accepts string extension names, returns `false` from the current deterministic
-  empty extension registry, and rejects non-string names. Its native folding is
-  limited to direct false folding for already-lowerable string names.
+  accepts string extension names, returns true for `json` and `hash` from the
+  current bounded compatibility registry, returns false for other names, and
+  rejects non-string names. Its native folding uses the same direct string-name
+  registry for already-lowerable string names.
   `header` accepts the same current no-op header subset as the builtin section
   above; direct native `header(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
@@ -3740,11 +3742,12 @@
   namespace-aware class resolution, exact callable validation, exact
   `TypeError`/exception behavior, and native lowering beyond function-table
   introspection
-- `extension_loaded()` behavior outside the deterministic empty extension
+- `extension_loaded()` behavior outside the deterministic bounded compatibility
   registry, including exact extension inventory policy, aliases, host
-  PHP/module discovery, dynamic loading side effects, `php.ini`/SAPI
-  differences, exact PHP diagnostics for invalid arguments, and native
-  lowering beyond direct false folding for already-lowerable string names
+  PHP/module discovery, dynamic loading side effects, extension versions,
+  extension functions/constants, `php.ini`/SAPI differences, exact PHP
+  diagnostics for invalid arguments, and native lowering beyond direct
+  string-name folding for already-lowerable string names
 - PHP standard library beyond documented builtins
 - `empty(...)` operands outside direct variables, direct array offsets, and
   direct public object-property operands, including nested offsets, dynamic

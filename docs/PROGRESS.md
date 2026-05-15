@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 733, a bounded `extension_loaded()` compatibility registry
+  for the WordPress 6.9.4 bootstrap requirement checks. The interpreter now
+  reports `json` and `hash` as loaded and keeps other extension names false;
+  native direct `extension_loaded("json")`/`("hash")` folds to true while
+  other already-lowerable string names fold to false. This remains a
+  deterministic compiler/runtime registry, not host extension discovery,
+  extension aliases, extension versions, native extension functions/constants,
+  `php.ini`/SAPI integration, dynamic loading, exact diagnostics,
+  partial-output behavior, or native extension support. The direct WordPress
+  probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the missing-extension guard and now
+  stops at
+  `runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test type_introspection_builtins extension_loaded -- --test-threads=1`,
+  `cargo test -p phpc --test extension_registry_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone692`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone733`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 732, bounded direct `exit()`/`die()` execution through
   `phpc run`. The construct is handled as a termination signal rather than an
   ordinary callable builtin: `function_exists("exit")` and
@@ -19,7 +45,7 @@ Implemented:
   The bootstrap-shim probe advances past the previous `exit()` blocker at
   `<bootstrap-shim>:196:3` and now terminates through WordPress' missing
   extension guard with exit code `1`, 126 stdout bytes, and no stderr because
-  the current `extension_loaded()` policy still reports an empty extension
+  the then-current `extension_loaded()` policy still reported an empty extension
   registry. Focused verification so far:
   `cargo check -p phpc`,
   `cargo test -p phpc --test exit_construct -- --test-threads=1`,

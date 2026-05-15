@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T09:20:00Z
+
+- Checkpoint before this task: `547a714 runtime: add bounded exit`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 733, bounded `extension_loaded()` compatibility
+  registry for the real WordPress 6.9.4 bootstrap requirement checks after the
+  missing-extension `exit(1)` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/type_introspection_builtins.rs`,
+  `compiler/tests/extension_registry_cli.rs`, `tests/fixtures/milestone692/*`,
+  `tests/fixtures/milestone733/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test type_introspection_builtins extension_loaded -- --test-threads=1`,
+  `cargo test -p phpc --test extension_registry_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone692`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone733`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: host extension discovery, extension aliases,
+  extension versions, native extension functions/constants, `php.ini`/SAPI
+  integration, dynamic loading, exact diagnostics, partial-output behavior, and
+  native extension support remain unsupported. The direct WordPress probe still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
+- Next concrete task: implement or explicitly bound `file_exists()` while
+  keeping filesystem metadata policy, path canonicalization, relative paths,
+  stream wrappers, permissions, TOCTOU behavior, host filesystem coupling,
+  partial-output behavior, and native lowering explicit.
+
 ## Loop Event 2026-05-15T08:45:00Z
 
 - Checkpoint before this task: `20ac373 runtime: add bounded implode`, pushed

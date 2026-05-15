@@ -890,9 +890,9 @@ table. Bare global constant reads and `constant($name)` still stay behind the
 native global-constant boundary until generated code has a real constant table
 and version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
-to false under the current deterministic empty extension registry; native code
-does not query host PHP modules, `php.ini`, SAPI state, or dynamic extension
-loading.
+against the current deterministic bounded compatibility registry: `json` and
+`hash` fold to true, while other names fold to false. Native code does not
+query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
 The table includes interpreter-only array builtins such as
 `array_change_key_case`, `array_column`, `array_is_list`, `array_product`,
 `array_reduce`, and `array_filter`; direct calls to those builtins still reject
@@ -1368,6 +1368,7 @@ comparison.
 
 Zend extension loading is not an early target. Selected extensions will be
 implemented as runtime modules with documented dependencies and semantic gaps.
-Until that exists, `extension_loaded()` uses an empty compiler/runtime
-extension registry so compatibility probes take fallback paths instead of
-claiming host extension support.
+Until that exists, `extension_loaded()` uses a bounded compiler/runtime
+compatibility registry. It is intentionally just enough for current WordPress
+bootstrap requirement checks and does not claim host extension support,
+extension functions/constants, extension versions, or dynamic loading.

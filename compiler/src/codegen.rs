@@ -734,9 +734,11 @@ impl LlvmGenerator {
                 .map(IrValue::Bool)
                 .ok_or_else(|| self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
             "is_countable" | "is_iterable" => Ok(IrValue::Bool(false)),
-            "extension_loaded" if matches!(value, IrValue::String(_) | IrValue::StringPtr(_)) => {
-                Ok(IrValue::Bool(false))
-            }
+            "extension_loaded" => match value {
+                IrValue::String(name) => Ok(IrValue::Bool(is_compat_loaded_extension_name(&name))),
+                IrValue::StringPtr(_) => Ok(IrValue::Bool(false)),
+                _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
+            },
             "is_object" => Ok(IrValue::Bool(false)),
             _ => Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION)),
         }
@@ -3516,9 +3518,11 @@ impl CGenerator {
                 .map(CValue::Bool)
                 .ok_or_else(|| self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
             "is_countable" | "is_iterable" => Ok(CValue::Bool(false)),
-            "extension_loaded" if matches!(value, CValue::String(_) | CValue::StringExpr(_)) => {
-                Ok(CValue::Bool(false))
-            }
+            "extension_loaded" => match value {
+                CValue::String(name) => Ok(CValue::Bool(is_compat_loaded_extension_name(&name))),
+                CValue::StringExpr(_) => Ok(CValue::Bool(false)),
+                _ => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+            },
             "is_object" => Ok(CValue::Bool(false)),
             _ => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
         }
@@ -6266,6 +6270,10 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "var_dump"
             | "print_r"
     )
+}
+
+fn is_compat_loaded_extension_name(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
 }
 
 fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<bool> {

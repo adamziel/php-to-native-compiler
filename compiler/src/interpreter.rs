@@ -5919,7 +5919,7 @@ impl Interpreter {
             "extension_loaded" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::String(_) => Ok(Value::Bool(false)),
+                    Value::String(name) => Ok(Value::Bool(is_compat_loaded_extension_name(name))),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -8177,6 +8177,10 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
         Value::Object(_) => Some("object"),
         Value::Closure(_) => Some("closure"),
     }
+}
+
+fn is_compat_loaded_extension_name(name: &str) -> bool {
+    matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
 }
 
 fn call_sprintf(args: &[Value], span: Span) -> CompileResult<Value> {

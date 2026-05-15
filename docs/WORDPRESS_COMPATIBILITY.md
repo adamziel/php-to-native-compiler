@@ -104,7 +104,8 @@ The first bootstrap probe is expected to fail. Known blockers include:
   The previous `instanceof Countable` blocker in `wp-includes/compat.php` is
   covered by the bounded Milestone 691 `instanceof` runtime slice. The shim
   probe's previous `extension_loaded()` blocker is covered by the bounded
-  Milestone 692 empty extension-registry policy. The previous
+  Milestone 692 extension-registry policy, which Milestone 733 later widens for
+  the current `json` and `hash` WordPress bootstrap requirement checks. The previous
   `PHP_VERSION_ID` blocker is covered by the bounded Milestone 693 PHP 8.3
   compatibility-target constant. The previous `dirname()` blocker is covered
   by the bounded Milestone 694 lexical Unix-style path builtin. The previous
@@ -280,8 +281,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   destructor/finally ordering, output buffering, SAPI behavior, or native
   lowering. The bootstrap-shim probe now reaches WordPress' missing-extension
   guard and terminates with exit code `1`, 126 stdout bytes, and no stderr
-  because the current `extension_loaded()` policy still reports an empty
+  because the then-current `extension_loaded()` policy still reported an empty
   extension registry.
+  Milestone 733 replaces that empty registry with a bounded compatibility
+  registry that reports `json` and `hash` as loaded while leaving other
+  extensions false. This is not host extension discovery, extension aliases,
+  extension versions, native extension functions/constants, `php.ini`/SAPI
+  integration, dynamic loading, exact diagnostics, partial-output behavior, or
+  native extension support. The bootstrap-shim probe now reaches
+  `runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

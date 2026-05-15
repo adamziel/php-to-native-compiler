@@ -1,6 +1,5 @@
 exit: 0
 stdout:
-001
-0--- stdout end ---
+ok--- stdout end ---
 stderr:
 --- stderr end ---

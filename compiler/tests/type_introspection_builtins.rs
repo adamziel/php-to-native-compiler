@@ -264,20 +264,22 @@ echo function_exists("namespaced_name") ? "1" : "0";
 }
 
 #[test]
-fn extension_loaded_uses_current_empty_extension_registry() {
+fn extension_loaded_uses_current_compatibility_registry() {
     let execution = run_source(
         r#"<?php
 echo extension_loaded("mbstring") ? "1" : "0";
 echo extension_loaded("MBSTRING") ? "1" : "0";
 echo extension_loaded("json") ? "1" : "0";
+echo extension_loaded("HASH") ? "1" : "0";
 echo "\n";
 $call = "extension_loaded";
 echo $call("simplexml") ? "1" : "0";
+echo $call("hash") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "000\n0");
+    assert_eq!(execution.stdout, "0011\n01");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -403,19 +405,22 @@ echo "\n";
 }
 
 #[test]
-fn emit_ir_folds_direct_extension_loaded_string_names_to_false() {
+fn emit_ir_folds_direct_extension_loaded_string_names() {
     let ir = emit_ir_source(
         r#"<?php
 $name = "mbstring";
 
 echo extension_loaded("mbstring") ? "1" : "0";
 echo extension_loaded("MBSTRING") ? "1" : "0";
+echo extension_loaded("json") ? "1" : "0";
+echo extension_loaded("HASH") ? "1" : "0";
 echo extension_loaded($name) ? "1" : "0";
 echo "\n";
 "#,
     )
     .unwrap();
 
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
     assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
     assert!(!ir.contains("extension_loaded"), "{ir}");
 }

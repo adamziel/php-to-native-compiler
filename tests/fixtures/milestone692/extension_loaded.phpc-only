@@ -1,1 +1,1 @@
-Project-specific extension policy: phpc currently exposes an empty extension registry, while system PHP depends on host-loaded extensions.
+Project-specific extension policy: phpc exposes a bounded compatibility extension registry, while system PHP depends on host-loaded extensions.

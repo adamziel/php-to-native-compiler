@@ -6734,18 +6734,27 @@ handled.
   signal, keeps callable lookup false, supports omitted/null/int/string
   arguments in the current subset, and advances the real bootstrap-shim probe
   to WordPress' missing-extension guard: exit code `1`, 126 stdout bytes, and
-  no stderr under the current empty `extension_loaded()` policy.
-- [ ] Runtime/extensions lane: replace the deterministic empty
+  no stderr under the then-current empty `extension_loaded()` policy.
+- [x] Runtime/extensions lane: replace the deterministic empty
   `extension_loaded()` registry with a bounded compatibility registry for the
   WordPress 6.9.4 bootstrap requirement checks, with tests, CLI coverage, docs,
   and named unsupported edges for host extension discovery, extension aliases,
   extension version APIs, native extension functions/constants, configuration,
-  exact diagnostics, partial-output behavior, and native lowering.
+  exact diagnostics, partial-output behavior, and native lowering. The
+  Milestone 733 slice reports `json` and `hash` as loaded, keeps other
+  extensions false, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:203:8: undefined function file_exists()`.
+- [ ] Runtime/filesystem lane: implement or explicitly bound `file_exists()`
+  for the real WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:203:8`,
+  with tests, CLI coverage, docs, and named unsupported edges for filesystem
+  metadata policy, path canonicalization, relative paths, stream wrappers,
+  permissions, TOCTOU behavior, host filesystem coupling, partial-output
+  behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 732 checkpoint, the latest committed checkpoint
-  is `20ac373 runtime: add bounded implode`, covering Milestone 731.
+- Before the current Milestone 733 checkpoint, the latest committed checkpoint
+  is `547a714 runtime: add bounded exit`, covering Milestone 732.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
