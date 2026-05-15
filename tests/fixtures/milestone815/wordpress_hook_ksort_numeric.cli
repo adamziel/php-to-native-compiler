@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone815/wordpress_hook_ksort_numeric.php"
+  ],
+  "stdin": "",
+  "stdout": "2|10",
+  "stderr": "",
+  "exit": 0
+}

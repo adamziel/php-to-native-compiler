@@ -116,8 +116,10 @@ bounded `wpdb` dynamic table-name properties now cover the reached
 compound assignment now covers the reached object-cache mutation path; direct
 `$GLOBALS['name']` reads/writes now cover the reached object-cache bootstrap
 global assignment; direct object-property array-offset `isset(...)` now covers
-the reached `WP_Hook::add_filter()` priority check; it now stops at missing
-bounded `ksort()` support for `WP_Hook::add_filter()`.
+the reached `WP_Hook::add_filter()` priority check; bounded `ksort()` now
+covers the reached hook-priority ordering path; it now stops at a
+by-reference parameter invocation boundary in the reached `wp_cache_get()`
+option-cache path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -386,9 +388,11 @@ object-property array-offset compound assignment for the reached object-cache
 mutation path. Milestone 813 added bounded direct `$GLOBALS['name']`
 read/write routing to the root global table for the reached object-cache
 bootstrap assignment. Milestone 814 added direct object-property array-offset
-`isset(...)` for the reached `WP_Hook::add_filter()` priority check. The
-current frontier is now missing bounded `ksort()` support for the reached
-`WP_Hook::add_filter()` priority ordering path.
+`isset(...)` for the reached `WP_Hook::add_filter()` priority check. Milestone
+815 added bounded `ksort($array, SORT_NUMERIC)` for direct variable arrays and
+direct object-property arrays. The current frontier is now the reached
+`wp_cache_get()` by-reference parameter invocation boundary in the
+`get_option()` option-cache path.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -559,8 +563,9 @@ The repository already has a working Rust workspace with:
   direct `$GLOBALS['name']` read/write routing covers the reached object-cache
   bootstrap global assignment, and direct object-property array-offset
   `isset(...)` covers the reached `WP_Hook::add_filter()` priority check.
-  The next bottleneck is missing bounded `ksort()` support for the reached
-  `WP_Hook::add_filter()` priority ordering path.
+  Bounded `ksort($array, SORT_NUMERIC)` covers the reached hook-priority
+  ordering path. The next bottleneck is by-reference parameter invocation in
+  the reached `wp_cache_get()` option-cache path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

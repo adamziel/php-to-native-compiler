@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T17:05:00Z
+
+- Checkpoint before this task:
+  `d457422 runtime: add bounded globals and hook isset`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 815, bounded `ksort($array, SORT_NUMERIC)` for the
+  reached `WP_Hook::add_filter()` priority ordering path.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/ksort_builtin.rs`,
+  `tests/fixtures/milestone815/*`, `GOAL.MD`, `docs/ARCHITECTURE.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime array_sort_keys_numeric -- --nocapture`,
+  `cargo test -p phpc --test ksort_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone815`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:1780:7: unsupported call wp_cache_get(): reference parameter invocation is not implemented`.
+- Remaining semantic gaps: full PHP sort semantics, sort flags beyond
+  `SORT_NUMERIC`, broad by-reference argument handling, reference parameter
+  invocation, references/copy-on-write, exact diagnostics, native lowering, and
+  real WordPress bootstrap support remain unsupported.
+- Next concrete task: handle the reached `wp_cache_get()` call shape where the
+  declaration has an optional by-reference `$found` parameter but the current
+  call omits it, without claiming real reference parameter binding.
+
 ## Loop Event 2026-05-15T16:35:00Z
 
 - Checkpoint before this task:

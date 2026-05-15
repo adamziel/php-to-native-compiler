@@ -640,6 +640,22 @@ impl PhpArray {
         Ok(key)
     }
 
+    pub fn sort_keys_numeric(&mut self) -> RuntimeResult<()> {
+        let mut sortable = Vec::with_capacity(self.entries.len());
+        for entry in &self.entries {
+            sortable.push((
+                array_key_numeric_number_from_key("ksort()", &entry.key)?,
+                entry.clone(),
+            ));
+        }
+
+        sortable.sort_by(|(left, _), (right, _)| {
+            compare_numbers(*left, *right).unwrap_or(Ordering::Equal)
+        });
+        self.entries = sortable.into_iter().map(|(_, entry)| entry).collect();
+        Ok(())
+    }
+
     pub fn values_reindexed(&self) -> Self {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
@@ -1436,6 +1452,21 @@ fn array_numeric_number_from_value(callable: &'static str, value: &Value) -> Run
                 other.type_name()
             ),
         )),
+    }
+}
+
+fn array_key_numeric_number_from_key(
+    callable: &'static str,
+    key: &ArrayKey,
+) -> RuntimeResult<Number> {
+    match key {
+        ArrayKey::Int(value) => Ok(Number::Int(*value)),
+        ArrayKey::String(value) => parse_numeric_string(value).ok_or_else(|| {
+            RuntimeError::unsupported_call(
+                callable,
+                "SORT_NUMERIC keys must be numeric in the current subset, got non-numeric string key",
+            )
+        }),
     }
 }
 
@@ -4061,6 +4092,24 @@ mod tests {
             Some(&Value::String("Ada".to_string())),
             "array_values must not mutate the original array"
         );
+    }
+
+    #[test]
+    fn array_sort_keys_numeric_orders_entries_by_numeric_key_without_reindexing() {
+        let mut array = PhpArray::new();
+        array.insert(10, Value::String("ten".to_string()));
+        array.insert(2, Value::String("two".to_string()));
+        array.insert("5", Value::String("five".to_string()));
+
+        array.sort_keys_numeric().unwrap();
+
+        let entries = array.entries();
+        assert_eq!(entries[0].key, ArrayKey::Int(2));
+        assert_eq!(entries[0].value, Value::String("two".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(5));
+        assert_eq!(entries[1].value, Value::String("five".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(10));
+        assert_eq!(entries[2].value, Value::String("ten".to_string()));
     }
 
     #[test]

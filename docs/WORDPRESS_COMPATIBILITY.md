@@ -1003,6 +1003,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   references/copy-on-write, exact diagnostics, or native lowering. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:98:4: undefined function ksort()`.
+  Milestone 815 implements bounded `ksort($array, SORT_NUMERIC)` for direct
+  variable arrays and direct object-property arrays, covering the reached
+  `WP_Hook::add_filter()` priority ordering path. This is not full PHP sort
+  semantics, `SORT_REGULAR`, `SORT_STRING`, natural/locale sorts, mixed
+  non-numeric key comparison, broad by-reference argument handling, exact
+  diagnostics, or native lowering. The real bootstrap-shim probe now advances
+  to
+  `runtime error at <bootstrap-shim>:1780:7: unsupported call wp_cache_get(): reference parameter invocation is not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

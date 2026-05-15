@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 815, bounded `ksort()` support for the reached WordPress
+  hook-priority ordering path. Direct calls to `ksort($array, SORT_NUMERIC)`
+  now sort direct variable arrays in place by numeric key and return `true`;
+  direct object-property array calls such as
+  `ksort($this->callbacks, SORT_NUMERIC)` read and write the visible property
+  through the active visibility context. The runtime array keeps keys and
+  values intact rather than reindexing. This is not full PHP sort semantics,
+  `SORT_REGULAR`, `SORT_STRING`, natural/locale sorts, mixed non-numeric key
+  comparison, broad by-reference argument handling, exact diagnostics, or
+  native lowering. The real WordPress 6.9.4 bootstrap-shim probe now advances
+  past `WP_Hook::add_filter()`'s reached `ksort( $this->callbacks,
+  SORT_NUMERIC );` path to
+  `runtime error at <bootstrap-shim>:1780:7: unsupported call wp_cache_get(): reference parameter invocation is not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime array_sort_keys_numeric -- --nocapture`,
+  `cargo test -p phpc --test ksort_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone815`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 814, direct object-property array-offset `isset(...)` for
   the reached WordPress hook registration path. `isset($this->callbacks[
   $priority ])` and nested direct object-property array paths now read the

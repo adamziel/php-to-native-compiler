@@ -478,8 +478,8 @@
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_change_key_case`, `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
-  `array_product`, `array_reduce`, `array_filter`, `array_map`, `in_array`,
-  `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
+  `array_product`, `array_reduce`, `array_filter`, `array_map`, `ksort`,
+  `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `extension_loaded`, `mysqli_connect`,
@@ -1527,7 +1527,13 @@
   `false` when no value matches; `array_search($needle, $array, true)` uses the
   current scalar strict identity rules, and `array_search($needle, $array,
   false)` uses the loose path. It is also available through string-valued
-  dynamic function calls. `foreach ($array as $value)` iterates array values in
+  dynamic function calls. `ksort($array, SORT_NUMERIC)` sorts direct variable
+  arrays in place by numeric key and returns `true`; direct object-property
+  array targets such as `ksort($object->callbacks, SORT_NUMERIC)` use the
+  visible property path. Keys and values are preserved. Other sort flags,
+  natural/locale sorts, broad key comparison, broad by-reference argument
+  handling, exact diagnostics, and native lowering remain unsupported.
+  `foreach ($array as $value)` iterates array values in
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
   $key => $value)` additionally writes the current integer or string key as an
@@ -2405,7 +2411,7 @@
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `ksort`, `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
@@ -2541,7 +2547,7 @@
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `in_array`, `array_search`, `gettype`,
+  `array_filter`, `array_map`, `ksort`, `in_array`, `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`,
@@ -3180,7 +3186,11 @@
   third argument must evaluate to a boolean in the current subset. It rejects
   non-array haystacks and rejects array or object needles/values when
   encountered. `array_search` is also available through string-valued dynamic
-  function calls. `isset` supports direct variable
+  function calls. `ksort($array, SORT_NUMERIC)` sorts direct variable arrays
+  and direct object-property arrays in place by numeric key while preserving
+  keys and values. Other sort flags, natural/locale sorts, mixed non-numeric
+  key comparison, broad by-reference argument handling, exact diagnostics, and
+  native lowering remain unsupported. `isset` supports direct variable
   operands, direct array offset operands such as `isset($array[$key])` and
   nested direct-variable rooted array offset paths such as
   `isset($array[$outer][$inner])`, direct public object-property operands such

@@ -7469,18 +7469,26 @@ handled.
   references/copy-on-write, exact diagnostics, and native lowering named unless
   implemented. Milestone 814 advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:98:4: undefined function ksort()`.
-- [ ] Runtime/array-ordering lane: implement the reached bounded
+- [x] Runtime/array-ordering lane: implement the reached bounded
   `ksort($this->callbacks, SORT_NUMERIC)` behavior for `WP_Hook::add_filter()`
   without claiming full PHP sort semantics. Keep by-reference argument
   handling outside the reached target shapes, locale/string/natural sorts,
   mixed key comparison edge cases, stable-sort guarantees, exact diagnostics,
   and native lowering named unless implemented.
+  Milestone 815 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1780:7: unsupported call wp_cache_get(): reference parameter invocation is not implemented`.
+- [ ] Runtime/reference-parameter lane: handle the reached `wp_cache_get()`
+  call shape where the function declaration contains an optional by-reference
+  `$found` parameter but the current `get_option()` call omits it. Keep real
+  reference parameter binding, output-parameter writes, alias cells,
+  copy-on-write, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 813/814 checkpoint, the latest committed
-  checkpoint is `70aa138 runtime: add bounded object property nested compound`,
-  covering Milestone 812.
+- Before the current Milestone 815 checkpoint, the latest committed checkpoint
+  is `d457422 runtime: add bounded globals and hook isset`, covering
+  Milestones 813 and 814.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

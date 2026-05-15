@@ -6073,6 +6073,9 @@ impl Interpreter {
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
+                if key == "ksort" {
+                    return self.call_ksort(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -6106,6 +6109,9 @@ impl Interpreter {
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
+                }
+                if key == "ksort" {
+                    return self.call_ksort(args, span, caller_scope);
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
@@ -6292,6 +6298,119 @@ impl Interpreter {
         }
 
         Ok(Value::Array(compacted))
+    }
+
+    fn call_ksort(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ksort()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let sort_flags = if let Some(flags) = args.get(1) {
+            self.evaluate(flags, caller_scope)?
+        } else {
+            Value::Int(0)
+        };
+        if sort_flags != Value::Int(1) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ksort()",
+                    "only SORT_NUMERIC is implemented in the current subset",
+                ),
+            ));
+        }
+
+        match &args[0] {
+            Expr::Variable(name, _) => {
+                let mut value = caller_scope.read_static(name, span)?;
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            format!("first argument must be array, got {}", value.type_name()),
+                        ),
+                    ));
+                };
+                array
+                    .sort_keys_numeric()
+                    .map_err(|error| runtime_error(span, error))?;
+                caller_scope.write_static(name, value);
+                Ok(Value::Bool(true))
+            }
+            Expr::Property {
+                target,
+                property,
+                span: property_span,
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            "only direct variable and direct object-property array arguments are implemented",
+                        ),
+                    ));
+                };
+                let object = match caller_scope.read_static(object_name, *property_span)? {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *property_span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read property ${property} from {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                let mut value = object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ksort()",
+                            format!("first argument must be array, got {}", value.type_name()),
+                        ),
+                    ));
+                };
+                array
+                    .sort_keys_numeric()
+                    .map_err(|error| runtime_error(span, error))?;
+                object
+                    .write_property_from_context(
+                        property,
+                        value,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                Ok(Value::Bool(true))
+            }
+            other => Err(runtime_error(
+                other.span(),
+                RuntimeError::unsupported_call(
+                    "ksort()",
+                    "only direct variable and direct object-property array arguments are implemented",
+                ),
+            )),
+        }
     }
 
     fn call_exit_construct(
@@ -7641,6 +7760,13 @@ impl Interpreter {
             "array_reduce" => self.call_array_reduce(args, span),
             "array_filter" => self.call_array_filter(args, span),
             "array_map" => self.call_array_map(args, span),
+            "ksort" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ksort()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
             "in_array" => match args.as_slice() {
                 [needle, Value::Array(array)] => array
                     .contains_value_loose_scalar(needle)
@@ -10500,6 +10626,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "ksort"
             | "in_array"
             | "array_search"
             | "gettype"
