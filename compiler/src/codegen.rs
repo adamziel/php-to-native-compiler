@@ -6151,20 +6151,21 @@ fn native_defined_result(name: &str) -> Option<bool> {
         return None;
     }
 
-    Some(builtin_global_constant_value(name).is_some())
+    Some(builtin_global_constant_is_defined(name))
 }
 
-fn builtin_global_constant_value(name: &str) -> Option<i64> {
+fn builtin_global_constant_is_defined(name: &str) -> bool {
     match name {
-        "PHP_VERSION_ID" => Some(80300),
-        "CASE_LOWER" => Some(0),
-        "CASE_UPPER" => Some(1),
-        "ARRAY_FILTER_USE_BOTH" => Some(1),
-        "ARRAY_FILTER_USE_KEY" => Some(2),
-        "SORT_REGULAR" => Some(0),
-        "SORT_NUMERIC" => Some(1),
-        "SORT_STRING" => Some(2),
-        _ => None,
+        "PHP_VERSION"
+        | "PHP_VERSION_ID"
+        | "CASE_LOWER"
+        | "CASE_UPPER"
+        | "ARRAY_FILTER_USE_BOTH"
+        | "ARRAY_FILTER_USE_KEY"
+        | "SORT_REGULAR"
+        | "SORT_NUMERIC"
+        | "SORT_STRING" => true,
+        _ => false,
     }
 }
 

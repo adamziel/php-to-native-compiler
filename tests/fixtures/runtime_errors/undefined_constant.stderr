@@ -1,2 +1,2 @@
-runtime error at 2:6: undefined constant PHP_VERSION
+runtime error at 2:6: undefined constant PHP_OS
 

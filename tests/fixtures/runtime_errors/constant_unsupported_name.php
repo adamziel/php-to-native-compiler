@@ -1,2 +1,2 @@
 <?php
-echo constant("PHP_VERSION");
+echo constant("PHP_OS");

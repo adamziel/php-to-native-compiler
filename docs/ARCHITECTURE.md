@@ -853,11 +853,11 @@ as direct `ClassName::CONST`. This does not model bare namespace constant
 fallback reads, autoload-triggered class discovery, broader `self`/`parent`/
 `static` string names, host extension loading, full extension constant
 inventories, or native lowering.
-Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`
-PHP 8.3 compatibility-target constant in the built-in answer table. Bare global
-constant reads and `constant($name)` still stay behind the native
-global-constant boundary until generated code has a real constant table and
-version-policy model.
+Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID` and
+`PHP_VERSION` PHP 8.3 compatibility-target constants in the built-in answer
+table. Bare global constant reads and `constant($name)` still stay behind the
+native global-constant boundary until generated code has a real constant table
+and version-policy model.
 Direct `extension_loaded($name)` calls with already-lowerable string names fold
 to false under the current deterministic empty extension registry; native code
 does not query host PHP modules, `php.ini`, SAPI state, or dynamic extension
@@ -877,8 +877,9 @@ Direct `defined($name)` calls fold only when `$name` is an already-lowerable
 string value whose possible values are supported unqualified constant names
 with a uniform answer against the current exact built-in constant-name set.
 Exact `CASE_LOWER`, `CASE_UPPER`, `ARRAY_FILTER_USE_BOTH`,
-`ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`, `SORT_NUMERIC`, and `SORT_STRING`
-names fold true, while other supported unqualified names fold false.
+`ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`, `SORT_NUMERIC`, `SORT_STRING`,
+`PHP_VERSION_ID`, and `PHP_VERSION` names fold true, while other supported
+unqualified names fold false.
 Runtime-defined constants, source-order constant declarations, `define(...)`,
 `constant(...)`, qualified names such as `\Sodium\CRYPTO_AUTH_BYTES`,
 unsupported names, namespace-aware lookup, and exact native errors remain

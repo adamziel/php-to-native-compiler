@@ -270,9 +270,10 @@
   ancestor, and supported static property operands
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID`, which evaluate to
-  integers `0`, `1`, `2`, `1`, `0`, `1`, `2`, and the current deterministic
-  PHP 8.3 compatibility target `80300`
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and `PHP_VERSION`. The
+  integer constants evaluate to `0`, `1`, `2`, `1`, `0`, `1`, `2`, and the
+  current deterministic PHP 8.3 compatibility target `80300`; `PHP_VERSION`
+  evaluates to the deterministic compatibility string `8.3.0`.
 - runtime-defined constants through `define($name, $value)` over the current
   unqualified or qualified string-name and scalar/array value subset;
   `constant($name)` accepts unqualified names and qualified lookup names with
@@ -294,7 +295,8 @@
   supported keys, unary expressions, binary expressions over those values,
   and bare references to previously defined unqualified constants or the
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` constants
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and `PHP_VERSION`
+  constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys
@@ -555,7 +557,7 @@
 - explicit parse diagnostics for unsupported nested, namespace-aware, or
   dynamic-value `const` declarations
 - stable runtime diagnostics for unsupported bare global constants outside the
-  current built-in/runtime-defined slice, such as `PHP_VERSION`
+  current built-in/runtime-defined slice, such as `PHP_OS`
 - explicit parse diagnostics for unsupported array spread/reference elements
 - explicit parse diagnostics for unsupported array/list destructuring beyond
   the current simple positional `list($a, $b) = expr;` statement slice, such as
@@ -1714,7 +1716,8 @@
   before folding so native output cannot erase the runtime lookup boundary.
   Exact `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_BOTH`, `ARRAY_FILTER_USE_KEY`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, and `PHP_VERSION_ID` names fold to true;
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and `PHP_VERSION` names
+  fold to true;
   other supported unqualified names fold to false. The Milestone 569 and 573
   snapshots cover the `SORT_REGULAR` and `SORT_NUMERIC` additions without
   broadening native constant values, runtime-defined constant lookup, dynamic
@@ -3616,11 +3619,11 @@
 - `declare(strict_types=1)` and PHP type declaration enforcement
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, and runtime-defined
-  unqualified constants in the current name/value subset; PHP version-string
-  constants such as `PHP_VERSION`, component constants such as
-  `PHP_MAJOR_VERSION`, patch-level host version coupling, SAPIs/build
-  metadata, full extension constant catalogs, unsupported `define(...)` names
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
+  runtime-defined unqualified constants in the current name/value subset; PHP
+  version component constants such as `PHP_MAJOR_VERSION`, patch-level host
+  version coupling, SAPIs/build metadata, full extension constant catalogs,
+  unsupported `define(...)` names
   or values, case-insensitive legacy constants, bare namespace constant
   fallback reads, nested `const` declarations, dynamic declaration values,
   broader `constant()`/`defined()` lookup for class constants, names lexed as

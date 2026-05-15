@@ -6673,17 +6673,28 @@ handled.
   reference/COW semantics and native lowering explicit, and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
-- [ ] Runtime lane: implement or explicitly bound the `PHP_VERSION` built-in
+- [x] Runtime lane: implement or explicitly bound the `PHP_VERSION` built-in
   compatibility constant for the real WordPress 6.9.4 bootstrap-shim blocker
   at `<bootstrap-shim>:160:17`, with tests, CLI coverage, docs, and named
   unsupported edges for PHP-version policy, related version constants,
   `phpversion()`/`version_compare()` behavior, extension versions, exact PHP
-  diagnostics, partial-output behavior, and native lowering.
+  diagnostics, partial-output behavior, and native lowering. The Milestone 727
+  slice supports a deterministic PHP 8.3 `PHP_VERSION` string through bare
+  reads, `constant(...)`, `defined(...)`, dynamic string-name lookup, and native
+  `defined(...)` folding, keeps host/version catalog breadth explicit, and
+  advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
+- [ ] Runtime/builtin lane: implement or explicitly bound `version_compare()`
+  for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:162:7`, with tests, CLI coverage, docs, and named
+  unsupported edges for PHP's full version-string grammar, operator argument
+  forms, invalid argument diagnostics, pre-release ordering, extension version
+  coupling, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 726 checkpoint, the latest committed checkpoint
-  is `ade5528 runtime: add loop-depth control flow`, covering Milestone 725.
+- Before the current Milestone 727 checkpoint, the latest committed checkpoint
+  is `dce21ab runtime: add bounded global imports`, covering Milestone 726.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

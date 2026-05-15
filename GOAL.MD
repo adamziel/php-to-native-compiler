@@ -193,9 +193,10 @@ slot copying for objects without declared `__clone` methods. Milestone 725
 then advanced past loop-depth `break 2;` by letting active loops and switches
 consume positive integer literal `break N;`/`continue N;` depths. Milestone
 726 then advanced past function-scope `global $name, ...;` imports by routing
-direct imported globals through the root symbol table. The next visible
-bootstrap-shim blocker is now the missing `PHP_VERSION` compatibility constant:
-`runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
+direct imported globals through the root symbol table. Milestone 727 then
+added the deterministic `PHP_VERSION` compatibility constant. The next visible
+bootstrap-shim blocker is now missing `version_compare()`:
+`runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -292,8 +293,9 @@ The repository already has a working Rust workspace with:
 - `phpc run`: broad Milestone 1+ interpreter support for scalars, arrays,
   loops, alternate conditional syntax, functions, syntax-only closure
   declarations, constants, selected builtins including a deterministic
-  false-only `extension_loaded()` policy, bounded `PHP_VERSION_ID`, bounded
-  `dirname()`, bounded no-op `spl_autoload_register()`, syntax-only PHP
+  false-only `extension_loaded()` policy, bounded `PHP_VERSION_ID` and
+  `PHP_VERSION`, bounded `dirname()`, bounded no-op `spl_autoload_register()`,
+  syntax-only PHP
   attributes, bounded throw-statement runtime boundaries, minimal objects,
   bounded `instanceof`, a class-name-only namespace/import slice, and stable
   unsupported diagnostics;
@@ -303,9 +305,9 @@ The repository already has a working Rust workspace with:
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through bounded loop-depth control flow and
-  function-scope `global` imports, then stops at the missing `PHP_VERSION`
-  compatibility constant. The direct
+  probe currently advances through bounded loop-depth control flow,
+  function-scope `global` imports, and the `PHP_VERSION` compatibility
+  constant, then stops at missing `version_compare()`. The direct
   `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

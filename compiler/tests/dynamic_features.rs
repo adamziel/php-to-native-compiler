@@ -678,24 +678,14 @@ echo DYNAMIC_CONSTANT, "\n";
 
 #[test]
 fn undefined_bare_global_constants_have_stable_runtime_errors() {
-    let cases = [
-        (
-            r#"<?php
-echo PHP_VERSION;
-"#,
-            2,
-            6,
-            "PHP_VERSION",
-        ),
-        (
-            r#"<?php
+    let cases = [(
+        r#"<?php
 echo array_filter([], "strlen", CUSTOM_FILTER_MODE);
 "#,
-            2,
-            33,
-            "CUSTOM_FILTER_MODE",
-        ),
-    ];
+        2,
+        33,
+        "CUSTOM_FILTER_MODE",
+    )];
 
     for (source, line, column, name) in cases {
         let error = runtime_error(source);
@@ -711,6 +701,7 @@ fn constant_builtin_resolves_the_current_builtin_constant_slice() {
         r#"<?php
 echo constant("ARRAY_FILTER_USE_KEY"), "|", constant("ARRAY_FILTER_USE_BOTH"), "\n";
 echo constant("PHP_VERSION_ID"), "|", constant("PHP_VERSION_ID") >= 80000, "\n";
+echo defined("PHP_VERSION"), "|", PHP_VERSION === constant("PHP_VERSION"), "\n";
 define("Sodium\\CRYPTO_AUTH_BYTES", 32);
 echo constant("\\Sodium\\CRYPTO_AUTH_BYTES"), "\n";
 $name = "ARRAY_FILTER_USE_KEY";
@@ -732,7 +723,7 @@ echo count($filtered), "|", $filtered["name"], "\n";
 
     assert_eq!(
         execution.stdout,
-        "2|1\n80300|1\n32\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
+        "2|1\n80300|1\n1|1\n32\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -804,7 +795,7 @@ echo constant("SecretBox::SECRET");
 fn constant_builtin_rejects_unknown_constant_names() {
     let error = runtime_error(
         r#"<?php
-echo constant("PHP_VERSION");
+echo constant("PHP_OS");
 "#,
     );
 
@@ -812,7 +803,7 @@ echo constant("PHP_VERSION");
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call constant(): constant PHP_VERSION is not defined in the current runtime-defined or built-in constant subset"
+        "unsupported call constant(): constant PHP_OS is not defined in the current runtime-defined or built-in constant subset"
     );
 
     let class_constant = runtime_error(
@@ -896,7 +887,7 @@ echo check_defined_inside_function(), "\n";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|1\n1|\n|\n1|\n1|\n1||\n1|99\n\n1:1\n");
+    assert_eq!(execution.stdout, "1|1\n1|1\n|\n1|\n1|\n1||\n1|99\n\n1:1\n");
     assert_eq!(execution.exit_code, 0);
 }
 

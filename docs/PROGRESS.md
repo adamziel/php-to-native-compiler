@@ -4,6 +4,38 @@
 
 Implemented:
 
+- Added Milestone 727, bounded `PHP_VERSION` execution for the current
+  deterministic PHP 8.3 compatibility target. Bare `PHP_VERSION`,
+  `constant("PHP_VERSION")`, dynamic `constant($name)`, and
+  `defined("PHP_VERSION")` now see the string value `8.3.0`, while
+  `PHP_VERSION_ID` remains `80300`. Native `defined($name)` folding recognizes
+  `PHP_VERSION`, but native bare constant reads and `constant(...)` still
+  reject at the global-constant lowering boundary. Exact host PHP patch-level
+  coupling, `PHP_MAJOR_VERSION`/component constants, `phpversion()`,
+  `version_compare()`, extension version strings, SAPI/build metadata, full
+  predefined constant catalogs, exact PHP diagnostics, partial-output
+  behavior, and native constant values remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `PHP_VERSION` blocker at
+  `<bootstrap-shim>:160:17` and now stops at
+  `runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features constant -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features defined -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone727`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone727`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 726, bounded function-scope `global $name, ...;` imports
   through `phpc run` for direct variable names. The interpreter now keeps a
   shared root symbol table for top-level execution and lets user-function local

@@ -241,6 +241,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   warning/notice behavior, partial-output behavior, or native lowering. The
   bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:160:17: undefined constant PHP_VERSION`.
+  Milestone 727 covers the deterministic PHP 8.3 `PHP_VERSION` compatibility
+  string for bare reads, `constant(...)`, and `defined(...)`, while keeping
+  host patch-level coupling, component version constants, `phpversion()`,
+  `version_compare()`, extension versions, exact diagnostics, partial-output
+  behavior, and native constant values explicit. The bootstrap-shim probe now
+  reaches
+  `runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

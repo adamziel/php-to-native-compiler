@@ -26,6 +26,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T05:45:00Z
+
+- Checkpoint before this task: `dce21ab runtime: add bounded global imports`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 727, bounded `PHP_VERSION` execution for the real
+  WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:160:17`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `compiler/tests/user_constants_cli.rs`, `tests/fixtures/milestone727/*`,
+  runtime-error and unsupported-dynamic unknown-constant fixtures, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features constant -- --test-threads=1`,
+  `cargo test -p phpc --test dynamic_features defined -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary -- --test-threads=1`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone727`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone727`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  `cargo test -p phpc --test runtime_error_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: exact host PHP patch-level coupling, component
+  version constants such as `PHP_MAJOR_VERSION`, `phpversion()`,
+  `version_compare()`, extension version strings, SAPI/build metadata, full
+  predefined constant catalogs, exact PHP diagnostics, partial-output
+  behavior, and native constant values remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:162:7: undefined function version_compare()`.
+- Next concrete task: implement or explicitly bound `version_compare()` while
+  keeping PHP's full version-string grammar, operator argument forms, invalid
+  argument diagnostics, pre-release ordering, extension version coupling,
+  partial-output behavior, and native lowering explicit.
+
 ## Loop Event 2026-05-15T05:10:00Z
 
 - Checkpoint before this task: `ade5528 runtime: add loop-depth control flow`,
@@ -8125,8 +8168,8 @@ injects this file into every prompt. Each Codex pass should update it with:
   for exact uppercase `ARRAY_FILTER_USE_KEY` and `ARRAY_FILTER_USE_BOTH`.
   These constants now parse as first-class expressions, evaluate to integer
   values `2` and `1` in `phpc run`, work as named `array_filter` key-only and
-  value/key mode flags, keep unsupported constants such as `PHP_VERSION` on
-  stable parse diagnostics, and reject LLVM IR lowering explicitly.
+  value/key mode flags, kept constants outside that then-current slice on
+  stable parse diagnostics, and rejected LLVM IR lowering explicitly.
 - Files changed: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
   `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
   `compiler/tests/array_filter.rs`,
@@ -8411,8 +8454,8 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Remaining semantic gaps: bare constant reads only cover unqualified names that
   parse as identifier tokens and exist in the current built-in/runtime-defined
   constant table. Names lexed as language keywords or literals, other built-in
-  constants such as `PHP_VERSION`, extension constants, namespace-qualified
-  constants, class constants, case-insensitive legacy constants,
+  constants outside that then-current slice, extension constants,
+  namespace-qualified constants, class constants, case-insensitive legacy constants,
   references/copy-on-write behavior for constant values, exact PHP `Error`/
   `ValueError`/`TypeError` objects, and native constant lowering remain
   unsupported.

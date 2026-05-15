@@ -254,7 +254,7 @@ impl ConstantTable {
         self.values
             .get(canonical_name)
             .cloned()
-            .or_else(|| builtin_global_constant_value(canonical_name).map(Value::Int))
+            .or_else(|| builtin_global_constant_value(canonical_name))
     }
 
     fn contains(&self, name: &str) -> bool {
@@ -8017,16 +8017,17 @@ fn dirname_once(path: &str) -> String {
     }
 }
 
-fn builtin_global_constant_value(name: &str) -> Option<i64> {
+fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
-        "PHP_VERSION_ID" => Some(80300),
-        "CASE_LOWER" => Some(0),
-        "CASE_UPPER" => Some(1),
-        "ARRAY_FILTER_USE_BOTH" => Some(1),
-        "ARRAY_FILTER_USE_KEY" => Some(2),
-        "SORT_REGULAR" => Some(0),
-        "SORT_NUMERIC" => Some(1),
-        "SORT_STRING" => Some(2),
+        "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
+        "PHP_VERSION_ID" => Some(Value::Int(80300)),
+        "CASE_LOWER" => Some(Value::Int(0)),
+        "CASE_UPPER" => Some(Value::Int(1)),
+        "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),
+        "ARRAY_FILTER_USE_KEY" => Some(Value::Int(2)),
+        "SORT_REGULAR" => Some(Value::Int(0)),
+        "SORT_NUMERIC" => Some(Value::Int(1)),
+        "SORT_STRING" => Some(Value::Int(2)),
         _ => None,
     }
 }
