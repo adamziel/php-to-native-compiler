@@ -82,9 +82,13 @@ The committed synthetic harness is exercised by:
 cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1
 ```
 
-## Expected Initial Blockers
+## Current Probe Status
 
-The first bootstrap probe is expected to fail. Known blockers include:
+The direct `wp-settings.php` probe still fails because it is not a valid
+WordPress entrypoint without `ABSPATH`. The bootstrap-shim probe and the
+`wp-blog-header.php` front-controller probe now exit `0` with no stdout under
+the current deterministic placeholder database and CLI assumptions. Known
+historical blockers and remaining full-support gaps include:
 
 - include/require breadth beyond the first local
   `require`/`require_once`/`include`/`include_once` slice. The
@@ -1296,14 +1300,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
 
 ## First Non-Networked Smoke Target
 
-The first WordPress smoke target is:
+The first committed WordPress-shaped smoke target is:
 
 ```text
-Run `tools/wordpress-inventory.sh` against a local WordPress 6.9.4 tree and
-record the first `phpc run wp-settings.php` blocker.
+Run `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1`
+and verify the synthetic `wp-blog-header.php` front-controller probe exits 0
+with no stdout.
 ```
 
-That target becomes a real compatibility fixture only after any external-source
-snapshot is reviewed for stability and size. The normalized output policy now
-exists, and the latest throwaway external-source run is recorded in
-`docs/PROGRESS.md` rather than vendoring WordPress core.
+External-source WordPress runs remain operator-supplied measurements unless a
+separate source-size, license, update, and checksum policy is accepted. The
+normalized output policy exists, and the latest external-source run is recorded
+in `docs/PROGRESS.md` rather than vendoring WordPress core.

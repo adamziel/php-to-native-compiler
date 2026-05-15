@@ -65,9 +65,9 @@ tools/run-tests.sh
 | Current supported PHP branches 8.2-8.5 | Branch-specific comparison matrix | `not-covered` | The suite does not yet run against a matrix of PHP binaries or branch-specific expected behavior. |
 | php-src-style language compatibility | Imported or mirrored behavioral tests | `not-covered` | No committed php-src compatibility subset exists yet. |
 | Native executable compatibility | Linked native run command | `not-covered` | `phpc compile` emits IR/assembly only; no linked executable path exists yet. The first scalar runtime ABI prerequisite is documented in `docs/NATIVE_RUNTIME_ABI.md`. |
-| WordPress inventory output harness | `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1` | `pass` | Synthetic WordPress-shaped tree pins normalized direct-`wp-settings.php` and bootstrap-shim probes without vendoring WordPress core. |
+| WordPress inventory output harness | `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1` | `pass` | Synthetic WordPress-shaped trees pin normalized direct-`wp-settings.php`, bootstrap-shim, and silent `wp-blog-header.php` front-controller probes without vendoring WordPress core. |
 | WordPress core parse/load inventory | `tools/wordpress-inventory.sh --normalize /path/to/wordpress` | `skipped-unsupported` | Inventory command and committed output policy exist for external WordPress 6.9.4 source; a real external-source snapshot still needs an operator-supplied checkout. |
-| WordPress bootstrap | Non-networked bootstrap smoke command | `not-covered` | Blocked by include/require, namespaces, runtime environment, filesystem, database, and extension coverage. |
+| WordPress bootstrap/front-controller placeholder smoke | `tools/wordpress-inventory.sh --normalize "$WORDPRESS_ROOT"` | `partial` | Real WordPress 6.9.4 bootstrap-shim and front-controller probes exit `0` under deterministic placeholder DB/CLI assumptions; direct `wp-settings.php` still fails on `ABSPATH`, and full request/database/native behavior is not covered. |
 | WordPress request/admin/WP-CLI flows | Pinned smoke fixtures | `not-covered` | Requires a credible bootstrap harness first. |
 | Representative WordPress plugins/themes | Pinned plugin/theme fixtures | `not-covered` | Requires WordPress core bootstrap and extension/environment support first. |
 
@@ -77,7 +77,7 @@ tools/run-tests.sh
   are available for comparison.
 - Add a small `tests/fixtures/compat/php` smoke group that intentionally spans
   multiple language areas and records unsupported skips by name.
-- Use the WordPress bootstrap-shim inventory result to choose the next real
+- Use the WordPress front-controller inventory result to choose the next real
   compiler/runtime blocker without vendoring WordPress core.
 - Define the first native runtime ABI slice before claiming native executable
   compatibility.

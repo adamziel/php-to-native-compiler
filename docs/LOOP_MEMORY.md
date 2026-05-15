@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `dd47bca runtime: add wordpress mysqli charset setup`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 851, a committed deterministic front-controller
+  smoke fixture for the now-passing `wp-blog-header.php` probe.
+- Files changed so far: `compiler/tests/wordpress_inventory_cli.rs`,
+  `tests/fixtures/compat/wordpress/front_controller_smoke.expected`,
+  `tests/fixtures/compat/wordpress/source-pin.md`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1 --nocapture`
+  passed after correcting the expected include-file count.
+- Current WordPress frontier: the committed synthetic front-controller smoke
+  exits `0` with no stdout; the real WordPress 6.9.4 front-controller probe
+  also exits `0` with no stdout under placeholder database and CLI
+  assumptions. This is still not full WordPress support.
+- Remaining semantic gaps: real database/result resources, plugin/theme/admin
+  and REST flows, real request rendering, HTTP/filesystem/SAPI behavior,
+  references/copy-on-write fidelity, exception/warning fidelity, and native
+  lowering remain unproven.
+- Next concrete task: run formatting/diff checks and the full checkpoint gate.
+  The next runtime milestone should add a deterministic empty
+  `mysqli_result` lifecycle boundary for WordPress-style result consumption.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `28dd354 runtime: add wordpress wpdb vsprintf`, pushed to `origin/master`.
 - Task attempted: Milestone 850, deterministic `mysqli_query()` boundary for
   the reached WordPress charset setup statement

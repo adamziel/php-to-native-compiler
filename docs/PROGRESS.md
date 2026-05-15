@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 851, a committed deterministic WordPress-shaped
+  front-controller smoke fixture for the now-passing `wp-blog-header.php`
+  probe. The new synthetic normalized inventory test loads
+  `wp-blog-header.php` through `wp-load.php`, `wp-config.php`,
+  `wp-settings.php`, and a small `wp-includes/class-wpdb.php` charset setup
+  path, then verifies the front-controller probe exits `0` with no stdout and
+  no stderr. Direct `wp-settings.php` still records the expected undefined
+  `ABSPATH` boundary, and the bootstrap-shim probe also exits `0` with no
+  stdout. This fixture proves the committed harness shape only; it does not
+  claim real WordPress source coverage, plugin/theme/admin/REST flows, real
+  database/result resources, HTTP/filesystem/SAPI behavior, rendered request
+  output, or native lowering. Focused verification so far:
+  `cargo test -p phpc --test wordpress_inventory_cli -- --test-threads=1 --nocapture`.
+
 - Added Milestone 850, a deterministic `mysqli_query()` boundary for the
   reached WordPress charset setup query
   `SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'` in

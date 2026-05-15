@@ -75,6 +75,78 @@ fn wordpress_inventory_normalized_synthetic_snapshot_matches_fixture() {
 }
 
 #[test]
+fn wordpress_inventory_front_controller_smoke_matches_fixture() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let wp_root = std::env::temp_dir().join(format!(
+        "phpc-wordpress-front-controller-{}-{unique}",
+        std::process::id()
+    ));
+    let wp_includes = wp_root.join("wp-includes");
+
+    fs::create_dir_all(&wp_includes).expect("create synthetic wp-includes");
+    fs::write(
+        wp_root.join("wp-blog-header.php"),
+        "<?php\nrequire_once __DIR__ . '/wp-load.php';\n",
+    )
+    .expect("write front controller");
+    fs::write(
+        wp_root.join("wp-load.php"),
+        "<?php\nif (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }\nrequire_once ABSPATH . 'wp-config.php';\n",
+    )
+    .expect("write wp-load.php");
+    fs::write(
+        wp_root.join("wp-config.php"),
+        "<?php\n$table_prefix = 'wp_';\nrequire_once ABSPATH . 'wp-settings.php';\n",
+    )
+    .expect("write wp-config.php");
+    fs::write(
+        wp_root.join("wp-settings.php"),
+        "<?php\ndefine('WPINC', 'wp-includes');\nrequire ABSPATH . WPINC . '/load.php';\nrequire ABSPATH . WPINC . '/class-wpdb.php';\n$wpdb = new wpdb();\n$wpdb->set_charset('utf8mb4', 'utf8mb4_unicode_520_ci');\n",
+    )
+    .expect("write wp-settings.php");
+    fs::write(wp_includes.join("load.php"), "<?php\n").expect("write load.php");
+    fs::write(
+        wp_includes.join("class-wpdb.php"),
+        "<?php\nclass wpdb {\n    public $dbh;\n\n    public function __construct() {\n        $this->dbh = mysqli_init();\n        mysqli_real_connect($this->dbh, 'localhost', 'user', 'pass', null, 3306, null, 0);\n    }\n\n    public function set_charset($charset, $collate) {\n        $query = \"SET NAMES '\" . $charset . \"' COLLATE '\" . $collate . \"'\";\n        return mysqli_query($this->dbh, $query);\n    }\n}\n",
+    )
+    .expect("write class-wpdb.php");
+    fs::write(
+        wp_includes.join("version.php"),
+        "<?php\n$wp_version = '6.9.4';\n",
+    )
+    .expect("write version.php");
+
+    let output = Command::new("sh")
+        .arg(repo_root.join("tools/wordpress-inventory.sh"))
+        .arg("--normalize")
+        .arg(&wp_root)
+        .env("PHPC_BIN", env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(repo_root)
+        .output()
+        .expect("run wordpress inventory");
+
+    let _ = fs::remove_dir_all(&wp_root);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+    let expected =
+        include_str!("../../tests/fixtures/compat/wordpress/front_controller_smoke.expected");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+}
+
+#[test]
 fn wordpress_inventory_reports_probe_timeouts() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

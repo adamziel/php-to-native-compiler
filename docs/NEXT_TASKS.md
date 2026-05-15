@@ -7814,15 +7814,28 @@ handled.
   placeholder database and CLI assumptions; this is still not full WordPress,
   plugin/theme/admin/REST, real database, HTTP/filesystem, SAPI, or native
   support.
-- [ ] WordPress harness lane: add a committed deterministic fixture or smoke
+- [x] WordPress harness lane: add a committed deterministic fixture or smoke
   target for the now-passing `wp-blog-header.php` front-controller probe,
   while preserving the clear distinction between placeholder CLI/bootstrap
   success and full WordPress request support.
+  Milestone 851 adds a synthetic normalized inventory smoke in which
+  `wp-blog-header.php` loads through `wp-load.php`, `wp-config.php`,
+  `wp-settings.php`, and a small `wpdb` charset setup path, then exits `0`
+  with no stdout. It proves the committed harness shape only; real WordPress
+  source, plugin/theme/admin/REST flows, real database/result resources,
+  HTTP/filesystem/SAPI behavior, and native lowering remain outside this
+  smoke.
+- [ ] Runtime/mysqli lane: add the first deterministic `mysqli_result`
+  lifecycle boundary for reached WordPress-style empty result consumption,
+  such as `mysqli_fetch_object()`, `mysqli_free_result()`,
+  `mysqli_more_results()`, and `mysqli_next_result()` over placeholder empty
+  results, without claiming real SQL execution or result resources.
 
-## Latest Checkpoint
+## Latest Completed Checkpoint Before Milestone 851
 
-- Before the current Milestone 850 checkpoint, the latest committed checkpoint
-  is `28dd354 runtime: add wordpress wpdb vsprintf`, covering Milestone 849.
+- The latest committed checkpoint is
+  `dd47bca runtime: add wordpress mysqli charset setup`, covering Milestone
+  850.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -994,14 +994,17 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 850 is the active checkpoint candidate: a deterministic
-  `mysqli_query()` placeholder boundary covers the reached WordPress charset
-  setup statement and the `wp-blog-header.php` front-controller probe now exits
-  `0` with no stdout under current placeholder database and CLI assumptions.
-- The next immediate WordPress-directed lane is to turn that passing
+- Milestone 850 is committed: a deterministic `mysqli_query()` placeholder
+  boundary covers the reached WordPress charset setup statement and the real
+  `wp-blog-header.php` front-controller probe exits `0` with no stdout under
+  current placeholder database and CLI assumptions.
+- Milestone 851 is the active checkpoint candidate: turn that passing
   front-controller probe into a committed deterministic smoke target while
   preserving the distinction between placeholder CLI/bootstrap success and full
   WordPress support.
+- The next immediate runtime lane after the smoke target is the first
+  deterministic empty `mysqli_result` lifecycle boundary for
+  WordPress-style result consumption.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

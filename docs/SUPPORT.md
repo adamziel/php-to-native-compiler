@@ -4614,11 +4614,12 @@
   array arguments, nested arrays, invalid names, PHP warning behavior for
   missing or invalid names, variable-variable interactions, exact diagnostics,
   and native lowering beyond function-table introspection
-- `str_replace()` outside the current scalar/null string-convertible
-  three-argument subset: array search/replace/subject forms, the fourth
-  `$count` output argument, object/resource coercions, exact warning behavior,
-  binary string edge cases, and native lowering beyond function-table
-  introspection
+- `str_replace()` outside the current scalar/null string-convertible subject
+  subset with scalar/null replacement and scalar/null or one-level array
+  search values: replacement arrays, subject arrays, nested search arrays,
+  non-variable fourth `$count` targets, object/resource coercions, exact
+  warning behavior, binary string edge cases, and native lowering beyond
+  function-table introspection
 - `implode()` outside the current scalar/null array-value subset: legacy
   reversed argument order, nested arrays, object/resource values, exact warning
   behavior, partial-output behavior, and native lowering beyond function-table
@@ -4691,7 +4692,8 @@
   current method-context slice, append offsets, complex lvalues, ArrayAccess,
   magic methods, and general expressions
 - Zend extension loading
-- WordPress compatibility
+- full WordPress compatibility beyond the documented deterministic
+  bootstrap/front-controller placeholder probes
 - PHP's warning-and-continue behavior for undefined variables; plain reads fail
   with a runtime error in the current subset, while `isset($name)` remains the
   supported presence check
