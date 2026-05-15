@@ -451,6 +451,7 @@
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`,
   `strcasecmp`, `str_contains`, `strpos`, `preg_match`, `str_replace`,
+  `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `version_compare`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
@@ -558,6 +559,15 @@
   PHP-exact `ValueError` diagnostics, array/object/resource coercions,
   encoding-sensitive edge cases beyond represented runtime strings, and native
   lowering remain unsupported.
+  `substr_count($haystack, $needle, $offset = 0, $length = null)` supports
+  scalar/null string-convertible haystack and needle arguments, optional
+  integer offset and length slicing, negative offsets and lengths within the
+  current bounds rules, non-overlapping byte-position counts, and zero when the
+  searched slice is shorter than the needle. Empty needles are a current
+  runtime boundary instead of PHP-exact `ValueError`; broad scalar coercions,
+  array/object/resource coercions, exact PHP diagnostics, encoding-sensitive
+  edge cases beyond represented runtime strings, and native lowering remain
+  unsupported.
   `preg_match($pattern, $subject)` supports exactly two scalar/null
   string-convertible arguments. The current regex slice supports
   slash-delimited literal contains/prefix/suffix/exact patterns with `^` and
@@ -2024,7 +2034,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `strpos`, `preg_match`,
+  `strtolower`, `trim`, `str_contains`, `strpos`, `substr_count`, `preg_match`,
   `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_report`, `mysqli_init`,
@@ -2323,7 +2333,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `strpos`, `preg_match`, `str_replace`, `error_reporting`,
+  `str_contains`, `strpos`, `substr_count`, `preg_match`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -2458,7 +2468,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`,
-  `strpos`, `str_replace`, `sprintf`,
+  `strpos`, `substr_count`, `str_replace`, `sprintf`,
   `call_user_func`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -2578,6 +2588,11 @@
   needle subset plus an optional integer offset as the builtin section above;
   direct native `strpos(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
+  `substr_count` accepts the same current scalar/null string-convertible
+  haystack and needle subset plus optional integer offset and length arguments
+  as the builtin section above; direct native `substr_count(...)` calls still
+  reject under the function-call boundary, while native function-table
+  introspection recognizes the name.
   `min` accepts the same current integer-only variadic subset as the builtin
   section above; direct native `min(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -4155,6 +4170,11 @@
   `ValueError` diagnostics, array/object/resource coercions, encoding-sensitive
   edge cases beyond represented runtime strings, and native lowering beyond
   function-table introspection
+- `substr_count()` outside the current scalar/null string-convertible haystack
+  and needle plus optional integer offset/length subset: PHP-exact empty-needle
+  `ValueError`, broad scalar coercions, array/object/resource coercions,
+  encoding-sensitive edge cases beyond represented runtime strings, exact PHP
+  diagnostics, and native lowering beyond function-table introspection
 - `preg_match()` outside the current two-argument slash-delimited literal
   contains/prefix/suffix/exact pattern subset: captures/matches output, flags,
   offsets, full PCRE syntax, modifiers other than `u`, invalid-pattern

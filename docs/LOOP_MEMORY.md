@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T10:57:20Z
+
+- Checkpoint before this task:
+  `39416c3 runtime: add bounded strpos`, pushed to `origin/master`.
+- Task attempted: Milestone 801, bounded `substr_count()` implementation for
+  the reached WordPress `parse_db_host()` startup path after `strpos()`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/substr_count_builtin.rs`,
+  `tests/fixtures/milestone801/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test substr_count_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone801`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier after a short-slice panic
+  regression was fixed.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:2101:14: unsupported call preg_match(): matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset`.
+- Remaining semantic gaps: PHP-exact empty-needle `ValueError`, broad scalar
+  coercions, array/object/resource coercions, exact PHP diagnostics,
+  encoding-sensitive edge cases beyond represented runtime strings, and native
+  lowering remain unsupported.
+- Next concrete task: add bounded `preg_match()` matches-output support for the
+  reached WordPress `parse_db_host()` path while keeping capture naming,
+  optional unmatched groups, flags, offsets, full PCRE behavior,
+  invalid-pattern warnings, exact diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T10:29:45Z
 
 - Checkpoint before this task:

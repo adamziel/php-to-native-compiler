@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 801, a bounded `substr_count()` implementation for the
+  current WordPress `parse_db_host()` startup path immediately after
+  `strpos()`. The runtime now exposes `substr_count` through
+  function/callability metadata and dynamic string-valued calls, supports
+  scalar/null string conversion for haystack and needle arguments, optional
+  integer offset and length slicing, negative offsets and lengths within the
+  current bounds rules, non-overlapping byte-position counts, and zero when the
+  searched slice is shorter than the needle. Empty needles remain a current
+  runtime boundary instead of PHP-exact `ValueError`; broad scalar coercions,
+  array/object/resource coercions, exact PHP diagnostics, encoding-sensitive
+  edge cases beyond represented runtime strings, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `substr_count()` call to
+  `runtime error at <bootstrap-shim>:2101:14: unsupported call preg_match(): matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test substr_count_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone801`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 800, a bounded `strpos()` implementation for the current
   WordPress `parse_db_host()` startup path after `mysqli_init()`. The runtime
   now exposes `strpos` through function/callability metadata and dynamic

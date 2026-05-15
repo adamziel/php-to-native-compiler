@@ -888,6 +888,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `runtime error at <bootstrap-shim>:2092:8: undefined function substr_count()`.
   This is not full PHP string/encoding/coercion diagnostics, native lowering,
   or WordPress bootstrap support.
+  Milestone 801 implements bounded `substr_count()` for the reached
+  `parse_db_host()` path. It supports scalar/null string-convertible haystack
+  and needle arguments, optional integer offset/length slicing, negative
+  offsets and lengths within the current bounds rules, non-overlapping
+  byte-position counts, and short-slice zero counts. The real bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:2101:14: unsupported call preg_match(): matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset`.
+  This is not full PHP string/encoding/coercion diagnostics, native lowering,
+  or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

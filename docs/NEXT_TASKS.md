@@ -7331,16 +7331,26 @@ handled.
   negative offsets, byte-position matching, and `false` for no match,
   advancing the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:2092:8: undefined function substr_count()`.
-- [ ] Runtime/string lane: add a bounded `substr_count()` implementation for
+- [x] Runtime/string lane: add a bounded `substr_count()` implementation for
   the reached WordPress `parse_db_host()` path. Preserve PHP-exact offset and
   length behavior, empty-needle diagnostics, overlap behavior, scalar
   coercions, array/object arguments, and native lowering unless those slices
   are implemented and tested.
+  Milestone 801 implements scalar/null string-convertible haystack and needle
+  arguments, optional integer offset and length slicing, negative offsets and
+  lengths within the current bounds rules, non-overlapping byte-position
+  counts, and short-slice zero counts, advancing the real bootstrap-shim probe
+  to `runtime error at <bootstrap-shim>:2101:14: unsupported call preg_match(): matches output, flags, and offset arguments are not implemented; pass exactly two arguments in the current subset`.
+- [ ] Runtime/regex lane: add bounded `preg_match()` matches-output support for
+  the reached WordPress `parse_db_host()` path. Preserve capture naming,
+  optional unmatched groups, flags, offsets, full PCRE behavior, invalid
+  pattern warnings, exact diagnostics, and native lowering unless those slices
+  are implemented and tested.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 800 checkpoint, the latest committed checkpoint
-  is `27ed08e runtime: add bounded mysqli init`, covering Milestone 799.
+- Before the current Milestone 801 checkpoint, the latest committed checkpoint
+  is `39416c3 runtime: add bounded strpos`, covering Milestone 800.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

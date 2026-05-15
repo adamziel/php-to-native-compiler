@@ -6109,6 +6109,7 @@ impl Interpreter {
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_contains" => call_str_contains(&args, span),
             "strpos" => call_strpos(&args, span),
+            "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "error_reporting" => self.call_error_reporting(args, span),
@@ -9788,6 +9789,7 @@ fn is_builtin(name: &str) -> bool {
             | "strcasecmp"
             | "str_contains"
             | "strpos"
+            | "substr_count"
             | "str_replace"
             | "preg_match"
             | "error_reporting"
@@ -10179,6 +10181,109 @@ fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
         .position(|window| window == needle)
         .map(|index| Value::Int((start + index) as i64))
         .unwrap_or(Value::Bool(false)))
+}
+
+fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "substr_count()",
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_contains_argument("substr_count()", "haystack", &args[0], span)?;
+    let needle = string_contains_argument("substr_count()", "needle", &args[1], span)?;
+    if needle.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr_count()",
+                "empty needles are not supported in the current subset",
+            ),
+        ));
+    }
+
+    let offset = match args.get(2) {
+        Some(Value::Int(offset)) => *offset,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "substr_count()",
+                    format!(
+                        "offset argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => 0,
+    };
+    let haystack_len = haystack.len() as i64;
+    let start = if offset >= 0 {
+        offset
+    } else {
+        haystack_len + offset
+    };
+    if start < 0 || start > haystack_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr_count()",
+                "offset must be within the haystack bounds in the current subset",
+            ),
+        ));
+    }
+
+    let end = match args.get(3) {
+        Some(Value::Int(length)) if *length >= 0 => start + *length,
+        Some(Value::Int(length)) => haystack_len + *length,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "substr_count()",
+                    format!(
+                        "length argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => haystack_len,
+    };
+    if end < start || end > haystack_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr_count()",
+                "length must keep the searched slice within the haystack bounds in the current subset",
+            ),
+        ));
+    }
+
+    let haystack = &haystack.as_bytes()[start as usize..end as usize];
+    let needle = needle.as_bytes();
+    if needle.len() > haystack.len() {
+        return Ok(Value::Int(0));
+    }
+
+    let mut count = 0_i64;
+    let mut cursor = 0_usize;
+    while cursor <= haystack.len().saturating_sub(needle.len()) {
+        if &haystack[cursor..cursor + needle.len()] == needle {
+            count += 1;
+            cursor += needle.len();
+        } else {
+            cursor += 1;
+        }
+    }
+
+    Ok(Value::Int(count))
 }
 
 fn call_preg_match(args: &[Value], span: Span) -> CompileResult<Value> {

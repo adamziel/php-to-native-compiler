@@ -6246,6 +6246,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "strcasecmp"
             | "str_contains"
             | "strpos"
+            | "substr_count"
             | "str_replace"
             | "preg_match"
             | "error_reporting"
