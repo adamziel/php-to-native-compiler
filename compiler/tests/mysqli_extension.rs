@@ -432,6 +432,31 @@ echo mysqli_fetch_assoc($result) === false ? "no-row" : "row";
 }
 
 #[test]
+fn mysqli_fetch_array_accepts_current_assoc_mode_placeholder() {
+    let execution = run_source(
+        r#"<?php
+echo MYSQLI_ASSOC;
+echo "|";
+echo MYSQLI_NUM;
+echo "|";
+echo MYSQLI_BOTH;
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$row = mysqli_fetch_array($result, MYSQLI_ASSOC);
+echo "|", $row["ID"];
+echo "|", $row["post_title"];
+echo "|";
+echo mysqli_fetch_array($result, MYSQLI_ASSOC) === false ? "no-row" : "row";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|2|3|1|Hello world placeholder|no-row");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -508,6 +533,42 @@ mysqli_fetch_object(mysqli_init());
     assert_eq!(
         bad_result_handle.message,
         "unsupported call mysqli_fetch_object(): first argument must be mysqli_result object in the current subset, got mysqli object"
+    );
+
+    let default_fetch_array_mode = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_fetch_array($result);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(default_fetch_array_mode.phase, Phase::Runtime);
+    assert_eq!(default_fetch_array_mode.line, 5);
+    assert_eq!(default_fetch_array_mode.column, 1);
+    assert_eq!(
+        default_fetch_array_mode.message,
+        "unsupported call mysqli_fetch_array(): default MYSQLI_BOTH mode is not implemented in the current subset; pass MYSQLI_ASSOC for the deterministic associative placeholder row"
+    );
+
+    let numeric_fetch_array_mode = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+mysqli_fetch_array($result, MYSQLI_NUM);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(numeric_fetch_array_mode.phase, Phase::Runtime);
+    assert_eq!(numeric_fetch_array_mode.line, 5);
+    assert_eq!(numeric_fetch_array_mode.column, 1);
+    assert_eq!(
+        numeric_fetch_array_mode.message,
+        "unsupported call mysqli_fetch_array(): only MYSQLI_ASSOC mode is implemented in the current subset, got int"
     );
 }
 
@@ -622,6 +683,8 @@ echo function_exists("mysqli_fetch_object") ? "1" : "0";
 echo is_callable("mysqli_fetch_object") ? "1" : "0";
 echo function_exists("mysqli_fetch_assoc") ? "1" : "0";
 echo is_callable("mysqli_fetch_assoc") ? "1" : "0";
+echo function_exists("mysqli_fetch_array") ? "1" : "0";
+echo is_callable("mysqli_fetch_array") ? "1" : "0";
 echo function_exists("mysqli_fetch_field") ? "1" : "0";
 echo is_callable("mysqli_fetch_field") ? "1" : "0";
 echo function_exists("mysqli_num_fields") ? "1" : "0";
@@ -637,11 +700,14 @@ echo is_callable("mysqli_report") ? "1" : "0";
 echo function_exists("mysqli_init") ? "1" : "0";
 echo is_callable("mysqli_init") ? "1" : "0";
 echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
+echo defined("MYSQLI_ASSOC") ? "1" : "0";
+echo defined("MYSQLI_NUM") ? "1" : "0";
+echo defined("MYSQLI_BOTH") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 35, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 40, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

@@ -6231,7 +6231,10 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
         | "SORT_STRING"
         | "MYSQLI_REPORT_OFF"
         | "MYSQLI_REPORT_ERROR"
-        | "MYSQLI_REPORT_STRICT" => true,
+        | "MYSQLI_REPORT_STRICT"
+        | "MYSQLI_ASSOC"
+        | "MYSQLI_NUM"
+        | "MYSQLI_BOTH" => true,
         _ => false,
     }
 }
@@ -6348,6 +6351,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"
             | "mysqli_fetch_assoc"
+            | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"
             | "mysqli_free_result"

@@ -4404,8 +4404,53 @@ impl Interpreter {
     fn call_mysqli_fetch_assoc(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_fetch_assoc", args, 1, span)?;
         let result_id = expect_mysqli_result_handle("mysqli_fetch_assoc()", &args[0], span)?;
+        self.fetch_mysqli_assoc_row("mysqli_fetch_assoc()", result_id, span)
+    }
+
+    fn call_mysqli_fetch_array(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mysqli_fetch_array()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_array()", &args[0], span)?;
+        let Some(mode) = args.get(1) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_fetch_array()",
+                    "default MYSQLI_BOTH mode is not implemented in the current subset; pass MYSQLI_ASSOC for the deterministic associative placeholder row",
+                ),
+            ));
+        };
+        if *mode != Value::Int(PHP_MYSQLI_ASSOC) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_fetch_array()",
+                    format!(
+                        "only MYSQLI_ASSOC mode is implemented in the current subset, got {}",
+                        mode.type_name()
+                    ),
+                ),
+            ));
+        }
+        self.fetch_mysqli_assoc_row("mysqli_fetch_array()", result_id, span)
+    }
+
+    fn fetch_mysqli_assoc_row(
+        &mut self,
+        function: &str,
+        result_id: i64,
+        span: Span,
+    ) -> CompileResult<Value> {
         let row = {
-            let state = self.mysqli_result_state_mut("mysqli_fetch_assoc()", result_id, span)?;
+            let state = self.mysqli_result_state_mut(function, result_id, span)?;
             if state.row_cursor >= state.rows.len() {
                 return Ok(Value::Bool(false));
             }
@@ -8843,6 +8888,7 @@ impl Interpreter {
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
             "mysqli_fetch_assoc" => self.call_mysqli_fetch_assoc(&args, span),
+            "mysqli_fetch_array" => self.call_mysqli_fetch_array(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
             "mysqli_free_result" => self.call_mysqli_free_result(&args, span),
@@ -11767,6 +11813,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"
             | "mysqli_fetch_assoc"
+            | "mysqli_fetch_array"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"
             | "mysqli_free_result"
@@ -11873,6 +11920,9 @@ const PHP_E_ALL: i64 = 32767;
 const PHP_MYSQLI_REPORT_OFF: i64 = 0;
 const PHP_MYSQLI_REPORT_ERROR: i64 = 1;
 const PHP_MYSQLI_REPORT_STRICT: i64 = 2;
+const PHP_MYSQLI_ASSOC: i64 = 1;
+const PHP_MYSQLI_NUM: i64 = 2;
+const PHP_MYSQLI_BOTH: i64 = 3;
 
 fn builtin_global_constant_value(name: &str) -> Option<Value> {
     match name {
@@ -11907,6 +11957,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "MYSQLI_REPORT_OFF" => Some(Value::Int(PHP_MYSQLI_REPORT_OFF)),
         "MYSQLI_REPORT_ERROR" => Some(Value::Int(PHP_MYSQLI_REPORT_ERROR)),
         "MYSQLI_REPORT_STRICT" => Some(Value::Int(PHP_MYSQLI_REPORT_STRICT)),
+        "MYSQLI_ASSOC" => Some(Value::Int(PHP_MYSQLI_ASSOC)),
+        "MYSQLI_NUM" => Some(Value::Int(PHP_MYSQLI_NUM)),
+        "MYSQLI_BOTH" => Some(Value::Int(PHP_MYSQLI_BOTH)),
         _ => None,
     }
 }

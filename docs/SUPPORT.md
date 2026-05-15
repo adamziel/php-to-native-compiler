@@ -515,9 +515,9 @@
   `mysqli_real_connect`, `mysqli_get_server_info`, `mysqli_query`,
   `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
-  `mysqli_fetch_assoc`, `mysqli_fetch_field`, `mysqli_num_fields`,
-  `mysqli_free_result`, `mysqli_more_results`, `mysqli_next_result`,
-  `mysqli_report`, `mysqli_init`, `header`,
+  `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
+  `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
+  `mysqli_next_result`, `mysqli_report`, `mysqli_init`, `header`,
   `header_remove`, `headers_sent`, `abs`, `assert`,
   `get_class`, `is_object`, `get_debug_type`, `class_exists`,
   `interface_exists`, `trait_exists`, `enum_exists`,
@@ -843,6 +843,11 @@
   `mysqli_fetch_assoc($result)` uses the same row cursor and returns one
   associative PHP array with `ID = 1` and
   `post_title = "Hello world placeholder"` before returning `false`.
+  `mysqli_fetch_array($result, MYSQLI_ASSOC)` returns the same associative
+  array shape and shares that row cursor; omitted mode/default `MYSQLI_BOTH`,
+  `MYSQLI_NUM`, and `MYSQLI_BOTH` row shapes are explicit unsupported
+  boundaries. The `MYSQLI_ASSOC`, `MYSQLI_NUM`, and `MYSQLI_BOTH` constants
+  are exposed with their PHP integer values.
   `mysqli_free_result($result)` releases that interpreter-owned placeholder
   result state and returns `null`. `mysqli_more_results($handle)` and
   `mysqli_next_result($handle)` return `false` for the placeholder connection.
@@ -2846,9 +2851,9 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_query`, `mysqli_errno`, `mysqli_error`, `mysqli_select_db`,
   `mysqli_real_escape_string`, `mysqli_fetch_object`,
-  `mysqli_fetch_assoc`, `mysqli_fetch_field`, `mysqli_num_fields`,
-  `mysqli_free_result`, `mysqli_more_results`, `mysqli_next_result`,
-  `mysqli_report`, and `mysqli_init` are recognized for function/callability
+  `mysqli_fetch_assoc`, `mysqli_fetch_array`, `mysqli_fetch_field`,
+  `mysqli_num_fields`, `mysqli_free_result`, `mysqli_more_results`,
+  `mysqli_next_result`, `mysqli_report`, and `mysqli_init` are recognized for function/callability
   metadata and dynamic lookup. `mysqli_real_connect(...)` executes only the
   current placeholder-handle success boundary,
   `mysqli_get_server_info(...)` returns only the current deterministic
@@ -4509,9 +4514,10 @@
   string builtin/missing-name folding
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_query()`/`mysqli_select_db()`/`mysqli_real_escape_string()`/
-  `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_field()`/
-  `mysqli_num_fields()`/`mysqli_free_result()`/`mysqli_more_results()`/
-  `mysqli_next_result()`/`mysqli_report()`/`mysqli_init()` beyond the current
+  `mysqli_fetch_object()`/`mysqli_fetch_assoc()`/`mysqli_fetch_array()`/
+  `mysqli_fetch_field()`/`mysqli_num_fields()`/`mysqli_free_result()`/
+  `mysqli_more_results()`/`mysqli_next_result()`/`mysqli_report()`/
+  `mysqli_init()` beyond the current
   metadata/report-mode/placeholder-object/fake successful real-connect and
   fake server-info/SQL-mode-query/charset-setup/database-selection/escaping/
   empty-result lifecycle boundary:

@@ -1,0 +1,10 @@
+$ phpc run tests/fixtures/milestone859/mysqli_fetch_array_assoc_seed_post.php
+exit: 0
+stdout:
+1|2|3
+1
+Hello world placeholder
+no-row
+--- stdout end ---
+stderr:
+--- stderr end ---

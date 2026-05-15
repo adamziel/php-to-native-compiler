@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 859, bounded `mysqli_fetch_array()` support for the
+  deterministic seed-post placeholder result when callers explicitly pass
+  `MYSQLI_ASSOC`. The runtime now exposes `MYSQLI_ASSOC`, `MYSQLI_NUM`, and
+  `MYSQLI_BOTH` constants, recognizes `mysqli_fetch_array()` through runtime
+  and native metadata lookup, returns the same associative array shape as
+  `mysqli_fetch_assoc($result)`, shares the placeholder row cursor, and
+  returns `false` after the one row is consumed. Calls that omit the mode still
+  report a named default-`MYSQLI_BOTH` boundary, and `MYSQLI_NUM`/`MYSQLI_BOTH`
+  modes remain unsupported. This is not numeric or mixed-index row hydration,
+  broad fetch-mode support, real SQL/database state, warnings/errors, or
+  native database lowering. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension -- --nocapture` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone859`.
+
 - Added Milestone 858, a synthetic WordPress-shaped associative
   `wpdb::get_results()` smoke over the deterministic
   `mysqli_fetch_assoc()` seed-post row. The fixture defines the current

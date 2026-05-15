@@ -29,6 +29,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `5e3c39e tests: add wordpress wpdb associative row smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 859, bounded
+  `mysqli_fetch_array($result, MYSQLI_ASSOC)` support for the deterministic
+  seed-post placeholder result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone859/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone859`, and
+  `git diff --check` passed.
+- Current WordPress frontier: the current WIP should let callers consume the
+  exact seed-post placeholder result through `mysqli_fetch_array($result,
+  MYSQLI_ASSOC)`, with `MYSQLI_NUM`/`MYSQLI_BOTH` and omitted default mode
+  kept as named unsupported boundaries.
+- Remaining semantic gaps: numeric and mixed fetch arrays, broad fetch modes,
+  real WordPress `wpdb` fidelity, WordPress core constants beyond the current
+  mysqli constants, real SQL execution, database state, errors/warnings, and
+  native database lowering remain missing.
+- Next concrete task: run focused MySQLi and milestone859 fixture tests, fix
+  failures, then run the full serialized checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `b40bd9b runtime: add wordpress mysqli associative row`, pushed to
   `origin/master`.
 - Task attempted: Milestone 858, a synthetic `wpdb::get_results($query,

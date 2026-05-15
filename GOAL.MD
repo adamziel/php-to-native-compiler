@@ -1088,10 +1088,14 @@ unchecked work. Current state:
   `mysqli_fetch_assoc()` returns the seed-post placeholder row as an
   associative PHP array and shares the placeholder result cursor with object
   fetching.
-- Milestone 858 is the active checkpoint candidate: a synthetic
+- Milestone 858 is committed: a synthetic
   `wpdb::get_results($query, ARRAY_A)` smoke consumes the associative row path
   through WordPress-shaped `last_result` and `num_rows` state without claiming
   real database support.
+- Milestone 859 is the active checkpoint candidate: deterministic
+  `mysqli_fetch_array($result, MYSQLI_ASSOC)` returns the seed-post
+  placeholder row as an associative PHP array while numeric and mixed fetch
+  modes remain named unsupported boundaries.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and
