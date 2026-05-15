@@ -580,6 +580,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   interface constants, interface inheritance, built-in/internal interface
   catalogs, variance/signature checks, autoload-triggered interface discovery,
   exact PHP fatal behavior, native lowering, or WordPress bootstrap support.
+  Milestone 762 implements the bounded object-handle `=&` slice needed for
+  that `NOOP_Translations` path: direct variable sources holding current object
+  values can be assigned into direct variable or direct array-offset targets.
+  It advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:231:20: undefined function str_replace()`.
+  This is not scalar/array reference aliasing, source/target rebinding,
+  by-reference array-offset or method-call sources, object-property array
+  targets, copy-on-write, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -31,14 +31,16 @@
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
   object-property array-offset targets such as `$object->items[$key] =& $value`
-  parses in
-  statement position as a runtime boundary for direct variable,
-  direct array-offset, and method-call sources plus the documented direct
-  object-property array-offset target shape. Guarded or
-  declaration-contained code can be loaded, but if execution reaches the
-  assignment, `phpc run` reports `unsupported call reference assignment:
-  references and aliasing are not implemented`. This does not create PHP
-  aliases or reference containers.
+  parses in statement position for direct variable, direct array-offset, and
+  method-call sources plus the documented direct object-property array-offset
+  target shape. The only executing subset is direct variable sources holding a
+  current object value assigned into a direct variable or direct array offset;
+  this stores the same object handle under the current value model. Scalar and
+  array sources, array-offset and method-call sources, object-property array
+  targets, source/target rebinding aliases, PHP reference containers,
+  copy-on-write, and native lowering remain unsupported and report
+  `unsupported call reference assignment: references and aliasing are not
+  implemented` when reached.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment

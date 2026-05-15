@@ -58,6 +58,34 @@ injects this file into every prompt. Each Codex pass should update it with:
   symbol-table/array-slot binding, copy-on-write interaction, mutation
   ordering, and exact unsupported edge-case docs.
 
+## Loop Event 2026-05-15T06:40:00Z
+
+- Checkpoint before this task:
+  `689eed6 runtime: add interface implementation metadata`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 762, bounded object-handle by-reference assignment
+  for the WordPress `$l10n[ $domain ] = &$noop_translations;` blocker.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`, `tests/fixtures/milestone762/*`,
+  and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone762`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: scalar/array reference aliasing, source/target
+  rebinding, by-reference array-offset and method-call sources,
+  object-property array targets, alias containers, copy-on-write, exact PHP
+  diagnostics, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:231:20: undefined function str_replace()`.
+- Next concrete task: implement a bounded `str_replace()` builtin slice for
+  the reached WordPress path while keeping array search/replace forms,
+  count-output references, object/resource coercions, binary/string edge
+  cases, and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

@@ -17,7 +17,8 @@ use crate::ast::{
     ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
     ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
+    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, UnaryOp,
+    UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -792,13 +793,14 @@ impl Interpreter {
                 self.execute_assignment(target, expr, scope)?;
                 Ok(Flow::Normal)
             }
-            Stmt::ReferenceAssign { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "reference assignment",
-                    "references and aliasing are not implemented",
-                ),
-            )),
+            Stmt::ReferenceAssign {
+                target,
+                source,
+                span,
+            } => {
+                self.execute_reference_assignment(target, source, *span, scope)?;
+                Ok(Flow::Normal)
+            }
             Stmt::CompoundAssign {
                 target,
                 op,
@@ -2312,6 +2314,94 @@ impl Interpreter {
     ) -> CompileResult<()> {
         self.evaluate_assignment(target, expr, scope)?;
         Ok(())
+    }
+
+    fn execute_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let unsupported = || {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "references and aliasing are not implemented",
+                ),
+            )
+        };
+
+        match target {
+            AssignTarget::Variable { name, .. } => {
+                let value = self.evaluate_object_handle_reference_source(source, span, scope)?;
+                scope.write_static(name, value);
+                Ok(())
+            }
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                ..
+            } => {
+                let key = self.evaluate_array_key(index, scope)?;
+                let value = self.evaluate_object_handle_reference_source(source, span, scope)?;
+                let mut slot = scope
+                    .read_named(name)
+                    .unwrap_or_else(|| Value::Array(PhpArray::new()));
+
+                if matches!(slot, Value::Null) {
+                    slot = Value::Array(PhpArray::new());
+                }
+
+                match &mut slot {
+                    Value::Array(array) => {
+                        array.insert(key, value);
+                        scope.write_static(name, slot);
+                        Ok(())
+                    }
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot write offset on {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            }
+            _ => Err(unsupported()),
+        }
+    }
+
+    fn evaluate_object_handle_reference_source(
+        &mut self,
+        source: &ReferenceSource,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = match source {
+            ReferenceSource::Variable { name, .. } => scope.read_static(name, span)?,
+            ReferenceSource::ArrayIndex { .. } | ReferenceSource::MethodCall { .. } => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "reference assignment",
+                        "references and aliasing are not implemented",
+                    ),
+                ));
+            }
+        };
+
+        match value {
+            Value::Object(_) => Ok(value),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "reference assignment",
+                    "references and aliasing are not implemented",
+                ),
+            )),
+        }
     }
 
     fn evaluate_assignment(

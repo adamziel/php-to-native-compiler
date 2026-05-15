@@ -6964,19 +6964,27 @@ handled.
   `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
   corresponding to `$l10n[ $domain ] = &$noop_translations;` in
   `wp-includes/l10n.php:1428`.
-- [ ] Runtime/value-model lane: implement real PHP reference assignment for
+- [x] Runtime/value-model lane: implement real PHP reference assignment for
   the next real WordPress bootstrap-shim blocker at
   `wp-includes/l10n.php:1428`, or explicitly widen the existing runtime
   boundary only if the reached code can continue honestly without references.
   This must address alias containers, symbol-table/array-slot binding,
   copy-on-write interaction, mutation ordering, and exact unsupported
   edge-case docs before claiming support.
+  Milestone 762 implements only the honest object-handle subset for direct
+  variable sources into direct variable or direct array-offset targets. It
+  advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:231:20: undefined function str_replace()`.
+- [ ] Builtin/runtime lane: implement a bounded `str_replace()` slice for the
+  next real WordPress bootstrap-shim blocker while documenting unsupported
+  array search/replace forms, count output argument references, object/resource
+  coercions, binary/string edge cases, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 761 checkpoint, the latest committed checkpoint
-  is `5c154e8 parser: add skipped list destructuring slots`, covering
-  Milestone 760.
+- Before the current Milestone 762 checkpoint, the latest committed checkpoint
+  is `689eed6 runtime: add interface implementation metadata`, covering
+  Milestone 761.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

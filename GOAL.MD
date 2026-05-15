@@ -273,8 +273,10 @@ values for the current local-file subset. Milestone 760 added skipped
 positional slots in statement-form `list(...) = expr;`. Milestone 761 then
 recorded class `implements` metadata for relationship checks while leaving
 interface enforcement and built-in/internal interface catalogs explicit future
-work; the current bootstrap-shim blocker is now reference assignment at
-`wp-includes/l10n.php:1428`, `$l10n[ $domain ] = &$noop_translations;`.
+work. Milestone 762 added a bounded object-handle `=&` slice for direct
+variable sources into direct array-offset targets, advancing past
+`wp-includes/l10n.php:1428`; the current bootstrap-shim blocker is now missing
+`str_replace()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.

@@ -229,11 +229,11 @@ magic property hooks, resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
 
-By-reference assignment syntax is accepted only as a runtime boundary for
-direct variable, direct array-offset, and method-call sources plus direct
-object-property array-offset targets: guarded code can parse, but
-reached `=&` assignments fail with a stable unsupported diagnostic until
-reference containers and copy-on-write exist.
+By-reference assignment syntax has one executing object-handle slice: direct
+variable sources holding current object values may be assigned into direct
+variables or direct array offsets, storing the same object handle. Other
+reached `=&` assignments still fail with a stable unsupported diagnostic until
+reference containers, alias rebinding, and copy-on-write exist.
 By-reference function and method return declarations also parse as runtime
 boundaries: containing code can register, but invocation fails with a stable
 unsupported diagnostic until reference-return binding exists.

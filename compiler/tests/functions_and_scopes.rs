@@ -843,6 +843,53 @@ $alias =& $value;
 }
 
 #[test]
+fn reference_assignment_object_handle_variable_source_executes_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $name;
+}
+$box = new Box();
+$box->name = "before";
+$alias =& $box;
+$alias->name = "after";
+echo $box->name;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "after");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_object_handle_array_target_executes_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public $name;
+}
+function remember($key) {
+    global $items;
+    static $box = null;
+    if ($box === null) {
+        $box = new Box();
+    }
+    $box->name = "stored";
+    $items[$key] =& $box;
+    return $items[$key];
+}
+$value = remember("primary");
+echo $value->name;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "stored");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_syntax_inside_unexecuted_function_body_is_registered() {
     let execution = run_source(
         r#"<?php
