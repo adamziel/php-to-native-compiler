@@ -4243,6 +4243,24 @@ impl Interpreter {
         Ok(Value::Int(1))
     }
 
+    fn call_mysqli_kill(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_kill", args, 2, span)?;
+        expect_mysqli_handle("mysqli_kill()", &args[0], span)?;
+        let Value::Int(process_id) = args[1] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_kill()",
+                    format!(
+                        "process_id argument must be int in the current subset, got {}",
+                        args[1].type_name()
+                    ),
+                ),
+            ));
+        };
+        Ok(Value::Bool(process_id == 1))
+    }
+
     fn call_mysqli_get_charset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_charset", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_charset()", &args[0], span)?;
@@ -9381,6 +9399,7 @@ impl Interpreter {
             "mysqli_get_client_version" => self.call_mysqli_get_client_version(&args, span),
             "mysqli_get_proto_info" => self.call_mysqli_get_proto_info(&args, span),
             "mysqli_thread_id" => self.call_mysqli_thread_id(&args, span),
+            "mysqli_kill" => self.call_mysqli_kill(&args, span),
             "mysqli_get_charset" => self.call_mysqli_get_charset(&args, span),
             "mysqli_character_set_name" => self.call_mysqli_character_set_name(&args, span),
             "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
@@ -12338,6 +12357,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_client_version"
             | "mysqli_get_proto_info"
             | "mysqli_thread_id"
+            | "mysqli_kill"
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
             | "mysqli_field_count"

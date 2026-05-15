@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 917, bounded `mysqli_kill()` support for deterministic
+  placeholder MySQLi thread-id kill metadata. The runtime accepts current
+  placeholder `mysqli` handles plus integer process ids, returns `true` only
+  for the deterministic placeholder `mysqli_thread_id()` value `1`, returns
+  `false` for other ids, rejects non-`mysqli` handles and non-integer process
+  ids with stable diagnostics, and exposes the name through runtime and native
+  metadata lookup. This is not real server-thread killing, connection
+  invalidation, reconnect behavior, host database state, PHP warning/error
+  fidelity, or native database lowering. Verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_client_and_protocol_metadata -- --test-threads=1`
+  passed and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone917`.
+
 - Added Milestone 916, a synthetic WordPress-shaped `wpdb` connection
   result-drain bookkeeping smoke that calls the bounded
   `mysqli_store_result($this->dbh)` and `mysqli_use_result($this->dbh)`

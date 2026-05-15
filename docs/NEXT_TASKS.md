@@ -8492,16 +8492,28 @@ handled.
   placeholder charset setup query. It is not real result buffering,
   unbuffered result lifecycle behavior, pending result tracking, warnings,
   errors, host database state, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi result cleanup or metadata
+- [x] Runtime/mysqli lane: inspect the next MySQLi result cleanup or metadata
   boundary used by WordPress after connection-level store/use result clean
   state, such as `mysqli_kill()` or a sharper unsupported diagnostic, before
   claiming broader connection result lifecycle fidelity.
+  Milestone 917 implements bounded deterministic `mysqli_kill($handle,
+  $process_id)` support for current placeholder `mysqli` handles and integer
+  process ids. It returns `true` only for the deterministic placeholder
+  `mysqli_thread_id()` value `1`, returns `false` for other ids, rejects
+  unsupported handles/process-id values with stable diagnostics, and is visible
+  through runtime and native metadata lookup. This is not real server-thread
+  killing, connection invalidation, reconnect behavior, warnings/errors, host
+  database state, or native lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_kill()` placeholder through a WordPress-shaped connection
+  thread lifecycle method without claiming real thread killing, reconnect, or
+  connection invalidation fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5daf329 runtime: add mysqli store use result placeholders`, covering
-  Milestone 915 before the current Milestone 916 candidate.
+  `0cbbf94 tests: add wordpress wpdb result drain smoke`, covering Milestone
+  916 before the current Milestone 917 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

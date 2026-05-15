@@ -515,7 +515,7 @@
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
-  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`,
+  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_close`,
   `mysqli_options`, `mysqli_connect_errno`, `mysqli_connect_error`,
   `mysqli_set_charset`,
@@ -842,8 +842,12 @@
   negotiating or inspecting a real server protocol.
   `mysqli_thread_id($handle)` accepts the placeholder object and returns
   deterministic thread id `1` without inspecting a real server connection,
-  allocating server-side threads, or supporting thread killing/reconnect
-  behavior.
+  allocating server-side threads, or supporting real reconnect behavior.
+  `mysqli_kill($handle, $process_id)` accepts the placeholder object and an
+  integer process id, returns deterministic `true` only for placeholder thread
+  id `1`, and returns `false` for other ids, without killing host server
+  threads, invalidating or reconnecting the placeholder object, emitting
+  warnings, or touching database state.
   `mysqli_get_charset($handle)` accepts the placeholder object and returns a
   deterministic `stdClass`-shaped metadata object for the current utf8mb4
   placeholder, with `charset`, `collation`, `dir`, `min_length`,
@@ -2449,6 +2453,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
+  `mysqli_kill`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
@@ -2775,7 +2780,7 @@
   `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
-  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`,
+  `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_kill`, `mysqli_get_charset`,
   `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`, `mysqli_query`,
@@ -2924,7 +2929,7 @@
   `mysqli_get_server_info`, `mysqli_get_server_version`,
   `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`,
-  `mysqli_thread_id`, `mysqli_get_charset`, `mysqli_character_set_name`,
+  `mysqli_thread_id`, `mysqli_kill`, `mysqli_get_charset`, `mysqli_character_set_name`,
   `mysqli_field_count`, `mysqli_get_connection_stats`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -2997,6 +3002,7 @@
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
   `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
   `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
+  `mysqli_kill`,
   `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_field_count`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`,
@@ -3017,7 +3023,9 @@
   `mysqli_get_client_version(...)` return only deterministic placeholder
   client-library metadata, `mysqli_get_proto_info(...)` returns only
   deterministic placeholder protocol metadata, `mysqli_thread_id(...)` returns
-  only deterministic placeholder thread-id metadata, `mysqli_get_charset(...)`
+  only deterministic placeholder thread-id metadata, `mysqli_kill(...)`
+  returns only deterministic placeholder thread-id kill acceptance metadata
+  without killing or reconnecting a host connection, `mysqli_get_charset(...)`
   returns only deterministic placeholder charset/collation metadata,
   `mysqli_character_set_name(...)` returns only deterministic placeholder
   charset-name metadata, `mysqli_field_count(...)` returns only deterministic
@@ -3053,7 +3061,7 @@
   `mysqli_get_host_info(...)`/
   `mysqli_get_client_info(...)`/`mysqli_get_client_version(...)`/
   `mysqli_get_proto_info(...)`/
-  `mysqli_thread_id(...)`/
+  `mysqli_thread_id(...)`/`mysqli_kill(...)`/
   `mysqli_get_charset(...)`/
   `mysqli_character_set_name(...)`/
   `mysqli_field_count(...)`/
@@ -4712,7 +4720,7 @@
 - `mysqli_connect()`/`mysqli_real_connect()`/`mysqli_get_server_info()`/
   `mysqli_get_server_version()`/`mysqli_get_host_info()`/`mysqli_get_client_info()`/
   `mysqli_get_client_version()`/`mysqli_get_proto_info()`/
-  `mysqli_thread_id()`/
+  `mysqli_thread_id()`/`mysqli_kill()`/
   `mysqli_get_charset()`/
   `mysqli_character_set_name()`/
   `mysqli_field_count()`/

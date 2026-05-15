@@ -6351,6 +6351,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_get_client_version"
             | "mysqli_get_proto_info"
             | "mysqli_thread_id"
+            | "mysqli_kill"
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
             | "mysqli_field_count"

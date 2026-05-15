@@ -200,6 +200,7 @@ $client = "mysqli_get_client_info";
 $version = "mysqli_get_client_version";
 $proto = "mysqli_get_proto_info";
 $thread = "mysqli_thread_id";
+$kill = "mysqli_kill";
 echo function_exists($client) ? "yes" : "no";
 echo "|";
 echo is_callable($version) ? "version-callable" : "version-missing";
@@ -207,6 +208,8 @@ echo "|";
 echo is_callable($proto) ? "callable" : "missing";
 echo "|";
 echo is_callable($thread) ? "thread-callable" : "thread-missing";
+echo "|";
+echo is_callable($kill) ? "kill-callable" : "kill-missing";
 $handle = mysqli_init();
 mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
 echo "|";
@@ -227,13 +230,17 @@ echo "|";
 echo mysqli_thread_id($handle);
 echo "|";
 echo $thread($handle);
+echo "|";
+echo mysqli_kill($handle, mysqli_thread_id($handle)) ? "killed" : "missing-thread";
+echo "|";
+echo $kill($handle, 99) ? "unexpected-thread" : "no-thread";
 "#,
     )
     .unwrap();
 
     assert_eq!(
         execution.stdout,
-        "yes|version-callable|callable|thread-callable|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|80000|80000|10|10|1|1"
+        "yes|version-callable|callable|thread-callable|kill-callable|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|mysqlnd 8.0.0-phpc-placeholder|80000|80000|10|10|1|1|killed|no-thread"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -872,6 +879,36 @@ mysqli_thread_id("not-a-handle");
     assert_eq!(
         bad_thread_handle.message,
         "unsupported call mysqli_thread_id(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_kill_handle = run_source(
+        r#"<?php
+mysqli_kill("not-a-handle", 1);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_kill_handle.phase, Phase::Runtime);
+    assert_eq!(bad_kill_handle.line, 2);
+    assert_eq!(bad_kill_handle.column, 1);
+    assert_eq!(
+        bad_kill_handle.message,
+        "unsupported call mysqli_kill(): first argument must be mysqli object in the current subset, got string"
+    );
+
+    let bad_kill_process_id = run_source(
+        r#"<?php
+mysqli_kill(mysqli_init(), "1");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_kill_process_id.phase, Phase::Runtime);
+    assert_eq!(bad_kill_process_id.line, 2);
+    assert_eq!(bad_kill_process_id.column, 1);
+    assert_eq!(
+        bad_kill_process_id.message,
+        "unsupported call mysqli_kill(): process_id argument must be int in the current subset, got string"
     );
 }
 
@@ -1892,6 +1929,8 @@ echo function_exists("mysqli_get_proto_info") ? "1" : "0";
 echo is_callable("mysqli_get_proto_info") ? "1" : "0";
 echo function_exists("mysqli_thread_id") ? "1" : "0";
 echo is_callable("mysqli_thread_id") ? "1" : "0";
+echo function_exists("mysqli_kill") ? "1" : "0";
+echo is_callable("mysqli_kill") ? "1" : "0";
 echo function_exists("mysqli_get_charset") ? "1" : "0";
 echo is_callable("mysqli_get_charset") ? "1" : "0";
 echo function_exists("mysqli_character_set_name") ? "1" : "0";
@@ -1983,7 +2022,7 @@ echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 105, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 107, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -2159,6 +2198,18 @@ mysqli_get_connection_stats(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_thread_id(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_kill(mysqli_init(), 1);
 "#,
     )
     .unwrap_err();

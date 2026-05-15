@@ -5,7 +5,7 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
-`mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_stat`,
+`mysqli_kill`, `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_stat`,
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
 `mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_autocommit`,
@@ -18,10 +18,10 @@ Status: boundary only.
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
 `mysqli_num_rows`, `mysqli_data_seek`, `mysqli_free_result`,
 `mysqli_more_results`, `mysqli_next_result`, `mysqli_store_result`,
-`mysqli_use_result`, `mysqli_report`, and `mysqli_init` are currently visible through
-`function_exists()`, `is_callable()`, dynamic string-valued function lookup,
-and native function-table introspection so WordPress' early database startup
-paths can move to the next real bootstrap blocker.
+`mysqli_use_result`, `mysqli_report`, and `mysqli_init` are currently visible
+through `function_exists()`, `is_callable()`, dynamic string-valued function
+lookup, and native function-table introspection so WordPress' early database
+startup paths can move to the next real bootstrap blocker.
 
 `mysqli_report($mode)` accepts the current WordPress startup mode
 `MYSQLI_REPORT_OFF` and the common PHP 8 strict mode combination
@@ -68,7 +68,13 @@ server protocol.
 
 `mysqli_thread_id($handle)` accepts the placeholder object and returns
 deterministic thread id `1`. It does not inspect a real server connection,
-allocate server-side threads, or support thread killing/reconnect behavior.
+allocate server-side threads, or support real reconnect behavior.
+
+`mysqli_kill($handle, $process_id)` accepts the placeholder object and an
+integer process id, returning `true` only for the deterministic placeholder
+thread id `1` and `false` for other ids. It does not kill a host server
+thread, invalidate or reconnect the placeholder connection, emit warnings, or
+touch database state.
 
 `mysqli_get_charset($handle)` accepts the placeholder object and returns a
 deterministic `stdClass`-shaped metadata object for the current utf8mb4
