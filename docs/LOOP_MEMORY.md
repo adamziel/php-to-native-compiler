@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T12:32:00Z
+
+- Checkpoint before this task:
+  `e660bdf runtime: add bounded mysqli real connect`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 804, bounded `preg_replace()` support for the
+  reached WordPress `wpdb::db_version()` database-version cleanup path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/preg_replace_builtin.rs`,
+  `tests/fixtures/milestone804/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone804`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:4149:10: undefined function mysqli_get_server_info()`.
+- Remaining semantic gaps: pattern/replacement arrays, subject arrays,
+  non-empty replacements, limit/count arguments, callbacks, full PCRE
+  replacement behavior, invalid-pattern warnings, byte/Unicode edge cases,
+  broad coercions, exact diagnostics, and native lowering remain unsupported.
+- Next concrete task: add bounded `mysqli_get_server_info()` support for the
+  reached WordPress `wpdb::db_server_info()` path while keeping real server
+  negotiation, host I/O, extension resources, connection-state validation,
+  errors/warnings, exact diagnostics, and native database lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T12:08:00Z
 
 - Checkpoint before this task:

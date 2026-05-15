@@ -6292,6 +6292,7 @@ impl Interpreter {
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
+            "preg_replace" => call_preg_replace(&args, span),
             "error_reporting" => self.call_error_reporting(args, span),
             "sprintf" => call_sprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -9973,6 +9974,7 @@ fn is_builtin(name: &str) -> bool {
             | "substr_count"
             | "str_replace"
             | "preg_match"
+            | "preg_replace"
             | "error_reporting"
             | "sprintf"
             | "call_user_func"
@@ -10500,6 +10502,58 @@ fn call_preg_match(args: &[Value], span: Span) -> CompileResult<Value> {
     })?;
 
     Ok(Value::Int(if pattern.matches(&subject) { 1 } else { 0 }))
+}
+
+fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(3..=5).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "preg_replace()",
+                ArityExpectation::Between { min: 3, max: 5 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if args.len() > 3 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_replace()",
+                "limit and count output arguments are not implemented; pass exactly three arguments in the current subset",
+            ),
+        ));
+    }
+
+    let pattern = string_contains_argument("preg_replace()", "pattern", &args[0], span)?;
+    let replacement = string_contains_argument("preg_replace()", "replacement", &args[1], span)?;
+    let subject = string_contains_argument("preg_replace()", "subject", &args[2], span)?;
+
+    if pattern != "/[^0-9.].*/" {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_replace()",
+                "only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset",
+            ),
+        ));
+    }
+    if !replacement.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "preg_replace()",
+                "only an empty replacement string is implemented in the current subset",
+            ),
+        ));
+    }
+
+    let end = subject
+        .bytes()
+        .position(|byte| !(byte.is_ascii_digit() || byte == b'.'))
+        .unwrap_or(subject.len());
+    Ok(Value::String(subject[..end].to_string()))
 }
 
 enum BoundedPregPattern {

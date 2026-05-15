@@ -450,7 +450,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`,
-  `strcasecmp`, `str_contains`, `strpos`, `preg_match`, `str_replace`,
+  `strcasecmp`, `str_contains`, `strpos`, `preg_match`, `preg_replace`, `str_replace`,
   `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
@@ -584,6 +584,14 @@
   IPv4-ish and bracketed IPv6-ish startup paths. Non-direct matches outputs,
   flags, offsets, optional unmatched-group fidelity, broad named-capture
   support, full PCRE syntax, modifiers other than `u`, invalid-pattern
+  warnings, byte/Unicode edge cases, broad coercions, exact diagnostics, and
+  native lowering remain unsupported.
+  `preg_replace($pattern, $replacement, $subject)` supports exactly the
+  WordPress database-version cleanup pattern `/[^0-9.].*/`, an empty
+  replacement string, and a scalar/null string-convertible subject. It returns
+  the leading ASCII digits/dots prefix used by `wpdb::db_version()`. Pattern or
+  replacement arrays, subject arrays, non-empty replacements, limit/count
+  arguments, callbacks, full PCRE replacement behavior, invalid-pattern
   warnings, byte/Unicode edge cases, broad coercions, exact diagnostics, and
   native lowering remain unsupported.
   `error_reporting($mask = null)` supports no arguments to read the current
@@ -2046,7 +2054,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `strpos`, `substr_count`, `preg_match`,
+  `strtolower`, `trim`, `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`,
   `error_reporting`, `min`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_report`, `mysqli_init`,
@@ -2345,7 +2353,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `strpos`, `substr_count`, `preg_match`, `str_replace`, `error_reporting`,
+  `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
@@ -4197,6 +4205,13 @@
   syntax, modifiers other than `u`, invalid-pattern warnings, byte/Unicode
   behavior beyond the current valid UTF-8 string model, broad coercions, exact
   diagnostics, and native lowering beyond function-table introspection
+- `preg_replace()` outside the exact WordPress database-version cleanup pattern
+  `/[^0-9.].*/` with an empty replacement and scalar/null subject:
+  pattern/replacement arrays, subject arrays, non-empty replacements,
+  limit/count arguments, callbacks, full PCRE replacement behavior,
+  invalid-pattern warnings, byte/Unicode behavior beyond the current valid
+  UTF-8 string model, broad coercions, exact diagnostics, and native lowering
+  beyond function-table introspection
 - `error_reporting()` outside the current no-argument read and one-integer
   mask-set subset: warning/notice/deprecation filtering, ini integration,
   disabled-function policy, non-integer coercions, exact diagnostics, and

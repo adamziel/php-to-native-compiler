@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 804, bounded `preg_replace()` support for the current
+  WordPress `wpdb::db_version()` startup path. The runtime now exposes
+  `preg_replace` through function/callability metadata and dynamic
+  string-valued calls, supports exactly the WordPress database-version cleanup
+  pattern `/[^0-9.].*/` with an empty replacement string and a scalar/null
+  string-convertible subject, and returns the leading ASCII digits/dots prefix
+  used to normalize MySQL/MariaDB version strings. Pattern/replacement arrays,
+  subject arrays, non-empty replacements, limit/count arguments, callbacks,
+  full PCRE replacement behavior, invalid-pattern warnings, byte/Unicode edge
+  cases, broad coercions, exact PHP diagnostics, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `preg_replace()` call to
+  `runtime error at <bootstrap-shim>:4149:10: undefined function mysqli_get_server_info()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone804`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 803, a bounded `mysqli_real_connect()` placeholder-success
   boundary for the current WordPress `wpdb::db_connect()` startup path. The
   runtime now exposes `mysqli_real_connect` through function/callability

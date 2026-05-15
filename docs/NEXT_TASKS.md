@@ -7364,17 +7364,28 @@ handled.
   returns deterministic fake success without host I/O, and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:4138:10: undefined function preg_replace()`.
-- [ ] Runtime/regex lane: add bounded `preg_replace()` support for the reached
+- [x] Runtime/regex lane: add bounded `preg_replace()` support for the reached
   WordPress `wp_debug_backtrace_summary()` startup path. Start from the exact
   call shape and pattern/replacement subject semantics reached by the probe;
   keep full PCRE replacement behavior, arrays of patterns/replacements,
   callbacks, limits/count output, invalid-pattern warnings, encoding edge
   cases, exact diagnostics, and native lowering named unless implemented.
+  Milestone 804 implements exactly the WordPress database-version cleanup
+  pattern `/[^0-9.].*/` with an empty replacement and scalar/null subject,
+  returning the leading ASCII digits/dots prefix, and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:4149:10: undefined function mysqli_get_server_info()`.
+- [ ] Runtime/database lane: add bounded `mysqli_get_server_info()` support for
+  the reached WordPress `wpdb::db_server_info()` path. Prefer a deterministic
+  placeholder server-version string tied to the current fake mysqli connection
+  boundary; keep real server negotiation, host I/O, extension resources,
+  connection-state validation, errors/warnings, exact diagnostics, and native
+  database lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 803 checkpoint, the latest committed checkpoint
-  is `d96023d runtime: add bounded preg_match captures`, covering Milestone 802.
+- Before the current Milestone 804 checkpoint, the latest committed checkpoint
+  is `e660bdf runtime: add bounded mysqli real connect`, covering Milestone 803.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

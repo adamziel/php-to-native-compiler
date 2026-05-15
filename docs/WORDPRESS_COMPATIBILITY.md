@@ -916,6 +916,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not real database connectivity, authentication, query/result
   behavior, escaping, charset handling, warning/error routing, exact
   diagnostics, PDO, native database lowering, or WordPress bootstrap support.
+  Milestone 804 implements bounded `preg_replace()` for the reached
+  `wpdb::db_version()` database-version cleanup path. It supports exactly
+  `/[^0-9.].*/` with an empty replacement and scalar/null subject, returning
+  the leading ASCII digits/dots prefix. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:4149:10: undefined function mysqli_get_server_info()`.
+  This is not full PCRE replacement behavior, arrays, callbacks, limit/count
+  output, invalid-pattern warnings, exact diagnostics, native lowering, real
+  database server metadata, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
