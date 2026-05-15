@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_close()`
+lifecycle boundary. System PHP needs a real mysqli connection and invalidates
+the host connection handle after close; phpc only validates the current
+placeholder object and returns true.

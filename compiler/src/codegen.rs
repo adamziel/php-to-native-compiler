@@ -6353,6 +6353,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_get_charset"
             | "mysqli_character_set_name"
             | "mysqli_field_count"
+            | "mysqli_close"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"

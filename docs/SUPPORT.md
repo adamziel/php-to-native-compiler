@@ -516,7 +516,7 @@
   `mysqli_get_server_version`, `mysqli_get_host_info`,
   `mysqli_get_client_info`, `mysqli_get_client_version`,
   `mysqli_get_proto_info`, `mysqli_thread_id`, `mysqli_get_charset`,
-  `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_set_charset`,
+  `mysqli_character_set_name`, `mysqli_field_count`, `mysqli_close`, `mysqli_set_charset`,
   `mysqli_get_connection_stats`, `mysqli_stat`, `mysqli_autocommit`,
   `mysqli_begin_transaction`, `mysqli_commit`,
   `mysqli_rollback`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -852,6 +852,10 @@
   `mysqli_field_count($handle)` accepts the placeholder object and returns
   deterministic clean-state field count `0` without tracking the most recent
   query on the connection, result metadata, or SQL execution state.
+  `mysqli_close($handle)` accepts the placeholder object and returns
+  deterministic `true` without closing a host connection, invalidating the
+  placeholder object, releasing server resources, or changing later placeholder
+  metadata calls.
   `mysqli_get_connection_stats($handle)` accepts the placeholder object and
   returns an eight-key deterministic statistics array with zeroed traffic/query
   counters plus deterministic placeholder connection counters, without real

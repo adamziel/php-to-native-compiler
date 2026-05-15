@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 905, bounded `mysqli_close()` support for deterministic
+  placeholder MySQLi connection lifecycle metadata. The runtime accepts
+  `mysqli_close($handle)` for current placeholder `mysqli` objects, returns
+  deterministic `true`, rejects non-`mysqli` handles with stable diagnostics,
+  and exposes the name through runtime and native metadata lookup. This is not
+  real host connection teardown, handle invalidation, server resource release,
+  close-after-use diagnostics, PHP warning/error fidelity, or native database
+  lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_close -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone905`.
+
 - Added Milestone 904, a synthetic WordPress-shaped `wpdb` field-count
   bookkeeping smoke that calls the bounded `mysqli_field_count($this->dbh)`
   placeholder path, records deterministic local query metadata, and verifies

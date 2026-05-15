@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `db852e4 tests: add wordpress wpdb field count smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 905, bounded deterministic `mysqli_close()`
+  placeholder lifecycle support for current `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone905/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_close -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone905`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- compiler/src/interpreter.rs compiler/src/codegen.rs compiler/tests/mysqli_extension.rs tests/fixtures/milestone905 docs/PROGRESS.md docs/SUPPORT.md docs/extensions/mysqli.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: placeholder MySQLi lifecycle support is being
+  extended from metadata reads to deterministic close calls.
+- Remaining semantic gaps: real host connection teardown, handle invalidation,
+  server resource release, close-after-use diagnostics, warning/error fidelity,
+  database state mutation, and native database lowering remain missing.
+- Next concrete task: run focused MySQLi and fixture verification, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, add a synthetic WordPress-shaped `wpdb` close bookkeeping smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `6f0a3f0 runtime: add mysqli field count metadata`, pushed to
   `origin/master`.
 - Task attempted: Milestone 904, a synthetic WordPress-shaped `wpdb`

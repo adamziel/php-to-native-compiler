@@ -8379,16 +8379,26 @@ handled.
   verifies that the metadata check ran. It is not real WordPress last-query
   field-count fidelity, result metadata tracking, SQL execution state, host
   database integration, warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi connection or result
+- [x] Runtime/mysqli lane: inspect the next MySQLi connection or result
   lifecycle boundary used by WordPress, such as `mysqli_close()` or sharper
   result-state diagnostics, before claiming real connection teardown or host
   database state.
+  Milestone 905 implements bounded deterministic `mysqli_close($handle)`
+  lifecycle support. It accepts current placeholder `mysqli` handles, returns
+  deterministic `true`, rejects non-`mysqli` handles with stable diagnostics,
+  and is visible through runtime and native metadata lookup. This is not real
+  host connection teardown, handle invalidation, server resource release,
+  close-after-use diagnostics, warnings/errors, or native database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_close()` placeholder through a WordPress-shaped connection
+  teardown method without claiming real disconnect behavior or resource
+  lifecycle fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `6f0a3f0 runtime: add mysqli field count metadata`, covering Milestone 903
-  before the current Milestone 904 candidate.
+  `db852e4 tests: add wordpress wpdb field count smoke`, covering Milestone
+  904 before the current Milestone 905 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

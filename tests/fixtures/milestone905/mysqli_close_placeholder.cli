@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone905/mysqli_close_placeholder.php
+yes
+callable
+closed
+closed
