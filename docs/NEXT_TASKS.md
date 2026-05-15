@@ -6975,16 +6975,26 @@ handled.
   variable sources into direct variable or direct array-offset targets. It
   advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:231:20: undefined function str_replace()`.
-- [ ] Builtin/runtime lane: implement a bounded `str_replace()` slice for the
+- [x] Builtin/runtime lane: implement a bounded `str_replace()` slice for the
   next real WordPress bootstrap-shim blocker while documenting unsupported
   array search/replace forms, count output argument references, object/resource
   coercions, binary/string edge cases, and native lowering.
+  Milestone 763 implements scalar/null string-convertible `str_replace()` for
+  the three-argument form and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:3839:2: undefined function call_user_func()`,
+  corresponding to `call_user_func( $the_['function'] )` in
+  `wp-includes/class-wp-hook.php:339`.
+- [ ] Callable/runtime lane: implement a bounded `call_user_func()` slice for
+  the next real WordPress bootstrap-shim blocker, including direct string
+  callables and current array callable metadata where required, while keeping
+  references, variadic unpacking, `call_user_func_array`, closure invocation,
+  `__invoke`, exact warnings, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 762 checkpoint, the latest committed checkpoint
-  is `689eed6 runtime: add interface implementation metadata`, covering
-  Milestone 761.
+- Before the current Milestone 763 checkpoint, the latest committed checkpoint
+  is `de7d5e8 runtime: add object handle reference assignment`, covering
+  Milestone 762.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

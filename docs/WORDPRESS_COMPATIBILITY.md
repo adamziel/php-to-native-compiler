@@ -588,6 +588,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not scalar/array reference aliasing, source/target rebinding,
   by-reference array-offset or method-call sources, object-property array
   targets, copy-on-write, native lowering, or WordPress bootstrap support.
+  Milestone 763 implements bounded three-argument `str_replace()` for
+  scalar/null string-convertible arguments and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:3839:2: undefined function call_user_func()`,
+  corresponding to `call_user_func( $the_['function'] )` in
+  `wp-includes/class-wp-hook.php:339`. This is not array
+  search/replace/subject behavior, the `$count` output argument,
+  object/resource coercion, exact warning behavior, binary string edge cases,
+  native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

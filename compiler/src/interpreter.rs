@@ -5898,6 +5898,7 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
+            "str_replace" => call_str_replace(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "implode" => call_implode(&args, span),
             "dirname" => {
@@ -9141,6 +9142,7 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "str_replace"
             | "sprintf"
             | "implode"
             | "dirname"
@@ -9336,6 +9338,60 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
     matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
+}
+
+fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(3..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "str_replace()",
+                ArityExpectation::Between { min: 3, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if args.len() == 4 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_replace()",
+                "count output arguments are not implemented; pass exactly three arguments in the current subset",
+            ),
+        ));
+    }
+
+    let search = string_replace_argument("str_replace()", "search", &args[0], span)?;
+    let replace = string_replace_argument("str_replace()", "replace", &args[1], span)?;
+    let subject = string_replace_argument("str_replace()", "subject", &args[2], span)?;
+
+    if search.is_empty() {
+        return Ok(Value::String(subject));
+    }
+
+    Ok(Value::String(subject.replace(&search, &replace)))
+}
+
+fn string_replace_argument(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
 }
 
 fn call_sprintf(args: &[Value], span: Span) -> CompileResult<Value> {

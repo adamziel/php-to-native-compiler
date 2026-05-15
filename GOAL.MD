@@ -275,8 +275,9 @@ recorded class `implements` metadata for relationship checks while leaving
 interface enforcement and built-in/internal interface catalogs explicit future
 work. Milestone 762 added a bounded object-handle `=&` slice for direct
 variable sources into direct array-offset targets, advancing past
-`wp-includes/l10n.php:1428`; the current bootstrap-shim blocker is now missing
-`str_replace()`.
+`wp-includes/l10n.php:1428`. Milestone 763 added a bounded scalar/null
+`str_replace()` builtin; the current bootstrap-shim blocker is now missing
+`call_user_func()` at `wp-includes/class-wp-hook.php:339`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.

@@ -86,6 +86,35 @@ injects this file into every prompt. Each Codex pass should update it with:
   count-output references, object/resource coercions, binary/string edge
   cases, and native lowering named unless implemented.
 
+## Loop Event 2026-05-15T06:58:00Z
+
+- Checkpoint before this task:
+  `de7d5e8 runtime: add object handle reference assignment`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 763, bounded `str_replace()` for scalar/null
+  string-convertible arguments.
+- Files changed so far: `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/str_replace_builtin.rs`, `tests/fixtures/milestone763/*`,
+  and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test str_replace_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone763`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: array search/replace/subject forms, the fourth
+  `$count` output argument, object/resource coercions, exact warning behavior,
+  binary string edge cases, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:3839:2: undefined function call_user_func()`,
+  corresponding to `call_user_func( $the_['function'] )` in
+  `wp-includes/class-wp-hook.php:339`.
+- Next concrete task: implement bounded `call_user_func()` for the reached
+  hook dispatch path while keeping `call_user_func_array`, closure invocation,
+  `__invoke`, references, variadics, exact warning behavior, and native
+  lowering named unless implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

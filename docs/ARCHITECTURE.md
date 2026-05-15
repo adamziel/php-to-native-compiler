@@ -888,6 +888,11 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
+`str_replace()` is an interpreter-only bounded string replacement builtin for
+scalar/null string-convertible search, replacement, and subject values. Native
+function-table introspection recognizes the name, while direct native calls
+still reject until string allocation, array forms, count-output references, and
+diagnostics have a lowered runtime model.
 `implode()` is an interpreter-only bounded array-to-string builtin for current
 WordPress bootstrap message paths. It joins scalar/null array values in
 insertion order with either an empty default separator or a string separator.

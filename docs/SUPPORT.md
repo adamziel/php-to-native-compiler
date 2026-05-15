@@ -410,8 +410,8 @@
   targets, non-object property targets, and missing property names fail with
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
-- builtins for the documented subset: `strlen`, `sprintf`, `implode`, `dirname`,
-  `file_exists`,
+- builtins for the documented subset: `strlen`, `str_replace`, `sprintf`,
+  `implode`, `dirname`, `file_exists`,
   `version_compare`, `isset`, `empty`, `count`, `define`, `constant`, `defined`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
@@ -473,6 +473,11 @@
   locale behavior, argument reordering beyond `%N$s`, array/object/resource
   conversions, exact warning behavior, partial-output behavior, and native
   lowering remain unsupported.
+  `str_replace($search, $replace, $subject)` supports the current scalar/null
+  string-convertible subset for all three arguments and returns the subject
+  unchanged for an empty search string. Array search/replace/subject forms,
+  the fourth `$count` output argument, object/resource coercions, exact warning
+  behavior, binary string edge cases, and native lowering remain unsupported.
   `implode($array)` and `implode($separator, $array)` support current arrays
   containing only `null`, bool, int, float, and string values, preserve
   insertion order, ignore keys, and join values using PHP-shaped echo string
@@ -2126,7 +2131,8 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `sprintf`, `implode`, `file_exists`, `count`,
+  one of the documented callable builtins: `strlen`, `str_replace`, `sprintf`,
+  `implode`, `file_exists`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2250,7 +2256,8 @@
   first-class callable syntax, `call_user_func`, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `sprintf`, `implode`, `file_exists`, `isset`, `empty`, `count`, `define`, `constant`,
+- Builtins: `strlen`, `str_replace`, `sprintf`, `implode`, `file_exists`,
+  `isset`, `empty`, `count`, `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
   `array_slice`, `array_chunk`, `array_pad`, `array_merge`, `array_replace`,
@@ -2329,6 +2336,10 @@
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
+  `str_replace` accepts the same current scalar/null string-convertible subset
+  as the builtin section above; direct native `str_replace(...)` calls still
+  reject under the function-call boundary, while native function-table
+  introspection recognizes the name.
   `implode` accepts the same current scalar/null array-value subset as the
   builtin section above; direct native `implode(...)` calls still reject under
   the function-call boundary, while native function-table introspection
@@ -3840,6 +3851,11 @@
   flags, locale behavior, broad argument reordering, array/object/resource
   conversions, exact warning behavior, partial-output behavior, and native
   lowering beyond function-table introspection
+- `str_replace()` outside the current scalar/null string-convertible
+  three-argument subset: array search/replace/subject forms, the fourth
+  `$count` output argument, object/resource coercions, exact warning behavior,
+  binary string edge cases, and native lowering beyond function-table
+  introspection
 - `implode()` outside the current scalar/null array-value subset: legacy
   reversed argument order, nested arrays, object/resource values, exact warning
   behavior, partial-output behavior, and native lowering beyond function-table
