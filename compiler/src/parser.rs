@@ -1776,7 +1776,7 @@ impl Parser {
                         self.error_at(operator_span, unsupported_object_property_unset_message())
                     );
                 }
-                let property = self.consume_object_property_name(operator_span)?;
+                let (property, _) = self.consume_object_property_name(operator_span)?;
                 if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
                     return Err(
                         self.error_at(operator_span, unsupported_object_property_unset_message())
@@ -2240,7 +2240,7 @@ impl Parser {
                     span,
                 });
             }
-            let property = self.consume_object_property_name(operator_span)?;
+            let (property, _) = self.consume_object_property_name(operator_span)?;
             if self.check(|kind| matches!(kind, TokenKind::LParen)) {
                 return Ok(AssignTarget::Variable { name, span });
             }
@@ -3432,8 +3432,14 @@ impl Parser {
                     };
                     continue;
                 }
-                let member = self.consume_object_property_name(operator_span)?;
+                let (member, keyword_member) = self.consume_object_property_name(operator_span)?;
                 if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+                    if keyword_member {
+                        return Err(self.error_at(
+                            operator_span,
+                            "unsupported keyword method call: keyword method names after '->' are not implemented",
+                        ));
+                    }
                     let span = expr.span();
                     let args = self.parse_call_arguments_after_open()?;
                     expr = Expr::MethodCall {
@@ -4777,10 +4783,19 @@ impl Parser {
         }
     }
 
-    fn consume_object_property_name(&mut self, operator_span: Span) -> CompileResult<String> {
+    fn consume_object_property_name(
+        &mut self,
+        operator_span: Span,
+    ) -> CompileResult<(String, bool)> {
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Identifier(name) => Ok(name),
+            TokenKind::Identifier(name) => Ok((name, false)),
+            kind if object_property_keyword_name(&kind).is_some() => Ok((
+                object_property_keyword_name(&kind)
+                    .expect("checked keyword property name")
+                    .to_string(),
+                true,
+            )),
             TokenKind::Variable(_) => unreachable!("caller handles dynamic property variables"),
             _ => Err(self.error_at(
                 operator_span,
@@ -5321,6 +5336,60 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Greater => ">",
         TokenKind::GreaterEqual => ">=",
         TokenKind::RightShift => ">>",
+    }
+}
+
+fn object_property_keyword_name(kind: &TokenKind) -> Option<&'static str> {
+    match kind {
+        TokenKind::Echo => Some("echo"),
+        TokenKind::Print => Some("print"),
+        TokenKind::Function => Some("function"),
+        TokenKind::Fn => Some("fn"),
+        TokenKind::Class => Some("class"),
+        TokenKind::Interface => Some("interface"),
+        TokenKind::Trait => Some("trait"),
+        TokenKind::Enum => Some("enum"),
+        TokenKind::Abstract => Some("abstract"),
+        TokenKind::Final => Some("final"),
+        TokenKind::Readonly => Some("readonly"),
+        TokenKind::New => Some("new"),
+        TokenKind::Public => Some("public"),
+        TokenKind::Protected => Some("protected"),
+        TokenKind::Private => Some("private"),
+        TokenKind::Static => Some("static"),
+        TokenKind::Extends => Some("extends"),
+        TokenKind::Implements => Some("implements"),
+        TokenKind::Clone => Some("clone"),
+        TokenKind::Instanceof => Some("instanceof"),
+        TokenKind::Return => Some("return"),
+        TokenKind::Global => Some("global"),
+        TokenKind::Namespace => Some("namespace"),
+        TokenKind::Use => Some("use"),
+        TokenKind::Declare => Some("declare"),
+        TokenKind::Eval => Some("eval"),
+        TokenKind::Include => Some("include"),
+        TokenKind::IncludeOnce => Some("include_once"),
+        TokenKind::Require => Some("require"),
+        TokenKind::RequireOnce => Some("require_once"),
+        TokenKind::If => Some("if"),
+        TokenKind::Else => Some("else"),
+        TokenKind::ElseIf => Some("elseif"),
+        TokenKind::While => Some("while"),
+        TokenKind::Do => Some("do"),
+        TokenKind::Foreach => Some("foreach"),
+        TokenKind::For => Some("for"),
+        TokenKind::Switch => Some("switch"),
+        TokenKind::Match => Some("match"),
+        TokenKind::Break => Some("break"),
+        TokenKind::Continue => Some("continue"),
+        TokenKind::Throw => Some("throw"),
+        TokenKind::Try => Some("try"),
+        TokenKind::Catch => Some("catch"),
+        TokenKind::Finally => Some("finally"),
+        TokenKind::Null => Some("null"),
+        TokenKind::True => Some("true"),
+        TokenKind::False => Some("false"),
+        _ => None,
     }
 }
 

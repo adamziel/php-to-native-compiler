@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:55:05Z
+
+- Checkpoint before this task:
+  `14cea9d runtime: add bounded restore error handler`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 793, keyword-named object-property parsing for the
+  reached WordPress `$object->public` startup path.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone793/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model keyword_ -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone793`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `parse error at <bootstrap-shim>:418:48: unsupported array reference element: references are not implemented`.
+- Remaining semantic gaps: keyword method calls, dynamic methods,
+  dynamic/static properties outside the current slices, visibility semantics
+  beyond the existing direct-property runtime, magic property hooks,
+  references/copy-on-write, exact diagnostics, and native lowering remain
+  unsupported.
+- Next concrete task: implement or explicitly bound array element reference
+  syntax for the reached WordPress startup path while keeping aliasing,
+  reference containers, copy-on-write, by-reference iteration/returns,
+  destructuring references, exact diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T08:50:36Z
 
 - Checkpoint before this task:

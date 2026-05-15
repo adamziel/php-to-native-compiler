@@ -69,7 +69,10 @@
   no-reference/no-copy-on-write model, append to the final nested array, and
   return the appended value. Direct object-property assignment expressions
   evaluate the right-hand expression, then write existing declared public
-  property slots on direct object variables. Nested object-property array
+  property slots on direct object variables. Keyword-named direct properties
+  such as `$object->public` and `$object->class` are accepted as property names
+  after `->` for the current read/write subset, while keyword method calls
+  remain unsupported. Nested object-property array
   assignment expressions such as `$object->items[$outer][$inner] = expr` and
   object-property append-at-depth expressions such as
   `$object->items[$outer][] = expr` evaluate all property path keys left to
@@ -1205,9 +1208,11 @@
   on current object values and public dynamic slots on `stdClass`, using
   string or integer property-name values. The parser accepts both
   `$object->$name` and braced `$object->{$expr}` forms in the current read and
-  direct-variable-root write subset. Dynamic methods, dynamic static property
-  names, non-public dynamic property access, magic property hooks, dynamic
-  property-name `isset`/`empty`/`??`/`??=`, compound assignment,
+  direct-variable-root write subset. Keyword-named direct properties are
+  accepted after `->`; keyword method calls are still rejected with an explicit
+  parse diagnostic. Dynamic methods, dynamic static property names, non-public
+  dynamic property access, magic property hooks, dynamic property-name
+  `isset`/`empty`/`??`/`??=`, compound assignment,
   increment/decrement, string interpolation, non-`stdClass` missing-property
   creation, and exact PHP dynamic-property notices/deprecations remain
   unsupported. Non-public

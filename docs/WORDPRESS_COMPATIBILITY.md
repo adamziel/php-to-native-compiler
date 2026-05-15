@@ -822,6 +822,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not true handler-stack behavior, handler invocation,
   warning/error-handler routing, native lowering, keyword-named object-property
   parsing, or WordPress bootstrap support.
+  Milestone 793 implements keyword-named object-property parsing after `->` for
+  the reached `$object->public` path. The real bootstrap-shim probe now
+  advances to
+  `parse error at <bootstrap-shim>:418:48: unsupported array reference element: references are not implemented`.
+  This is not keyword method calls, full dynamic property behavior,
+  references/aliasing, copy-on-write, native lowering, or WordPress bootstrap
+  support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

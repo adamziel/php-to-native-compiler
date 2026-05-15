@@ -350,6 +350,50 @@ echo $data->{ $slot };
 }
 
 #[test]
+fn keyword_object_property_names_read_write_current_subset() {
+    let source = r#"<?php
+class KeywordBox {
+    public $public;
+    public $class;
+    public $function;
+    public $match;
+}
+
+$box = new KeywordBox();
+$box->public = "visibility";
+$box->class = "class-name";
+echo $box->public, "|", $box->class, "|";
+$box->function = "callable";
+$box->match = "expression";
+echo $box->function, "|", $box->match;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "visibility|class-name|callable|expression"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn keyword_method_names_remain_explicitly_unsupported() {
+    let error = parse_error(
+        r#"<?php
+$data = new stdClass();
+$data->public();
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported keyword method call: keyword method names after '->' are not implemented"
+    );
+}
+
+#[test]
 fn dynamic_property_names_do_not_materialize_missing_slots_on_declared_classes() {
     let error = runtime_error(
         r#"<?php

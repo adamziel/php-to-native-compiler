@@ -7259,17 +7259,25 @@ handled.
   Milestone 792 implements bounded cleanup and advances the real
   bootstrap-shim probe to
   `parse error at <bootstrap-shim>:254:31: expected property name after '->', found public`.
-- [ ] Parser/object lane: accept keyword tokens as object property names after
+- [x] Parser/object lane: accept keyword tokens as object property names after
   `->` for the reached `$object->public` WordPress startup path. Keep keyword
   method names, dynamic/static properties, visibility semantics, magic
   property hooks, references/copy-on-write, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 793 implements keyword-named direct object-property parsing and
+  advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:418:48: unsupported array reference element: references are not implemented`.
+- [ ] Parser/reference lane: implement or explicitly bound array element
+  reference syntax for the reached WordPress startup path. Keep aliasing,
+  reference containers, copy-on-write, by-reference iteration/returns,
+  destructuring references, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 792 checkpoint, the latest committed checkpoint
-  is `c4fe9ca runtime: add bounded preg match u modifier`, covering
-  Milestone 791.
+- Before the current Milestone 793 checkpoint, the latest committed checkpoint
+  is `14cea9d runtime: add bounded restore error handler`, covering
+  Milestone 792.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
