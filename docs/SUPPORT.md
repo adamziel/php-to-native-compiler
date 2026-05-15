@@ -2362,15 +2362,19 @@
   reference binding exists. Anonymous closure syntax with parameter lists,
   optional return-type metadata, block bodies, and `use (...)` capture lists is
   parsed so containing functions can be registered, including by-reference
-  capture syntax such as `use (&$name)`. Evaluating a no-capture anonymous
-  closure expression, a `static function (...) { ... }` expression, or an arrow
+  capture syntax such as `use (&$name)`. Evaluating an anonymous closure
+  expression, a `static function (...) { ... }` expression, or an arrow
   function expression creates an inert runtime closure value that can be
-  stored, read, and tested for truthiness. Closure bodies are not executed.
-  Explicit `use (...)` capture binding, arrow implicit capture binding and
-  execution, closure invocation, `$this` binding, static closure binding
-  semantics, callback integration, exact PHP `Closure` object behavior, and
-  native lowering are unsupported. Arrow function syntax `fn (...) => expr` is
-  parsed as a closure-shaped expression with a synthetic return body.
+  stored, read, and tested for truthiness. Explicit `use (...)` capture names
+  are looked up at closure creation and the current values are stored on the
+  inert closure value; by-reference captures record the requested capture mode
+  but do not create alias cells. Closure bodies are not executed. Arrow
+  implicit capture binding and execution, closure invocation, `$this` binding,
+  true by-reference capture aliasing, copy-on-write, static closure binding
+  semantics, callback integration beyond registration validation, exact PHP
+  `Closure` object behavior, and native lowering are unsupported. Arrow
+  function syntax `fn (...) => expr` is parsed as a closure-shaped expression
+  with a synthetic return body.
   Variadic parameters
   and argument unpacking, reference returns, reference expressions, named
   arguments, first-class callable syntax such as `strlen(...)` and

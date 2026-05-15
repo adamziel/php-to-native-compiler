@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 790, bounded explicit closure capture binding for inert
+  closure values on the current WordPress `set_error_handler(function (...) use
+  (&$utf8_pcre) { ... })` path. The runtime now evaluates explicit
+  `use (...)` capture names at closure creation, stores current captured values
+  on the closure object, records whether a capture requested `&`, and still
+  keeps closure invocation unsupported. By-reference captures do not create
+  alias cells yet; arrow implicit captures, closure body execution, true
+  references, copy-on-write, `$this` binding, static closure binding details,
+  callback invocation, exact `Closure` object behavior, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past the reached closure capture to
+  `runtime error at <bootstrap-shim>:70:2: unsupported call preg_match(): pattern modifiers are not implemented in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes closure_capture -- --nocapture`,
+  `cargo run -p phpc -- test tests/fixtures/milestone712`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone790`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 789, bounded `set_error_handler()` registration for the
   current WordPress startup error-handler path. The runtime now accepts a
   currently valid string callable, object/static array callable, or closure,

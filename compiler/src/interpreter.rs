@@ -8,9 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
-    PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpMethodMetadata, PhpObject,
-    PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError, RuntimeResult, Value,
-    Visibility,
+    PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
+    PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError,
+    RuntimeResult, Value, Visibility,
 };
 
 use crate::ast::{
@@ -1894,7 +1894,7 @@ impl Interpreter {
                 span,
                 is_arrow,
                 ..
-            } => self.evaluate_closure_expression(captures, *is_arrow, *span),
+            } => self.evaluate_closure_expression(captures, *is_arrow, *span, scope),
             Expr::New {
                 class_name,
                 args,
@@ -5394,21 +5394,26 @@ impl Interpreter {
         &mut self,
         captures: &[ClosureCapture],
         is_arrow: bool,
-        span: Span,
+        _span: Span,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        if !captures.is_empty() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "closure",
-                    "closure capture binding is not implemented",
-                ),
+        let mut captured_values = Vec::with_capacity(captures.len());
+        for capture in captures {
+            let value = scope.read_static(&capture.name, capture.span)?;
+            captured_values.push(PhpClosureCapture::new(
+                capture.name.clone(),
+                capture.by_reference,
+                value,
             ));
         }
 
         let id = self.next_closure_id;
         self.next_closure_id += 1;
-        Ok(Value::Closure(PhpClosure::new(id, is_arrow)))
+        Ok(Value::Closure(PhpClosure::new(
+            id,
+            is_arrow,
+            captured_values,
+        )))
     }
 
     fn call_function(

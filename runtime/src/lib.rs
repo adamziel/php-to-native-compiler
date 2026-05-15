@@ -2632,15 +2632,27 @@ pub enum Value {
     Closure(PhpClosure),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PhpClosure {
     id: i64,
     is_arrow: bool,
+    captures: Vec<PhpClosureCapture>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PhpClosureCapture {
+    name: String,
+    by_reference: bool,
+    value: Value,
 }
 
 impl PhpClosure {
-    pub fn new(id: i64, is_arrow: bool) -> Self {
-        Self { id, is_arrow }
+    pub fn new(id: i64, is_arrow: bool, captures: Vec<PhpClosureCapture>) -> Self {
+        Self {
+            id,
+            is_arrow,
+            captures,
+        }
     }
 
     pub fn id(&self) -> i64 {
@@ -2649,6 +2661,32 @@ impl PhpClosure {
 
     pub fn is_arrow(&self) -> bool {
         self.is_arrow
+    }
+
+    pub fn captures(&self) -> &[PhpClosureCapture] {
+        &self.captures
+    }
+}
+
+impl PhpClosureCapture {
+    pub fn new(name: impl Into<String>, by_reference: bool, value: Value) -> Self {
+        Self {
+            name: name.into(),
+            by_reference,
+            value,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn by_reference(&self) -> bool {
+        self.by_reference
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
     }
 }
 

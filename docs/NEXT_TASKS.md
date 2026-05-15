@@ -7235,17 +7235,25 @@ handled.
   Milestone 789 implements bounded registration and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:54:3: unsupported call closure: closure capture binding is not implemented`.
-- [ ] Closure runtime lane: implement or explicitly bound by-value and
+- [x] Closure runtime lane: implement or explicitly bound by-value and
   by-reference closure capture binding for the reached WordPress
   `set_error_handler(function (...) use (&$utf8_pcre) { ... })` path. Keep
   closure invocation, alias/reference semantics, copy-on-write, `$this`
   binding, static closures, exact capture timing, native lowering, and exact
   PHP diagnostics named unless implemented.
+  Milestone 790 implements explicit capture binding for inert closure values
+  and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:70:2: unsupported call preg_match(): pattern modifiers are not implemented in the current subset`.
+- [ ] Regex runtime lane: widen bounded `preg_match()` for the reached
+  `//u` startup probe. Keep full PCRE syntax, captures/matches output, flags,
+  offsets, warning/error-handler routing, Unicode semantics, broad modifiers,
+  exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 789 checkpoint, the latest committed checkpoint
-  is `016c895 runtime: add bounded magic method`, covering Milestone 788.
+- Before the current Milestone 790 checkpoint, the latest committed checkpoint
+  is `440b4ea runtime: add bounded error handler registration`, covering
+  Milestone 789.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

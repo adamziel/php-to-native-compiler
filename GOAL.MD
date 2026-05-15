@@ -76,10 +76,11 @@ bounded integer `min()`, and bounded nested direct-variable array-offset
 `isset(...)`, bounded local-path `is_readable()`, bounded shutdown
 registration, bounded `date_default_timezone_set('UTC')`, bounded
 deterministic CLI `$_SERVER`/`PHP_SAPI` startup state, bounded
-`preg_match()`, bounded `error_reporting()` mask state, and bounded
-`is_dir()`, bounded braced dynamic object-property names, and bounded
-`__METHOD__` magic-constant evaluation, and bounded `set_error_handler()`
-registration. The current shim frontier
+`preg_match()`, bounded `error_reporting()` mask state, bounded `is_dir()`,
+bounded braced dynamic object-property names, bounded `__METHOD__`
+magic-constant evaluation, bounded `set_error_handler()` registration, and
+bounded explicit closure capture binding for inert closure values. The current
+shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
@@ -87,10 +88,10 @@ initialization in `wp-includes/plugin.php:39`; it has moved past the missing
 and the fatal-error-handler `register_shutdown_function()` registration, past
 timezone setup, past the first request/SAPI startup state, and past the first
 regex startup guard, past the first error-reporting mask setup, and past the
-first startup directory check, and past the first braced dynamic object-property
-access, and past the first `__METHOD__` magic constant in method context; it
-now stops at closure capture binding in the first `set_error_handler()`
-callback.
+first startup directory check, the first braced dynamic object-property access,
+the first `__METHOD__` magic constant in method context, and the first closure
+capture in the `set_error_handler()` path; it now stops at the next
+`preg_match()` pattern-modifier boundary.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -326,8 +327,10 @@ constants. Milestone 786 added bounded `is_dir()` for local filesystem paths,
 and Milestone 787 added braced dynamic object-property reads/writes through the
 existing dynamic-property runtime subset. Milestone 788 added bounded
 `__METHOD__` magic-constant evaluation in current function/method contexts.
-Milestone 789 added bounded `set_error_handler()` registration. The current
-frontier is now closure capture binding in WordPress startup error handling.
+Milestone 789 added bounded `set_error_handler()` registration. Milestone 790
+added explicit `use (...)` closure capture binding for inert closure values.
+The current frontier is now `preg_match()` pattern modifiers in WordPress
+startup error handling.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -475,7 +478,8 @@ The repository already has a working Rust workspace with:
   `error_reporting()` mask state, bounded `is_dir()`, and bounded braced
   dynamic object-property names, and bounded `__METHOD__` magic-constant
   evaluation, and bounded `set_error_handler()` registration. The next
-  bottleneck is closure capture binding in the WordPress bootstrap shim.
+  bottleneck is `preg_match()` pattern modifiers in the WordPress bootstrap
+  shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

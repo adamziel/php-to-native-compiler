@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:41:09Z
+
+- Checkpoint before this task:
+  `440b4ea runtime: add bounded error handler registration`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 790, bounded explicit closure capture binding for
+  inert closure values on the reached WordPress `set_error_handler(function
+  (...) use (&$utf8_pcre) { ... })` path.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone712/closure_capture_boundary.*`,
+  `tests/fixtures/milestone790/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes closure_capture -- --nocapture`,
+  `cargo run -p phpc -- test tests/fixtures/milestone712`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone790`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: closure invocation, true by-reference aliasing,
+  copy-on-write, `$this` binding, static closure binding details, callback
+  invocation, exact `Closure` object behavior, warning/error-handler routing,
+  and native lowering remain unsupported.
+- Next concrete task: widen bounded `preg_match()` for the reached `//u`
+  startup probe while documenting full PCRE syntax, captures/matches output,
+  flags, offsets, warning/error-handler routing, Unicode semantics, exact
+  diagnostics, and native lowering unless implemented.
+
 ## Loop Event 2026-05-15T08:35:51Z
 
 - Checkpoint before this task:

@@ -1,1 +1,0 @@
-phpc intentionally rejects explicit closure captures before capture binding and references exist.

@@ -801,6 +801,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not handler invocation, warning/notice/deprecation routing,
   `restore_error_handler()`, exact PHP error handling, closure capture binding,
   native lowering, or WordPress bootstrap support.
+  Milestone 790 implements explicit `use (...)` capture binding for inert
+  closure values, enough to register the reached WordPress error handler
+  callback. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:70:2: unsupported call preg_match(): pattern modifiers are not implemented in the current subset`.
+  This is not closure invocation, true by-reference aliasing, copy-on-write,
+  callback execution, warning/error-handler routing, full regex/PCRE support,
+  native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

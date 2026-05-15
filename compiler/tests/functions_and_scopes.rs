@@ -1164,41 +1164,43 @@ if ($fn) {
 }
 
 #[test]
-fn anonymous_closure_capture_binding_has_stable_runtime_boundary() {
-    let error = runtime_error(
+fn anonymous_closure_capture_binding_allocates_current_inert_closure_values() {
+    let execution = run_source(
         r#"<?php
 $value = 1;
+$ref = 2;
 $fn = function () use ($value) {
     return $value;
 };
+$byRef = function () use (&$ref) {
+    return $ref;
+};
+echo $fn ? "value" : "missing";
+echo "|";
+echo $byRef ? "ref" : "missing";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "unsupported call closure: closure capture binding is not implemented"
-    );
+    assert_eq!(execution.stdout, "value|ref");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn static_anonymous_closure_capture_binding_has_stable_runtime_boundary() {
-    let error = runtime_error(
+fn static_anonymous_closure_capture_binding_allocates_current_inert_closure_values() {
+    let execution = run_source(
         r#"<?php
 $value = 1;
 $fn = static function () use ($value) {
     return $value;
 };
+echo $fn ? "truthy" : "missing";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 7);
-    assert_eq!(
-        error.message,
-        "unsupported call closure: closure capture binding is not implemented"
-    );
+    assert_eq!(execution.stdout, "truthy");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
