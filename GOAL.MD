@@ -1080,10 +1080,14 @@ unchecked work. Current state:
   query `SELECT ID, post_title FROM wp_posts WHERE ID = 1` returns a
   placeholder row-backed `mysqli_result` with two fields and one `stdClass`
   row, while all general SQL/database behavior remains unsupported.
-- Milestone 856 is the active checkpoint candidate: a synthetic
+- Milestone 856 is committed: a synthetic
   `wpdb::get_results()` smoke consumes that one-row placeholder through
   WordPress-shaped `last_result` and `num_rows` state without claiming real
   database support.
+- Milestone 857 is the active checkpoint candidate: deterministic
+  `mysqli_fetch_assoc()` returns the seed-post placeholder row as an
+  associative PHP array and shares the placeholder result cursor with object
+  fetching.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

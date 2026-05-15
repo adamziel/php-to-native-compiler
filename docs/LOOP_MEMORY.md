@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `b6bb122 tests: add wordpress wpdb seed row smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 857, deterministic `mysqli_fetch_assoc()` support
+  for the seed-post placeholder result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone857/*`, `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone857`, and
+  `git diff --check` passed.
+- Current WordPress frontier: the current WIP should let the exact
+  seed-post placeholder result be consumed as an associative PHP array through
+  `mysqli_fetch_assoc()`, sharing the row cursor with object fetches.
+- Remaining semantic gaps: `mysqli_fetch_array()`, numeric fetch indexes,
+  broad fetch modes, SQL execution, database state, query parsing, WordPress
+  query fidelity, errors/warnings, and native database lowering remain
+  missing.
+- Next concrete task: run focused MySQLi and milestone857 fixture tests, fix
+  failures, then run the full serialized checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `c4be502 runtime: add wordpress mysqli seed row`, pushed to
   `origin/master`.
 - Task attempted: Milestone 856, a synthetic WordPress-shaped

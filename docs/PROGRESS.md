@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 857, bounded `mysqli_fetch_assoc()` support for the
+  deterministic seed-post placeholder result. `mysqli_fetch_assoc($result)`
+  now accepts the current placeholder `mysqli_result`, shares the result row
+  cursor with `mysqli_fetch_object()`, returns a PHP array keyed by the
+  deterministic field names `ID` and `post_title` for the exact
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1` row, and returns
+  `false` after the one row is consumed. Added a `phpc-only` CLI fixture for
+  associative row hydration. This is not broad fetch-mode support,
+  `mysqli_fetch_array()`, numeric row indexes, mixed object/array cursor
+  fidelity beyond the shared cursor, real SQL/database state, warnings/errors,
+  or native database lowering. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension -- --nocapture` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone857`.
+
 - Added Milestone 856, a WordPress-shaped `wpdb::get_results()` smoke over
   the deterministic Milestone 855 seed-post row. The synthetic `wpdb` class
   initializes the placeholder connection, runs the exact

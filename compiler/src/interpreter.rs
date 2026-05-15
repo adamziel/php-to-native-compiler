@@ -4401,6 +4401,26 @@ impl Interpreter {
         self.create_stdclass_with_properties(row, span)
     }
 
+    fn call_mysqli_fetch_assoc(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_fetch_assoc", args, 1, span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_assoc()", &args[0], span)?;
+        let row = {
+            let state = self.mysqli_result_state_mut("mysqli_fetch_assoc()", result_id, span)?;
+            if state.row_cursor >= state.rows.len() {
+                return Ok(Value::Bool(false));
+            }
+            let row = state.rows[state.row_cursor].clone();
+            state.row_cursor += 1;
+            row
+        };
+
+        let mut array = PhpArray::new();
+        for (name, value) in row {
+            array.insert(name, value);
+        }
+        Ok(Value::Array(array))
+    }
+
     fn call_mysqli_fetch_field(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_fetch_field", args, 1, span)?;
         let result_id = expect_mysqli_result_handle("mysqli_fetch_field()", &args[0], span)?;
@@ -8822,6 +8842,7 @@ impl Interpreter {
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
             "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_fetch_object" => self.call_mysqli_fetch_object(&args, span),
+            "mysqli_fetch_assoc" => self.call_mysqli_fetch_assoc(&args, span),
             "mysqli_fetch_field" => self.call_mysqli_fetch_field(&args, span),
             "mysqli_num_fields" => self.call_mysqli_num_fields(&args, span),
             "mysqli_free_result" => self.call_mysqli_free_result(&args, span),
@@ -11745,6 +11766,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_select_db"
             | "mysqli_real_escape_string"
             | "mysqli_fetch_object"
+            | "mysqli_fetch_assoc"
             | "mysqli_fetch_field"
             | "mysqli_num_fields"
             | "mysqli_free_result"

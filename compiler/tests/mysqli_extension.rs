@@ -411,6 +411,27 @@ echo mysqli_fetch_object($result) === false ? "no-row" : "row";
 }
 
 #[test]
+fn mysqli_fetch_assoc_returns_current_seed_post_array_placeholder() {
+    let execution = run_source(
+        r#"<?php
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$result = mysqli_query($handle, "SELECT ID, post_title FROM wp_posts WHERE ID = 1");
+$row = mysqli_fetch_assoc($result);
+echo $row["ID"];
+echo "|";
+echo $row["post_title"];
+echo "|";
+echo mysqli_fetch_assoc($result) === false ? "no-row" : "row";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|Hello world placeholder|no-row");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_query_rejects_forms_outside_current_boundary() {
     let bad_handle = run_source(
         r#"<?php
@@ -599,6 +620,8 @@ echo function_exists("mysqli_real_escape_string") ? "1" : "0";
 echo is_callable("mysqli_real_escape_string") ? "1" : "0";
 echo function_exists("mysqli_fetch_object") ? "1" : "0";
 echo is_callable("mysqli_fetch_object") ? "1" : "0";
+echo function_exists("mysqli_fetch_assoc") ? "1" : "0";
+echo is_callable("mysqli_fetch_assoc") ? "1" : "0";
 echo function_exists("mysqli_fetch_field") ? "1" : "0";
 echo is_callable("mysqli_fetch_field") ? "1" : "0";
 echo function_exists("mysqli_num_fields") ? "1" : "0";
@@ -618,7 +641,7 @@ echo defined("MYSQLI_REPORT_OFF") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 33, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 35, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");

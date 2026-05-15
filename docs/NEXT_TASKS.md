@@ -7877,16 +7877,26 @@ handled.
   result, drains placeholder multi-result state, and returns the row array.
   It is not real SQL execution, database state, WordPress query fidelity,
   cache behavior, real post content, or native lowering.
-- [ ] Runtime/mysqli lane: add the next explicit boundary for post-query
+- [x] Runtime/mysqli lane: add the next explicit boundary for post-query
   operations that WordPress will need before real database support, such as
   deterministic `mysqli_fetch_assoc()`/array row hydration or a named
   unsupported diagnostic for unsupported fetch modes.
+  Milestone 857 adds deterministic `mysqli_fetch_assoc()` support for the
+  seed-post placeholder result. It shares the placeholder row cursor with
+  `mysqli_fetch_object()`, returns an associative PHP array keyed by `ID` and
+  `post_title`, then returns `false`. It is not `mysqli_fetch_array()`, numeric
+  indexes, broad fetch modes, SQL execution, real database state, or native
+  lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` associative-result smoke
+  that consumes the Milestone 857 `mysqli_fetch_assoc()` path through a
+  WordPress-shaped `ARRAY_A` or equivalent result mode without claiming real
+  database support.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `c4be502 runtime: add wordpress mysqli seed row`, covering Milestone 855
-  before the current Milestone 856 candidate.
+  `b6bb122 tests: add wordpress wpdb seed row smoke`, covering Milestone 856
+  before the current Milestone 857 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

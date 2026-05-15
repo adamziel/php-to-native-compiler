@@ -1294,10 +1294,11 @@ historical blockers and remaining full-support gaps include:
   Milestone 855 adds one deterministic row-backed placeholder result for
   `SELECT ID, post_title FROM wp_posts WHERE ID = 1`, and Milestone 856 adds a
   synthetic `wpdb::get_results()` smoke that stores that row in
-  `last_result`, increments `num_rows`, and returns the row array. These are
-  still deterministic harness milestones, not SQL execution, real database
-  state, plugin/theme/admin/REST, SAPI, rendered request, or native WordPress
-  support.
+  `last_result`, increments `num_rows`, and returns the row array. Milestone
+  857 adds associative array hydration for the same deterministic row through
+  `mysqli_fetch_assoc()`. These are still deterministic harness milestones,
+  not SQL execution, real database state, plugin/theme/admin/REST, SAPI,
+  rendered request, or native WordPress support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
