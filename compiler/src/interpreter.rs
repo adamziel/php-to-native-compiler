@@ -6003,6 +6003,7 @@ impl Interpreter {
             "abs" => call_abs(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
+            "date_default_timezone_set" => call_date_default_timezone_set(&args, span),
             "ini_get" => call_ini_get(&args, span),
             "min" => call_min(&args, span),
             "count" => {
@@ -9444,6 +9445,7 @@ fn is_builtin(name: &str) -> bool {
             | "abs"
             | "version_compare"
             | "microtime"
+            | "date_default_timezone_set"
             | "ini_get"
             | "min"
             | "count"
@@ -10289,6 +10291,25 @@ fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
                 "microtime()",
                 format!(
                     "as_float argument must be bool in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn call_date_default_timezone_set(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("date_default_timezone_set", args, 1, span)?;
+
+    match &args[0] {
+        Value::String(name) if name == "UTC" => Ok(Value::Bool(true)),
+        Value::String(_) => Ok(Value::Bool(false)),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "date_default_timezone_set()",
+                format!(
+                    "timezone identifier must be string in the current subset, got {}",
                     other.type_name()
                 ),
             ),

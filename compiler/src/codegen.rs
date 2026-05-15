@@ -6221,6 +6221,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "abs"
             | "version_compare"
             | "microtime"
+            | "date_default_timezone_set"
             | "ini_get"
             | "min"
             | "count"

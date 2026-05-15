@@ -746,6 +746,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   delivery, fatal-error context, output-buffer/destructor/finally interaction,
   exact diagnostics, native lowering, date/timezone support, or WordPress
   bootstrap support.
+  Milestone 782 implements bounded `date_default_timezone_set('UTC')` for the
+  reached startup path. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:42:50: undefined variable '$_SERVER'`,
+  corresponding to the `wp_fix_server_vars()` startup path. This is not full
+  date/timezone support, timezone database validation, global timezone state,
+  warning behavior, native lowering, request/SAPI superglobals, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

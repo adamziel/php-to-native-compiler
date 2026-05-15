@@ -7166,17 +7166,26 @@ handled.
   `null` return without executing callbacks, and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:73:1: undefined function date_default_timezone_set()`.
-- [ ] Date/time runtime lane: implement a bounded
+- [x] Date/time runtime lane: implement a bounded
   `date_default_timezone_set()` slice for the reached WordPress bootstrap
   timezone initialization path. Keep timezone identifier validation breadth,
   global timezone state interactions, `date_default_timezone_get()`, ini/date
   extension behavior, warning behavior, exact diagnostics, and native lowering
   named unless implemented.
+  Milestone 782 implements the reached `UTC` setter slice and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:42:50: undefined variable '$_SERVER'`,
+  corresponding to the `wp_fix_server_vars()` startup path.
+- [ ] Runtime/request-state lane: materialize a bounded `$_SERVER` superglobal
+  array for the reached WordPress `wp_fix_server_vars()` path. Keep broad SAPI
+  request state, environment import policy, mutation/reference behavior,
+  case/key completeness, exact warning behavior, native lowering, and other
+  superglobals named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 781 checkpoint, the latest committed checkpoint
-  is `62ff7c5 runtime: add bounded is_readable`, covering Milestone 780.
+- Before the current Milestone 782 checkpoint, the latest committed checkpoint
+  is `b328113 runtime: add shutdown registration`, covering Milestone 781.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

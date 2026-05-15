@@ -590,6 +590,32 @@ injects this file into every prompt. Each Codex pass should update it with:
   date/default timezone getter behavior, warning behavior, diagnostics, and
   native-lowering gaps.
 
+## Loop Event 2026-05-15T07:48:38Z
+
+- Checkpoint before this task:
+  `b328113 runtime: add shutdown registration`, pushed to `origin/master`.
+- Task attempted: Milestone 782, bounded `date_default_timezone_set()` for the
+  WordPress startup timezone initialization path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/timezone_builtin.rs`,
+  `tests/fixtures/milestone782/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test timezone_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone782`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: full timezone identifier validation, global timezone
+  state, `date_default_timezone_get()`, date extension integration, ini
+  interactions, warning behavior, exact diagnostics, and native lowering remain
+  unsupported. Direct `wp-settings.php` still stops on undefined `ABSPATH`; the
+  bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:42:50: undefined variable '$_SERVER'`.
+- Next concrete task: materialize a bounded `$_SERVER` superglobal array for
+  the reached `wp_fix_server_vars()` path while documenting SAPI request state,
+  environment import policy, mutation/reference behavior, key completeness,
+  exact warning behavior, native lowering, and other superglobal gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

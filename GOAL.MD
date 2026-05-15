@@ -79,7 +79,8 @@ has moved past WordPress' missing-MySQL-extension guard in
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
 `is_readable()` filesystem builtin in the fatal-error-handler override check
 and the fatal-error-handler `register_shutdown_function()` registration; it now
-stops at missing `date_default_timezone_set()` timezone initialization.
+stops at missing `$_SERVER` superglobal materialization in the
+`wp_fix_server_vars()` startup path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -307,8 +308,8 @@ Milestone 776 added bounded leading-numeric `(int)` string casts. Milestone
 `min()`. Milestone 779 added bounded nested direct-variable array-offset
 `isset(...)`. Milestone 780 added bounded local-path `is_readable()`.
 Milestone 781 added bounded `register_shutdown_function()` registration, and
-the current frontier is now `date_default_timezone_set()` in WordPress
-bootstrap startup.
+Milestone 782 added bounded `date_default_timezone_set('UTC')`, and the
+current frontier is now `$_SERVER` in WordPress request/server startup state.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -451,7 +452,7 @@ The repository already has a working Rust workspace with:
   `trim()`, bounded leading-numeric `(int)` string casts, bounded
   `str_contains()`, bounded integer `min()`, bounded nested direct-variable
   array-offset `isset(...)`, and bounded local-path `is_readable()`. The next
-  bottleneck is `date_default_timezone_set()` in the WordPress bootstrap shim.
+  bottleneck is `$_SERVER` materialization in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

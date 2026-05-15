@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 782, bounded `date_default_timezone_set()` for the current
+  WordPress startup timezone initialization path. The runtime now accepts one
+  string timezone identifier, returns `true` for the reached `UTC` identifier,
+  returns `false` for other identifiers without PHP's notice machinery yet,
+  exposes the builtin through function/callability metadata and dynamic
+  string-valued calls, and keeps direct native calls behind the generic
+  function-call lowering boundary. Full timezone identifier validation, global
+  timezone state, `date_default_timezone_get()`, date extension integration,
+  ini interactions, warning behavior, exact diagnostics, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past `date_default_timezone_set( 'UTC' )` in `wp-settings.php` to
+  `runtime error at <bootstrap-shim>:42:50: undefined variable '$_SERVER'`,
+  corresponding to the `wp_fix_server_vars()` startup path.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test timezone_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone782`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 781, bounded `register_shutdown_function()` registration for
   the current WordPress fatal-error-handler path. The runtime now accepts one
   valid current callable plus optional already-evaluated extra arguments,
