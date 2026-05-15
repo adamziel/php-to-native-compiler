@@ -692,14 +692,19 @@
   runtime strings, broad coercions, exact diagnostics, and native lowering
   remain unsupported.
   `preg_replace($pattern, $replacement, $subject)` supports exactly the
-  WordPress database-version cleanup pattern `/[^0-9.].*/` and the WordPress
-  path-tail cleanup pattern `#/[^/]*$#i`, and the WordPress redirect sanitizer
-  cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, all with an empty
+  WordPress database-version cleanup pattern `/[^0-9.].*/`, the WordPress
+  path-tail cleanup pattern `#/[^/]*$#i`, the WordPress redirect sanitizer
+  cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, the WordPress
+  mail-host cleanup pattern `#^www\.#`, and the KSES null cleanup patterns
+  `/[\x00-\x08\x0B\x0C\x0E-\x1F]/` and `/\\\\+0+/`, all with an empty
   replacement string and a scalar/null string-convertible subject. The first
   returns the leading ASCII digits/dots prefix used by `wpdb::db_version()`.
   The second removes the final slash-delimited path segment used by
   `wp_guess_url()`. The third removes characters outside the current ASCII
-  redirect allowlist while preserving already-percent-encoded bytes. Pattern or
+  redirect allowlist while preserving already-percent-encoded bytes. The
+  mail-host path removes a leading lowercase `www.`. The KSES paths remove
+  represented ASCII control characters in the documented ranges and slash-zero
+  sequences. Pattern or
   replacement arrays, subject arrays, non-empty replacements, limit/count
   arguments, callbacks, full PCRE replacement behavior, captures/backrefs,
   invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
@@ -4535,13 +4540,15 @@
   beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
   `/[^0-9.].*/`, path-tail cleanup pattern `#/[^/]*$#i`, and redirect
-  sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, all with an
-  empty replacement and scalar/null subject: pattern/replacement arrays,
-  subject arrays, non-empty replacements, limit/count arguments, callbacks,
-  full PCRE replacement behavior, captures/backrefs, invalid-pattern warnings,
-  byte/Unicode behavior beyond the current valid UTF-8 string model, broad
-  coercions, exact diagnostics, and native lowering beyond function-table
-  introspection
+  sanitizer cleanup pattern `|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i`, mail-host
+  cleanup pattern `#^www\.#`, and KSES null cleanup patterns
+  `/[\x00-\x08\x0B\x0C\x0E-\x1F]/` and `/\\\\+0+/`, all with an empty
+  replacement and scalar/null subject: pattern/replacement arrays, subject
+  arrays, non-empty replacements, limit/count arguments, callbacks, full PCRE
+  replacement behavior, captures/backrefs, invalid-pattern warnings,
+  byte/Unicode behavior beyond the current valid UTF-8 string model, full PHP
+  string escape semantics, broad coercions, exact diagnostics, and native
+  lowering beyond function-table introspection
 - `preg_replace_callback()` outside the exact WordPress
   `wp_sanitize_redirect()` UTF-8 sanitizer regex shape, exact
   `_wp_sanitize_utf8_in_redirect` string callback, scalar/null subject, and

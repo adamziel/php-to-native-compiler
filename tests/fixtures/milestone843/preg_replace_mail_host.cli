@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+example.test|mail.example.test|www2.example.test
+--- stdout end ---
+stderr:
+--- stderr end ---

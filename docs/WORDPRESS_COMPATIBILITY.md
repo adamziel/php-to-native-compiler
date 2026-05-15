@@ -1230,6 +1230,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   captures/backrefs, limit/count output, exact diagnostics, or native lowering.
   The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:2018:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i are implemented in the current subset`.
+  Milestone 843 widens bounded `preg_replace()` for the reached
+  `pluggable.php` `#^www\.#` mail-host cleanup and the adjacent KSES
+  null-cleanup patterns `/[\x00-\x08\x0B\x0C\x0E-\x1F]/` and `/\\\\+0+/`.
+  This is not broad PCRE replacement, arrays, callbacks, captures/backrefs,
+  limit/count output, full PHP string escape behavior, exact diagnostics, or
+  native lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

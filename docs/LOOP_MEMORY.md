@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `a26a7a1 runtime: add wordpress preg replace sanitizer`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 843, bounded `preg_replace()` support for the
+  reached WordPress mail-host cleanup and KSES null cleanup patterns.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/preg_replace_builtin.rs`,
+  `tests/fixtures/milestone843/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone843`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: pattern/replacement arrays, subject arrays,
+  non-empty replacements, callbacks, captures/backrefs, limit/count output,
+  invalid-pattern warnings, broad PCRE replacement behavior, full PHP string
+  escape semantics, exact diagnostics, and native lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
+- Next concrete task: run `git diff --check`, then the full checkpoint gate.
+  If green, checkpoint with
+  `tools/checkpoint.sh "runtime: add wordpress preg replace cleanups"`.
+  Milestone 844 should inspect and implement the reached `str_replace()` count
+  output path without claiming broad reference/output parameter semantics.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `7b31a6e runtime: add wordpress preg replace callback`, pushed to
   `origin/master`.
 - Task attempted: Milestone 842, bounded `preg_replace()` support for the

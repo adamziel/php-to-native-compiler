@@ -74,6 +74,62 @@ echo $call('|[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i', '', '/bad space/');
 }
 
 #[test]
+fn preg_replace_executes_current_wordpress_mail_host_cleanup() {
+    let execution = run_source(
+        r#"<?php
+echo preg_replace('#^www\.#', '', 'www.example.test');
+echo "|";
+echo preg_replace('#^www\.#', '', 'mail.example.test');
+echo "|";
+echo preg_replace('#^www\.#', '', 'www2.example.test');
+echo "|";
+$call = "preg_replace";
+echo $call('#^www\.#', '', 'www.wordpress.org');
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "example.test|mail.example.test|www2.example.test|wordpress.org"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn preg_replace_executes_current_wordpress_kses_control_char_cleanup() {
+    let execution = run_source(
+        "<?php\n\
+echo preg_replace('/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/', '', \"a\u{0}b\u{7}c\u{b}d\u{1f}e\");\n\
+echo \"|\";\n\
+$call = \"preg_replace\";\n\
+echo $call('/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/', '', \"x\u{c}y\");\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "abcde|xy");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn preg_replace_executes_current_wordpress_kses_slash_zero_cleanup() {
+    let execution = run_source(
+        r#"<?php
+echo preg_replace('/\\\\+0+/', '', 'a\\0b\\\\00c');
+echo "|";
+echo preg_replace('/\\\\+0+/', '', 'keep\\\\slash');
+echo "|";
+$call = "preg_replace";
+echo $call('/\\\\+0+/', '', '\\000x');
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "abc|keep\\\\slash|x");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_replace_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
@@ -100,7 +156,7 @@ preg_replace('/[^a-z].*/', '', 'abc123');
     assert_eq!(unsupported_pattern.column, 1);
     assert_eq!(
         unsupported_pattern.message,
-        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i are implemented in the current subset"
+        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, and KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/ are implemented in the current subset"
     );
 
     let unsupported_replacement = runtime_error(

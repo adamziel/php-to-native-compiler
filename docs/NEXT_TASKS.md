@@ -7731,18 +7731,28 @@ handled.
   Milestone 842 covers this exact redirect sanitizer cleanup pattern. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:2018:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\[\]()@]|i are implemented in the current subset`.
-- [ ] Runtime/regex lane: inspect the reached `preg_replace()` at
+- [x] Runtime/regex lane: inspect the reached `preg_replace()` at
   `<bootstrap-shim>:2018:13`, identify the originating WordPress source path,
   and implement only the exact next pattern/replacement shape if it is a small
   honest subset. Keep broad PCRE replacement support, replacement backrefs,
   arrays, callbacks, limit/count output, exact diagnostics, and native lowering
   named unless implemented.
+  Milestone 843 traces this to `wp-includes/kses.php:2018` and covers the
+  exact KSES control-character cleanup pattern, the adjacent slash-zero cleanup
+  pattern, and the previously reached `pluggable.php` mail-host cleanup
+  pattern. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
+- [ ] Runtime/string lane: implement the reached `str_replace()` count-output
+  argument shape without claiming broad by-reference output semantics. Inspect
+  the originating WordPress source, support only direct-variable count outputs
+  if appropriate, and keep array/object operands, broad references, exact PHP
+  warning behavior, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 842 checkpoint, the latest committed checkpoint
-  is `7b31a6e runtime: add wordpress preg replace callback`, covering
-  Milestone 841.
+- Before the current Milestone 843 checkpoint, the latest committed checkpoint
+  is `a26a7a1 runtime: add wordpress preg replace sanitizer`, covering
+  Milestone 842.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

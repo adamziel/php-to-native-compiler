@@ -12318,12 +12318,15 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     if pattern != "/[^0-9.].*/"
         && pattern != "#/[^/]*$#i"
         && !is_wordpress_redirect_sanitizer_cleanup_pattern(&pattern)
+        && !is_wordpress_mail_host_cleanup_pattern(&pattern)
+        && !is_wordpress_kses_control_char_cleanup_pattern(&pattern)
+        && !is_wordpress_kses_slash_zero_cleanup_pattern(&pattern)
     {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
                 "preg_replace()",
-                "only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, and redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i are implemented in the current subset",
+                "only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, and KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/ are implemented in the current subset",
             ),
         ));
     }
@@ -12351,6 +12354,24 @@ fn call_preg_replace(args: &[Value], span: Span) -> CompileResult<Value> {
             .filter(|ch| is_wordpress_redirect_sanitizer_allowed_char(*ch))
             .collect();
         return Ok(Value::String(sanitized));
+    }
+
+    if is_wordpress_mail_host_cleanup_pattern(&pattern) {
+        return Ok(Value::String(
+            subject.strip_prefix("www.").unwrap_or(&subject).to_string(),
+        ));
+    }
+
+    if is_wordpress_kses_control_char_cleanup_pattern(&pattern) {
+        let sanitized: String = subject
+            .chars()
+            .filter(|ch| !is_wordpress_kses_removed_control_char(*ch))
+            .collect();
+        return Ok(Value::String(sanitized));
+    }
+
+    if is_wordpress_kses_slash_zero_cleanup_pattern(&pattern) {
+        return Ok(Value::String(remove_wordpress_kses_slash_zero(&subject)));
     }
 
     let end = subject.rfind('/').unwrap_or(subject.len());
@@ -12387,6 +12408,52 @@ fn is_wordpress_redirect_sanitizer_allowed_char(ch: char) -> bool {
                 | ')'
                 | '@'
         )
+}
+
+fn is_wordpress_mail_host_cleanup_pattern(pattern: &str) -> bool {
+    pattern == "#^www\\.#" || pattern == "#^www.#"
+}
+
+fn is_wordpress_kses_control_char_cleanup_pattern(pattern: &str) -> bool {
+    pattern == "/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/" || pattern == "/[x00-x08x0Bx0Cx0E-x1F]/"
+}
+
+fn is_wordpress_kses_removed_control_char(ch: char) -> bool {
+    matches!(ch as u32, 0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F)
+}
+
+fn is_wordpress_kses_slash_zero_cleanup_pattern(pattern: &str) -> bool {
+    pattern == "/\\\\\\\\+0+/" || pattern == "/\\\\+0+/"
+}
+
+fn remove_wordpress_kses_slash_zero(subject: &str) -> String {
+    let mut output = String::with_capacity(subject.len());
+    let mut chars = subject.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+
+        let mut slash_count = 1;
+        while chars.peek() == Some(&'\\') {
+            slash_count += 1;
+            chars.next();
+        }
+
+        let mut zero_count = 0;
+        while chars.peek() == Some(&'0') {
+            zero_count += 1;
+            chars.next();
+        }
+
+        if zero_count == 0 {
+            for _ in 0..slash_count {
+                output.push('\\');
+            }
+        }
+    }
+    output
 }
 
 impl Interpreter {

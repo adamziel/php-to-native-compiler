@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 843, bounded `preg_replace()` cleanup patterns reached by
+  WordPress `pluggable.php` and KSES bootstrap paths. The interpreter now
+  accepts the exact `#^www\.#` empty-replacement mail-host cleanup used by
+  `wp_mail()`, plus the exact KSES null cleanup patterns
+  `/[\x00-\x08\x0B\x0C\x0E-\x1F]/` and `/\\\\+0+/` with empty replacements.
+  These remove the current leading `www.` host prefix, represented ASCII
+  control characters in the documented KSES ranges, and slash-zero sequences
+  such as `\0`/`\\00` from current runtime strings. Pattern/replacement
+  arrays, subject arrays, non-empty replacements, callbacks, captures/backrefs,
+  limit/count output, broad PCRE replacement behavior, exact PHP diagnostics,
+  full PHP string escape semantics, and native lowering remain unsupported.
+  The real WordPress 6.9.4 bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone843`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 842, a bounded `preg_replace()` redirect sanitizer cleanup
   pattern for the reached WordPress `wp_sanitize_redirect()` path. The
   interpreter now accepts exactly
