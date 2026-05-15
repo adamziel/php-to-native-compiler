@@ -78,6 +78,14 @@ or `switch` level at a time. Plain `continue;` that targets a switch remains a
 runtime boundary, while `continue 2;` can pass through the switch to an outer
 loop. Native lowering rejects all current structured control flow.
 
+Direct `exit()`/`die()` calls are treated as a bounded language-construct
+termination signal rather than as ordinary callable builtins. The interpreter
+preserves stdout accumulated so far and returns the current exit code for the
+top-level CLI result. The construct is intentionally absent from
+`function_exists()`/`is_callable()` lookup. Shutdown functions, destructors,
+finally-during-exit ordering, output buffers, SAPI interaction, and native
+termination lowering remain future runtime work.
+
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
 covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
 `(float)/(double)`, and `(array)`. The interpreter owns PHP-shaped conversion

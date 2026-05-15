@@ -1,0 +1,4 @@
+<?php
+exit("message");
+echo "after";
+

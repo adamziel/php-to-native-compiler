@@ -201,9 +201,11 @@ numeric-component comparator. Milestone 729 then advanced past the first
 Milestone 730 then advanced past the first `header()` path with a no-op
 web/SAPI boundary that validates the current argument shape and returns `null`.
 Milestone 731 then advanced past the first missing-extension `implode()` path
-with a bounded scalar/null array join builtin. The next visible bootstrap-shim
-blocker is now missing `exit()`:
-`runtime error at <bootstrap-shim>:196:3: undefined function exit()`.
+with a bounded scalar/null array join builtin. Milestone 732 then advanced past
+the first `exit(1)` termination path with a bounded direct `exit()`/`die()`
+construct. The bootstrap-shim now reaches WordPress' missing-extension guard
+and exits with code `1`, stdout, and no stderr because `extension_loaded()`
+still reports an empty extension registry.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -315,8 +317,9 @@ The repository already has a working Rust workspace with:
   probe currently advances through bounded loop-depth control flow,
   function-scope `global` imports, the `PHP_VERSION` compatibility constant,
   the first bounded `version_compare()` slice, and the first bounded
-  `sprintf()`, `header()`, and `implode()` slices, then stops at missing
-  `exit()`. The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
+  `sprintf()`, `header()`, `implode()`, and `exit()` slices, then stops at
+  WordPress' missing-extension guard under the current empty extension registry.
+  The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,

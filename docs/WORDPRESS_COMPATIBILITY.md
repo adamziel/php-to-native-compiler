@@ -274,6 +274,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   warning behavior, partial-output behavior, or native lowering. The
   bootstrap-shim probe now reaches
   `runtime error at <bootstrap-shim>:196:3: undefined function exit()`.
+  Milestone 732 covers bounded direct `exit()`/`die()` termination with current
+  stdout preservation and integer/string/null argument handling. This is not
+  dynamic/callable invocation, exact status normalization, shutdown functions,
+  destructor/finally ordering, output buffering, SAPI behavior, or native
+  lowering. The bootstrap-shim probe now reaches WordPress' missing-extension
+  guard and terminates with exit code `1`, 126 stdout bytes, and no stderr
+  because the current `extension_loaded()` policy still reports an empty
+  extension registry.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

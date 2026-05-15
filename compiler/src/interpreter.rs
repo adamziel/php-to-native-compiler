@@ -73,6 +73,7 @@ struct Interpreter {
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
     stdout: String,
+    exit_signal: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -271,6 +272,7 @@ enum Flow {
     Break { depth: usize, span: Span },
     Continue { depth: usize, span: Span },
     Return(Value),
+    Exit(i32),
     Goto { label: String, span: Span },
 }
 
@@ -387,6 +389,7 @@ impl Interpreter {
             class_context: Vec::new(),
             called_class_context: Vec::new(),
             stdout: String::new(),
+            exit_signal: None,
         };
         interpreter.initialize_static_property_defaults(program)?;
         Ok(interpreter)
@@ -576,6 +579,11 @@ impl Interpreter {
                 stderr: String::new(),
                 exit_code: 0,
             }),
+            Flow::Exit(code) => Ok(Execution {
+                stdout: self.stdout.clone(),
+                stderr: String::new(),
+                exit_code: code,
+            }),
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
@@ -611,9 +619,13 @@ impl Interpreter {
                     index = *target;
                     continue;
                 }
-                flow @ (Flow::Break { .. } | Flow::Continue { .. } | Flow::Return(_)) => {
-                    return Ok(flow);
-                }
+                flow @ (Flow::Break { .. }
+                | Flow::Continue { .. }
+                | Flow::Return(_)
+                | Flow::Exit(_)) => return Ok(flow),
+            }
+            if let Some(code) = self.exit_signal {
+                return Ok(Flow::Exit(code));
             }
             index += 1;
         }
@@ -703,7 +715,9 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok(flow);
+                        }
                     }
                 }
                 Ok(Flow::Normal)
@@ -728,7 +742,9 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok(flow);
+                        }
                     }
 
                     if !self.evaluate(condition, scope)?.is_truthy() {
@@ -771,7 +787,9 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok(flow);
+                        }
                     }
 
                     if let Some(increment) = increment {
@@ -824,7 +842,9 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
+                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                            return Ok(flow);
+                        }
                     }
                 }
 
@@ -1090,6 +1110,7 @@ impl Interpreter {
 
         match flow? {
             Flow::Normal | Flow::Return(_) => Ok(Flow::Normal),
+            Flow::Exit(code) => Ok(Flow::Exit(code)),
             Flow::Break { depth, span } => Ok(Flow::Break { depth, span }),
             Flow::Continue { depth, span } => Ok(Flow::Continue { depth, span }),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
@@ -1202,7 +1223,7 @@ impl Interpreter {
                         span,
                     });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. }) => return Ok(flow),
+                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => return Ok(flow),
             }
             index += 1;
         }
@@ -4305,6 +4326,10 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        if matches!(name.to_ascii_lowercase().as_str(), "exit" | "die") {
+            return self.call_exit_construct(name, args, span, caller_scope);
+        }
+
         match self.lookup_direct_function_call(name).ok_or_else(|| {
             runtime_error(span, RuntimeError::undefined_function(callable_name(name)))
         })? {
@@ -4390,6 +4415,67 @@ impl Interpreter {
         }
 
         Ok(Value::Bool(true))
+    }
+
+    fn call_exit_construct(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let construct = if name.eq_ignore_ascii_case("die") {
+            "die()"
+        } else {
+            "exit()"
+        };
+
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    construct,
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let mut code = 0;
+        if let Some(arg) = args.first() {
+            match self.evaluate(arg, caller_scope)? {
+                Value::Null => {}
+                Value::Int(value) => {
+                    code = i32::try_from(value).map_err(|_| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                construct,
+                                "integer status must fit in i32 in the current subset",
+                            ),
+                        )
+                    })?;
+                }
+                Value::String(value) => {
+                    self.stdout.push_str(&value);
+                }
+                other => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            construct,
+                            format!(
+                                "argument must be null, int, or string in the current subset, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
+
+        self.exit_signal = Some(code);
+        Ok(Value::Null)
     }
 
     fn lookup_function(&self, name: &str) -> Option<Callable> {
@@ -4523,6 +4609,7 @@ impl Interpreter {
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
             Flow::Return(value) => Ok(value),
+            Flow::Exit(_) => Ok(Value::Null),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }

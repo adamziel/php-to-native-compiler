@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 732, bounded direct `exit()`/`die()` execution through
+  `phpc run`. The construct is handled as a termination signal rather than an
+  ordinary callable builtin: `function_exists("exit")` and
+  `is_callable("exit")` remain false. The current subset supports omitted and
+  `null` arguments as exit code `0`, integer arguments that fit in `i32` as the
+  process status, and string arguments as stdout text followed by exit code
+  `0`. Boolean/float/array/object arguments, dynamic/callable invocation,
+  exact PHP status normalization, shutdown functions, destructor/finally
+  ordering, output buffering, SAPI behavior, broader partial-output behavior,
+  and native lowering remain unsupported. The direct WordPress probe still
+  stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous `exit()` blocker at
+  `<bootstrap-shim>:196:3` and now terminates through WordPress' missing
+  extension guard with exit code `1`, 126 stdout bytes, and no stderr because
+  the current `extension_loaded()` policy still reports an empty extension
+  registry. Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test exit_construct -- --test-threads=1`,
+  `cargo test -p phpc --test exit_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone732`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone732`,
+  `cargo test -p phpc --test type_introspection_builtins function_exists -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 731, bounded `implode()` execution through `phpc run` for the
   scalar/null array join path needed by the current WordPress bootstrap-shim
   missing-extension message. The builtin accepts `implode($array)` with an

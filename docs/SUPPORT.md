@@ -163,6 +163,16 @@
 - recursive user-function calls up to a fixed 128-frame user-function call-depth
   guard
 - `return`
+- direct `exit()`/`die()` calls as a bounded termination construct, not a
+  callable function. The current subset accepts no argument, an integer status
+  argument, a string message argument, or `null`; string arguments append to
+  stdout and terminate with exit code `0`, integer arguments terminate with the
+  provided status when it fits in `i32`, and `null`/omitted arguments terminate
+  with exit code `0`. `function_exists("exit")` and `is_callable("exit")`
+  remain false. Exit inside complex expressions, shutdown functions,
+  destructor/finally ordering, output buffering, exact status normalization,
+  partial-output behavior beyond current stdout preservation, and native
+  lowering remain unsupported.
 - `throw expr;` statements parse and participate in normal statement
   reachability. Guarded/unreached throw statements can be skipped by existing
   control flow. If execution reaches a throw statement, `phpc run` reports the
@@ -3720,6 +3730,10 @@
   replacement/removal behavior, output-sent warnings, SAPI/web-server
   integration, exact `ValueError`/`TypeError` diagnostics, partial-output
   behavior, and native lowering beyond function-table introspection
+- `exit()`/`die()` behavior beyond the current direct-call termination subset:
+  callable/dynamic invocation, boolean/float/array/object argument handling,
+  PHP's exact exit-status normalization, shutdown functions, destructors,
+  finally ordering, output buffering, SAPI interaction, and native lowering
 - `spl_autoload_register()` behavior beyond accepting closure/string callback
   registrations as a no-op success, including autoload stack storage,
   unregistering, invocation during class lookup, prepend ordering,

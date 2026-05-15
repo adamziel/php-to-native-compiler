@@ -6724,17 +6724,28 @@ handled.
   separator, keeps broader PHP conversion and native lowering explicit, and
   advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:196:3: undefined function exit()`.
-- [ ] Runtime/control builtin lane: implement or explicitly bound `exit()` /
+- [x] Runtime/control builtin lane: implement or explicitly bound `exit()` /
   `die()` for the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:196:3`, with tests, CLI coverage, docs, and named
   unsupported edges for process termination semantics, integer exit-code
   handling, string message output, finally/destructor/shutdown-function
-  behavior, partial-output behavior, and native lowering.
+  behavior, partial-output behavior, and native lowering. The Milestone 732
+  slice treats direct `exit()`/`die()` as a language-construct termination
+  signal, keeps callable lookup false, supports omitted/null/int/string
+  arguments in the current subset, and advances the real bootstrap-shim probe
+  to WordPress' missing-extension guard: exit code `1`, 126 stdout bytes, and
+  no stderr under the current empty `extension_loaded()` policy.
+- [ ] Runtime/extensions lane: replace the deterministic empty
+  `extension_loaded()` registry with a bounded compatibility registry for the
+  WordPress 6.9.4 bootstrap requirement checks, with tests, CLI coverage, docs,
+  and named unsupported edges for host extension discovery, extension aliases,
+  extension version APIs, native extension functions/constants, configuration,
+  exact diagnostics, partial-output behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 731 checkpoint, the latest committed checkpoint
-  is `4e53c5f runtime: add bounded header`, covering Milestone 730.
+- Before the current Milestone 732 checkpoint, the latest committed checkpoint
+  is `20ac373 runtime: add bounded implode`, covering Milestone 731.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
