@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 912, a synthetic WordPress-shaped `wpdb` query-info
+  bookkeeping smoke that calls the bounded `mysqli_info($this->dbh)`
+  placeholder after the deterministic charset setup query, records clean local
+  statement-information metadata, and verifies that the query bookkeeping
+  boundary ran. This is a harness smoke only; it does not add real WordPress
+  SQL statement information, mutation summaries, host database state, PHP
+  warning/error fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone912`.
+
 - Added Milestone 911, bounded `mysqli_info()` support for deterministic
   placeholder MySQLi clean statement-information metadata. The runtime accepts
   current placeholder `mysqli` handles, returns deterministic clean state

@@ -213,7 +213,8 @@ synthetic WordPress-shaped `wpdb` options bookkeeping smoke, plus
 deterministic `mysqli_connect_errno()`/`mysqli_connect_error()` clean
 connect-error metadata, now wired through a synthetic WordPress-shaped `wpdb`
 connect-error bookkeeping smoke, plus deterministic `mysqli_info()` clean
-statement-information metadata for the next query-bookkeeping boundary.
+statement-information metadata, now wired through a synthetic
+WordPress-shaped `wpdb` query-info bookkeeping smoke.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

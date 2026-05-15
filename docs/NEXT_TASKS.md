@@ -8448,15 +8448,23 @@ handled.
   diagnostics, and is visible through runtime and native metadata lookup. This
   is not real statement information tracking, mutation summaries, warnings,
   errors, host database state, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_info()` placeholder through a WordPress-shaped query
   bookkeeping method without claiming real SQL statement information.
+  Milestone 912 adds a `phpc-only` synthetic `wpdb` fixture that records clean
+  `mysqli_info()` placeholder metadata after a placeholder charset setup query.
+  It is not real SQL statement information, mutation summaries, warnings,
+  errors, host database state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi warning or diagnostic
+  boundary used by WordPress after clean statement-information state, such as
+  `mysqli_get_warnings()` or a sharper unsupported diagnostic, before claiming
+  real warning metadata.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4eb8e06 tests: add wordpress wpdb connect error smoke`, covering Milestone
-  910 before the current Milestone 911 candidate.
+  `dc195fe runtime: add mysqli info placeholder`, covering Milestone 911 before
+  the current Milestone 912 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

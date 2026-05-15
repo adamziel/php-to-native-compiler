@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_info()` clean
+statement-information metadata through a WordPress-shaped `wpdb::query()`
+bookkeeping method after a placeholder charset setup query. System PHP needs a
+real mysqli connection and reports host extension statement metadata; phpc only
+records local `wpdb` bookkeeping around clean placeholder state.

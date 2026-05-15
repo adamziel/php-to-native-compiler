@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `dc195fe runtime: add mysqli info placeholder`, pushed to `origin/master`.
+- Task attempted: Milestone 912, a synthetic WordPress-shaped `wpdb`
+  query-info bookkeeping smoke over deterministic `mysqli_info()` placeholder
+  support.
+- Files changed so far: `tests/fixtures/milestone912/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone912`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped query bookkeeping method is
+  being extended to record deterministic clean statement-information metadata
+  after a placeholder query.
+- Remaining semantic gaps: real SQL statement information, mutation summaries,
+  warnings/errors, host database state, SQL execution, and native database
+  lowering remain missing.
+- Next concrete task: run whitespace checks and the serialized checkpoint gate
+  under `umask 0022`; after checkpoint, inspect the next MySQLi warning or
+  diagnostic boundary such as `mysqli_get_warnings()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `4eb8e06 tests: add wordpress wpdb connect error smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 911, bounded deterministic `mysqli_info()` clean

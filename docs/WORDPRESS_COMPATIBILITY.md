@@ -1441,7 +1441,9 @@ historical blockers and remaining full-support gaps include:
   claiming real connection failure fidelity. Milestone 911 adds deterministic
   `mysqli_info()` clean statement-information metadata without real SQL
   statement-info tracking, mutation summaries, host database state,
-  warning/error fidelity, or native database lowering.
+  warning/error fidelity, or native database lowering. Milestone 912 wires
+  that placeholder through a synthetic WordPress-shaped `wpdb` query-info
+  bookkeeping smoke without claiming real SQL statement information.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
