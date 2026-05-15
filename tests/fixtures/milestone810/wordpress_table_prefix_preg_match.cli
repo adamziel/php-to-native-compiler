@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone810/wordpress_table_prefix_preg_match.php"
+  ],
+  "stdin": "",
+  "stdout": "ok|1|-",
+  "stderr": "",
+  "exit": 0
+}

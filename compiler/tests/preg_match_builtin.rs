@@ -118,6 +118,23 @@ echo $matches[2];
 }
 
 #[test]
+fn preg_match_handles_wordpress_table_prefix_guard() {
+    let execution = run_source(
+        r#"<?php
+echo preg_match('|[^a-z0-9_]|i', 'wp_');
+echo "|";
+echo preg_match('|[^a-z0-9_]|i', 'wp-Bad', $matches);
+echo "|";
+echo $matches[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|1|-");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_rejects_forms_outside_current_subset() {
     let output_args = runtime_error(
         r#"<?php

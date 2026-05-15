@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 810, bounded `preg_match()` support for the reached
+  WordPress `wpdb::set_prefix()` table-prefix validation guard. The runtime
+  now recognizes the exact pattern `|[^a-z0-9_]|i`, returns no match for
+  conventional prefixes such as `wp_`, and reports a match with match `0` for
+  the first non-alphanumeric/non-underscore character. This is not arbitrary
+  delimiter support, broad character-class or case-insensitive PCRE behavior,
+  invalid-pattern warnings, exact diagnostics, or native regex lowering. The
+  real WordPress 6.9.4 bootstrap-shim probe now advances past the reached
+  table-prefix regex to
+  `runtime error at <bootstrap-shim>:1034:5: undefined property wpdb::$categories`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone810`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 809, a WordPress inventory bootstrap-shim startup-state
   update for the reached `$table_prefix` blocker. The shim now defines
   `$table_prefix = 'wp_';` before requiring `wp-settings.php`, and the

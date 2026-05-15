@@ -10783,6 +10783,7 @@ enum BoundedPregPattern {
     Exact(String),
     WordPressDbHostIpv4,
     WordPressDbHostIpv6,
+    WordPressTablePrefixInvalidChar,
 }
 
 impl BoundedPregPattern {
@@ -10796,6 +10797,9 @@ impl BoundedPregPattern {
             || pattern == "#^(?:[)?(?P<host>[0-9a-fA-F:]+)(?:]:(?P<port>[d]+))?#"
         {
             return Ok(Self::WordPressDbHostIpv6);
+        }
+        if pattern == "|[^a-z0-9_]|i" {
+            return Ok(Self::WordPressTablePrefixInvalidChar);
         }
 
         let Some(body_and_modifiers) = pattern.strip_prefix('/') else {
@@ -10834,9 +10838,9 @@ impl BoundedPregPattern {
             Self::Prefix(literal) => subject.starts_with(literal),
             Self::Suffix(literal) => subject.ends_with(literal),
             Self::Exact(literal) => subject == literal,
-            Self::WordPressDbHostIpv4 | Self::WordPressDbHostIpv6 => {
-                self.captures(subject).is_some()
-            }
+            Self::WordPressDbHostIpv4
+            | Self::WordPressDbHostIpv6
+            | Self::WordPressTablePrefixInvalidChar => self.captures(subject).is_some(),
         }
     }
 
@@ -10854,6 +10858,7 @@ impl BoundedPregPattern {
             Self::Exact(literal) if subject == literal => Some(preg_match_single_capture(subject)),
             Self::WordPressDbHostIpv4 => wordpress_db_host_ipv4_captures(subject),
             Self::WordPressDbHostIpv6 => wordpress_db_host_ipv6_captures(subject),
+            Self::WordPressTablePrefixInvalidChar => wordpress_table_prefix_invalid_char(subject),
             _ => None,
         }
     }
@@ -10875,6 +10880,13 @@ fn wordpress_db_host_match_array(full: &str, host: &str, port: Option<&str>) -> 
         matches.insert(2, Value::String(port.to_string()));
     }
     matches
+}
+
+fn wordpress_table_prefix_invalid_char(subject: &str) -> Option<PhpArray> {
+    let invalid = subject
+        .chars()
+        .find(|ch| !matches!(ch, '_' | '0'..='9' | 'a'..='z' | 'A'..='Z'))?;
+    Some(preg_match_single_capture(&invalid.to_string()))
 }
 
 fn wordpress_db_host_ipv4_captures(subject: &str) -> Option<PhpArray> {

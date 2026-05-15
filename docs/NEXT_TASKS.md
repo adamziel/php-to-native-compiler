@@ -7427,15 +7427,25 @@ handled.
   shim before requiring `wp-settings.php`, proves the synthetic included-file
   path can see it, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1006:8: unsupported call preg_match(): only slash-delimited patterns are implemented in the current subset`.
-- [ ] Runtime/regex lane: widen bounded `preg_match()` for the reached
+- [x] Runtime/regex lane: widen bounded `preg_match()` for the reached
   WordPress startup pattern delimiter shape while keeping broad PCRE syntax,
   callbacks, flags/offsets beyond the existing slice, exact warnings, and
   native lowering named unless implemented.
+  Milestone 810 recognizes the exact WordPress table-prefix validation pattern
+  `|[^a-z0-9_]|i`, returns no match for conventional prefixes such as `wp_`,
+  and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1034:5: undefined property wpdb::$categories`.
+- [ ] Runtime/object lane: model the reached `wpdb::$categories` table-name
+  initialization state without hiding broader object-property semantics. Start
+  from the `wpdb::tables('old')` path reached after `set_prefix()`, and keep
+  dynamic properties, declared/default property initialization, visibility,
+  references/copy-on-write, exact diagnostics, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 809 checkpoint, the latest committed checkpoint
-  is `0e56bc7 runtime: add bounded mysqli select db`, covering Milestone 808.
+- Before the current Milestone 810 checkpoint, the latest committed checkpoint
+  is `a5493b1 tools: seed wordpress table prefix shim`, covering Milestone 809.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

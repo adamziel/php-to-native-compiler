@@ -582,7 +582,10 @@
   populate match `0`, failed matches clear the variable to an empty array, and
   the two exact WordPress `wpdb::parse_db_host()` named-capture patterns
   populate `0`, `host`/`1`, and optional `port`/`2` entries for the current
-  IPv4-ish and bracketed IPv6-ish startup paths. Non-direct matches outputs,
+  IPv4-ish and bracketed IPv6-ish startup paths. The exact WordPress table
+  prefix validation pattern `|[^a-z0-9_]|i` is also supported, returning a
+  match for the first non-alphanumeric/non-underscore character and no match
+  for conventional prefixes such as `wp_`. Non-direct matches outputs,
   flags, offsets, optional unmatched-group fidelity, broad named-capture
   support, full PCRE syntax, modifiers other than `u`, invalid-pattern
   warnings, byte/Unicode edge cases, broad coercions, exact diagnostics, and
@@ -4228,12 +4231,14 @@
   encoding-sensitive edge cases beyond represented runtime strings, exact PHP
   diagnostics, and native lowering beyond function-table introspection
 - `preg_match()` outside the current slash-delimited literal
-  contains/prefix/suffix/exact pattern subset and the two exact WordPress
-  db-host named-capture patterns: non-direct matches outputs, flags, offsets,
+  contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
+  named-capture patterns, and the exact WordPress table-prefix validation
+  pattern `|[^a-z0-9_]|i`: non-direct matches outputs, flags, offsets,
   optional unmatched-group fidelity, broad capture-group behavior, full PCRE
-  syntax, modifiers other than `u`, invalid-pattern warnings, byte/Unicode
-  behavior beyond the current valid UTF-8 string model, broad coercions, exact
-  diagnostics, and native lowering beyond function-table introspection
+  syntax, modifiers other than `u` outside the table-prefix guard,
+  invalid-pattern warnings, byte/Unicode behavior beyond the current valid
+  UTF-8 string model, broad coercions, exact diagnostics, and native lowering
+  beyond function-table introspection
 - `preg_replace()` outside the exact WordPress database-version cleanup pattern
   `/[^0-9.].*/` with an empty replacement and scalar/null subject:
   pattern/replacement arrays, subject arrays, non-empty replacements,

@@ -965,6 +965,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not real `wp-config.php` loading, database credentials, salts/keys,
   multisite table-prefix validation, host-specific settings, native lowering,
   or WordPress bootstrap support.
+  Milestone 810 implements the exact WordPress table-prefix validation
+  `preg_match()` guard `|[^a-z0-9_]|i`, returning no match for conventional
+  prefixes such as `wp_` and a match for the first invalid character. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:1034:5: undefined property wpdb::$categories`.
+  This is not arbitrary regex delimiter support, broad character-class or
+  case-insensitive PCRE behavior, invalid-pattern warnings, native regex
+  lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
