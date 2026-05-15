@@ -155,7 +155,11 @@ current placeholder database and CLI assumptions. Milestone 851 committed a
 synthetic normalized front-controller smoke for that path. Milestone 852 added
 the first placeholder empty `mysqli_result` lifecycle boundary, and Milestone
 853 added a synthetic `wpdb::query()` smoke that stores, fetches, frees, and
-drains that empty result through WordPress-shaped object state. These are
+drains that empty result through WordPress-shaped object state. Milestones 854
+through 860 then moved the database-consumption smoke from an explicit
+non-empty-`SELECT` boundary into one deterministic seed-post row exposed through
+object, associative, and explicit `MYSQLI_ASSOC` fetch-array paths, plus
+synthetic `wpdb::get_results()` harnesses for those row shapes. These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
 or native WordPress compatibility.

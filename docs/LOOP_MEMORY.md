@@ -29,6 +29,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `d6dc445 runtime: add wordpress mysqli fetch array assoc`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 860, a synthetic WordPress-shaped
+  `wpdb::get_results($query, ARRAY_A)` smoke that consumes the deterministic
+  seed-post placeholder result through `mysqli_fetch_array($result,
+  MYSQLI_ASSOC)`.
+- Files changed so far: `tests/fixtures/milestone860/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone860`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb::get_results(..., ARRAY_A)`
+  path can now use the explicit `mysqli_fetch_array(..., MYSQLI_ASSOC)`
+  compatibility branch to store one deterministic associative placeholder post
+  row in `last_result`, update `num_rows`, free the placeholder result, and
+  drain placeholder multi-result state.
+- Remaining semantic gaps: real WordPress `wpdb` output-mode fidelity, numeric
+  and mixed `mysqli_fetch_array()` modes, SQL execution, database state, query
+  parsing, cache behavior, post/content fidelity, warnings/errors, and native
+  database lowering remain missing.
+- Next concrete task: run whitespace checks, then use the full serialized
+  checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `5e3c39e tests: add wordpress wpdb associative row smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 859, bounded

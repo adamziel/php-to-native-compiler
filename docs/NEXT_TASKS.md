@@ -7906,16 +7906,29 @@ handled.
   `MYSQLI_ASSOC`/`MYSQLI_NUM`/`MYSQLI_BOTH` constants. Omitted-mode
   `MYSQLI_BOTH`, numeric rows, and mixed rows remain named unsupported
   boundaries.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises a
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises a
   fallback or compatibility path using `mysqli_fetch_array($result,
   MYSQLI_ASSOC)` without claiming real `wpdb` output-mode fidelity or real
   database support.
+  Milestone 860 adds a `phpc-only` synthetic `wpdb::get_results($query,
+  ARRAY_A)` fixture that consumes the exact seed-post placeholder result
+  through `mysqli_fetch_array($result, MYSQLI_ASSOC)`, stores the associative
+  row in `$this->last_result`, increments `$this->num_rows`, frees the
+  placeholder result, and drains placeholder multi-result state. It is not
+  real WordPress `wpdb` output-mode fidelity, numeric or mixed fetch-array
+  support, SQL execution, database state, cache behavior, warnings/errors, or
+  native lowering.
+- [ ] Runtime/mysqli lane: add the next deterministic result-fetch slice or a
+  sharper named boundary after `MYSQLI_ASSOC` fetch-array support, such as
+  `mysqli_fetch_array($result, MYSQLI_NUM)`/`MYSQLI_BOTH` for the seed-post
+  placeholder row or a deliberately scoped `mysqli_data_seek()`/cursor-reset
+  boundary, with tests, CLI coverage, docs, and unsupported edges.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5e3c39e tests: add wordpress wpdb associative row smoke`, covering
-  Milestone 858 before the current Milestone 859 candidate.
+  `d6dc445 runtime: add wordpress mysqli fetch array assoc`, covering
+  Milestone 859 before the current Milestone 860 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
