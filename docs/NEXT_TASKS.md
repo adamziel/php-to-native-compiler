@@ -8110,15 +8110,25 @@ handled.
   runtime and native metadata lookup. This is not real server status, live
   connection inspection, query counters, thread/table metadata, host database
   integration, warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records
   deterministic `mysqli_stat()` output through WordPress-shaped connection
   status bookkeeping without claiming real server status or counters.
+  Milestone 880 adds a `phpc-only` synthetic `wpdb` fixture that calls
+  `mysqli_stat($this->dbh)`, records the deterministic zeroed status string on
+  local object state, and records that the status check ran. It is not real
+  WordPress server-status fidelity, live connection inspection, query counters,
+  thread/table metadata, host database integration, warnings/errors, or native
+  lowering.
+- [ ] Runtime/mysqli lane: inspect the next database boundary after
+  placeholder server metadata and choose a small tested slice, such as a named
+  `mysqli_autocommit()`/transaction boundary or deterministic placeholder
+  error-state metadata, before broader SQL execution is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `4e15419 tests: add wordpress wpdb host info smoke`, covering Milestone 878
-  before the current Milestone 879 candidate.
+  `63956d1 runtime: add mysqli stat placeholder`, covering Milestone 879
+  before the current Milestone 880 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

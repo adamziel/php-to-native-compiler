@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `63956d1 runtime: add mysqli stat placeholder`, pushed to `origin/master`.
+- Task attempted: Milestone 880, a synthetic WordPress-shaped `wpdb`
+  server-status metadata smoke over deterministic `mysqli_stat()` placeholder
+  output.
+- Files changed so far: `tests/fixtures/milestone880/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone880`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection status path can
+  now record deterministic placeholder server-status metadata.
+- Remaining semantic gaps: real server-status fidelity, live connection
+  inspection, query counters, thread/table metadata, host database integration,
+  warning/error fidelity, real WordPress `wpdb` fidelity, and native database
+  lowering remain missing.
+- Next concrete task: run whitespace checks and the serialized checkpoint gate
+  under `umask 0022`; after checkpoint, inspect the next MySQLi transaction or
+  error-state boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `4e15419 tests: add wordpress wpdb host info smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 879, bounded `mysqli_stat()` placeholder metadata

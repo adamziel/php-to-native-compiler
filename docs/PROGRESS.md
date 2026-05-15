@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 880, a synthetic WordPress-shaped `wpdb` server-status
+  metadata smoke that calls the bounded `mysqli_stat($this->dbh)` placeholder
+  path, records deterministic zeroed status metadata on local object state, and
+  verifies that the status check ran. This is a harness smoke only; it does not
+  add real WordPress server-status fidelity, live connection inspection, query
+  counters, thread/table metadata, host database integration, warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone880`.
+
 - Added Milestone 879, bounded `mysqli_stat()` support for placeholder MySQLi
   handles. The runtime now accepts `mysqli_stat($handle)` for current
   placeholder `mysqli` objects, returns deterministic zeroed server-status
