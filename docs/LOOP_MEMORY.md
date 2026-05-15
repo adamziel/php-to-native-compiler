@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T23:40:00Z
+
+- Checkpoint before this task:
+  `a6e3e10 parser: bound object-property array reference targets`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 754, by-reference function and method return
+  declarations as a runtime boundary.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone754/reference_return_method_*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone754`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: by-reference return declarations only parse and
+  register as runtime boundaries. Invocation reports
+  `unsupported call <name>(): reference returns are not implemented`. Real PHP
+  reference values, alias-backed return slots, by-reference parameter
+  invocation, copy-on-write, unset alias behavior, exact diagnostics, and
+  native lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:15:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
+- Next concrete task: implement or explicitly bound class modifiers for
+  `abstract`, `final`, and `readonly` class declarations, then rerun the
+  WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T23:15:00Z
 
 - Checkpoint before this task:

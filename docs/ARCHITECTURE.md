@@ -154,6 +154,10 @@ plus direct object-property array-offset targets.
 It deliberately does not add a `Reference` runtime value or alias-backed symbol-table slots.
 The current value model remains boxed values in materialized symbol tables; PHP
 reference containers and copy-on-write remain future runtime work.
+By-reference function and method return declarations are represented as
+function metadata so declaration-contained code can register, but invoking such
+a function or method reports a stable runtime boundary before any return value
+or alias binding is produced.
 By-reference `foreach` value syntax is likewise represented only far enough to
 preserve a stable runtime boundary when reached; it does not mutate array slots
 through aliases, preserve lingering loop-variable references, or implement PHP

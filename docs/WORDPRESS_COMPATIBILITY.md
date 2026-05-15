@@ -482,6 +482,18 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `public function &make_entry( $original, $translation )`. This is not
   by-reference return support, real PHP alias/reference semantics,
   copy-on-write, exact PHP diagnostics, or WordPress bootstrap support.
+  Milestone 754 parses by-reference function and method return declarations as
+  runtime boundaries. After that slice, the direct `wp-settings.php` probe
+  still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:15:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
+  This is not abstract/final/readonly class support, abstract-method
+  enforcement, final inheritance/method enforcement, readonly class semantics,
+  real PHP alias/reference semantics, copy-on-write, exact PHP diagnostics, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

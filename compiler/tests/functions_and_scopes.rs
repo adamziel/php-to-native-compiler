@@ -749,20 +749,79 @@ class Box {
 }
 
 #[test]
-fn reference_returns_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn reference_return_declarations_inside_unexecuted_body_are_registered() {
+    let execution = run_source(
         r#"<?php
 function &identity($value) {
     return $value;
 }
+echo "registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_return_invocation_reports_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+function &identity($value) {
+    return $value;
+}
+echo identity(1);
 "#,
     );
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 10);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported reference return: returning functions by reference is not implemented"
+        "unsupported call identity(): reference returns are not implemented"
+    );
+}
+
+#[test]
+fn reference_return_methods_inside_unexecuted_class_are_registered() {
+    let execution = run_source(
+        r#"<?php
+class Factory {
+    public function &make() {
+        $value = 1;
+        return $value;
+    }
+}
+echo "loaded";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "loaded");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_return_method_invocation_reports_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+class Factory {
+    public function &make() {
+        $value = 1;
+        return $value;
+    }
+}
+$factory = new Factory();
+echo $factory->make();
+"#,
+    );
+
+    assert_eq!(error.line, 9);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call make(): reference returns are not implemented"
     );
 }
 

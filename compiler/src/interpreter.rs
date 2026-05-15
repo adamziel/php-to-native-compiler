@@ -9272,6 +9272,16 @@ fn ensure_user_function_arity(
 }
 
 fn ensure_supported_function_signature(function: &FunctionDecl, span: Span) -> CompileResult<()> {
+    if function.returns_by_reference {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(&function.name),
+                "reference returns are not implemented",
+            ),
+        ));
+    }
+
     if function.params.iter().any(|param| param.by_reference) {
         return Err(runtime_error(
             span,

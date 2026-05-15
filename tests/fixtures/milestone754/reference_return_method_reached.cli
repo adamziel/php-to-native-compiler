@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+runtime error at tests/fixtures/milestone754/reference_return_method_reached.php:9:6: unsupported call make_entry(): reference returns are not implemented
+--- stderr end ---

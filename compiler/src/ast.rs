@@ -521,6 +521,7 @@ pub struct FunctionDecl {
     pub name: String,
     pub params: Vec<FunctionParam>,
     pub return_type: Option<TypeDecl>,
+    pub returns_by_reference: bool,
     pub body: Vec<Stmt>,
     pub span: Span,
 }

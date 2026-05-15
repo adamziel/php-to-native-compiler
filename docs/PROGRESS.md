@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 754, by-reference function and method return declarations as
+  a runtime boundary. The parser now accepts declarations such as
+  `function &identity(...)` and `public function &make_entry(...)` so guarded
+  or declaration-contained WordPress code can be registered without
+  implementing PHP reference-return binding. If execution invokes one of these
+  functions or methods, `phpc run` reports `unsupported call <name>(): reference
+  returns are not implemented`. Real PHP reference values, alias-backed return
+  slots, by-reference parameter invocation, copy-on-write, unset alias
+  behavior, exact PHP diagnostics, and native lowering remain unsupported. The
+  real WordPress 6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:319:19` reference-return blocker in
+  `wp-includes/pomo/mo.php` to
+  `parse error at <bootstrap-shim>:15:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_return -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone754`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 753, by-reference assignment syntax into direct
   object-property array-offset targets as a runtime boundary. The parser now
   accepts targets such as `$this->entries[$key] =& $entry` in statement

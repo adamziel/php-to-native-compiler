@@ -157,13 +157,7 @@ impl Parser {
         start: Span,
         resolve_namespace: bool,
     ) -> CompileResult<FunctionDecl> {
-        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
-            let span = self.advance().span;
-            return Err(self.error_at(
-                span,
-                "unsupported reference return: returning functions by reference is not implemented",
-            ));
-        }
+        let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         let name = self.consume_identifier("expected function name")?;
         let name = if resolve_namespace {
             self.resolve_function_declaration_name(&name)
@@ -187,6 +181,7 @@ impl Parser {
             name,
             params,
             return_type,
+            returns_by_reference,
             body,
             span: start,
         })
@@ -435,13 +430,7 @@ impl Parser {
         &mut self,
         start: Span,
     ) -> CompileResult<FunctionDecl> {
-        if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
-            let span = self.advance().span;
-            return Err(self.error_at(
-                span,
-                "unsupported reference return: returning functions by reference is not implemented",
-            ));
-        }
+        let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         let name = self.consume_identifier("expected function name")?;
         self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_function_params_after_open()?;
@@ -455,6 +444,7 @@ impl Parser {
             name,
             params,
             return_type,
+            returns_by_reference,
             body: Vec::new(),
             span: start,
         })

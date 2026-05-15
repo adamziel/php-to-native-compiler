@@ -6894,17 +6894,25 @@ handled.
   `wp-includes/pomo/mo.php`. Milestone 753 parses this direct target shape as
   the existing runtime boundary and advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:319:19: unsupported reference return: returning functions by reference is not implemented`.
-- [ ] Parser/reference lane: implement or explicitly bound by-reference
+- [x] Parser/reference lane: implement or explicitly bound by-reference
   method returns for the next real WordPress bootstrap-shim blocker at
   `<bootstrap-shim>:319:19`, corresponding to
   `public function &make_entry( $original, $translation )` in
-  `wp-includes/pomo/mo.php`.
+  `wp-includes/pomo/mo.php`. Milestone 754 parses by-reference function and
+  method return declarations as runtime boundaries and advances the real
+  bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:15:1: unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
+- [ ] Parser/object lane: implement or explicitly bound class modifiers for
+  the next real WordPress bootstrap-shim blocker at `<bootstrap-shim>:15:1`.
+  The first target is parser registration for `abstract` and `final` class
+  declarations without claiming abstract-method enforcement, final
+  inheritance/method enforcement, readonly class semantics, or native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 753 checkpoint, the latest committed checkpoint
-  is `66e0715 parser: bound method-call reference sources`, covering
-  Milestone 752.
+- Before the current Milestone 754 checkpoint, the latest committed checkpoint
+  is `a6e3e10 parser: bound object-property array reference targets`, covering
+  Milestone 753.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -257,10 +257,10 @@ blocker is now by-reference assignment into an object-property array-offset
 target at `<bootstrap-shim>:302:38`, corresponding to
 `$this->entries[ $entry->key() ] = &$entry;` in `wp-includes/pomo/mo.php`.
 Milestone 753 then parsed that direct target shape as the existing runtime
-boundary; the current bootstrap-shim blocker is now a by-reference method
-return at `<bootstrap-shim>:319:19`, corresponding to
-`public function &make_entry( $original, $translation )` in
-`wp-includes/pomo/mo.php`.
+boundary. Milestone 754 then parsed by-reference function and method return
+declarations as runtime boundaries; the current bootstrap-shim blocker is now
+class modifiers at `<bootstrap-shim>:15:1`, reported as
+`unsupported class modifier: abstract, final, and readonly class modifiers are not implemented`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -390,9 +390,9 @@ The repository already has a working Rust workspace with:
   nested direct-variable array-offset `unset(...)`, and untyped instance
   property defaults for the current constant-expression subset, plus
   by-reference assignment from method-call sources and into direct
-  object-property array-offset targets as the same runtime boundary. The next
-  bottleneck is a by-reference method return in the
-  WordPress bootstrap shim.
+  object-property array-offset targets as the same runtime boundary, and
+  by-reference function/method return declarations as runtime boundaries. The
+  next bottleneck is class modifiers in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

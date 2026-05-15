@@ -22,6 +22,12 @@
 - direct variable removal: `unset($name)` removes static variables from the
   current scope and treats undefined names as no-ops; `unset(...)` may include
   multiple supported operands and executes them left to right
+- by-reference function and method return declarations such as
+  `function &identity(...)` and `public function &make(...)` parse as runtime
+  boundaries. Guarded or declaration-contained declarations can be loaded, but
+  if execution invokes one of them, `phpc run` reports `unsupported call
+  <name>(): reference returns are not implemented`. This does not create PHP
+  reference-return binding, alias cells, or copy-on-write containers.
 - by-reference assignment syntax `$alias =& $value;`,
   `$alias =& $array[$key];`, `$alias =& $object->method();`, and direct
   object-property array-offset targets such as `$object->items[$key] =& $value`
@@ -32,7 +38,7 @@
   declaration-contained code can be loaded, but if execution reaches the
   assignment, `phpc run` reports `unsupported call reference assignment:
   references and aliasing are not implemented`. This does not create PHP
-  aliases, by-reference returns, or reference containers.
+  aliases or reference containers.
 - assignment statements, plus expression-position direct static-variable
   assignment `$name = expr` and direct array-offset assignment
   `$array[$key] = expr`, and direct public object-property assignment
