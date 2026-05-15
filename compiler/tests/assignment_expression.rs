@@ -169,6 +169,40 @@ echo ($items[] = rhs_value()), ":", $items[2], "\n";
 }
 
 #[test]
+fn append_at_depth_assignment_expressions_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+$submenu = [];
+echo ($submenu['themes.php'][] = 'widgets'), ":", $submenu['themes.php'][0], "\n";
+echo ($submenu['themes.php'][] = 'customize'), ":", $submenu['themes.php'][1], "\n";
+
+$created = [];
+echo ($created['outer']['inner'][] = 'made'), ":", $created['outer']['inner'][0], "\n";
+
+$nullable = ['slot' => null];
+echo ($nullable['slot'][] = 'null-made'), ":", $nullable['slot'][0], "\n";
+
+function path_key() {
+    echo "key\n";
+    return "path";
+}
+function rhs_value() {
+    echo "rhs\n";
+    return "value";
+}
+$items = [];
+echo ($items[path_key()][] = rhs_value()), ":", $items["path"][0], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "widgets:widgets\ncustomize:customize\nmade:made\nnull-made:null-made\nkey\nrhs\nvalue:value\n"
+    );
+}
+
+#[test]
 fn array_offset_assignment_expression_evaluates_key_before_rhs() {
     let execution = run_source(
         r#"<?php
@@ -218,6 +252,25 @@ echo ($value[] = rhs_value());
 
     assert_eq!(error.phase, Phase::Runtime);
     assert_eq!(error.line, 7);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot write offset on int"
+    );
+}
+
+#[test]
+fn append_at_depth_assignment_expression_rejects_non_array_intermediate_values() {
+    let error = run_source(
+        r#"<?php
+$items = ["outer" => 1];
+echo ($items["outer"][] = "x");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
     assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
@@ -438,7 +491,7 @@ fn assignment_expression_rejects_complex_targets() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented"
+            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented"
         );
     }
 }
@@ -473,6 +526,14 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
 
     let error = emit_ir_source("<?php\n$items = 1;\necho ($items['outer']['inner'] = 'value');\n")
         .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+
+    let error =
+        emit_ir_source("<?php\n$items = 1;\necho ($items['outer'][] = 'value');\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);

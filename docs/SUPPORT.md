@@ -45,7 +45,12 @@
   return the assigned value. Direct append-offset assignment expressions
   evaluate the right-hand expression, append to direct array variables,
   materialize undefined or `null` target variables as arrays, and return the
-  appended value. Direct object-property assignment expressions evaluate the
+  appended value. Append-at-depth assignment expressions such as
+  `$array[$outer][] = expr` and `$array[$outer][$inner][] = expr` evaluate all
+  path index expressions left to right before the right-hand expression,
+  materialize undefined, missing, or `null` array containers under the current
+  no-reference/no-copy-on-write model, append to the final nested array, and
+  return the appended value. Direct object-property assignment expressions evaluate the
   right-hand expression, then write existing declared public property slots on
   direct object variables. Dynamic property-name reads and direct assignment
   expressions such as `$object->$name` and `$object->$name = expr` are
@@ -663,8 +668,10 @@
 - explicit parse diagnostics for unsupported unparenthesized nested ternary
   expressions
 - explicit parse diagnostics for unsupported assignment-expression forms
-  outside direct static-variable `$name = expr`, including append-offset
-  chained assignments and complex/nested targets
+  outside the documented direct-variable, direct/nested array-offset,
+  append/append-at-depth, direct object-property, and supported static-property
+  target subset, including append-offset chained assignments and complex mixed
+  object/property/ArrayAccess targets
 - explicit parse diagnostics for unsupported compound assignment targets
   outside direct static variables, direct array offsets, direct object
   properties, and supported static properties
@@ -2960,7 +2967,9 @@
   alternate switch bodies, and exponentiation syntax `**`/`**=` are rejected
   with stable parse diagnostics; object property removal, append-offset unset,
   and nested/complex unset operands are not implemented.
-  Nested indexed writes, complex assignment lvalues, nested/complex
+  Complex assignment lvalues outside the documented direct-variable,
+  direct/nested array-offset, append/append-at-depth, direct object-property,
+  and supported static-property target subset, nested/complex
   `isset(...)` and `empty(...)` array offset operands, native
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop

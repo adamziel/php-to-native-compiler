@@ -6858,16 +6858,24 @@ handled.
   748 accepts `$alias =& $array[$key];` as a runtime boundary and advances the
   real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:5463:28: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
-- [ ] Arrays/value-model lane: implement or explicitly bound append-at-depth
+- [x] Arrays/value-model lane: implement or explicitly bound append-at-depth
   assignment expressions for the next real WordPress bootstrap-shim blocker at
   `<bootstrap-shim>:5463:28`, corresponding to
-  `$submenu['themes.php'][] = ...` in `wp-includes/functions.php`.
+  `$submenu['themes.php'][] = ...` in `wp-includes/functions.php`. Milestone
+  749 implements append-at-depth assignment for direct-variable nested array
+  paths and advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:3149:47: unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented`.
+- [ ] Arrays/value-model lane: implement or explicitly bound nested
+  direct-variable array-offset `unset(...)` for the next real WordPress
+  bootstrap-shim blocker at `<bootstrap-shim>:3149:47`, corresponding to
+  `unset( $new_allowed_options[ $option_group ][ $pos ] );` in
+  `wp-includes/option.php`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 748 checkpoint, the latest committed checkpoint
-  is `77ae789 parser: bound by-reference foreach syntax`, covering Milestone
-  747.
+- Before the current Milestone 749 checkpoint, the latest committed checkpoint
+  is `edd19d8 parser: bound array reference assignment source`, covering
+  Milestone 748.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -26,6 +26,43 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T21:25:00Z
+
+- Checkpoint before this task:
+  `edd19d8 parser: bound array reference assignment source`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 749, append-at-depth assignment expressions for
+  direct-variable nested array paths.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `tests/fixtures/unsupported_syntax_features/unsupported_assignment_expression.*`,
+  `tests/fixtures/milestone749/append_at_depth_assignment.*`,
+  `tests/fixtures/milestone749/append_at_depth_non_array.*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test assignment_expression -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_expression_position_assignment_forms -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone749`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: append-at-depth is limited to direct-variable
+  nested array paths and current no-reference/no-copy-on-write container
+  materialization. Append after append intermediates, mixed object/property or
+  ArrayAccess paths, nested compound assignment, nested `??=`, nested
+  increment/decrement, references/copy-on-write, exact diagnostics, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:3149:47: unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented`,
+  corresponding to `unset( $new_allowed_options[ $option_group ][ $pos ] );`.
+- Next concrete task: implement or explicitly bound nested direct-variable
+  array-offset `unset(...)`, then rerun the WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T20:55:00Z
 
 - Checkpoint before this task:

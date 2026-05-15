@@ -57,12 +57,13 @@ close-tag newline behavior for the covered fixtures.
 
 Assignment targets are intentionally narrower than expression reads. Direct
 variables, direct array offsets, direct append offsets, direct object
-properties, selected static properties, and direct-variable nested array offset
-paths have explicit AST targets. The nested array target keeps a variable root
-plus evaluated index expressions so the interpreter can materialize missing
-array containers under the current no-reference/no-copy-on-write model. Mixed
-object/property/ArrayAccess paths, append-at-depth, and nested read-modify-write
-forms remain explicit boundaries.
+properties, selected static properties, direct-variable nested array offset
+paths, and direct-variable append-at-depth paths have explicit AST targets. The
+nested array targets keep a variable root plus evaluated index expressions so
+the interpreter can materialize missing array containers under the current
+no-reference/no-copy-on-write model. Mixed object/property/ArrayAccess paths,
+append after an append intermediate, and nested read-modify-write forms remain
+explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, array-offset, object-property, and

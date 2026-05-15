@@ -419,6 +419,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `$submenu['themes.php'][]`. This is not executable reference assignment,
   append-at-depth support, nested assignment support, copy-on-write, or
   WordPress bootstrap support.
+  Milestone 749 implements append-at-depth assignment expressions for
+  direct-variable nested array paths such as `$array[$key][] = expr` and
+  `$array[$outer][$inner][] = expr`. After that slice, the direct
+  `wp-settings.php` probe still reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:3149:47: unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented`,
+  corresponding to `wp-includes/option.php` and
+  `unset( $new_allowed_options[ $option_group ][ $pos ] );`. This is not
+  nested `unset`, copy-on-write, exact PHP warning/fatal behavior, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

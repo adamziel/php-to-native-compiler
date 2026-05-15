@@ -1888,6 +1888,7 @@ impl Parser {
                     | AssignTarget::ParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. } => {}
                     AssignTarget::NestedArrayIndex { .. }
+                    | AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
@@ -2085,6 +2086,7 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
@@ -2105,6 +2107,7 @@ impl Parser {
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
@@ -2245,6 +2248,15 @@ impl Parser {
                     index: None,
                     span,
                 }),
+                nested @ Expr::Index { .. } => {
+                    let (name, indices, _) = Self::array_index_path_from_expr(nested)
+                        .ok_or(unsupported_assignment_expression_target_message())?;
+                    Ok(AssignTarget::NestedArrayAppend {
+                        name,
+                        indices,
+                        span,
+                    })
+                }
                 _ => Err(unsupported_assignment_expression_target_message()),
             },
             Expr::Property {
@@ -4224,6 +4236,7 @@ impl Parser {
                 matches!(
                     target.as_ref(),
                     AssignTarget::ArrayIndex { index: None, .. }
+                        | AssignTarget::NestedArrayAppend { .. }
                 ) || Self::expr_contains_unsupported_assignment_rhs(expr)
             }
             Expr::CompoundAssign { expr, .. } | Expr::NullCoalesceAssign { expr, .. } => {
@@ -5115,7 +5128,7 @@ fn unsupported_assignment_expression_message() -> &'static str {
 }
 
 fn unsupported_assignment_expression_target_message() -> &'static str {
-    "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented"
+    "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented"
 }
 
 fn unsupported_chained_assignment_expression_message() -> &'static str {

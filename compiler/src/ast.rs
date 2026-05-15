@@ -262,6 +262,11 @@ pub enum AssignTarget {
         indices: Vec<Expr>,
         span: Span,
     },
+    NestedArrayAppend {
+        name: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     Property {
         object: String,
         property: String,
@@ -398,6 +403,7 @@ impl AssignTarget {
             | AssignTarget::List { span, .. }
             | AssignTarget::ArrayIndex { span, .. }
             | AssignTarget::NestedArrayIndex { span, .. }
+            | AssignTarget::NestedArrayAppend { span, .. }
             | AssignTarget::Property { span, .. }
             | AssignTarget::DynamicProperty { span, .. }
             | AssignTarget::StaticProperty { span, .. }

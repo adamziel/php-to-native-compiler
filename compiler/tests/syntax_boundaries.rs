@@ -935,7 +935,7 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "<?php\n$items = [];\necho ($items[]['inner'] = 'value');\n",
             3,
             25,
-            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented",
+            "unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, nested array offsets, append-at-depth targets, and direct object properties are implemented",
         ),
         (
             "<?php\n$items = [];\necho ($items[] ??= 'value');\n",

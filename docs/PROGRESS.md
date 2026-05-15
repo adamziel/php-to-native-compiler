@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 749, append-at-depth assignment expressions for the current
+  direct-variable nested array path. The parser now accepts targets such as
+  `$array[$outer][] = expr` and `$array[$outer][$inner][] = expr`, and the
+  interpreter evaluates path keys left to right before the right-hand
+  expression, materializes undefined, missing, or `null` array containers, and
+  appends to the final nested array while returning the assigned value.
+  Non-array intermediate values still report a stable invalid-array-access
+  runtime diagnostic. Mixed object/property/ArrayAccess paths, append after an
+  append intermediate such as `$array[]['key']`, nested compound assignment,
+  nested `??=`, nested increment/decrement, references/copy-on-write, exact PHP
+  warning behavior, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:5463:28` append-at-depth blocker to
+  `parse error at <bootstrap-shim>:3149:47: unsupported unset: only direct variables like unset($name), direct array offset removal like unset($array[$key]), and direct static property operands like unset(ClassName::$property) are implemented; object property, append, and nested unset forms are not implemented`,
+  corresponding to `wp-includes/option.php` and
+  `unset( $new_allowed_options[ $option_group ][ $pos ] );`. Direct
+  `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test assignment_expression -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_expression_position_assignment_forms -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone749`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 748, statement-form by-reference assignment syntax from
   direct array-offset sources as a runtime boundary. The parser now accepts
   `$alias =& $array[$key];` in statement position, including inside guarded or
