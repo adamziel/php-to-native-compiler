@@ -925,6 +925,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full PCRE replacement behavior, arrays, callbacks, limit/count
   output, invalid-pattern warnings, exact diagnostics, native lowering, real
   database server metadata, or WordPress bootstrap support.
+  Milestone 805 implements bounded `mysqli_get_server_info()` for the
+  placeholder `mysqli` object and returns deterministic
+  `8.0.0-phpc-placeholder` server info. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:904:10: undefined function compact()`.
+  This is not real server negotiation, connection-state validation, host I/O,
+  extension resources, query/result behavior, exact diagnostics, native
+  database lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

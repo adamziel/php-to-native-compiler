@@ -7375,17 +7375,27 @@ handled.
   returning the leading ASCII digits/dots prefix, and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:4149:10: undefined function mysqli_get_server_info()`.
-- [ ] Runtime/database lane: add bounded `mysqli_get_server_info()` support for
+- [x] Runtime/database lane: add bounded `mysqli_get_server_info()` support for
   the reached WordPress `wpdb::db_server_info()` path. Prefer a deterministic
   placeholder server-version string tied to the current fake mysqli connection
   boundary; keep real server negotiation, host I/O, extension resources,
   connection-state validation, errors/warnings, exact diagnostics, and native
   database lowering named unless implemented.
+  Milestone 805 returns deterministic placeholder server info
+  `8.0.0-phpc-placeholder` for the placeholder `mysqli` object and advances
+  the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:904:10: undefined function compact()`.
+- [ ] Runtime/array-symbol lane: add bounded `compact()` support for the
+  reached WordPress startup path. Start with direct string variable-name
+  arguments over the current symbol table, preserve PHP-shaped omission of
+  missing names if implemented, and keep array arguments, nested arrays,
+  invalid names, warning behavior, variable-variable interactions, exact
+  diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 804 checkpoint, the latest committed checkpoint
-  is `e660bdf runtime: add bounded mysqli real connect`, covering Milestone 803.
+- Before the current Milestone 805 checkpoint, the latest committed checkpoint
+  is `349bca3 runtime: add bounded preg_replace`, covering Milestone 804.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

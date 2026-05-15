@@ -107,7 +107,7 @@ mode call, the reached `mysqli_init()` handle creation, bounded `strpos()`
 and `substr_count()` matching, the reached `preg_match()` matches-output path,
 the reached `mysqli_real_connect()` placeholder-success path, and the reached
 `preg_replace()` database-version cleanup path; it now stops at
-`mysqli_get_server_info()`.
+`compact()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -361,8 +361,9 @@ bounded `preg_match()` direct matches-output support for the reached
 `parse_db_host()` path. Milestone 803 added bounded deterministic
 `mysqli_real_connect()` success for the current placeholder handle. The current
 Milestone 804 added bounded `preg_replace()` support for the reached database
-version cleanup path. The current frontier is now `mysqli_get_server_info()`
-in WordPress startup.
+version cleanup path. Milestone 805 added deterministic
+`mysqli_get_server_info()` placeholder server metadata for the current fake
+mysqli handle. The current frontier is now `compact()` in WordPress startup.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -522,8 +523,7 @@ The repository already has a working Rust workspace with:
   bounded `preg_match()` direct matches-output support for the reached
   db-host parse path, and bounded `mysqli_real_connect()` deterministic
   placeholder success, and bounded `preg_replace()` database-version cleanup.
-  The next bottleneck is `mysqli_get_server_info()` in the WordPress bootstrap
-  shim.
+  The next bottleneck is `compact()` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

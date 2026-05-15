@@ -3824,6 +3824,36 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_get_server_info(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_server_info", args, 1, span)?;
+        let Value::Object(handle) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_get_server_info()",
+                    format!(
+                        "argument must be mysqli object in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_get_server_info()",
+                    format!(
+                        "argument must be mysqli object in the current subset, got {} object",
+                        handle.class_name()
+                    ),
+                ),
+            ));
+        }
+
+        Ok(Value::String("8.0.0-phpc-placeholder".to_string()))
+    }
+
     fn evaluate_array_index(
         &mut self,
         target: &Expr,
@@ -7452,6 +7482,7 @@ impl Interpreter {
                 ),
             )),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
+            "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -10038,6 +10069,7 @@ fn is_builtin(name: &str) -> bool {
             | "extension_loaded"
             | "mysqli_connect"
             | "mysqli_real_connect"
+            | "mysqli_get_server_info"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"

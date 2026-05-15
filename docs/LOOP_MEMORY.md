@@ -26,6 +26,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T12:58:00Z
+
+- Checkpoint before this task:
+  `349bca3 runtime: add bounded preg_replace`, pushed to `origin/master`.
+- Task attempted: Milestone 805, bounded `mysqli_get_server_info()` support for
+  the reached WordPress `wpdb::db_server_info()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone805/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/extensions/mysqli.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone805`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:904:10: undefined function compact()`.
+- Remaining semantic gaps: real server negotiation, connection-state
+  validation, host I/O, extension resources, query/result behavior, real server
+  metadata, warning/error routing, exact PHP diagnostics, PDO, and native
+  database lowering remain unsupported.
+- Next concrete task: add bounded `compact()` support for the reached WordPress
+  startup path while keeping array arguments, nested arrays, invalid names,
+  warning behavior, variable-variable interactions, exact diagnostics, and
+  native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T12:32:00Z
 
 - Checkpoint before this task:

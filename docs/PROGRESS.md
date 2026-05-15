@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 805, bounded `mysqli_get_server_info()` support for the
+  current WordPress `wpdb::db_server_info()` startup path after the fake
+  `mysqli_real_connect()` boundary. The runtime now exposes
+  `mysqli_get_server_info` through function/callability metadata and dynamic
+  string-valued calls, accepts the placeholder `mysqli` object, and returns
+  the deterministic placeholder string `8.0.0-phpc-placeholder` so the reached
+  `wpdb::db_version()` guard can continue through the bounded
+  `preg_replace()` version cleanup. This is not real server negotiation,
+  connection-state validation, host I/O, extension resources, query/result
+  behavior, real server metadata, warning/error routing, exact PHP
+  diagnostics, PDO, or native database lowering. The real WordPress 6.9.4
+  bootstrap-shim probe now advances past the reached
+  `mysqli_get_server_info()` call to
+  `runtime error at <bootstrap-shim>:904:10: undefined function compact()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone805`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 804, bounded `preg_replace()` support for the current
   WordPress `wpdb::db_version()` startup path. The runtime now exposes
   `preg_replace` through function/callability metadata and dynamic
