@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 894, a synthetic WordPress-shaped `wpdb` connection-metadata
+  bookkeeping smoke that calls the bounded
+  `mysqli_get_server_version($this->dbh)` placeholder path alongside
+  `mysqli_get_server_info($this->dbh)`, records deterministic local server
+  version metadata, and verifies that the metadata boundary ran. This is a
+  harness smoke only; it does not add real WordPress database server-version
+  fidelity, server-version detection, host database integration, protocol
+  negotiation, server capability inspection, PHP warning/error fidelity, or
+  native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone894`.
+
 - Added Milestone 893, bounded `mysqli_get_server_version()` support for
   deterministic placeholder MySQLi server-version metadata. The runtime accepts
   `mysqli_get_server_version($handle)` for current placeholder `mysqli`

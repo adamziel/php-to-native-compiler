@@ -1385,7 +1385,9 @@ historical blockers and remaining full-support gaps include:
   `mysqli_get_server_version()` placeholder metadata without real
   server-version detection, host database integration, protocol negotiation,
   server capability inspection, warning/error fidelity, or native database
-  lowering.
+  lowering. Milestone 894 wires that placeholder through a synthetic
+  WordPress-shaped `wpdb` server-version bookkeeping smoke without claiming
+  real database server-version fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -192,7 +192,8 @@ connection-metadata bookkeeping smoke, plus deterministic
 `mysqli_get_client_version()` placeholder client-version metadata wired through
 a synthetic WordPress-shaped `wpdb` client-version bookkeeping smoke, plus
 deterministic `mysqli_get_server_version()` placeholder server-version
-metadata for the next server metadata boundary.
+metadata for the next server metadata boundary, now wired through a synthetic
+WordPress-shaped `wpdb` server-version bookkeeping smoke.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,

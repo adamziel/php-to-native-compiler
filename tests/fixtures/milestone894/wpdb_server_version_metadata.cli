@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone894/wpdb_server_version_metadata.php
+80000
+8.0.0-phpc-placeholder
+80000
+checked
