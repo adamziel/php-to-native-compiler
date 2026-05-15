@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `90c290e tests: add wordpress wpdb ping smoke`, pushed to `origin/master`.
+- Task attempted: Milestone 877, bounded `mysqli_get_host_info()` placeholder
+  metadata for current `mysqli` handles.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone877/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_get_host_info -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone877`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: placeholder MySQLi handles now expose a named
+  deterministic host-info metadata boundary.
+- Remaining semantic gaps: real host/transport/socket/protocol metadata,
+  connection liveness checks, reconnect behavior, warning/error fidelity, host
+  database integration, real WordPress `wpdb` fidelity, and native database
+  lowering remain missing.
+- Next concrete task: run focused full MySQLi extension tests, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `e0b8746 runtime: add mysqli ping placeholder`, pushed to `origin/master`.
 - Task attempted: Milestone 876, a synthetic WordPress-shaped
   `wpdb::check_connection()` smoke over deterministic placeholder

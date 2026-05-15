@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Added Milestone 877, bounded `mysqli_get_host_info()` support for
+  placeholder MySQLi handles. The runtime now accepts
+  `mysqli_get_host_info($handle)` for current placeholder `mysqli` objects,
+  returns deterministic `localhost via TCP/IP (phpc-placeholder)` metadata,
+  rejects non-`mysqli` handles with a stable diagnostic, and exposes the name
+  through runtime and native metadata lookup. This is not real host, transport,
+  socket, protocol, connection-liveness, reconnect, warning/error, or native
+  database behavior. Focused verification so far:
+  `cargo test -p phpc --test mysqli_extension mysqli_get_host_info -- --test-threads=1`
+  and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone877`.
+
 - Added Milestone 876, a synthetic WordPress-shaped
   `wpdb::check_connection()` smoke that calls the bounded
   `mysqli_ping($this->dbh)` placeholder path, records that the check ran, and

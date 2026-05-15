@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone877/mysqli_get_host_info_placeholder.php
+yes|callable
+localhost via TCP/IP (phpc-placeholder)
+localhost via TCP/IP (phpc-placeholder)

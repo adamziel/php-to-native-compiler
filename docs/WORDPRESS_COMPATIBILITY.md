@@ -1339,7 +1339,9 @@ historical blockers and remaining full-support gaps include:
   or host database integration. Milestone 876 adds a synthetic
   `wpdb::check_connection()` smoke that records deterministic ready state after
   that placeholder ping path without claiming real reconnection or database
-  liveness behavior.
+  liveness behavior. Milestone 877 adds deterministic placeholder
+  `mysqli_get_host_info()` metadata for current `mysqli` objects without
+  inspecting a real host, transport, socket, protocol, or live connection.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

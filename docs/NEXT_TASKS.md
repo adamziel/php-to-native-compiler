@@ -8081,16 +8081,25 @@ handled.
   and records deterministic ready state after placeholder success. It is not
   real WordPress reconnection behavior, socket I/O, host database integration,
   warnings/errors, real `wpdb` state fidelity, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next connection metadata boundary after
+- [x] Runtime/mysqli lane: inspect the next connection metadata boundary after
   placeholder ping and choose a small tested slice, such as deterministic
   `mysqli_get_host_info()` or `mysqli_stat()` metadata, before any real host
   database state is claimed.
+  Milestone 877 implements bounded `mysqli_get_host_info($handle)` for
+  placeholder `mysqli` objects. It returns deterministic
+  `localhost via TCP/IP (phpc-placeholder)`, rejects non-`mysqli` handles with
+  stable diagnostics, and is visible through runtime and native metadata
+  lookup. This is not real host, transport, socket, protocol,
+  connection-liveness, reconnect, warning/error, or native database behavior.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records
+  deterministic `mysqli_get_host_info()` through WordPress-shaped connection
+  metadata bookkeeping without claiming real host or transport state.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `e0b8746 runtime: add mysqli ping placeholder`, covering Milestone 875
-  before the current Milestone 876 candidate.
+  `90c290e tests: add wordpress wpdb ping smoke`, covering Milestone 876
+  before the current Milestone 877 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

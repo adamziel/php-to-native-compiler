@@ -3,7 +3,7 @@
 Status: boundary only.
 
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
-`mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
+`mysqli_get_host_info`, `mysqli_set_charset`, `mysqli_query`, `mysqli_affected_rows`,
 `mysqli_insert_id`, `mysqli_ping`, `mysqli_select_db`, `mysqli_real_escape_string`,
 `mysqli_fetch_object`, `mysqli_fetch_assoc`, `mysqli_fetch_array`,
 `mysqli_fetch_row`, `mysqli_fetch_field`, `mysqli_num_fields`,
@@ -33,6 +33,11 @@ select a database, negotiate charset, or produce real mysqli connection state.
 `8.0.0-phpc-placeholder`, a deterministic fake server string used by
 WordPress' `wpdb::db_version()` guard. It does not query a server or reflect
 real connection metadata.
+
+`mysqli_get_host_info($handle)` accepts the placeholder object and returns
+`localhost via TCP/IP (phpc-placeholder)`, deterministic fake connection
+metadata for reached host-info probes. It does not inspect a real host,
+transport, socket, protocol, or live connection.
 
 `mysqli_set_charset($handle, "utf8mb4")` accepts the placeholder object and
 returns deterministic `true` for the reached WordPress charset setup shape.
@@ -111,7 +116,7 @@ unsupported call mysqli_connect(): mysqli/database connections are not implement
 
 No real mysqli extension behavior is implemented yet: no host connections, no
 real resources or connected objects beyond the placeholder shapes, no real
-server metadata, no query execution beyond the documented deterministic
+server or host/transport metadata, no query execution beyond the documented deterministic
 queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no
 fetch modes beyond the documented placeholder row shapes, no real row-count
