@@ -6264,6 +6264,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "ini_get"
             | "min"
             | "rand"
+            | "uniqid"
+            | "hash_hmac"
             | "count"
             | "constant"
             | "defined"

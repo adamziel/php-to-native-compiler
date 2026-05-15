@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 820, bounded deterministic `uniqid()` and HMAC-SHA256
+  `hash_hmac()` support for the reached WordPress `wpdb::placeholder_escape()`
+  hash expression. The runtime now exposes `uniqid` and `hash_hmac` through
+  function/callability metadata and dynamic string-valued calls, supports
+  `uniqid($prefix, true)` with deterministic output, and supports
+  `hash_hmac('sha256', $data, $key, false)` with lowercase hex output via the
+  Rust `hmac` and `sha2` crates. This is not broad PHP hash extension support,
+  `hash()`, `hash_equals()`, `hash_hmac_algos()`, algorithms beyond SHA-256,
+  raw binary output, exact entropy/time behavior, cryptographic guarantees for
+  generated IDs, exact diagnostics, or native lowering. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the placeholder hash expression
+  to
+  `runtime error at <bootstrap-shim>:241:8: unsupported comparison: strict identity for arrays is not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test hash_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone820`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 819, bounded deterministic no-argument `rand()` support for
   the reached WordPress `wpdb::placeholder_escape()` salt path. The runtime now
   exposes `rand` through function/callability metadata and dynamic

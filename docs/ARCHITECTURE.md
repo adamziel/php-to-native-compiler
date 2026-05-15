@@ -930,6 +930,12 @@ WordPress `wpdb::placeholder_escape()` salt path. The current slice accepts no
 arguments and returns a fixed integer so compatibility probes are reproducible;
 PHP random-state compatibility, min/max forms, seeding, cryptographic
 randomness, and native lowering remain out of scope.
+`uniqid()` and `hash_hmac()` are interpreter-only deterministic hash
+boundaries for the same placeholder-escape path. `uniqid()` returns a fixed
+prefix-based ID, and `hash_hmac()` currently supports lowercase hex
+HMAC-SHA256 through the `hmac` and `sha2` crates. Broader hash algorithms,
+raw binary output, exact entropy/time behavior, and native lowering remain out
+of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native

@@ -1,0 +1,1 @@
+Project-specific hash/random boundary: phpc combines deterministic rand(), uniqid(), and HMAC-SHA256 for the reached WordPress placeholder escape path, while system PHP uses host random/time state.

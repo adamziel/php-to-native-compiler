@@ -7513,17 +7513,26 @@ handled.
   `runtime error at <bootstrap-shim>:2424:25: undefined function hash_hmac()`,
   corresponding to `wp-includes/class-wpdb.php:2424` in
   `wpdb::placeholder_escape()`.
-- [ ] Runtime/hash lane: implement the reached bounded `hash_hmac('sha256',
+- [x] Runtime/hash lane: implement the reached bounded `hash_hmac('sha256',
   uniqid($salt, true), $salt)` behavior for `wpdb::placeholder_escape()`.
   Decide whether to use a narrow deterministic helper or a standard Rust crate.
   Keep broad algorithms, binary/raw output variants, array/object coercions,
   exact warnings/errors, cryptographic guarantees, host entropy, and native
   lowering named unless implemented.
+  Milestone 820 uses the Rust `hmac` and `sha2` crates and advances the real
+  bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:241:8: unsupported comparison: strict identity for arrays is not implemented`.
+- [ ] Runtime/comparison lane: implement strict identity for current arrays
+  over the ordered array value model, enough for reached WordPress empty-array
+  comparison shapes such as `array() === $value` and
+  `array_values($arr) === $arr`. Keep references, recursive arrays,
+  object/resource values, copy-on-write identity, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 819 checkpoint, the latest committed checkpoint
-  is `bf7d206 runtime: add bounded mysqli escaping`, covering Milestone 818.
+- Before the current Milestone 820 checkpoint, the latest committed checkpoint
+  is `450e435 runtime: add bounded rand`, covering Milestone 819.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

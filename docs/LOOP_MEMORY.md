@@ -26,6 +26,41 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T12:15:00Z
+
+- Checkpoint before this task:
+  `450e435 runtime: add bounded rand`, pushed to `origin/master`.
+- Task attempted: Milestone 820, bounded deterministic `uniqid()` and
+  HMAC-SHA256 `hash_hmac()` support for the reached
+  `wpdb::placeholder_escape()` hash expression.
+- Files changed so far: `Cargo.lock`, `compiler/Cargo.toml`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/hash_builtin.rs`, `tests/fixtures/milestone820/*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test hash_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone820`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:241:8: unsupported comparison: strict identity for arrays is not implemented`.
+- Remaining semantic gaps: broad PHP hash extension support, `hash()`,
+  `hash_equals()`, `hash_hmac_algos()`, algorithms beyond SHA-256, raw binary
+  output, exact entropy/time behavior, cryptographic guarantees for generated
+  IDs, exact diagnostics, native lowering, and real WordPress bootstrap support
+  remain unsupported.
+- Next concrete task: implement strict identity for current arrays over the
+  ordered array value model, enough for reached WordPress empty-array and
+  list-shape comparisons, while keeping references, recursive arrays,
+  object/resource values, copy-on-write identity, and native lowering named
+  unless implemented.
+
 ## Loop Event 2026-05-15T11:55:00Z
 
 - Checkpoint before this task:

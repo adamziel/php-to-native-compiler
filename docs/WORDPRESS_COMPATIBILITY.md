@@ -1047,6 +1047,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `runtime error at <bootstrap-shim>:2424:25: undefined function hash_hmac()`,
   corresponding to the adjacent placeholder hashing call in
   `wp-includes/class-wpdb.php:2424`.
+  Milestone 820 implements bounded deterministic `uniqid()` and
+  HMAC-SHA256 `hash_hmac()` for the reached
+  `wpdb::placeholder_escape()` hash expression, using Rust `hmac`/`sha2`
+  crates for the digest. This is not broad PHP hash extension support,
+  `hash()`, `hash_equals()`, `hash_hmac_algos()`, algorithms beyond SHA-256,
+  raw binary output, exact entropy/time behavior, cryptographic guarantees for
+  generated IDs, exact diagnostics, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:241:8: unsupported comparison: strict identity for arrays is not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

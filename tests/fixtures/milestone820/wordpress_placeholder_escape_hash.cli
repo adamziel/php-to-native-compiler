@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone820/wordpress_placeholder_escape_hash.php"
+  ],
+  "stdin": "",
+  "stdout": "{277ed1cfce3c3ec91a67403c0b4e58db09d8e70c27ebf0abe9a32461c5eb5bd4}",
+  "stderr": "",
+  "exit": 0
+}

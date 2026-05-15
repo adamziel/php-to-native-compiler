@@ -6,12 +6,14 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use hmac::{Hmac, Mac};
 use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
     PhpArray, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
     PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, RuntimeError,
     RuntimeResult, Value, Visibility,
 };
+use sha2::Sha256;
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
@@ -7034,6 +7036,8 @@ impl Interpreter {
             "ini_get" => call_ini_get(&args, span),
             "min" => call_min(&args, span),
             "rand" => call_rand(&args, span),
+            "uniqid" => call_uniqid(&args, span),
+            "hash_hmac" => call_hash_hmac(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -10739,6 +10743,8 @@ fn is_builtin(name: &str) -> bool {
             | "ini_get"
             | "min"
             | "rand"
+            | "uniqid"
+            | "hash_hmac"
             | "count"
             | "constant"
             | "defined"
@@ -11004,6 +11010,37 @@ fn mysql_escape_string(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn string_builtin_argument(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        value.push(HEX[(byte >> 4) as usize] as char);
+        value.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    value
 }
 
 fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -12108,6 +12145,111 @@ fn call_rand(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::Int(123456789))
+}
+
+fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "uniqid()",
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let prefix = match args.first() {
+        Some(value) => string_builtin_argument("uniqid()", "prefix", value, span)?,
+        None => String::new(),
+    };
+
+    let more_entropy = match args.get(1) {
+        Some(Value::Bool(value)) => *value,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "uniqid()",
+                    format!(
+                        "more_entropy argument must be bool in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => false,
+    };
+
+    let mut value = format!("{prefix}0000000000000");
+    if more_entropy {
+        value.push_str(".00000000");
+    }
+    Ok(Value::String(value))
+}
+
+fn call_hash_hmac(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(3..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "hash_hmac()",
+                ArityExpectation::Between { min: 3, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let algorithm = string_builtin_argument("hash_hmac()", "algorithm", &args[0], span)?;
+    if !algorithm.eq_ignore_ascii_case("sha256") {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_hmac()",
+                "only sha256 is implemented in the current subset",
+            ),
+        ));
+    }
+
+    let data = string_builtin_argument("hash_hmac()", "data", &args[1], span)?;
+    let key = string_builtin_argument("hash_hmac()", "key", &args[2], span)?;
+
+    match args.get(3) {
+        Some(Value::Bool(false)) | None => {}
+        Some(Value::Bool(true)) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_hmac()",
+                    "raw binary output is not implemented; omit raw_output or pass false in the current subset",
+                ),
+            ));
+        }
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash_hmac()",
+                    format!(
+                        "raw_output argument must be bool in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+    }
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "hash_hmac()",
+                "key values outside the current HMAC-SHA256 subset are not implemented",
+            ),
+        )
+    })?;
+    mac.update(data.as_bytes());
+    Ok(Value::String(hex_bytes(&mac.finalize().into_bytes())))
 }
 
 fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {

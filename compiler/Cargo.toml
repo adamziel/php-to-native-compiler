@@ -13,5 +13,6 @@ name = "phpc"
 path = "src/main.rs"
 
 [dependencies]
+hmac = "0.12"
 php_runtime = { path = "../runtime" }
-
+sha2 = "0.10"
