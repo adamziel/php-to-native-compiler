@@ -406,6 +406,31 @@ injects this file into every prompt. Each Codex pass should update it with:
   the reached `wp_convert_hr_to_bytes()` path while documenting custom masks,
   binary string, coercion, diagnostic, and native-lowering gaps.
 
+## Loop Event 2026-05-15T11:05:00Z
+
+- Checkpoint before this task:
+  `8303f95 runtime: add bounded strtolower`, pushed to `origin/master`.
+- Task attempted: Milestone 775, bounded default-mask `trim()` for the
+  WordPress `wp_convert_hr_to_bytes()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/string_trim_builtin.rs`,
+  `tests/fixtures/milestone775/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_trim_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone775`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: custom character masks, binary/null-byte string
+  edge cases beyond the current represented runtime-string subset,
+  array/object/resource coercions, exact PHP diagnostics, and native lowering
+  remain unsupported. Direct `wp-settings.php` still stops on undefined
+  `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:1689:11: unsupported call (int): leading-numeric string cast behavior is not implemented`.
+- Next concrete task: implement a bounded leading-numeric `(int)` string cast
+  slice for the reached `wp_convert_hr_to_bytes()` path while documenting PHP
+  warning/recovery, numeric grammar, overflow, binary string, diagnostic, and
+  native-lowering gaps.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

@@ -6209,6 +6209,7 @@ fn is_native_known_function_name(name: &str) -> bool {
         "define"
             | "strlen"
             | "strtolower"
+            | "trim"
             | "strcasecmp"
             | "str_replace"
             | "sprintf"

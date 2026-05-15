@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 775, bounded `trim()` for the current WordPress
+  `wp_convert_hr_to_bytes()` path. The runtime now accepts one current
+  scalar/null string-convertible value, trims PHP's default whitespace
+  characters for represented runtime strings, exposes the builtin through
+  function/callability metadata and dynamic string-valued calls, and keeps
+  direct native calls behind the generic function-call lowering boundary.
+  Custom character masks, binary/null-byte string edge cases beyond the
+  current represented runtime-string subset, array/object/resource coercions,
+  exact PHP diagnostics, and native lowering remain unsupported. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the reached `trim()`
+  call to
+  `runtime error at <bootstrap-shim>:1689:11: unsupported call (int): leading-numeric string cast behavior is not implemented`,
+  corresponding to `wp-includes/load.php:1689`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_trim_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone775`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 774, bounded `strtolower()` for the current WordPress
   `wp_convert_hr_to_bytes()` path. The runtime now accepts one current
   scalar/null string-convertible value, applies ASCII lowercase mapping over

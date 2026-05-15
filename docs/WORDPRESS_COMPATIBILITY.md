@@ -693,6 +693,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   case mapping, full Unicode case folding, binary string compatibility beyond
   valid UTF-8 runtime strings, array/object/resource coercions, exact
   diagnostics, native lowering, or WordPress bootstrap support.
+  Milestone 775 implements bounded default-mask `trim()` for current
+  scalar/null string-convertible values. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:1689:11: unsupported call (int): leading-numeric string cast behavior is not implemented`,
+  corresponding to `wp-includes/load.php:1689`. This is not custom character
+  mask support, binary/null-byte string compatibility beyond the current
+  represented runtime-string subset, array/object/resource coercions, exact
+  diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

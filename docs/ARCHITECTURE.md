@@ -897,6 +897,11 @@ scalar/null string-convertible values. It applies ASCII lowercase mapping over
 runtime UTF-8 strings so WordPress bootstrap can normalize simple option
 suffixes, while locale-sensitive casing, full Unicode case folding, binary
 string behavior beyond valid UTF-8, and native lowering remain out of scope.
+`trim()` is an interpreter-only bounded string-normalization builtin for
+current scalar/null string-convertible values. The first slice implements the
+default PHP whitespace mask for represented runtime strings so WordPress can
+parse shorthand INI values, while custom masks, binary/null-byte edge cases,
+and native lowering remain out of scope.
 `strcasecmp()` is an interpreter-only bounded string comparison builtin for
 current scalar/null string-convertible values. It compares valid UTF-8 runtime
 strings by bytes with ASCII case folding and returns only sign values. Native

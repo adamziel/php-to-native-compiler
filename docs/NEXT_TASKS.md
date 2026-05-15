@@ -7096,16 +7096,26 @@ handled.
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1688:23: undefined function trim()`,
   corresponding to `wp-includes/load.php:1688`.
-- [ ] String builtin lane: implement a bounded `trim()` slice for the next
+- [x] String builtin lane: implement a bounded `trim()` slice for the next
   WordPress bootstrap blocker, starting with the default character mask needed
   by `wp_convert_hr_to_bytes()`. Keep custom character masks, binary string
   edge cases, array/object/resource coercions, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 775 implements the default-mask scalar/null string-convertible
+  `trim()` slice and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1689:11: unsupported call (int): leading-numeric string cast behavior is not implemented`,
+  corresponding to `wp-includes/load.php:1689`.
+- [ ] Cast/coercion lane: implement a bounded leading-numeric `(int)` string
+  cast slice for the next WordPress bootstrap blocker, starting with the
+  shorthand memory strings produced by `wp_convert_hr_to_bytes()`. Keep PHP's
+  warning/recovery details, whitespace/sign/decimal/exponent grammar,
+  overflow, binary string edge cases, exact diagnostics, and native lowering
+  named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 774 checkpoint, the latest committed checkpoint
-  is `f45bcce runtime: add bounded ini_get`, covering Milestone 773.
+- Before the current Milestone 775 checkpoint, the latest committed checkpoint
+  is `8303f95 runtime: add bounded strtolower`, covering Milestone 774.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

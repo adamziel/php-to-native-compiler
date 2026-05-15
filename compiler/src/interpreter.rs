@@ -5937,6 +5937,7 @@ impl Interpreter {
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
             "strtolower" => call_strtolower(&args, span),
+            "trim" => call_trim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "sprintf" => call_sprintf(&args, span),
@@ -9252,6 +9253,7 @@ fn is_builtin(name: &str) -> bool {
         "define"
             | "strlen"
             | "strtolower"
+            | "trim"
             | "strcasecmp"
             | "str_replace"
             | "sprintf"
@@ -9473,6 +9475,46 @@ fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
         .map_err(|error| runtime_error(span, error))?;
 
     Ok(Value::String(value.to_ascii_lowercase()))
+}
+
+fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "trim()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if args.len() == 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "trim()",
+                "custom character masks are not implemented; pass exactly one argument in the current subset",
+            ),
+        ));
+    }
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("trim()", "arrays are not supported"),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+
+    Ok(Value::String(
+        value
+            .trim_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{000B}'))
+            .to_string(),
+    ))
 }
 
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
