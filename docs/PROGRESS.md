@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added Milestone 909, bounded `mysqli_connect_errno()` and
+  `mysqli_connect_error()` support for deterministic placeholder MySQLi clean
+  connect-error metadata. The runtime accepts the no-argument calls, returns
+  deterministic clean state (`0` and `null`), rejects argument-bearing calls
+  with stable arity diagnostics, and exposes both names through runtime and
+  native metadata lookup. This is not failed connection tracking, host
+  extension error state, report-mode behavior, PHP warning/error/exception
+  fidelity, or native database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_connect_error -- --test-threads=1`
+  passed, full `cargo test -p phpc --test mysqli_extension -- --test-threads=1`
+  passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone909`.
+
 - Added Milestone 908, a synthetic WordPress-shaped `wpdb` options
   bookkeeping smoke that calls the bounded
   `mysqli_options($this->dbh, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true)`

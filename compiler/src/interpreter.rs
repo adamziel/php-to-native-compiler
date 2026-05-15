@@ -4325,6 +4325,16 @@ impl Interpreter {
         }
     }
 
+    fn call_mysqli_connect_errno(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_connect_errno", args, 0, span)?;
+        Ok(Value::Int(0))
+    }
+
+    fn call_mysqli_connect_error(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_connect_error", args, 0, span)?;
+        Ok(Value::Null)
+    }
+
     fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_get_connection_stats", args, 1, span)?;
         expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
@@ -9352,6 +9362,8 @@ impl Interpreter {
             "mysqli_field_count" => self.call_mysqli_field_count(&args, span),
             "mysqli_close" => self.call_mysqli_close(&args, span),
             "mysqli_options" => self.call_mysqli_options(&args, span),
+            "mysqli_connect_errno" => self.call_mysqli_connect_errno(&args, span),
+            "mysqli_connect_error" => self.call_mysqli_connect_error(&args, span),
             "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
@@ -12303,6 +12315,8 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_field_count"
             | "mysqli_close"
             | "mysqli_options"
+            | "mysqli_connect_errno"
+            | "mysqli_connect_error"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"

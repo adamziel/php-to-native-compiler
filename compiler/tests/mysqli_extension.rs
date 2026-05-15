@@ -338,6 +338,34 @@ echo $call($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, 1) ? "set" : "failed";
 }
 
 #[test]
+fn mysqli_connect_error_state_returns_current_clean_placeholders() {
+    let execution = run_source(
+        r#"<?php
+$errno = "mysqli_connect_errno";
+$error = "mysqli_connect_error";
+echo function_exists($errno) ? "yes" : "no";
+echo "|";
+echo is_callable($error) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_options($handle, MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+echo "|";
+echo mysqli_connect_errno();
+echo "|";
+echo mysqli_connect_error() === null ? "null" : mysqli_connect_error();
+echo "|";
+echo $errno();
+echo "|";
+echo $error() === null ? "null" : $error();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|0|null|0|null");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_stat_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -929,6 +957,39 @@ mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, "yes");
     assert_eq!(
         bad_value.message,
         "unsupported call mysqli_options(): value must be bool or int for MYSQLI_OPT_INT_AND_FLOAT_NATIVE in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_connect_error_state_rejects_forms_outside_current_boundary() {
+    let bad_errno = run_source(
+        r#"<?php
+mysqli_connect_errno("extra");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_errno.phase, Phase::Runtime);
+    assert_eq!(bad_errno.line, 2);
+    assert_eq!(bad_errno.column, 1);
+    assert_eq!(
+        bad_errno.message,
+        "arity mismatch for mysqli_connect_errno(): expected 0 argument(s), got 1"
+    );
+
+    let bad_error = run_source(
+        r#"<?php
+mysqli_connect_error("extra");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_error.phase, Phase::Runtime);
+    assert_eq!(bad_error.line, 2);
+    assert_eq!(bad_error.column, 1);
+    assert_eq!(
+        bad_error.message,
+        "arity mismatch for mysqli_connect_error(): expected 0 argument(s), got 1"
     );
 }
 
@@ -1760,6 +1821,10 @@ echo function_exists("mysqli_close") ? "1" : "0";
 echo is_callable("mysqli_close") ? "1" : "0";
 echo function_exists("mysqli_options") ? "1" : "0";
 echo is_callable("mysqli_options") ? "1" : "0";
+echo function_exists("mysqli_connect_errno") ? "1" : "0";
+echo is_callable("mysqli_connect_errno") ? "1" : "0";
+echo function_exists("mysqli_connect_error") ? "1" : "0";
+echo is_callable("mysqli_connect_error") ? "1" : "0";
 echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
 echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
@@ -1829,7 +1894,7 @@ echo defined("MYSQLI_OPT_INT_AND_FLOAT_NATIVE") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 93, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 97, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1957,6 +2022,30 @@ mysqli_close(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_options(mysqli_init(), MYSQLI_OPT_INT_AND_FLOAT_NATIVE, true);
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_connect_errno();
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_connect_error();
 "#,
     )
     .unwrap_err();

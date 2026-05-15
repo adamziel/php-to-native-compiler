@@ -6356,6 +6356,8 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "mysqli_field_count"
             | "mysqli_close"
             | "mysqli_options"
+            | "mysqli_connect_errno"
+            | "mysqli_connect_error"
             | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"

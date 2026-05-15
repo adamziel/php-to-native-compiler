@@ -8418,16 +8418,27 @@ handled.
   WordPress client-option behavior, result type-conversion behavior,
   connection state mutation, host database integration, warnings/errors, or
   native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi diagnostic or metadata
+- [x] Runtime/mysqli lane: inspect the next MySQLi diagnostic or metadata
   boundary used by WordPress after options setup, such as connect-time
   errno/error state after option handling or a sharper unsupported diagnostic,
   before claiming real host connection state.
+  Milestone 909 implements bounded deterministic `mysqli_connect_errno()` and
+  `mysqli_connect_error()` clean-state support. They accept no arguments,
+  return `0` and `null`, reject argument-bearing calls with stable arity
+  diagnostics, and are visible through runtime and native metadata lookup.
+  This is not failed connection tracking, host extension error state,
+  report-mode behavior, warnings/errors/exceptions, or native database
+  lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_connect_errno()`/`mysqli_connect_error()` placeholders
+  through a WordPress-shaped connection error-state method without claiming real
+  connection failure fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `1611e04 runtime: add mysqli options placeholder`, covering Milestone 907
-  before the current Milestone 908 candidate.
+  `668552c tests: add wordpress wpdb options smoke`, covering Milestone 908
+  before the current Milestone 909 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -29,6 +29,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `668552c tests: add wordpress wpdb options smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 909, bounded deterministic
+  `mysqli_connect_errno()`/`mysqli_connect_error()` clean connect-error
+  metadata.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/mysqli_extension.rs`,
+  `tests/fixtures/milestone909/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/extensions/mysqli.md`, `docs/NEXT_TASKS.md`,
+  `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check` passed,
+  `cargo test -p phpc --test mysqli_extension mysqli_connect_error -- --test-threads=1`
+  initially failed because the test expected older arity wording; the expected
+  diagnostic was corrected, rerun targeted test passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone909`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- compiler/src/interpreter.rs compiler/src/codegen.rs compiler/tests/mysqli_extension.rs tests/fixtures/milestone909 docs/PROGRESS.md docs/SUPPORT.md docs/extensions/mysqli.md docs/NEXT_TASKS.md GOAL.MD docs/WORDPRESS_COMPATIBILITY.md docs/LOOP_MEMORY.md`
+  passed.
+- Current WordPress frontier: placeholder MySQLi startup diagnostics are being
+  extended from object properties to procedural clean connect-error metadata.
+- Remaining semantic gaps: failed connection tracking, host extension error
+  state, report-mode behavior, warning/error/exception fidelity, database
+  state mutation, and native database lowering remain missing.
+- Next concrete task: run focused MySQLi and fixture verification, whitespace
+  checks, and the serialized checkpoint gate under `umask 0022`; after
+  checkpoint, add a synthetic WordPress-shaped `wpdb` connection error-state
+  bookkeeping smoke.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `1611e04 runtime: add mysqli options placeholder`, pushed to
   `origin/master`.
 - Task attempted: Milestone 908, a synthetic WordPress-shaped `wpdb` options

@@ -1,0 +1,5 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_connect_errno()` and `mysqli_connect_error()` clean connect-error
+state. System PHP needs a real mysqli connection attempt and reports the last
+connection error for the host extension; phpc only returns clean placeholder
+state.

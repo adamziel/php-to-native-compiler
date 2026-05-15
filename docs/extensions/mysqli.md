@@ -7,6 +7,7 @@ Status: boundary only.
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_thread_id`,
 `mysqli_get_charset`, `mysqli_character_set_name`, `mysqli_stat`,
 `mysqli_field_count`, `mysqli_close`, `mysqli_options`,
+`mysqli_connect_errno`, `mysqli_connect_error`,
 `mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
@@ -94,6 +95,11 @@ or int values and returns deterministic `true`. The option constant is exposed
 with PHP's integer value `201`. This does not negotiate or apply real client
 options, change result type conversion, mutate connection state, or affect
 later placeholder result rows.
+
+`mysqli_connect_errno()` and `mysqli_connect_error()` return deterministic
+clean connect-error state, `0` and `null`. They do not track failed connection
+attempts, host extension state, report-mode behavior, or exact PHP warning and
+exception behavior.
 
 `mysqli_get_connection_stats($handle)` accepts the placeholder object and
 returns an eight-key deterministic statistics array:

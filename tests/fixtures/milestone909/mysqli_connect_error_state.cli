@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone909/mysqli_connect_error_state.php
+yes
+callable
+0
+null
+0
+null
