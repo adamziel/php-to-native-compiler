@@ -241,11 +241,11 @@ Milestone 744 added bounded inline HTML output between `?>` and the next PHP
 open tag. Milestone 745 added bounded dynamic property-name reads/writes for
 existing public slots and `stdClass` public dynamic slots. Milestone 746 added
 statement-form by-reference assignment syntax as a runtime boundary. Milestone
-747 added by-reference `foreach` value syntax as a runtime boundary; the
-current bootstrap-shim blocker is now reference assignment from an array-offset
-source at `<bootstrap-shim>:5188:31`, corresponding to
-`$input_array = &$input_array[ $path_element ];` in
-`wp-includes/functions.php`.
+747 added by-reference `foreach` value syntax as a runtime boundary. Milestone
+748 added by-reference assignment from direct array-offset sources as the same
+runtime boundary; the current bootstrap-shim blocker is now append-at-depth
+assignment at `<bootstrap-shim>:5463:28`, corresponding to
+`$submenu['themes.php'][] = ...` in `wp-includes/functions.php`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -366,10 +366,11 @@ The repository already has a working Rust workspace with:
   inventory probes, include/parser tracing, maintained lexer byte offsets for
   large source files, bounded final-position variadic parameters, and bounded
   dynamic property-name reads/writes for existing public slots and `stdClass`,
-  statement-form by-reference assignment syntax as a runtime boundary, and
-  by-reference `foreach` value syntax as a runtime boundary. The next
-  bottleneck is reference assignment from an array-offset source in the
-  WordPress bootstrap shim.
+  statement-form by-reference assignment syntax as a runtime boundary,
+  by-reference `foreach` value syntax as a runtime boundary, and
+  by-reference assignment from direct array-offset sources as a runtime
+  boundary. The next bottleneck is append-at-depth assignment in the WordPress
+  bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

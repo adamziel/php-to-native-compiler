@@ -801,6 +801,40 @@ echo "registered";
 }
 
 #[test]
+fn reference_assignment_array_offset_source_inside_unexecuted_body_is_registered() {
+    let execution = run_source(
+        r#"<?php
+function descend(&$items) {
+    $cursor =& $items[0];
+    return $cursor;
+}
+echo "registered";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "registered");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_assignment_array_offset_source_executes_as_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$items = [1];
+$alias =& $items[0];
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported call reference assignment: references and aliasing are not implemented"
+    );
+}
+
+#[test]
 fn reference_assignment_source_boundary_is_stable() {
     let error = parse_error(
         r#"<?php
@@ -812,7 +846,7 @@ $alias =& make_value();
     assert_eq!(error.column, 11);
     assert_eq!(
         error.message,
-        "unsupported reference assignment: only direct variable reference sources are parsed before reference semantics exist"
+        "unsupported reference assignment: only direct variable and direct array-offset reference sources are parsed before reference semantics exist"
     );
 }
 

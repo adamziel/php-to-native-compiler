@@ -3,8 +3,8 @@ use crate::ast::{
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
     CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterfaceMethodDecl, Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
-    TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    InterfaceMethodDecl, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
+    TraitDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -1944,15 +1944,42 @@ impl Parser {
         Ok(Some(Stmt::Assign { target, expr, span }))
     }
 
-    fn parse_reference_assignment_source(&mut self) -> CompileResult<String> {
+    fn parse_reference_assignment_source(&mut self) -> CompileResult<ReferenceSource> {
         let token = self.advance().clone();
-        match token.kind {
-            TokenKind::Variable(name) => Ok(name),
+        let (name, span) = match token.kind {
+            TokenKind::Variable(name) => (name, token.span),
             _ => Err(self.error_at(
                 token.span,
-                "unsupported reference assignment: only direct variable reference sources are parsed before reference semantics exist",
-            )),
+                unsupported_reference_assignment_source_message(),
+            ))?,
+        };
+
+        if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    unsupported_reference_assignment_source_message(),
+                ));
+            }
+            let index = self.parse_expression()?;
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+            if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_reference_assignment_source_message(),
+                ));
+            }
+            return Ok(ReferenceSource::ArrayIndex { name, index, span });
         }
+
+        if self.check(|kind| matches!(kind, TokenKind::LBracket | TokenKind::ObjectOperator)) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_reference_assignment_source_message(),
+            ));
+        }
+
+        Ok(ReferenceSource::Variable { name, span })
     }
 
     fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
@@ -5145,6 +5172,10 @@ fn unsupported_array_reference_element_message() -> &'static str {
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
     "unsupported array destructuring: only simple positional statement-form list($a, $b) = expr targets are implemented; short [...], expression-position list(...), nested, keyed, skipped, reference, and non-variable targets are not implemented"
+}
+
+fn unsupported_reference_assignment_source_message() -> &'static str {
+    "unsupported reference assignment: only direct variable and direct array-offset reference sources are parsed before reference semantics exist"
 }
 
 fn unsupported_first_class_callable_message() -> &'static str {

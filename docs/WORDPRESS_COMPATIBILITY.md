@@ -406,6 +406,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   array offset source with `$input_array = &$input_array[ $path_element ];`.
   This is not executable by-reference foreach support, general reference
   assignment support, aliasing, copy-on-write, or WordPress bootstrap support.
+  Milestone 748 widens statement-form by-reference assignment syntax to accept
+  direct array-offset sources such as `$alias =& $array[$key];` as the same
+  runtime boundary. After that slice, the direct `wp-settings.php` probe still
+  reports
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap-shim probe exits without timing out, emits zero stdout bytes,
+  starts stderr with `phpc trace include: <wordpress-root>/wp-settings.php`,
+  and reaches
+  `parse error at <bootstrap-shim>:5463:28: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`,
+  corresponding to `wp-includes/functions.php` assigning into
+  `$submenu['themes.php'][]`. This is not executable reference assignment,
+  append-at-depth support, nested assignment support, copy-on-write, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

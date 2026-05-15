@@ -213,9 +213,10 @@ magic property hooks, resources, and
 `__clone` dispatch, clone visibility/destructor behavior, resources, and native
 extension integration.
 
-By-reference assignment syntax is accepted only as a runtime boundary: guarded
-code can parse, but reached `=&` assignments fail with a stable unsupported
-diagnostic until reference containers and copy-on-write exist.
+By-reference assignment syntax is accepted only as a runtime boundary for
+direct variable and direct array-offset sources: guarded code can parse, but
+reached `=&` assignments fail with a stable unsupported diagnostic until
+reference containers and copy-on-write exist.
 By-reference `foreach` value syntax is also a runtime boundary: containing code
 can parse, but reached loops fail with a stable unsupported diagnostic until
 aliasing, mutation ordering, and copy-on-write are implemented.

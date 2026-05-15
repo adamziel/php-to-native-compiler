@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 748, statement-form by-reference assignment syntax from
+  direct array-offset sources as a runtime boundary. The parser now accepts
+  `$alias =& $array[$key];` in statement position, including inside guarded or
+  declaration-contained WordPress functions, without implementing PHP aliases.
+  If execution reaches the assignment, `phpc run` reports the existing stable
+  `unsupported call reference assignment: references and aliasing are not
+  implemented` diagnostic. Reference assignment from function calls, object
+  properties, nested offsets, append offsets, static members, variable
+  variables, reference containers, copy-on-write, unset alias behavior, exact
+  PHP diagnostics, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:5188:31` array-offset reference-assignment source blocker
+  to `parse error at <bootstrap-shim>:5463:28: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`,
+  corresponding to `wp-includes/functions.php` assigning into
+  `$submenu['themes.php'][]`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone748`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 747, by-reference `foreach` syntax as a runtime boundary.
   The parser now accepts `foreach ($items as &$value)` and
   `foreach ($items as $key => &$value)` so guarded or declaration-contained

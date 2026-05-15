@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T20:55:00Z
+
+- Checkpoint before this task:
+  `77ae789 parser: bound by-reference foreach syntax`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 748, by-reference assignment from direct
+  array-offset sources as a runtime boundary.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `tests/fixtures/milestone748/reference_assignment_array_offset_unreached.*`,
+  `tests/fixtures/milestone748/reference_assignment_array_offset_reached.*`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, `GOAL.MD`, and `README.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test functions_and_scopes reference_assignment -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone748`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: by-reference assignment remains syntax-only plus
+  runtime boundary. Alias cells, reference containers, copy-on-write,
+  reference assignment from nested offsets/properties/static members/function
+  calls, unset alias behavior, exact diagnostics, and native lowering remain
+  unsupported. Direct `wp-settings.php` still stops on undefined `ABSPATH`;
+  the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:5463:28: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`,
+  corresponding to `$submenu['themes.php'][] = ...`.
+- Next concrete task: implement or explicitly bound append-at-depth assignment
+  expressions, then rerun the WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T20:25:00Z
 
 - Checkpoint before this task:

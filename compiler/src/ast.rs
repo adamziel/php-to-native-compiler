@@ -40,7 +40,7 @@ pub enum Stmt {
     },
     ReferenceAssign {
         target: AssignTarget,
-        source: String,
+        source: ReferenceSource,
         span: Span,
     },
     CompoundAssign {
@@ -287,6 +287,19 @@ pub enum AssignTarget {
     },
     LateStaticProperty {
         property: String,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReferenceSource {
+    Variable {
+        name: String,
+        span: Span,
+    },
+    ArrayIndex {
+        name: String,
+        index: Expr,
         span: Span,
     },
 }
