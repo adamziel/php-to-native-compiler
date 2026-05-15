@@ -8389,16 +8389,25 @@ handled.
   and is visible through runtime and native metadata lookup. This is not real
   host connection teardown, handle invalidation, server resource release,
   close-after-use diagnostics, warnings/errors, or native database lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_close()` placeholder through a WordPress-shaped connection
   teardown method without claiming real disconnect behavior or resource
   lifecycle fidelity.
+  Milestone 906 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  placeholder close result on local connection bookkeeping and verifies that
+  the close path ran. It is not real WordPress disconnect behavior, host
+  connection teardown, handle invalidation, server resource release,
+  close-after-use diagnostics, warnings/errors, or native database lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi option or lifecycle
+  boundary used by WordPress, such as `mysqli_options()` and the related option
+  constants, before claiming real client-option negotiation or host connection
+  state.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `db852e4 tests: add wordpress wpdb field count smoke`, covering Milestone
-  904 before the current Milestone 905 candidate.
+  `ce6da47 runtime: add mysqli close placeholder`, covering Milestone 905
+  before the current Milestone 906 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

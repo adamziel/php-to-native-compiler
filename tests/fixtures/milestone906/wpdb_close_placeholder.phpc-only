@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder `mysqli_close()`
+through a WordPress-shaped `wpdb` connection teardown method. System PHP needs
+a real mysqli connection and invalidates the host connection handle; phpc only
+records local `wpdb` bookkeeping around the placeholder true return value.

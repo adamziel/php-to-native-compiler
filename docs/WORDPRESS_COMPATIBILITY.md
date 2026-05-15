@@ -1422,7 +1422,9 @@ historical blockers and remaining full-support gaps include:
   last-query field-count fidelity. Milestone 905 adds deterministic
   `mysqli_close()` placeholder lifecycle metadata without real host connection
   teardown, handle invalidation, server resource release, close-after-use
-  diagnostics, warning/error fidelity, or native database lowering.
+  diagnostics, warning/error fidelity, or native database lowering. Milestone
+  906 wires that placeholder through a synthetic WordPress-shaped `wpdb` close
+  bookkeeping smoke without claiming real WordPress disconnect behavior.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

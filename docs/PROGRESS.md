@@ -4,6 +4,15 @@
 
 Implemented:
 
+- Added Milestone 906, a synthetic WordPress-shaped `wpdb` close bookkeeping
+  smoke that calls the bounded `mysqli_close($this->dbh)` placeholder path,
+  records deterministic local teardown metadata, and verifies that the
+  lifecycle boundary ran. This is a harness smoke only; it does not add real
+  WordPress disconnect behavior, host connection teardown, handle invalidation,
+  server resource release, close-after-use diagnostics, PHP warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone906`.
+
 - Added Milestone 905, bounded `mysqli_close()` support for deterministic
   placeholder MySQLi connection lifecycle metadata. The runtime accepts
   `mysqli_close($handle)` for current placeholder `mysqli` objects, returns

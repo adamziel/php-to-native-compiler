@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone906/wpdb_close_placeholder.php
+closed
+recorded
+not-ready
+checked
