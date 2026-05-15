@@ -1391,7 +1391,10 @@ historical blockers and remaining full-support gaps include:
   `mysqli_get_connection_stats()` placeholder metadata without real mysqlnd
   statistics, client/server traffic accounting, query accounting, memory
   accounting, connection reuse state, warning/error fidelity, host database
-  integration, or native database lowering.
+  integration, or native database lowering. Milestone 896 wires that
+  placeholder through a synthetic WordPress-shaped `wpdb`
+  connection-statistics bookkeeping smoke without claiming real WordPress
+  database connection-statistics fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

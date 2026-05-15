@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 896, a synthetic WordPress-shaped `wpdb`
+  connection-statistics bookkeeping smoke that calls the bounded
+  `mysqli_get_connection_stats($this->dbh)` placeholder path, records stable
+  local traffic/query/connection counters, and verifies that the metadata
+  boundary ran. This is a harness smoke only; it does not add real WordPress
+  database connection-statistics fidelity, mysqlnd statistics fidelity,
+  client/server traffic accounting, query accounting, memory accounting,
+  connection reuse state, host database integration, PHP warning/error
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone896`.
+
 - Added Milestone 895, bounded `mysqli_get_connection_stats()` support for
   deterministic placeholder MySQLi connection statistics. The runtime accepts
   `mysqli_get_connection_stats($handle)` for current placeholder `mysqli`

@@ -29,6 +29,34 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `0085c02 runtime: add mysqli connection stats placeholder`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 896, a synthetic WordPress-shaped `wpdb`
+  connection-statistics bookkeeping smoke over deterministic
+  `mysqli_get_connection_stats()` placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone896/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone896`
+  passed with one `phpc-only` fixture skipped for system PHP comparison, and
+  `git diff --check -- GOAL.MD docs/LOOP_MEMORY.md docs/NEXT_TASKS.md docs/PROGRESS.md docs/WORDPRESS_COMPATIBILITY.md tests/fixtures/milestone896`
+  passed.
+- Current WordPress frontier: a WordPress-shaped connection-statistics
+  bookkeeping path can record deterministic placeholder traffic/query and
+  connection counters.
+- Remaining semantic gaps: real WordPress database connection-statistics
+  fidelity, mysqlnd statistics, client/server traffic accounting, query
+  accounting, memory accounting, connection reuse state, host database
+  integration, warning/error fidelity, database state mutation, and native
+  database lowering remain missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi metadata or diagnostic boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `d786695 tests: add wordpress wpdb server version smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 895, bounded deterministic

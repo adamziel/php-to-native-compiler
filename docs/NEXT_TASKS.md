@@ -8283,16 +8283,28 @@ handled.
   client/server traffic accounting, query accounting, memory accounting,
   connection reuse state, host database integration, warnings/errors, or native
   database lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_get_connection_stats()` placeholder through WordPress-shaped
   connection statistics bookkeeping without claiming real mysqlnd/client
   statistics fidelity.
+  Milestone 896 adds a `phpc-only` synthetic `wpdb` fixture that records the
+  deterministic placeholder connection-statistics array on local object state
+  and verifies stable traffic/query/connection counters. It is not real
+  WordPress database connection-statistics fidelity, mysqlnd statistics,
+  client/server traffic accounting, query accounting, memory accounting,
+  connection reuse state, host database integration, warnings/errors, or
+  native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after
+  connection-statistics placeholders and choose a small tested slice, such as
+  deterministic `mysqli_thread_id()`/`mysqli_get_charset()` metadata or a
+  sharper named diagnostic, before broader SQL execution or real host state is
+  claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `d786695 tests: add wordpress wpdb server version smoke`, covering
-  Milestone 894 before the current Milestone 895 candidate.
+  `0085c02 runtime: add mysqli connection stats placeholder`, covering
+  Milestone 895 before the current Milestone 896 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
