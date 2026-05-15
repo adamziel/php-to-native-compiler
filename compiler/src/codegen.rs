@@ -6268,6 +6268,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "extension_loaded"
             | "file_exists"
             | "header"
+            | "header_remove"
             | "headers_sent"
             | "assert"
             | "get_class"

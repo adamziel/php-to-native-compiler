@@ -47,6 +47,41 @@ echo $result === null ? "|null" : "|not-null";
 }
 
 #[test]
+fn header_remove_accepts_current_noop_signature() {
+    let execution = run_source(
+        r#"<?php
+header("Last-Modified: today");
+$result = header_remove("Last-Modified");
+echo $result === null ? "null" : "not-null";
+header_remove();
+echo "|after";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "null|after");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn header_remove_is_available_through_string_valued_calls() {
+    let execution = run_source(
+        r#"<?php
+$call = "header_remove";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$result = $call("Last-Modified");
+echo $result === null ? "|null" : "|not-null";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|null");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn headers_sent_accepts_current_no_header_state_signature() {
     let execution = run_source(
         r#"<?php
@@ -147,6 +182,33 @@ echo headers_sent("", 0, "extra");
 }
 
 #[test]
+fn header_remove_rejects_forms_outside_current_subset() {
+    let non_string = runtime_error(
+        r#"<?php
+echo header_remove(42);
+"#,
+    );
+    assert_eq!(non_string.line, 2);
+    assert_eq!(non_string.column, 6);
+    assert_eq!(
+        non_string.message,
+        "unsupported call header_remove(): header name argument must be string in the current subset, got int"
+    );
+
+    let too_many = runtime_error(
+        r#"<?php
+echo header_remove("A", "B");
+"#,
+    );
+    assert_eq!(too_many.line, 2);
+    assert_eq!(too_many.column, 6);
+    assert_eq!(
+        too_many.message,
+        "arity mismatch for header_remove(): expected 0 to 1 argument(s), got 2"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_header_until_native_runtime_call_lowering_exists() {
     let error = emit_ir_source(
         r#"<?php
@@ -154,6 +216,16 @@ header("Content-Type: text/html");
 "#,
     )
     .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn emit_ir_rejects_header_remove_until_native_runtime_call_lowering_exists() {
+    let error = emit_ir_source("<?php\nheader_remove('Last-Modified');\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
@@ -177,13 +249,15 @@ fn emit_ir_includes_header_in_native_callable_lookup_table() {
         r#"<?php
 echo function_exists("header") ? "1" : "0";
 echo is_callable("header") ? "1" : "0";
+echo function_exists("header_remove") ? "1" : "0";
+echo is_callable("header_remove") ? "1" : "0";
 echo function_exists("headers_sent") ? "1" : "0";
 echo is_callable("headers_sent") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }

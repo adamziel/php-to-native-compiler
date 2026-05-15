@@ -7034,16 +7034,28 @@ handled.
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1547:2: undefined function header_remove()`,
   corresponding to `wp-includes/functions.php:1547`.
-- [ ] Web/SAPI runtime lane: implement a bounded `header_remove()` slice for
+- [x] Web/SAPI runtime lane: implement a bounded `header_remove()` slice for
   the next real WordPress bootstrap-shim blocker, likely as a no-op for current
   string header names while documenting all-header removal, header storage,
   output-sent warnings, SAPI behavior, exact diagnostics, and native lowering
   unless implemented.
+  Milestone 769 implements no-argument and string-name `header_remove()` as a
+  no-op returning `null`. It advances the real bootstrap-shim probe into
+  WordPress' `wp_check_php_mysql_versions()` missing-MySQL-extension path in
+  `wp-includes/load.php:202`, producing the missing `mysqli` extension HTML
+  page and exit code `1` instead of a compiler/runtime unsupported diagnostic.
+- [ ] Database/extension lane: define the honest next WordPress database
+  compatibility step after the missing-MySQL-extension guard. Options include a
+  bounded `function_exists('mysqli_connect')`/extension presence policy only if
+  it immediately leads to explicit unsupported mysqli/database operations, or a
+  real minimal mysqli/PDO compatibility plan with host assumptions. Do not
+  claim MySQL support without executable database behavior, tests, docs, and
+  named unsupported edges.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 768 checkpoint, the latest committed checkpoint
-  is `78af560 runtime: add bounded headers_sent`, covering Milestone 767.
+- Before the current Milestone 769 checkpoint, the latest committed checkpoint
+  is `1b38379 runtime: add bounded abs`, covering Milestone 768.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

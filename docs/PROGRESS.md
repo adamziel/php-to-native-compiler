@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 769, bounded `header_remove()` for the current no-header-state
+  CLI/runtime shim. The builtin now accepts no argument or one string header
+  name, returns `null`, records no header state, and is visible through
+  function/callability metadata and dynamic string-valued calls. Actual
+  all-header removal, named-header storage/removal, output-sent warnings,
+  SAPI/web-server behavior, exact diagnostics, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  `header_remove( 'Last-Modified' )` in `wp-includes/functions.php:1547` into
+  WordPress' `wp_check_php_mysql_versions()` missing-MySQL-extension path in
+  `wp-includes/load.php:202`; the probe exits with status `1`, emits the
+  WordPress missing `mysqli` extension HTML page on stdout, and has no runtime
+  error after include tracing. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test header_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone769`,
+  and a direct bootstrap-shim probe with
+  `PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 target/debug/phpc run <bootstrap-shim>`.
+
 - Added Milestone 768, bounded `abs()` for the current integer and finite-float
   runtime values. This covers the reached WordPress `absint()` path after its
   explicit `(int)` cast, returns an integer for integer input and a float for

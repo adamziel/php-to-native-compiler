@@ -7115,6 +7115,7 @@ impl Interpreter {
                 }
             }
             "header" => call_header(&args, span),
+            "header_remove" => call_header_remove(&args, span),
             "headers_sent" => call_headers_sent(&args, span),
             "assert" => {
                 if !(1..=2).contains(&args.len()) {
@@ -9294,6 +9295,7 @@ fn is_builtin(name: &str) -> bool {
             | "extension_loaded"
             | "file_exists"
             | "header"
+            | "header_remove"
             | "headers_sent"
             | "assert"
             | "get_class"
@@ -9779,6 +9781,37 @@ fn call_header(args: &[Value], span: Span) -> CompileResult<Value> {
                 "header()",
                 format!(
                     "response_code argument must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        ));
+    }
+
+    Ok(Value::Null)
+}
+
+fn call_header_remove(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "header_remove()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    if let Some(other) = args
+        .first()
+        .filter(|value| !matches!(value, Value::String(_)))
+    {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "header_remove()",
+                format!(
+                    "header name argument must be string in the current subset, got {}",
                     other.type_name()
                 ),
             ),

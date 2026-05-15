@@ -643,6 +643,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   integer-minimum overflow, numeric string coercion, bool/null coercion,
   array/object/resource operands, NaN/infinity behavior, exact diagnostics,
   native lowering, or WordPress bootstrap support.
+  Milestone 769 implements bounded `header_remove()` as a no-op for no argument
+  or one string header name. It advances the real bootstrap-shim probe past
+  `wp-includes/functions.php:1547` into WordPress'
+  `wp_check_php_mysql_versions()` guard in `wp-includes/load.php:202`; the
+  probe exits with status `1` and emits WordPress' missing `mysqli` extension
+  HTML page. This is not response header storage/removal, output-sent warnings,
+  SAPI behavior, database or mysqli support, native lowering, or WordPress
+  bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

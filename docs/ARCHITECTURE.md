@@ -918,6 +918,10 @@ shape, returns `null`, and deliberately records no response state yet. Native
 function-table introspection recognizes the name, while direct native calls
 reject until response state, diagnostics, and SAPI integration have a lowered
 runtime model.
+`header_remove()` is the matching interpreter-only no-op removal boundary. It
+accepts no argument or one string header name and returns `null`, but it does
+not maintain a header bag, remove stored headers, detect output-sent state, or
+model SAPI behavior.
 `headers_sent()` is an interpreter-only no-header-state web/SAPI boundary. The
 current no-argument slice returns `false` so reached WordPress guard branches
 can continue, but filename/line output arguments, output-started tracking,

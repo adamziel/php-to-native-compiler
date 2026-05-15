@@ -254,6 +254,35 @@ injects this file into every prompt. Each Codex pass should update it with:
   output-sent warnings, SAPI behavior, exact diagnostics, and native lowering
   named unless implemented.
 
+## Loop Event 2026-05-15T08:48:00Z
+
+- Checkpoint before this task:
+  `1b38379 runtime: add bounded abs`, pushed to `origin/master`.
+- Task attempted: Milestone 769, bounded `header_remove()` for the WordPress
+  no-cache header path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/header_builtin.rs`,
+  `tests/fixtures/milestone769/*`, and docs.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test header_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone769`, and
+  a direct bootstrap-shim probe with
+  `PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 target/debug/phpc run <bootstrap-shim>`.
+- Remaining semantic gaps: actual all-header removal, named-header
+  storage/removal, output-sent warnings, SAPI/web-server behavior, exact
+  diagnostics, partial-output behavior, and native lowering remain unsupported.
+  Direct `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap
+  shim now enters WordPress' `wp_check_php_mysql_versions()` guard in
+  `wp-includes/load.php:202`, exits with status `1`, and emits the missing
+  `mysqli` extension HTML page.
+- Next concrete task: define the honest next database/extension compatibility
+  step after the missing-MySQL-extension guard without claiming MySQL support
+  until executable mysqli/database behavior, tests, docs, and unsupported edges
+  exist.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:
