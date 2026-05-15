@@ -480,8 +480,8 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
-  `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `preg_match`, `preg_replace`,
-  `str_replace`, `substr_count`,
+  `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
+  `preg_match`, `preg_replace`, `str_replace`, `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
@@ -618,6 +618,13 @@
   PHP-exact `ValueError` diagnostics, array/object/resource coercions,
   encoding-sensitive edge cases beyond represented runtime strings, and native
   lowering remain unsupported.
+  `substr($string, $offset, $length = null)` supports scalar/null
+  string-convertible input, integer offsets, and optional integer lengths.
+  Positive and negative offsets, positive and negative lengths, and
+  out-of-range empty results are implemented over byte positions when the
+  resulting runtime string remains valid UTF-8. Float/string offset and length
+  coercions, object/resource operands, invalid UTF-8 byte ranges, exact PHP
+  diagnostics, and native lowering remain unsupported.
   `substr_count($haystack, $needle, $offset = 0, $length = null)` supports
   scalar/null string-convertible haystack and needle arguments, optional
   integer offset and length slicing, negative offsets and lengths within the
@@ -2218,7 +2225,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `str_ends_with`, `strpos`, `substr_count`, `preg_match`, `preg_replace`,
+  `strtolower`, `trim`, `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -2520,7 +2527,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
-  `str_contains`, `str_ends_with`, `strpos`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
+  `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
@@ -2658,7 +2665,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`,
-  `str_ends_with`, `strpos`, `substr_count`, `str_replace`, `sprintf`,
+  `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
@@ -2820,6 +2827,10 @@
   `strpos` accepts the same current scalar/null string-convertible haystack and
   needle subset plus an optional integer offset as the builtin section above;
   direct native `strpos(...)` calls still reject under the function-call
+  boundary, while native function-table introspection recognizes the name.
+  `substr` accepts the same current scalar/null string-convertible input,
+  integer offset, and optional integer length subset as the builtin section
+  above; direct native `substr(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
   `substr_count` accepts the same current scalar/null string-convertible
   haystack and needle subset plus optional integer offset and length arguments
@@ -4459,6 +4470,10 @@
   `ValueError` diagnostics, array/object/resource coercions, encoding-sensitive
   edge cases beyond represented runtime strings, and native lowering beyond
   function-table introspection
+- `substr()` outside the current scalar/null string-convertible input plus
+  integer offset and optional integer length subset: float/string offset and
+  length coercions, object/resource operands, invalid UTF-8 byte ranges, exact
+  PHP diagnostics, and native lowering beyond function-table introspection
 - `substr_count()` outside the current scalar/null string-convertible haystack
   and needle plus optional integer offset/length subset: PHP-exact empty-needle
   `ValueError`, broad scalar coercions, array/object/resource coercions,

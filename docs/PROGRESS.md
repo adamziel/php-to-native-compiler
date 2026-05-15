@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 836, bounded `substr()` support for the reached WordPress
+  bootstrap string-slicing path. The interpreter now exposes `substr` through
+  direct calls, string-valued dynamic calls, `function_exists`, and
+  `is_callable` for the current scalar/null string-convertible input, integer
+  offset, and optional integer length subset. Positive and negative offsets,
+  positive and negative lengths, out-of-range empty results, and native
+  function-table introspection are covered. Float/string offset coercions,
+  object/resource operands, byte ranges that do not produce valid UTF-8 under
+  the current runtime string representation, exact PHP diagnostics, and direct
+  native lowering remain unsupported. The real WordPress 6.9.4 bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test substr_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone836`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 835, bounded `str_ends_with()` support for the reached
   WordPress `wp_fix_server_vars()` startup guard. The interpreter now exposes
   `str_ends_with` through direct calls, string-valued dynamic calls,

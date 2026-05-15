@@ -1187,6 +1187,11 @@ The first bootstrap probe is expected to fail. Known blockers include:
   behavior, exact diagnostics, or native lowering. The real bootstrap-shim
   probe now advances to
   `runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
+  Milestone 836 implements bounded `substr()` for the reached bootstrap
+  string-slicing path. This is not full PHP binary string slicing, broad
+  offset/length coercion, object/resource operands, exact diagnostics, or
+  native lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

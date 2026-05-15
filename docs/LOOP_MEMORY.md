@@ -29,6 +29,37 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `601d0a8 runtime: add bounded str ends with`, pushed to `origin/master`.
+- Task attempted: Milestone 836, bounded `substr()` support for the reached
+  WordPress bootstrap string-slicing path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/substr_builtin.rs`,
+  `tests/fixtures/milestone836/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test substr_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone836`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: float/string offset and length coercions,
+  object/resource operands, invalid UTF-8 byte ranges, exact PHP diagnostics,
+  and native `substr()` lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
+- Next concrete task: run the full checkpoint gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded substr"` if the full gate passes.
+  Milestone 837 should widen `preg_replace()` for the next reached WordPress
+  pattern without claiming broad PCRE replacement support.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `9671480 runtime: seed script filename server default`, pushed to
   `origin/master`.
 - Task attempted: Milestone 835, bounded `str_ends_with()` support for the

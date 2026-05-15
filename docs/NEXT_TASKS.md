@@ -7668,16 +7668,24 @@ handled.
   `function_exists`, and `is_callable`. The real bootstrap-shim probe now
   advances to
   `runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
-- [ ] Runtime/string lane: implement the next bounded `substr()` path reached
+- [x] Runtime/string lane: implement the next bounded `substr()` path reached
   by the WordPress bootstrap shim. Keep negative offset/length edge behavior,
   byte-vs-character semantics, broad scalar coercions, array/object/resource
   operands, exact diagnostics, and native lowering named unless implemented.
+  Milestone 836 covers scalar/null string-convertible input, integer offsets,
+  and optional integer lengths over byte positions when the result remains
+  valid UTF-8. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
+- [ ] Runtime/regex lane: widen the bounded `preg_replace()` implementation
+  for the next reached WordPress bootstrap pattern, without claiming broad PCRE
+  replacement semantics. Keep callback replacement, arrays, captures/backrefs,
+  modifiers, limits/count output, exact diagnostics, and native lowering named
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 835 checkpoint, the latest committed checkpoint
-  is `9671480 runtime: seed script filename server default`, covering
-  Milestone 834.
+- Before the current Milestone 836 checkpoint, the latest committed checkpoint
+  is `601d0a8 runtime: add bounded str ends with`, covering Milestone 835.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -127,10 +127,11 @@ Subsequent bounded milestones advanced the same shim through nested
 `empty(...)` paths and deterministic MySQLi metadata placeholders, dynamic
 object/class-string static property access for the PHPMailer validator
 assignment, deterministic CLI `$_SERVER['SCRIPT_FILENAME']` startup state, and
-the reached `str_ends_with($_SERVER['SCRIPT_FILENAME'], 'php.cgi')` guard. As
-of Milestone 835, direct `wp-settings.php` still stops at missing `ABSPATH`,
-while the bootstrap shim now stops at
-`runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
+the reached `str_ends_with($_SERVER['SCRIPT_FILENAME'], 'php.cgi')` guard, and
+bounded `substr()` string slicing for the following bootstrap path. As of
+Milestone 836, direct `wp-settings.php` still stops at missing `ABSPATH`, while
+the bootstrap shim now stops at
+`runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -444,9 +445,10 @@ property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
 writes. Milestone 834 seeds the deterministic CLI
 `$_SERVER['SCRIPT_FILENAME']` startup key, and
-Milestone 835 covers the reached `str_ends_with()` CGI guard. The current
-bootstrap-shim frontier is now
-`runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
+Milestone 835 covers the reached `str_ends_with()` CGI guard, and Milestone
+836 covers bounded `substr()` slicing. The current bootstrap-shim frontier is
+now the next unsupported `preg_replace()` pattern at
+`runtime error at <bootstrap-shim>:6337:13: unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/ is implemented in the current subset`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -645,8 +647,9 @@ The repository already has a working Rust workspace with:
   and `DESCRIBE` probes. Bounded dynamic static-receiver property reads/direct
   writes cover the reached PHPMailer validator assignment. A bounded
   `SCRIPT_FILENAME` CLI seed covers the reached URL-guessing read, and a
-  bounded `str_ends_with()` slice covers the following CGI guard. The next
-  bottleneck is `substr()` in the WordPress bootstrap shim.
+  bounded `str_ends_with()` slice covers the following CGI guard, and bounded
+  `substr()` covers the next string-slicing path. The next bottleneck is a
+  `preg_replace()` pattern outside the current database-version cleanup slice.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
@@ -968,12 +971,12 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 835 is the active checkpoint candidate: bounded
-  `str_ends_with()` support advanced the real WordPress bootstrap shim to
-  missing `substr()`.
-- The next immediate WordPress-directed runtime lane is a bounded `substr()`
-  slice for the reached bootstrap path, with broader string semantics and
-  native lowering named unless implemented.
+- Milestone 836 is the active checkpoint candidate: bounded `substr()` support
+  advanced the real WordPress bootstrap shim to the next unsupported
+  `preg_replace()` pattern.
+- The next immediate WordPress-directed runtime lane is a bounded
+  `preg_replace()` widening for the reached bootstrap path, with broader PCRE
+  semantics and native lowering named unless implemented.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

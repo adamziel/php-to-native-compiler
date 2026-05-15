@@ -7324,6 +7324,7 @@ impl Interpreter {
             "str_contains" => call_str_contains(&args, span),
             "str_ends_with" => call_str_ends_with(&args, span),
             "strpos" => call_strpos(&args, span),
+            "substr" => call_substr(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
@@ -11374,6 +11375,7 @@ fn is_builtin(name: &str) -> bool {
             | "str_contains"
             | "str_ends_with"
             | "strpos"
+            | "substr"
             | "substr_count"
             | "str_replace"
             | "preg_match"
@@ -11974,6 +11976,74 @@ fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
         .position(|window| window == needle)
         .map(|index| Value::Int((start + index) as i64))
         .unwrap_or(Value::Bool(false)))
+}
+
+fn call_substr(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "substr()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_contains_argument("substr()", "string", &args[0], span)?;
+    let offset = match args.get(1) {
+        Some(Value::Int(offset)) => *offset,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "substr()",
+                    format!(
+                        "offset argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => unreachable!("arity checked above"),
+    };
+    let value_len = value.len() as i64;
+    let start = if offset >= 0 {
+        offset.min(value_len)
+    } else {
+        (value_len + offset).max(0)
+    };
+
+    let end = match args.get(2) {
+        Some(Value::Int(length)) if *length >= 0 => (start + *length).min(value_len),
+        Some(Value::Int(length)) => (value_len + *length).max(0),
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "substr()",
+                    format!(
+                        "length argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => value_len,
+    };
+    let end = end.max(start).min(value_len);
+    let bytes = value.as_bytes()[start as usize..end as usize].to_vec();
+    let result = String::from_utf8(bytes).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "substr()",
+                "substring byte range must remain valid UTF-8 in the current subset",
+            ),
+        )
+    })?;
+
+    Ok(Value::String(result))
 }
 
 fn call_substr_count(args: &[Value], span: Span) -> CompileResult<Value> {

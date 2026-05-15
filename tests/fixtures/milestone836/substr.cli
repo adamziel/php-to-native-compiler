@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+press|word|pr|word
+--- stdout end ---
+stderr:
+--- stderr end ---
