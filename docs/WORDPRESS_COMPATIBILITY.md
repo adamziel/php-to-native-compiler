@@ -1028,6 +1028,17 @@ The first bootstrap probe is expected to fail. Known blockers include:
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:1283:15: undefined function mysqli_real_escape_string()`,
   corresponding to the reached `wpdb::_real_escape()` option lookup path.
+  Milestone 818 implements bounded `mysqli_real_escape_string()` for the
+  reached `wpdb::_real_escape()` path. It accepts the existing placeholder
+  `mysqli` object and scalar/null string-convertible data, returning
+  deterministic MySQL-style escaping for NUL, newline, carriage return,
+  backslash, quotes, and Ctrl-Z. This is not real connection charset state,
+  host database behavior, warning/error routing, binary or invalid-string
+  fidelity, exact escaping edge cases, SQL execution, or native lowering. The
+  real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:2422:71: undefined function rand()`,
+  corresponding to `wp-includes/class-wpdb.php:2422` in
+  `wpdb::placeholder_escape()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

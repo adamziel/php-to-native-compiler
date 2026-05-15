@@ -979,7 +979,13 @@ runtime and native function tables expose the name so early application
 extension guards can move to the next compatibility blocker, but direct or
 dynamic connection attempts report a stable unsupported runtime diagnostic
 until mysqli/PDO host integration, connection handles, query/result behavior,
-errors, escaping, charset state, and native database calls are designed.
+errors, full escaping, charset state, and native database calls are designed.
+The current placeholder MySQLi slice also supports deterministic
+`mysqli_real_connect()`, `mysqli_get_server_info()`, `mysqli_query()` for the
+reached SQL-mode probe, `mysqli_select_db()`, and
+`mysqli_real_escape_string()` for scalar/null string-convertible values over
+the placeholder handle. These calls are compatibility probes, not host DB
+integration.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

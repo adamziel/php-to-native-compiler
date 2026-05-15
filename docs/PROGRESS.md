@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 818, bounded `mysqli_real_escape_string()` support for the
+  reached WordPress `wpdb::_real_escape()` option lookup path. The runtime now
+  exposes `mysqli_real_escape_string` through function/callability metadata and
+  dynamic string-valued calls, accepts the existing placeholder `mysqli` object
+  and scalar/null string-convertible data, and returns deterministic MySQL-style
+  escaping for NUL, newline, carriage return, backslash, single quote, double
+  quote, and Ctrl-Z. This is not real connection charset state, host database
+  behavior, warning/error routing, binary or invalid-string fidelity, exact
+  escaping edge cases, SQL execution, or native lowering. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past `wpdb::_real_escape()` to
+  `runtime error at <bootstrap-shim>:2422:71: undefined function rand()`,
+  corresponding to `wp-includes/class-wpdb.php:2422` in
+  `wpdb::placeholder_escape()`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone818`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 817, bounded direct-variable by-reference parameter copy-back
   for the reached WordPress object-cache output-parameter path. Calls that
   provide a direct variable for a by-reference user-function or method

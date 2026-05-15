@@ -4168,6 +4168,50 @@ impl Interpreter {
         Ok(Value::Bool(true))
     }
 
+    fn call_mysqli_real_escape_string(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_real_escape_string", args, 2, span)?;
+        let Value::Object(handle) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_escape_string()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {}",
+                        args[0].type_name()
+                    ),
+                ),
+            ));
+        };
+        if !handle.class_name().eq_ignore_ascii_case("mysqli") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_escape_string()",
+                    format!(
+                        "first argument must be mysqli object in the current subset, got {} object",
+                        handle.class_name()
+                    ),
+                ),
+            ));
+        }
+
+        if matches!(args[1], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "mysqli_real_escape_string()",
+                    "data argument arrays are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        let value = args[1]
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?;
+
+        Ok(Value::String(mysql_escape_string(&value)))
+    }
+
     fn evaluate_array_index(
         &mut self,
         target: &Expr,
@@ -8092,6 +8136,7 @@ impl Interpreter {
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
             "mysqli_query" => self.call_mysqli_query(&args, span),
             "mysqli_select_db" => self.call_mysqli_select_db(&args, span),
+            "mysqli_real_escape_string" => self.call_mysqli_real_escape_string(&args, span),
             "mysqli_report" => {
                 expect_arity(name, &args, 1, span)?;
                 let Value::Int(mode) = args[0] else {
@@ -10748,6 +10793,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_server_info"
             | "mysqli_query"
             | "mysqli_select_db"
+            | "mysqli_real_escape_string"
             | "mysqli_report"
             | "mysqli_init"
             | "file_exists"
@@ -10939,6 +10985,23 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
 
 fn is_compat_loaded_extension_name(name: &str) -> bool {
     matches!(name.to_ascii_lowercase().as_str(), "json" | "hash")
+}
+
+fn mysql_escape_string(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\0' => escaped.push_str("\\0"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\\' => escaped.push_str("\\\\"),
+            '\'' => escaped.push_str("\\'"),
+            '"' => escaped.push_str("\\\""),
+            '\u{001A}' => escaped.push_str("\\Z"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {

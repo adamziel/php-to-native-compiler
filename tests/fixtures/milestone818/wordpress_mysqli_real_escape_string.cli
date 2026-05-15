@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone818/wordpress_mysqli_real_escape_string.php"
+  ],
+  "stdin": "",
+  "stdout": "can\\'t \\\"stop\\\" \\\\ now\\n",
+  "stderr": "",
+  "exit": 0
+}

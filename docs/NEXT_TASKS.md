@@ -7493,19 +7493,28 @@ handled.
   implemented.
   Milestone 817 advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1283:15: undefined function mysqli_real_escape_string()`.
-- [ ] Runtime/mysqli lane: implement the reached bounded
+- [x] Runtime/mysqli lane: implement the reached bounded
   `mysqli_real_escape_string($this->dbh, $data)` behavior for
   `wpdb::_real_escape()` over the existing placeholder `mysqli` object and
   scalar string-convertible data. Keep connection charset state, real database
   connection behavior, warning/error routing, exact escaping edge cases,
   binary/invalid-string behavior, SQL execution, and native lowering named
   unless implemented.
+  Milestone 818 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:2422:71: undefined function rand()`,
+  corresponding to `wp-includes/class-wpdb.php:2422` in
+  `wpdb::placeholder_escape()`.
+- [ ] Runtime/random lane: implement the reached bounded `rand()` behavior for
+  `wpdb::placeholder_escape()` without claiming cryptographic randomness or
+  full PHP random-state compatibility. Keep seeding, mt/rand state coupling,
+  min/max argument forms, swapped bounds, exact warnings/errors,
+  deterministic-test policy, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 817 checkpoint, the latest committed checkpoint
-  is `7de9213 runtime: allow omitted reference defaults`, covering Milestone
-  816.
+- Before the current Milestone 818 checkpoint, the latest committed checkpoint
+  is `941c01d runtime: add bounded reference output copyback`, covering
+  Milestone 817.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

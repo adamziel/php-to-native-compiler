@@ -117,9 +117,11 @@ compound assignment now covers the reached object-cache mutation path; direct
 `$GLOBALS['name']` reads/writes now cover the reached object-cache bootstrap
 global assignment; direct object-property array-offset `isset(...)` now covers
 the reached `WP_Hook::add_filter()` priority check; bounded `ksort()` now
-covers the reached hook-priority ordering path; it now stops at a
-bounded `mysqli_real_escape_string()` gap in the reached `wpdb::_real_escape()`
-option lookup path.
+covers the reached hook-priority ordering path; direct-variable by-reference
+output parameters cover the reached `WP_Object_Cache::get(..., $found)`
+cache-miss path; bounded `mysqli_real_escape_string()` now covers the reached
+`wpdb::_real_escape()` option lookup path; it now stops at a missing bounded
+`rand()` call in `wpdb::placeholder_escape()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -397,9 +399,11 @@ by-reference parameters with defaults, which moves past `wp_cache_get()`'s
 omitted `$found` parameter in `get_option()` but not the later provided
 `$found` output variable. Milestone 817 covers direct-variable by-reference
 parameter copy-back for the reached `WP_Object_Cache::get(..., $found)` output
-shape. The current frontier is now missing bounded
-`mysqli_real_escape_string()` support in the reached `wpdb::_real_escape()`
-option lookup path.
+shape. Milestone 818 covers bounded `mysqli_real_escape_string()` for the
+reached `wpdb::_real_escape()` option lookup path over the existing
+placeholder `mysqli` object. The current frontier is now missing bounded
+`rand()` support in the reached `wpdb::placeholder_escape()` path at
+`wp-includes/class-wpdb.php:2422`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -574,9 +578,11 @@ The repository already has a working Rust workspace with:
   ordering path. Omitted optional by-reference parameters with defaults can now
   execute without reference binding. Direct-variable by-reference parameters
   copy the callee's final value back to the caller, covering the reached
-  `WP_Object_Cache::get(..., $found)` output shape. The next bottleneck is
-  missing bounded `mysqli_real_escape_string()` support in the reached
-  `wpdb::_real_escape()` option lookup path.
+  `WP_Object_Cache::get(..., $found)` output shape. Bounded
+  `mysqli_real_escape_string()` covers the reached `wpdb::_real_escape()`
+  option lookup path over the placeholder MySQLi handle. The next bottleneck is
+  missing bounded `rand()` support in the reached
+  `wpdb::placeholder_escape()` path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

@@ -1,0 +1,1 @@
+Project-specific database boundary: phpc returns deterministic MySQL-style escaping for the placeholder mysqli handle, while system PHP depends on a real mysqli extension connection and charset state.
