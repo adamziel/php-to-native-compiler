@@ -7208,17 +7208,26 @@ handled.
   Milestone 786 implements the local one-string path slice and advances the
   real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:124:22: expected property name after '->', found {`.
-- [ ] Object/parser runtime lane: implement or explicitly bound braced dynamic
+- [x] Object/parser runtime lane: implement or explicitly bound braced dynamic
   object-property access such as `$object->{$name}` for the reached WordPress
   startup path. Keep arbitrary expressions, writes, unset/isset/empty/null
   coalescing behavior, magic properties, non-public visibility context,
   references/copy-on-write, exact diagnostics, and native lowering named
   unless implemented.
+  Milestone 787 implements braced dynamic-property reads and direct-variable
+  root writes through the existing dynamic-property runtime subset, and
+  advances the real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:173:7: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented`.
+- [ ] Object/magic-constant lane: implement bounded `__METHOD__` evaluation
+  for the reached WordPress method context. Keep trait methods, closure
+  contexts, static method edge cases, case/original-name fidelity,
+  namespace-qualified names, source mapping, native lowering, and exact PHP
+  behavior named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 786 checkpoint, the latest committed checkpoint
-  is `cd17eba runtime: add bounded error reporting`, covering Milestone 785.
+- Before the current Milestone 787 checkpoint, the latest committed checkpoint
+  is `c11f0df runtime: add bounded is dir`, covering Milestone 786.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

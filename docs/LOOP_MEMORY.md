@@ -26,6 +26,33 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T08:21:58Z
+
+- Checkpoint before this task:
+  `c11f0df runtime: add bounded is dir`, pushed to `origin/master`.
+- Task attempted: Milestone 787, bounded braced dynamic object-property names
+  for the reached WordPress startup object path.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone787/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model braced_dynamic_property_names_read_write_current_expression_subset -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone787`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: arbitrary object roots for assignment, method
+  calls, dynamic static properties, non-public dynamic property access, magic
+  property hooks, dynamic property-name `isset`/`empty`/`??`/`??=`, compound
+  assignment, increment/decrement, references/copy-on-write, exact
+  notices/deprecations, and native lowering remain unsupported.
+- Next concrete task: implement bounded `__METHOD__` evaluation for the reached
+  WordPress method context while documenting trait methods, closure contexts,
+  static-method edge cases, namespace/name fidelity, source mapping, exact PHP
+  behavior, and native lowering unless implemented.
+
 ## Loop Event 2026-05-15T08:14:37Z
 
 - Checkpoint before this task:

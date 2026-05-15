@@ -781,6 +781,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   full filesystem support, stream wrappers, symlink/canonicalization policy,
   permissions/open_basedir behavior, stat-cache fidelity, native lowering,
   dynamic object-property support, or WordPress bootstrap support.
+  Milestone 787 implements braced dynamic object-property names for the
+  existing public-slot/`stdClass` dynamic-property runtime subset. The real
+  bootstrap-shim probe now advances to
+  `parse error at <bootstrap-shim>:173:7: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented`.
+  This is not full dynamic-property support, magic property hooks, non-public
+  dynamic visibility, references/copy-on-write, native lowering, `__METHOD__`
+  support, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

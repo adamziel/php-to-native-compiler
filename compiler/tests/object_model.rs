@@ -326,6 +326,30 @@ echo $data->$intKey;
 }
 
 #[test]
+fn braced_dynamic_property_names_read_write_current_expression_subset() {
+    let source = r#"<?php
+class Account {
+    public $id;
+}
+
+$name = "id";
+$account = new Account();
+$account->{$name} = 7;
+echo $account->{ "i" . "d" };
+echo "|";
+
+$data = new stdClass();
+$slot = "answer";
+$data->{$slot} = 42;
+echo $data->{ $slot };
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "7|42");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn dynamic_property_names_do_not_materialize_missing_slots_on_declared_classes() {
     let error = runtime_error(
         r#"<?php

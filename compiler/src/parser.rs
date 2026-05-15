@@ -2229,7 +2229,7 @@ impl Parser {
 
         if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
             let operator_span = self.previous().span;
-            if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
                 let property = self.parse_dynamic_property_name_expr(operator_span)?;
                 if self.check(|kind| matches!(kind, TokenKind::LParen)) {
                     return Ok(AssignTarget::Variable { name, span });
@@ -3415,7 +3415,7 @@ impl Parser {
 
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let operator_span = self.previous().span;
-                if matches!(self.peek().kind, TokenKind::Variable(_)) {
+                if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
                     let property = self.parse_dynamic_property_name_expr(operator_span)?;
                     if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                         return Err(self.error_at(
@@ -4788,6 +4788,14 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::LBrace => {
+                let expr = self.parse_expression()?;
+                self.consume_keyword(
+                    TokenKind::RBrace,
+                    "expected '}' after dynamic property expression",
+                )?;
+                Ok(expr)
+            }
             _ => unreachable!("caller checked dynamic property variable"),
         }
     }

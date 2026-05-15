@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 787, bounded braced dynamic object-property names for the
+  current WordPress startup object path. The parser now accepts
+  `$object->{$expr}` reads and direct-variable-root writes, reusing the
+  existing dynamic-property AST and runtime name evaluation. The interpreter
+  keeps the current string/integer property-name subset, reads/writes existing
+  public slots, materializes public dynamic slots on `stdClass`, and leaves
+  complex roots behind the existing assignment-target boundary. Arbitrary
+  property expressions outside the current expression subset, dynamic method
+  calls, dynamic static properties, non-public dynamic property access, magic
+  property hooks, dynamic property-name `isset`/`empty`/`??`/`??=`, compound
+  assignment, increment/decrement, references/copy-on-write, exact notices and
+  deprecations, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the braced dynamic property
+  parse blocker to
+  `parse error at <bootstrap-shim>:173:7: unsupported magic constant __METHOD__: method context evaluation requires method dispatch, which is not implemented`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model braced_dynamic_property_names_read_write_current_expression_subset -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone787`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 786, bounded `is_dir()` for the current WordPress startup
   filesystem path. The runtime now accepts one string local path, rejects
   stream-wrapper paths, returns `false` for missing paths and files, returns

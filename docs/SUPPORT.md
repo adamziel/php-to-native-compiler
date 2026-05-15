@@ -73,12 +73,13 @@
   `$object->items[$outer][] = expr` evaluate all property path keys left to
   right, materialize `null` property values and missing/`null` intermediate
   containers as arrays, then write the property back through the existing
-  visibility-aware object-property path. Dynamic property-name reads and direct assignment
-  expressions such as `$object->$name` and `$object->$name = expr` are
-  supported for direct object variables when the property-name expression
-  evaluates to a string or integer name and resolves to an existing public
-  slot; writes can also materialize public dynamic slots on `stdClass`
-  objects. Nested compound assignment, nested `??=`, nested
+  visibility-aware object-property path. Dynamic property-name reads and direct
+  assignment expressions such as `$object->$name`, `$object->{$expr}`,
+  `$object->$name = expr`, and `$object->{$expr} = expr` are supported for
+  direct object variables when the property-name expression evaluates to a
+  string or integer name and resolves to an existing public slot; writes can
+  also materialize public dynamic slots on `stdClass` objects. Nested compound
+  assignment, nested `??=`, nested
   increment/decrement, mixed object/property/ArrayAccess
   targets, non-`stdClass` missing property materialization,
   references/copy-on-write, and native lowering remain unsupported. Simple
@@ -1187,9 +1188,11 @@
   visible declared/inherited static-method subset.
   Dynamic instance property names are supported only for existing public slots
   on current object values and public dynamic slots on `stdClass`, using
-  string or integer property-name values. Dynamic methods, dynamic static
-  property names, non-public dynamic property access, magic property hooks,
-  dynamic property-name `isset`/`empty`/`??`/`??=`, compound assignment,
+  string or integer property-name values. The parser accepts both
+  `$object->$name` and braced `$object->{$expr}` forms in the current read and
+  direct-variable-root write subset. Dynamic methods, dynamic static property
+  names, non-public dynamic property access, magic property hooks, dynamic
+  property-name `isset`/`empty`/`??`/`??=`, compound assignment,
   increment/decrement, string interpolation, non-`stdClass` missing-property
   creation, and exact PHP dynamic-property notices/deprecations remain
   unsupported. Non-public
@@ -3125,7 +3128,8 @@
   `new static` slices, magic methods, namespaces,
   autoloading, anonymous classes, attributes, reflection, dynamic properties
   beyond `stdClass` public slot materialization, dynamic property-name forms
-  beyond existing public slots and `stdClass`, dynamic method names, protected method visibility outside
+  beyond existing public slots and `stdClass` including complex assignment
+  roots, dynamic method names, protected method visibility outside
   same-class/child method contexts, non-public property access outside the
   current private/protected method context, broader
   constructor visibility context, static member
@@ -3452,7 +3456,8 @@
   assignment values. Nested
   append/offset assignment expressions, append-offset chained assignment
   expressions, dynamic property names beyond the current direct
-  `$object->$name` assignment slice, append-offset `??=` targets, reference
+  `$object->$name`/`$object->{$expr}` assignment slice, append-offset `??=`
+  targets, reference
   assignment, copy-on-write container aliasing, exact native error objects, and
   native lowering are not implemented.
 - Compound assignment is limited to direct static variables, direct
