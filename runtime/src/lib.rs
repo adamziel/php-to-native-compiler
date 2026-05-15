@@ -688,6 +688,26 @@ impl PhpArray {
         Ok(len)
     }
 
+    pub fn pop_value(&mut self) -> Value {
+        let Some(entry) = self.entries.pop() else {
+            self.cursor = 0;
+            return Value::Null;
+        };
+
+        if matches!(entry.key, ArrayKey::Int(key) if key >= 0 && key.checked_add(1) == Some(self.next_auto_index))
+        {
+            self.next_auto_index -= 1;
+            self.auto_index_exhausted = false;
+        }
+        if self.entries.is_empty() {
+            self.cursor = 0;
+        } else if self.cursor >= self.entries.len() {
+            self.cursor = self.entries.len() - 1;
+        }
+
+        entry.value
+    }
+
     pub fn keys_reindexed(&self) -> Self {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
@@ -4329,6 +4349,24 @@ mod tests {
         assert_eq!(array.current_value(), Value::String("second".to_string()));
         assert_eq!(array.next_value(), Value::Bool(false));
         assert_eq!(array.current_value(), Value::Bool(false));
+    }
+
+    #[test]
+    fn array_pop_value_removes_last_value_and_updates_append_index_like_php() {
+        let mut array = PhpArray::new();
+        array.insert(2, Value::String("two".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+        assert_eq!(array.next_value(), Value::String("five".to_string()));
+
+        assert_eq!(array.pop_value(), Value::String("five".to_string()));
+        assert_eq!(array.current_value(), Value::String("two".to_string()));
+        assert_eq!(
+            array.append(Value::String("new".to_string())).unwrap(),
+            ArrayKey::Int(5)
+        );
+        assert_eq!(array.pop_value(), Value::String("new".to_string()));
+        assert_eq!(array.pop_value(), Value::String("two".to_string()));
+        assert_eq!(array.pop_value(), Value::Null);
     }
 
     #[test]

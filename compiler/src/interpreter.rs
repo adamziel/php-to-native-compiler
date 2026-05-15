@@ -6141,6 +6141,9 @@ impl Interpreter {
                 if key == "array_unshift" {
                     return self.call_array_unshift(args, span, caller_scope);
                 }
+                if key == "array_pop" {
+                    return self.call_array_pop(args, span, caller_scope);
+                }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
                 }
@@ -6183,6 +6186,9 @@ impl Interpreter {
                 }
                 if key == "array_unshift" {
                     return self.call_array_unshift(args, span, caller_scope);
+                }
+                if key == "array_pop" {
+                    return self.call_array_pop(args, span, caller_scope);
                 }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
@@ -6538,6 +6544,49 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?;
         caller_scope.write_static(array_name, array_value);
         Ok(Value::Int(len))
+    }
+
+    fn call_array_pop(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_pop()",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Expr::Variable(array_name, _) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_pop()",
+                    "argument must be a direct variable array in the current subset",
+                ),
+            ));
+        };
+
+        let mut array_value = caller_scope.read_static(array_name, span)?;
+        let Value::Array(array) = &mut array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_pop()",
+                    format!("argument must be array, got {}", array_value.type_name()),
+                ),
+            ));
+        };
+
+        let value = array.pop_value();
+        caller_scope.write_static(array_name, array_value);
+        Ok(value)
     }
 
     fn call_next(
@@ -8135,6 +8184,13 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "array_unshift()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
+            "array_pop" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_pop()",
                     "by-reference array arguments require a direct call target in the current subset",
                 ),
             )),
@@ -11215,6 +11271,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_map"
             | "ksort"
             | "array_unshift"
+            | "array_pop"
             | "next"
             | "in_array"
             | "array_search"

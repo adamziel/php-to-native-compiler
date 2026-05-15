@@ -7595,18 +7595,29 @@ handled.
   `$this->iterations[$level]` object-property array-offset shape, and advances
   the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:207:2: undefined function array_pop()`.
-- [ ] Runtime/array lane: implement the reached bounded `array_pop()` behavior
+- [x] Runtime/array lane: implement the reached bounded `array_pop()` behavior
   for direct variable arrays in the WordPress hook cleanup path. Keep broad
   by-reference argument handling, non-variable array targets, object-property
   array targets unless reached and implemented, internal pointer side effects,
   references/copy-on-write, exact warnings, and native lowering named unless
   implemented.
+  Milestone 829 covers direct-variable ordered-array pop mutation, empty-array
+  null return, reached append-index behavior after integer-key pops, and
+  string-valued direct dynamic calls, and advances the real bootstrap-shim
+  probe to
+  `runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:2357` in `wpdb::_do_query()`.
+- [ ] Runtime/mysqli lane: extend the bounded `mysqli_query()` placeholder for
+  the reached `wpdb::_do_query()` option-query path without claiming real SQL
+  execution. Keep host database behavior, result resources, row fetching,
+  affected rows, errors/warnings, charset/collation, prepared statements,
+  transactions, binary/invalid-string behavior, and native database calls
+  named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 828 checkpoint, the latest committed checkpoint
-  is `14dac92 runtime: add bounded call_user_func_array`, covering Milestone
-  827.
+- Before the current Milestone 829 checkpoint, the latest committed checkpoint
+  is `e7ab60e runtime: add bounded next`, covering Milestone 828.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

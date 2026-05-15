@@ -1124,6 +1124,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   interaction, references/copy-on-write, exact warning behavior, or native
   lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:207:2: undefined function array_pop()`.
+  Milestone 829 implements bounded direct-variable `array_pop()` for the
+  reached hook cleanup path such as `array_pop( $wp_current_filter )`: it
+  removes and returns the last inserted value, returns `null` for empty arrays,
+  and preserves the reached append-index behavior after integer-key pops. This
+  is not broad by-reference array handling, object-property array targets,
+  value-only dynamic calls, full internal pointer side effects,
+  references/copy-on-write, exact warning behavior, or native lowering. The
+  real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:2357` in `wpdb::_do_query()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 829, bounded direct-variable `array_pop()` support for the
+  reached WordPress hook cleanup path. The runtime now removes and returns the
+  last inserted array value, returns `null` for empty arrays, updates the
+  current cursor when the removed element was current or later, and follows the
+  reached PHP append-index behavior for integer-keyed pops. The interpreter
+  exposes `array_pop` through direct calls, string-valued direct dynamic calls,
+  `function_exists`, and `is_callable`, while value-only dynamic calls such as
+  `call_user_func("array_pop", ...)`, non-variable array targets,
+  object-property array targets, broad by-reference argument handling,
+  references/copy-on-write, exact warning behavior, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `array_pop()` call to
+  `runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:2357` in `wpdb::_do_query()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime pop_value -- --nocapture`,
+  `cargo test -p phpc --test array_pop_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone829`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 828, bounded `next()` support for the reached WordPress hook
   iteration path. `PhpArray` now tracks a current cursor for the implemented
   value model; `current()` reads that cursor, and direct `next($array)`

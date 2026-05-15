@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T16:35:00Z
+
+- Checkpoint before this task:
+  `e7ab60e runtime: add bounded next`, pushed to `origin/master`.
+- Task attempted: Milestone 829, bounded direct-variable `array_pop()` support
+  for the reached WordPress hook cleanup path.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/array_pop_builtin.rs`,
+  `tests/fixtures/milestone829/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime pop_value -- --nocapture`,
+  `cargo test -p phpc --test array_pop_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone829`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:2357:20: unsupported call mysqli_query(): only the WordPress SQL mode probe SELECT @@SESSION.sql_mode is implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:2357` in `wpdb::_do_query()`.
+- Remaining semantic gaps: broad by-reference array argument handling,
+  non-variable array targets, object-property array targets, full internal
+  pointer side effects, references/copy-on-write, exact warning behavior,
+  native lowering, and real WordPress bootstrap support remain unsupported.
+- Next concrete task: extend the bounded `mysqli_query()` placeholder for the
+  reached `wpdb::_do_query()` option-query path while keeping real SQL
+  execution, result resources, row fetching, affected rows, errors/warnings,
+  charset/collation, prepared statements, transactions, and native database
+  calls named unless implemented.
+
 ## Loop Event 2026-05-15T16:05:00Z
 
 - Checkpoint before this task:

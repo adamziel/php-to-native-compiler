@@ -491,7 +491,7 @@
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_change_key_case`, `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_unshift`, `next`, `ksort`,
+  `array_unshift`, `array_pop`, `next`, `ksort`,
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
@@ -1429,6 +1429,13 @@
   semantics, `reset()`/`end()`/`prev()` interaction, object operands,
   value-only dynamic calls, broad lvalue targets, references/copy-on-write,
   exact warnings, and native lowering remain unsupported.
+  `array_pop($array)` removes and returns the last inserted value for direct
+  variable arrays, returns `null` for empty arrays, updates the current cursor
+  when needed, and follows the reached PHP append-index behavior after popping
+  the last integer key. Non-variable targets, object-property array targets,
+  value-only dynamic calls, broad by-reference handling,
+  references/copy-on-write, exact warnings, and native lowering remain
+  unsupported.
   `array_is_list($array)`
   returns true for empty arrays and arrays whose entries are ordered with exact
   integer keys `0..n-1`; numeric string keys such as `"0"` participate through
@@ -2489,7 +2496,7 @@
   `array_intersect_key`, `array_diff_key`, `array_diff`, `array_intersect`,
   `array_unique`, `array_flip`, `array_fill_keys`, `array_count_values`,
   `array_sum`, `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `hash_hmac`, `gettype`, `is_null`, `is_bool`, `is_int`,
+  `array_unshift`, `array_pop`, `ksort`, `in_array`, `array_search`, `rand`, `uniqid`, `hash_hmac`, `gettype`, `is_null`, `is_bool`, `is_int`,
   `is_integer`, `is_long`, `is_float`, `is_double`, `is_string`, `is_array`,
   `is_scalar`, `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
   `function_exists`, `dirname`, `extension_loaded`, `mysqli_connect`,
@@ -2626,7 +2633,7 @@
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `array_unshift`, `next`, `ksort`, `in_array`,
+  `array_filter`, `array_map`, `array_unshift`, `array_pop`, `next`, `ksort`, `in_array`,
   `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
@@ -2753,6 +2760,10 @@
   subset as the builtin section above; direct native `array_unshift(...)`
   calls still reject under the function-call boundary, while native
   function-table introspection recognizes the name.
+  `array_pop` accepts the same direct-variable ordered-array mutation subset
+  as the builtin section above; direct native `array_pop(...)` calls still
+  reject under the function-call boundary, while native function-table
+  introspection recognizes the name.
   `next` accepts the same direct array-pointer mutation subset as the builtin
   section above; direct native `next(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3328,7 +3339,7 @@
   outside the current private/protected method context, append offset operands, complex lvalues,
   general expression operands, magic methods, and unsupported array-key
   coercions remain unsupported.
-  `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`, `array_values`,
+  `array_key_first`, `array_key_last`, `current`, `next`, `array_pop`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
@@ -4376,6 +4387,12 @@
   `call_user_func("array_unshift", ...)`, broad by-reference argument
   handling, references/copy-on-write, exact warnings/errors, and native
   lowering beyond function-table introspection
+- `array_pop()` outside the current direct-variable ordered-array mutation
+  subset: non-variable targets, object-property array targets, value-only
+  dynamic calls such as `call_user_func("array_pop", ...)`, broad by-reference
+  argument handling, full internal pointer side effects, references/copy-on-write,
+  exact warnings/errors, and native lowering beyond function-table
+  introspection
 - `current()` outside the current ordered-array first-value subset: PHP's
   mutable internal array-pointer model, interaction with `next()`/`reset()`,
   object operands, references/copy-on-write, exact warnings/errors, and native
