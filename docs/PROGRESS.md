@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 884, a synthetic WordPress-shaped `wpdb` transaction-start
+  bookkeeping smoke that calls the bounded
+  `mysqli_begin_transaction($this->dbh, 0, $name)` placeholder path, records
+  local transaction-start state, and verifies that the placeholder boundary
+  ran. This is a harness smoke only; it does not add real WordPress
+  transaction fidelity, real transaction state, autocommit state mutation,
+  commit/rollback behavior, savepoints, host database integration,
+  warning/error fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone884`.
+
 - Added Milestone 883, bounded `mysqli_begin_transaction()` support for
   placeholder MySQLi handles. The runtime now accepts
   `mysqli_begin_transaction($handle)`, plus optional flags value `0` and

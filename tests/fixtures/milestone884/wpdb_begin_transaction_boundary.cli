@@ -1,0 +1,5 @@
+$ phpc run tests/fixtures/milestone884/wpdb_begin_transaction_boundary.php
+started
+checked
+wp-bootstrap
+1

@@ -1357,7 +1357,9 @@ historical blockers and remaining full-support gaps include:
   claiming real WordPress transaction fidelity. Milestone 883 adds bounded
   deterministic `mysqli_begin_transaction()` placeholder success without real
   transaction state, autocommit state changes, commit/rollback behavior, or
-  host database integration.
+  host database integration. Milestone 884 wires that placeholder through a
+  synthetic WordPress-shaped `wpdb` transaction-start bookkeeping smoke without
+  claiming real WordPress transaction fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

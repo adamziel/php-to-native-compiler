@@ -8153,16 +8153,27 @@ handled.
   native metadata lookup. This is not real transaction state, autocommit state
   mutation, commit/rollback behavior, savepoints, host database integration,
   warnings/errors, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that exercises the
   bounded `mysqli_begin_transaction()` placeholder through WordPress-shaped
   transaction bookkeeping without claiming real transaction or database-state
   behavior.
+  Milestone 884 adds a `phpc-only` synthetic `wpdb` fixture that calls
+  `mysqli_begin_transaction($this->dbh, 0, $name)`, records local transaction
+  bookkeeping state, and records that the placeholder transaction-start path
+  ran. It is not real WordPress transaction behavior, real transaction state,
+  autocommit state mutation, commit/rollback behavior, savepoints, host
+  database integration, warnings/errors, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next transaction boundary after
+  begin-transaction placeholders and choose a small tested slice, such as
+  bounded `mysqli_commit()`/`mysqli_rollback()` placeholder success or a
+  deterministic placeholder error-state boundary, before broader SQL execution
+  is claimed.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `3c94ed9 tests: add wordpress wpdb autocommit smoke`, covering Milestone 882
-  before the current Milestone 883 candidate.
+  `522e858 runtime: add mysqli begin transaction placeholder`, covering
+  Milestone 883 before the current Milestone 884 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

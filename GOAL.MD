@@ -178,7 +178,8 @@ through a synthetic WordPress-shaped `wpdb` server-status bookkeeping smoke,
 plus a bounded deterministic `mysqli_autocommit()` placeholder transaction
 boundary for boolean modes wired through a synthetic WordPress-shaped `wpdb`
 autocommit bookkeeping smoke, plus a bounded deterministic
-`mysqli_begin_transaction()` placeholder transaction-start boundary.
+`mysqli_begin_transaction()` placeholder transaction-start boundary wired
+through a synthetic WordPress-shaped `wpdb` transaction bookkeeping smoke.
 These are
 evidence that the compiler can walk farther through WordPress-shaped execution;
 they are not evidence of real database, request, plugin/theme/admin/REST, SAPI,
