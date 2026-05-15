@@ -187,13 +187,15 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
 6. Native execution: runtime ABI, linked binaries, boxed values, stack frames,
    heap/lifetime management, helper calls, and native diagnostics.
 
-For WordPress specifically, the next visible bootstrap-shim blocker after the
-Milestone 723 nested assignment slice is `clone`:
-`parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
-That opens an object-lifecycle lane: cloned object handles, shallow property
-copying under the current value model, `__clone` dispatch, visibility around
+For WordPress specifically, Milestone 724 advanced the bootstrap-shim probe
+past `clone` expressions by adding fresh object handles and shallow property
+slot copying for objects without declared `__clone` methods. The next visible
+bootstrap-shim blocker is now loop-depth control flow:
+`parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`,
+corresponding to `wp-includes/load.php:1610` and `break 2;`.
+The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
-and exact PHP diagnostics.
+destructors/reuse, and exact PHP diagnostics.
 
 - Native execution is missing linked binaries, runtime ABI, boxed values in
   generated code, stack frames, heap management, runtime helper calls,
@@ -227,13 +229,14 @@ and exact PHP diagnostics.
   late-bound `static::method(...)`, now execute through `phpc run`, but
   interfaces, traits, enums, object-receiver static properties/constants,
   non-static dynamic static dispatch, broader class constant semantics,
-  cloning, magic methods, dynamic method/property names, typed property
-  compatibility and instance property defaults, broader constructor/inheritance
-  rules, and native object lowering are still missing.
+  clone behavior beyond the current shallow no-`__clone` slice, magic methods,
+  dynamic method/property names, typed property compatibility and instance
+  property defaults, broader constructor/inheritance rules, and native object
+  lowering are still missing.
   The interpreter object-handle identity slice covers assignment,
   argument/return, array, foreach, strict identity, `spl_object_id`, and a
-  current-subset `spl_object_hash`, but clone/destruction/reuse and full object
-  execution are still missing.
+  current-subset `spl_object_hash`, and bounded clone expressions, but
+  `__clone`, destruction/reuse, and full object execution are still missing.
 - Standard-library and extension coverage is broad only in selected array and
   scalar areas; real app compatibility needs filesystem, streams, regex, JSON,
   XML, HTTP, database, crypto, encoding, date/time, reflection, sessions, and
@@ -297,10 +300,10 @@ The repository already has a working Rust workspace with:
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through the bounded nested assignment slice and then
-  stops at `clone`. The direct `wp-settings.php` probe still stops at undefined
-  `ABSPATH`, which is an entrypoint/environment issue rather than proof of core
-  bootstrap support.
+  probe currently advances through the bounded clone slice and then stops at
+  `break 2` loop-depth control flow. The direct `wp-settings.php` probe still
+  stops at undefined `ABSPATH`, which is an entrypoint/environment issue rather
+  than proof of core bootstrap support.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

@@ -606,7 +606,7 @@
   before typed metadata/uninitialized state/write enforcement exist, instance
   property default values, multiple property declarations, unsupported class
   constant declaration forms such as typed, static, or multi-declarator class constants,
-  unsupported `clone` expressions, dynamic `instanceof` class operands,
+  malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
   anonymous class expressions, dynamic property names,
@@ -862,9 +862,15 @@
   class as the called-class context,
   and `self::method(...)`, `parent::method(...)`, and `static::method(...)`
   execute resolved visible static methods while an active class/called-class
-  context exists. `clone
-  $object` expressions fail with a stable parse diagnostic before object
-  handle copying or `__clone` dispatch is implemented.
+  context exists. `clone $object` expressions evaluate the operand, require a
+  current object value,
+  allocate a fresh process-local object handle, shallow-copy the object's
+  current property slots, and return the cloned object. Object-valued
+  properties keep their existing handles under the current no-reference and
+  no-copy-on-write model. Classes that declare `__clone`, non-object operands,
+  private/protected clone-method visibility behavior, destructor/reuse
+  behavior, exact PHP `Error` objects, partial-output behavior, references,
+  copy-on-write, and native lowering remain unsupported.
   `$value instanceof Name` executes for the current bounded runtime slice:
   non-object left operands return `false`, object operands check declared class
   metadata plus the current single-parent chain, unknown class/interface names
@@ -911,7 +917,7 @@
   Dynamic method names, dynamic property names, non-public
   property/constructor visibility context beyond the current slice, static
   storage beyond direct static property reads/writes, broader class constant
-  semantics, shallow/deep clone property copying, `__clone`,
+  semantics, clone behavior beyond the current shallow property-slot copy, `__clone`,
   typed/default property compatibility, broader
   `parent::`/`self::`/`static::`, broader inheritance/interface relationship checks,
   namespace/autoload-aware class resolution, aliases and imports for class

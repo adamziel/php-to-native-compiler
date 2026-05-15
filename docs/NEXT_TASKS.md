@@ -6640,18 +6640,29 @@ handled.
   append-at-depth and nested read-modify-write forms explicit, and advances the
   real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
-- [ ] Parser/runtime lane: implement or explicitly bound `clone` expressions
+- [x] Parser/runtime lane: implement or explicitly bound `clone` expressions
   for the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:1324:9`, with tests, CLI coverage, docs, and named
   unsupported edges for `__clone` dispatch, private/protected clone methods,
   object handle identity, nested object/reference properties,
   references/copy-on-write, exact PHP diagnostics, partial-output behavior, and
-  native lowering.
+  native lowering. The Milestone 724 slice supports bounded `clone $object`
+  expressions for objects without declared `__clone` methods, keeps `__clone`
+  and references/copy-on-write explicit, and advances the real bootstrap-shim
+  probe to
+  `parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`.
+- [ ] Parser/runtime lane: implement or explicitly bound loop-depth
+  `break N;`/`continue N;` control flow for the real WordPress 6.9.4
+  bootstrap-shim blocker at `<bootstrap-shim>:1610:6`, corresponding to
+  `wp-includes/load.php:1610` and `break 2;`, with tests, CLI coverage, docs,
+  and named unsupported edges for invalid depths, switch/loop stack behavior,
+  `continue N`, exact PHP diagnostics, partial-output behavior, and native
+  lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 723 checkpoint, the latest committed checkpoint
-  is `7c76fba runtime: add bounded array casts`, covering Milestone 722.
+- Before the current Milestone 724 checkpoint, the latest committed checkpoint
+  is `8be05b5 runtime: add nested array assignment`, covering Milestone 723.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

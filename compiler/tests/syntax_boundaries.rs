@@ -549,25 +549,19 @@ fn emit_ir_rejects_anonymous_class_expression_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_clone_expression_has_stable_parse_errors() {
+fn malformed_clone_expression_has_stable_parse_errors() {
     let cases = [
         (
-            "<?php\n$copy = clone $object;\n",
+            "<?php\n$copy = clone;\n",
             2,
-            9,
-            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+            14,
+            "expected expression, found ;",
         ),
         (
-            "<?php\necho clone $object;\n",
+            "<?php\necho clone;\n",
             2,
-            6,
-            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
-        ),
-        (
-            "<?php\nCLONE $object;\n",
-            2,
-            1,
-            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
+            11,
+            "expected expression, found ;",
         ),
     ];
 
@@ -580,13 +574,13 @@ fn unsupported_clone_expression_has_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_clone_expression_at_parse_boundary() {
+fn emit_ir_rejects_clone_expression_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$copy = clone $object;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(
         error.message,
-        "unsupported clone expression: object handle copying and __clone dispatch are not implemented"
+        "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior"
     );
 }
 

@@ -1385,6 +1385,7 @@ impl Interpreter {
                 args,
                 span,
             } => self.instantiate_object(class_name, args, *span, scope),
+            Expr::Clone { expr, span } => self.evaluate_clone_expression(expr, *span, scope),
             Expr::Unary { op, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
@@ -1486,18 +1487,13 @@ impl Interpreter {
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
 
+        let object_id = self.allocate_object_id();
+
+        let inherited_properties = self.inherited_instance_properties(class_id);
         let class = self
             .classes
             .get(class_id)
             .expect("class id should resolve to class metadata");
-
-        let object_id = self.next_object_id;
-        self.next_object_id = self
-            .next_object_id
-            .checked_add(1)
-            .expect("object id counter fits in i64");
-
-        let inherited_properties = self.inherited_instance_properties(class_id);
         let object = PhpObject::from_class_with_inherited_properties_with_id(
             class,
             &inherited_properties,
@@ -1574,6 +1570,49 @@ impl Interpreter {
             Some(object.class_id()),
         )?;
         Ok(Value::Object(object))
+    }
+
+    fn allocate_object_id(&mut self) -> i64 {
+        let object_id = self.next_object_id;
+        self.next_object_id = self
+            .next_object_id
+            .checked_add(1)
+            .expect("object id counter fits in i64");
+        object_id
+    }
+
+    fn evaluate_clone_expression(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = self.evaluate(expr, scope)?;
+        let Value::Object(object) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "clone",
+                    format!(
+                        "clone operand must be object in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        if self
+            .resolve_instance_method(object.class_id(), "__clone")
+            .is_some()
+        {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("clone", "__clone dispatch is not implemented"),
+            ));
+        }
+
+        let object_id = self.allocate_object_id();
+        Ok(Value::Object(object.shallow_clone_with_id(object_id)))
     }
 
     fn inherited_instance_properties(

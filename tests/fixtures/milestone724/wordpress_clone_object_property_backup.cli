@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+bool(false)
+main:backup--- stdout end ---
+stderr:
+--- stderr end ---

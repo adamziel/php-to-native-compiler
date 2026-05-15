@@ -2191,6 +2191,71 @@ var_dump(strlen(spl_object_hash($left)));
 }
 
 #[test]
+fn clone_expression_creates_new_handle_with_copied_properties() {
+    let source = r#"<?php
+class Box {
+    public $name;
+    public $child;
+}
+
+$child = new Box();
+$child->name = "child";
+$box = new Box();
+$box->name = "original";
+$box->child = $child;
+
+$copy = clone $box;
+$copy->name = "copy";
+$box_child = $box->child;
+$copy_child = $copy->child;
+
+var_dump($box === $copy);
+var_dump(spl_object_id($box) === spl_object_id($copy));
+echo $box->name, "\n";
+echo $copy->name, "\n";
+var_dump($box_child === $copy_child);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nbool(false)\noriginal\ncopy\nbool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn clone_expression_rejects_non_objects_and_declared_clone_methods() {
+    let type_error = runtime_error("<?php\n$copy = clone 42;\n");
+
+    assert_eq!(type_error.line, 2);
+    assert_eq!(type_error.column, 9);
+    assert_eq!(
+        type_error.message,
+        "unsupported call clone: clone operand must be object in the current subset, got int"
+    );
+
+    let clone_method_error = runtime_error(
+        r#"<?php
+class Box {
+    public function __clone() {
+        echo "clone";
+    }
+}
+$box = new Box();
+$copy = clone $box;
+"#,
+    );
+
+    assert_eq!(clone_method_error.line, 8);
+    assert_eq!(clone_method_error.column, 9);
+    assert_eq!(
+        clone_method_error.message,
+        "unsupported call clone: __clone dispatch is not implemented"
+    );
+}
+
+#[test]
 fn spl_object_hash_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_hash());\n");
 
@@ -2655,6 +2720,18 @@ fn emit_ir_rejects_spl_object_hash_until_native_object_lowering_exists() {
         error.message.contains("class declarations")
             || error.message.contains("object instantiation")
             || error.message.contains("object metadata builtins"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn emit_ir_rejects_clone_expression_until_native_object_lowering_exists() {
+    let error = php_compiler::emit_ir_source("<?php\necho clone $object;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("object/class lowering"),
         "{}",
         error.message
     );
@@ -4452,26 +4529,6 @@ class Box {
             3,
             29,
             "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {}
-$box = new Box();
-$copy = clone $box;
-"#,
-            4,
-            9,
-            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {}
-$box = new Box();
-$copy = CLONE $box;
-"#,
-            4,
-            9,
-            "unsupported clone expression: object handle copying and __clone dispatch are not implemented",
         ),
     ];
 

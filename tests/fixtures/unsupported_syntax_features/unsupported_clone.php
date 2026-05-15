@@ -1,2 +1,2 @@
 <?php
-$copy = clone $object;
+$copy = clone;

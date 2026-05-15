@@ -219,6 +219,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   references/copy-on-write, exact PHP warning behavior, partial-output
   behavior, or native lowering. The bootstrap-shim probe now reaches
   `parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
+  Milestone 724 covers bounded `clone $object` expressions by allocating a
+  fresh object handle and shallow-copying current property slots when the class
+  does not declare `__clone`. This is not `__clone` dispatch, private/protected
+  clone-method visibility behavior, reference/copy-on-write behavior,
+  destructor/reuse behavior, exact PHP diagnostics, partial-output behavior, or
+  native lowering. The bootstrap-shim probe now reaches
+  `parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`,
+  corresponding to `wp-includes/load.php:1610` and `break 2;`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

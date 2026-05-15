@@ -98,7 +98,9 @@ Implemented now:
   a metadata-only core `Exception` class seed,
   inherited method lookup, public/same-class private/protected same-class and
   child instance method dispatch, and public/inherited public instance
-  `__construct` plus explicit parent/self method dispatch with scoped `$this`
+  `__construct` plus explicit parent/self method dispatch with scoped `$this`,
+  and bounded `clone` expressions that allocate fresh handles and shallow-copy
+  current property slots when no `__clone` method is declared
 - structured runtime error categories with stable diagnostic messages for the
   currently supported runtime failures
 - PHP-ish echo conversion
@@ -1142,7 +1144,8 @@ property redeclarations sharing one runtime slot, or full constructor
 visibility.
 Objects do not expose reflection, implement
 dynamic method/property names, broader `parent::`/`self::`/`static::`,
-typed/default property compatibility, broader inheritance/constructor semantics, or exact PHP
+typed/default property compatibility, broader inheritance/constructor
+semantics, `__clone` dispatch, destructor/reuse behavior, or exact PHP
 lifecycle behavior.
 Named static method syntax through `ClassName::method(...)`,
 `$object::method(...)`, `$className::method(...)`, `self::method(...)`,

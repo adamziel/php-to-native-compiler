@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+bool(false)
+bool(false)
+original
+copy
+bool(true)
+--- stdout end ---
+stderr:
+--- stderr end ---

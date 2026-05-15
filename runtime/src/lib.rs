@@ -2168,6 +2168,15 @@ impl PhpObject {
         self.properties.borrow().clone()
     }
 
+    pub fn shallow_clone_with_id(&self, id: i64) -> Self {
+        Self {
+            id,
+            class_id: self.class_id,
+            class_name: self.class_name.clone(),
+            properties: Rc::new(RefCell::new(self.properties.borrow().clone())),
+        }
+    }
+
     pub fn read_public_property(&self, name: &str) -> RuntimeResult<Value> {
         let properties = self.properties.borrow();
         let property = self.public_property_or_error(&properties, name)?;

@@ -2879,6 +2879,15 @@ impl Parser {
             });
         }
 
+        if self.match_token(|kind| matches!(kind, TokenKind::Clone)) {
+            let span = self.previous().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Clone {
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
         self.parse_postfix()
     }
 
@@ -3062,7 +3071,7 @@ impl Parser {
                 Err(self.error_at(token.span, unsupported_class_expression_message()))
             }
             TokenKind::New => self.parse_new_expression(token.span),
-            TokenKind::Clone => Err(self.error_at(token.span, unsupported_clone_message())),
+            TokenKind::Clone => Err(self.error_at(token.span, "expected expression after clone")),
             TokenKind::Instanceof => {
                 Err(self.error_at(token.span, unsupported_instanceof_message()))
             }
@@ -3827,7 +3836,8 @@ impl Parser {
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
             | Expr::IncrementDecrement { .. }
-            | Expr::New { .. } => Err(self.error_at(
+            | Expr::New { .. }
+            | Expr::Clone { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
             )),
@@ -3904,7 +3914,8 @@ impl Parser {
             | Expr::CompoundAssign { .. }
             | Expr::NullCoalesceAssign { .. }
             | Expr::IncrementDecrement { .. }
-            | Expr::New { .. } => Err(self.error_at(
+            | Expr::New { .. }
+            | Expr::Clone { .. } => Err(self.error_at(
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
             )),
@@ -3954,6 +3965,7 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
             }
+            Expr::Clone { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Closure { params, .. } => params
                 .iter()
                 .filter_map(|param| param.default.as_ref())
@@ -4067,6 +4079,7 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
+            Expr::Clone { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Closure { params, .. } => params
                 .iter()
                 .filter_map(|param| param.default.as_ref())
@@ -4163,6 +4176,7 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)
             }
+            Expr::Clone { expr, .. } => Self::find_append_index_span(expr),
             Expr::Closure { params, .. } => params
                 .iter()
                 .filter_map(|param| param.default.as_ref())

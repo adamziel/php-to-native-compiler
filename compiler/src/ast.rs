@@ -605,6 +605,10 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    Clone {
+        expr: Box<Expr>,
+        span: Span,
+    },
     Binary {
         left: Box<Expr>,
         op: BinaryOp,
@@ -708,6 +712,7 @@ impl Expr {
             | Expr::InstanceOf { span, .. }
             | Expr::Closure { span, .. }
             | Expr::New { span, .. }
+            | Expr::Clone { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
             | Expr::ErrorControl { span, .. }

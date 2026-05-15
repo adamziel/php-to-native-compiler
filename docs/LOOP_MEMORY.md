@@ -26,6 +26,45 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T03:35:00Z
+
+- Checkpoint before this task: `8be05b5 runtime: add nested array assignment`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 724, bounded `clone` expressions for the real
+  WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:1324:9`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `runtime/src/lib.rs`, `compiler/tests/object_model.rs`,
+  `compiler/tests/syntax_boundaries.rs`,
+  `compiler/tests/clone_expression_cli.rs`, `tests/fixtures/milestone724/*`,
+  clone-related unsupported fixture snapshots, `README.md`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model clone -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries clone -- --test-threads=1`,
+  `cargo test -p phpc --test clone_expression_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone724`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone724`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: classes declaring `__clone`, private/protected
+  clone-method visibility behavior, references/copy-on-write, destructor/reuse
+  behavior, exact PHP diagnostics, partial-output behavior, and native lowering
+  remain unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`.
+- Next concrete task: implement or explicitly bound loop-depth
+  `break N;`/`continue N;` control flow, starting with WordPress
+  `wp-includes/load.php:1610` and `break 2;`, while keeping exact PHP
+  diagnostics and native lowering explicit.
+
 ## Loop Event 2026-05-15T02:35:00Z
 
 - Checkpoint before this task: `7c76fba runtime: add bounded array casts`,

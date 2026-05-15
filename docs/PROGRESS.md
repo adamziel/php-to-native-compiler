@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 724, a bounded `clone` expression slice through `phpc run`.
+  The parser now accepts `clone expr`, and the interpreter requires the operand
+  to evaluate to a current object value, allocates a fresh process-local object
+  handle, shallow-copies the current property slots, and returns the cloned
+  object. Object-valued properties keep their existing handles under the
+  current no-reference/no-copy-on-write value model. Classes that declare
+  `__clone`, non-object operands, clone visibility semantics, exact PHP `Error`
+  objects, destructor/reuse behavior, references/copy-on-write, partial-output
+  behavior, and native lowering remain unsupported. The direct WordPress probe
+  still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous clone blocker and now
+  stops at
+  `parse error at <bootstrap-shim>:1610:6: unsupported break: loop-depth arguments are not implemented; only 'break;' for the innermost loop is supported`,
+  corresponding to `wp-includes/load.php:1610` and `break 2;`.
+  Focused verification so far:
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model clone -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries clone -- --test-threads=1`,
+  `cargo test -p phpc --test clone_expression_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone724`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone724`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_object_features`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 723, a bounded nested array-offset assignment slice through
   `phpc run`. Assignment expressions with a direct variable root and multiple
   explicit array indices, such as `$ctx[0][$i] = $value`, now flatten into a

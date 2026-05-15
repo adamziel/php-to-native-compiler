@@ -161,6 +161,8 @@ incorrect native code.
   diagnostics for PHP-forbidden static-property unset,
   dynamic static method calls through `$object::method()` and
   `$className::method()` for visible static methods,
+  `clone $object` for current object values without declared `__clone`
+  methods, using fresh object handles and shallow-copied property slots,
   single-parent metadata including namespaced parent names when the parent is
   already declared, object `isset` and `empty`, and selected metadata builtins,
   including declared interface metadata, declared empty-trait metadata, and
@@ -201,7 +203,8 @@ same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and
 instance property defaults,
 typed or multi-declarator class constants, dynamic method/property names, resources, and
-native extension integration.
+`__clone` dispatch, clone visibility/destructor behavior, resources, and native
+extension integration.
 
 ### Native Path
 

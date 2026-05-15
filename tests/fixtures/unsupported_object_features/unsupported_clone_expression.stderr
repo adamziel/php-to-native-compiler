@@ -1,2 +1,2 @@
-parse error at 6:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented
+runtime error at 8:9: unsupported call clone: __clone dispatch is not implemented
 

@@ -1,6 +1,8 @@
 <?php
 class Box {
-    public $name;
+    public function __clone() {
+        echo "clone";
+    }
 }
 $box = new Box();
 $copy = clone $box;

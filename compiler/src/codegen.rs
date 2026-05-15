@@ -511,6 +511,7 @@ impl LlvmGenerator {
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, LLVM_CLOSURE_REJECTION)),
             Expr::New { span, .. } => Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION)),
+            Expr::Clone { span, .. } => Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION)),
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
@@ -3288,6 +3289,9 @@ impl CGenerator {
             }
             Expr::Closure { span, .. } => Err(self.unsupported(*span, ASSEMBLY_CLOSURE_REJECTION)),
             Expr::New { span, .. } => Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION)),
+            Expr::Clone { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+            }
             Expr::Unary { op, expr, span } => {
                 if matches!(op, UnaryOp::Not) {
                     if let Expr::Unary {
