@@ -5,7 +5,7 @@ Status: boundary only.
 `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
 `mysqli_get_server_version`, `mysqli_get_host_info`, `mysqli_get_client_info`,
 `mysqli_get_client_version`, `mysqli_get_proto_info`, `mysqli_stat`,
-`mysqli_autocommit`,
+`mysqli_get_connection_stats`, `mysqli_autocommit`,
 `mysqli_begin_transaction`, `mysqli_commit`, `mysqli_rollback`,
 `mysqli_set_charset`, `mysqli_query`, `mysqli_errno`, `mysqli_error`,
 `mysqli_sqlstate`, `mysqli_warning_count`, `mysqli_affected_rows`,
@@ -61,6 +61,15 @@ reflect extension build configuration.
 `mysqli_get_proto_info($handle)` accepts the placeholder object and returns
 deterministic protocol version `10`. It does not negotiate or inspect a real
 server protocol.
+
+`mysqli_get_connection_stats($handle)` accepts the placeholder object and
+returns an eight-key deterministic statistics array:
+`bytes_sent`, `bytes_received`, `packets_sent`, `packets_received`,
+`result_set_queries`, `non_result_set_queries`, `connect_success`, and
+`active_connections`. Traffic and query counters are zeroed; the connection
+counters are deterministic placeholders. This does not model real mysqlnd
+statistics, client/server traffic, memory accounting, connection reuse, or host
+database state.
 
 `mysqli_stat($handle)` accepts the placeholder object and returns deterministic
 zeroed server-status metadata. It does not query real counters, thread/table
@@ -167,7 +176,7 @@ unsupported call mysqli_connect(): mysqli/database connections are not implement
 
 No real mysqli extension behavior is implemented yet: no host connections, no
 real resources or connected objects beyond the placeholder shapes, no real
-server, host/transport, client/protocol, or server-status metadata, no query execution beyond the documented deterministic
+server, host/transport, client/protocol, connection-statistics, or server-status metadata, no query execution beyond the documented deterministic
 queries, no real database selection beyond deterministic success, no general
 non-empty result sets, no real row/field metadata, no charset handling, no
 fetch modes beyond the documented placeholder row shapes, no real row-count

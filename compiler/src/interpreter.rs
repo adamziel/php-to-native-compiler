@@ -4237,6 +4237,21 @@ impl Interpreter {
         Ok(Value::Int(10))
     }
 
+    fn call_mysqli_get_connection_stats(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mysqli_get_connection_stats", args, 1, span)?;
+        expect_mysqli_handle("mysqli_get_connection_stats()", &args[0], span)?;
+        let mut stats = PhpArray::new();
+        stats.insert("bytes_sent", Value::Int(0));
+        stats.insert("bytes_received", Value::Int(0));
+        stats.insert("packets_sent", Value::Int(0));
+        stats.insert("packets_received", Value::Int(0));
+        stats.insert("result_set_queries", Value::Int(0));
+        stats.insert("non_result_set_queries", Value::Int(0));
+        stats.insert("connect_success", Value::Int(1));
+        stats.insert("active_connections", Value::Int(1));
+        Ok(Value::Array(stats))
+    }
+
     fn call_mysqli_stat(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_stat", args, 1, span)?;
         expect_mysqli_handle("mysqli_stat()", &args[0], span)?;
@@ -9243,6 +9258,7 @@ impl Interpreter {
             "mysqli_get_client_info" => self.call_mysqli_get_client_info(&args, span),
             "mysqli_get_client_version" => self.call_mysqli_get_client_version(&args, span),
             "mysqli_get_proto_info" => self.call_mysqli_get_proto_info(&args, span),
+            "mysqli_get_connection_stats" => self.call_mysqli_get_connection_stats(&args, span),
             "mysqli_stat" => self.call_mysqli_stat(&args, span),
             "mysqli_autocommit" => self.call_mysqli_autocommit(&args, span),
             "mysqli_begin_transaction" => self.call_mysqli_begin_transaction(&args, span),
@@ -12187,6 +12203,7 @@ fn is_builtin(name: &str) -> bool {
             | "mysqli_get_client_info"
             | "mysqli_get_client_version"
             | "mysqli_get_proto_info"
+            | "mysqli_get_connection_stats"
             | "mysqli_stat"
             | "mysqli_autocommit"
             | "mysqli_begin_transaction"

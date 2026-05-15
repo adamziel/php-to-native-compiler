@@ -1387,7 +1387,11 @@ historical blockers and remaining full-support gaps include:
   server capability inspection, warning/error fidelity, or native database
   lowering. Milestone 894 wires that placeholder through a synthetic
   WordPress-shaped `wpdb` server-version bookkeeping smoke without claiming
-  real database server-version fidelity.
+  real database server-version fidelity. Milestone 895 adds deterministic
+  `mysqli_get_connection_stats()` placeholder metadata without real mysqlnd
+  statistics, client/server traffic accounting, query accounting, memory
+  accounting, connection reuse state, warning/error fidelity, host database
+  integration, or native database lowering.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

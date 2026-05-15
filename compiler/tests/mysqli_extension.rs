@@ -232,6 +232,38 @@ echo $proto($handle);
 }
 
 #[test]
+fn mysqli_connection_stats_return_current_placeholder_metadata() {
+    let execution = run_source(
+        r#"<?php
+$call = "mysqli_get_connection_stats";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+$handle = mysqli_init();
+mysqli_real_connect($handle, "localhost", "user", "pass", null, 3306, null, 0);
+$stats = mysqli_get_connection_stats($handle);
+$dynamic = $call($handle);
+echo "|";
+echo count($stats);
+echo "|";
+echo $stats["bytes_sent"];
+echo "|";
+echo $stats["bytes_received"];
+echo "|";
+echo $stats["connect_success"];
+echo "|";
+echo $stats["active_connections"];
+echo "|";
+echo $dynamic["result_set_queries"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|8|0|0|1|1|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mysqli_stat_returns_current_placeholder_metadata() {
     let execution = run_source(
         r#"<?php
@@ -677,6 +709,24 @@ mysqli_get_proto_info("not-a-handle");
     assert_eq!(
         bad_proto_handle.message,
         "unsupported call mysqli_get_proto_info(): first argument must be mysqli object in the current subset, got string"
+    );
+}
+
+#[test]
+fn mysqli_connection_stats_reject_forms_outside_current_boundary() {
+    let bad_handle = run_source(
+        r#"<?php
+mysqli_get_connection_stats("not-a-handle");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(bad_handle.phase, Phase::Runtime);
+    assert_eq!(bad_handle.line, 2);
+    assert_eq!(bad_handle.column, 1);
+    assert_eq!(
+        bad_handle.message,
+        "unsupported call mysqli_get_connection_stats(): first argument must be mysqli object in the current subset, got string"
     );
 }
 
@@ -1466,6 +1516,8 @@ echo function_exists("mysqli_get_client_version") ? "1" : "0";
 echo is_callable("mysqli_get_client_version") ? "1" : "0";
 echo function_exists("mysqli_get_proto_info") ? "1" : "0";
 echo is_callable("mysqli_get_proto_info") ? "1" : "0";
+echo function_exists("mysqli_get_connection_stats") ? "1" : "0";
+echo is_callable("mysqli_get_connection_stats") ? "1" : "0";
 echo function_exists("mysqli_stat") ? "1" : "0";
 echo is_callable("mysqli_stat") ? "1" : "0";
 echo function_exists("mysqli_autocommit") ? "1" : "0";
@@ -1532,7 +1584,7 @@ echo defined("MYSQLI_BOTH") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 78, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 80, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
     assert!(!ir.contains("MYSQLI_REPORT_OFF"), "{ir}");
@@ -1600,6 +1652,18 @@ mysqli_get_server_version(mysqli_init());
     let error = emit_ir_source(
         r#"<?php
 mysqli_get_host_info(mysqli_init());
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source(
+        r#"<?php
+mysqli_get_connection_stats(mysqli_init());
 "#,
     )
     .unwrap_err();

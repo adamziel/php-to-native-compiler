@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added Milestone 895, bounded `mysqli_get_connection_stats()` support for
+  deterministic placeholder MySQLi connection statistics. The runtime accepts
+  `mysqli_get_connection_stats($handle)` for current placeholder `mysqli`
+  objects, returns an eight-key array with stable zeroed traffic/query counters
+  plus deterministic placeholder connection counters, rejects non-`mysqli`
+  handles with stable diagnostics, and exposes the name through runtime and
+  native metadata lookup. This is not real mysqlnd statistics, client/server
+  traffic accounting, query accounting, memory accounting, connection reuse
+  state, host database integration, PHP warning/error fidelity, or native
+  database lowering. Verification:
+  `cargo test -p phpc --test mysqli_extension mysqli_connection_stats -- --test-threads=1`
+  passed, full
+  `cargo test -p phpc --test mysqli_extension -- --test-threads=1` passed, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone895`.
+
 - Added Milestone 894, a synthetic WordPress-shaped `wpdb` connection-metadata
   bookkeeping smoke that calls the bounded
   `mysqli_get_server_version($this->dbh)` placeholder path alongside

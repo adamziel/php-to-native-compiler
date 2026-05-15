@@ -8270,16 +8270,29 @@ handled.
   WordPress database server-version fidelity, server-version detection, host
   database integration, protocol negotiation, server capability inspection,
   warnings/errors, or native lowering.
-- [ ] Runtime/mysqli lane: inspect the next MySQLi boundary after server
+- [x] Runtime/mysqli lane: inspect the next MySQLi boundary after server
   metadata placeholders and choose a small tested slice, such as deterministic
   `mysqli_get_connection_stats()` empty metadata or a sharper named diagnostic,
   before broader SQL execution or real host state is claimed.
+  Milestone 895 implements bounded deterministic
+  `mysqli_get_connection_stats($handle)` metadata. It accepts current
+  placeholder `mysqli` handles, returns an eight-key array with stable zeroed
+  traffic/query counters and deterministic placeholder connection counters,
+  rejects non-`mysqli` handles with stable diagnostics, and is visible through
+  runtime and native metadata lookup. This is not real mysqlnd statistics,
+  client/server traffic accounting, query accounting, memory accounting,
+  connection reuse state, host database integration, warnings/errors, or native
+  database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+  bounded `mysqli_get_connection_stats()` placeholder through WordPress-shaped
+  connection statistics bookkeeping without claiming real mysqlnd/client
+  statistics fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `76682fa runtime: add mysqli server version metadata`, covering
-  Milestone 893 before the current Milestone 894 candidate.
+  `d786695 tests: add wordpress wpdb server version smoke`, covering
+  Milestone 894 before the current Milestone 895 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

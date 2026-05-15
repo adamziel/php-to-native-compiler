@@ -1,0 +1,7 @@
+$ phpc run tests/fixtures/milestone895/mysqli_connection_stats_metadata.php
+8
+0
+0
+1
+1
+0

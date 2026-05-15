@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_connection_stats()` metadata boundary. System PHP needs a mysqlnd
+mysqli connection with statistics enabled and reports host/client-specific
+connection counters.
