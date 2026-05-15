@@ -299,6 +299,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   filesystem support, partial-output behavior, or native filesystem lowering.
   The bootstrap-shim probe now reaches
   `lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
+  Milestone 735 adds bounded direct array-offset and object-property
+  interpolation for `{$items['key']}`, `{$items[$key]}`, `$items[key]`,
+  integer offset keys, and `{$object->property}`. This is not nested offsets,
+  dynamic property names, static properties, `${...}`, variable variables,
+  arbitrary expression interpolation, heredoc/nowdoc, exact diagnostics, or
+  native lowering. The bootstrap-shim probe now reaches
+  `lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

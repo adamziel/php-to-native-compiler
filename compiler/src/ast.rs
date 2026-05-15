@@ -670,6 +670,21 @@ pub enum Expr {
 pub enum InterpolatedStringPart {
     Literal(String),
     Variable(String),
+    ArrayOffset {
+        variable: String,
+        key: InterpolatedArrayKey,
+    },
+    ObjectProperty {
+        variable: String,
+        property: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolatedArrayKey {
+    Int(i64),
+    String(String),
+    Variable(String),
 }
 
 impl Expr {

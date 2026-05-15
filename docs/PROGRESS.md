@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added Milestone 735, bounded direct array-offset and object-property
+  double-quoted string interpolation through `phpc run` for the real WordPress
+  6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:3891:12`. The lexer/AST
+  now represent `{$items['key']}`, `{$items[$key]}`, `$items[key]`, integer
+  offset keys, and `{$object->property}` as explicit interpolation parts; the
+  interpreter reads them left to right from the current symbol table and uses
+  the current PHP-shaped echo conversion. Nested offsets, dynamic property
+  names, static properties, `${...}`, variable variables, arbitrary expression
+  interpolation, heredoc/nowdoc, exact diagnostics, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the previous complex-interpolation
+  blocker and now stops at
+  `lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo test -p phpc --test interpolated_string_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone735`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 734, bounded `file_exists()` execution through `phpc run`
   for the real WordPress 6.9.4 bootstrap-shim database drop-in probe. The
   interpreter accepts one string local path, rejects stream-wrapper paths, and

@@ -208,9 +208,11 @@ and exits with code `1`, stdout, and no stderr. Milestone 733 then replaced
 the empty `extension_loaded()` registry with a bounded compatibility registry
 for the current `json` and `hash` WordPress requirement checks. Milestone 734
 then advanced past the first filesystem drop-in probe with bounded
-`file_exists()` execution for one string local path. The next visible
-bootstrap-shim blocker is now complex interpolation:
-`lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
+`file_exists()` execution for one string local path. Milestone 735 then
+advanced past the first complex string interpolation blocker with bounded
+direct array-offset and object-property interpolation. The next visible
+bootstrap-shim blocker is now heredoc/nowdoc syntax:
+`lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -324,7 +326,8 @@ The repository already has a working Rust workspace with:
   function-scope `global` imports, the `PHP_VERSION` compatibility constant,
   the first bounded `version_compare()` slice, and the first bounded
   `sprintf()`, `header()`, `implode()`, `exit()`, `extension_loaded()`, and
-  `file_exists()` slices, then stops at unsupported complex interpolation.
+  `file_exists()` slices, plus bounded direct array-offset/object-property
+  string interpolation, then stops at unsupported heredoc/nowdoc syntax.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

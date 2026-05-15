@@ -987,19 +987,57 @@ echo "{{$term_count}}", "\n";
 }
 
 #[test]
-fn complex_braced_string_interpolation_remains_a_named_boundary() {
-    let error = lex_error(
+fn double_quoted_strings_interpolate_current_array_offsets_and_object_properties() {
+    let execution = run_source(
         r#"<?php
 $attributes = ["textAlign" => "center"];
+$key = "textAlign";
+class Partial {
+    public $id;
+}
+$partial = new Partial();
+$partial->id = "header";
 echo "has-text-align-{$attributes['textAlign']}";
+echo "|has-text-align-{$attributes[$key]}";
+echo "|has-text-align-$attributes[textAlign]";
+echo "|customize_partial_render_{$partial->id}";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "has-text-align-center|has-text-align-center|has-text-align-center|customize_partial_render_header"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn remaining_complex_string_interpolation_forms_keep_named_boundaries() {
+    let dollar_brace = lex_error(
+        r#"<?php
+$name = "value";
+echo "${name}";
 "#,
     );
-
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+    assert_eq!(dollar_brace.line, 3);
+    assert_eq!(dollar_brace.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented"
+        dollar_brace.message,
+        "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
+    );
+
+    let nested = lex_error(
+        r#"<?php
+$attributes = ["textAlign" => ["mobile" => "center"]];
+echo "has-text-align-{$attributes['textAlign']['mobile']}";
+"#,
+    );
+    assert_eq!(nested.line, 3);
+    assert_eq!(nested.column, 6);
+    assert_eq!(
+        nested.message,
+        "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
     );
 }
 

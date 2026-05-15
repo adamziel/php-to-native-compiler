@@ -16,8 +16,8 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassConstantDecl, ClassDecl, ClassMember,
     ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl, Expr,
     ForAction, FunctionDecl, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterpolatedStringPart, Program, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
-    UnaryOp, UnsetTarget,
+    InterpolatedArrayKey, InterpolatedStringPart, Program, Span, StaticLocalDeclarator, Stmt,
+    SwitchCase, TraitDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
@@ -3242,9 +3242,85 @@ impl Interpreter {
                         .map_err(|error| runtime_error(span, error))?;
                     output.push_str(&text);
                 }
+                InterpolatedStringPart::ArrayOffset { variable, key } => {
+                    let value =
+                        self.evaluate_interpolated_array_offset(variable, key, span, scope)?;
+                    let text = value
+                        .try_echo_string()
+                        .map_err(|error| runtime_error(span, error))?;
+                    output.push_str(&text);
+                }
+                InterpolatedStringPart::ObjectProperty { variable, property } => {
+                    let value = self
+                        .evaluate_interpolated_object_property(variable, property, span, scope)?;
+                    let text = value
+                        .try_echo_string()
+                        .map_err(|error| runtime_error(span, error))?;
+                    output.push_str(&text);
+                }
             }
         }
         Ok(Value::String(output))
+    }
+
+    fn evaluate_interpolated_array_offset(
+        &self,
+        variable: &str,
+        key: &InterpolatedArrayKey,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let array = scope.read_static(variable, span)?;
+        let key = match key {
+            InterpolatedArrayKey::Int(value) => ArrayKey::Int(*value),
+            InterpolatedArrayKey::String(value) => ArrayKey::String(value.clone()),
+            InterpolatedArrayKey::Variable(name) => {
+                let value = scope.read_static(name, span)?;
+                ArrayKey::from_value(&value).map_err(|error| runtime_error(span, error))?
+            }
+        };
+
+        match array {
+            Value::Array(array) => array.get(key.clone()).cloned().ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()),
+                )
+            }),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot read offset from {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn evaluate_interpolated_object_property(
+        &self,
+        variable: &str,
+        property: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let object = scope.read_static(variable, span)?;
+        match object {
+            Value::Object(object) => {
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(span, error))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "cannot read property ${property} from {}",
+                    other.type_name()
+                )),
+            )),
+        }
     }
 
     fn evaluate_self_class_name_constant(&self, span: Span) -> CompileResult<Value> {

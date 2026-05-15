@@ -1,4 +1,4 @@
-use crate::ast::{InterpolatedStringPart, Span};
+use crate::ast::{InterpolatedArrayKey, InterpolatedStringPart, Span};
 use crate::error::{CompileResult, Diagnostic, Phase};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -491,16 +491,9 @@ impl<'a> Lexer<'a> {
                         value = String::new();
                     }
 
-                    let mut name = String::new();
-                    name.push(self.advance());
-                    while let Some(next) = self.peek() {
-                        if is_identifier_part(next) {
-                            name.push(self.advance());
-                        } else {
-                            break;
-                        }
-                    }
-                    parts.push(InterpolatedStringPart::Variable(name));
+                    let name = self.lex_identifier_name();
+                    let part = self.lex_interpolated_suffix(name, span)?;
+                    parts.push(part);
                     continue;
                 }
 
@@ -524,20 +517,13 @@ impl<'a> Lexer<'a> {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
 
-                let mut name = String::new();
-                name.push(self.advance());
-                while let Some(next) = self.peek() {
-                    if is_identifier_part(next) {
-                        name.push(self.advance());
-                    } else {
-                        break;
-                    }
-                }
+                let name = self.lex_identifier_name();
+                let part = self.lex_interpolated_suffix(name, span)?;
                 if self.peek() != Some('}') {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
                 self.advance();
-                parts.push(InterpolatedStringPart::Variable(name));
+                parts.push(part);
                 continue;
             }
 
@@ -545,6 +531,133 @@ impl<'a> Lexer<'a> {
         }
 
         Err(self.error_at(span, "unterminated string literal"))
+    }
+
+    fn lex_identifier_name(&mut self) -> String {
+        let mut name = String::new();
+        name.push(self.advance());
+        while let Some(next) = self.peek() {
+            if is_identifier_part(next) {
+                name.push(self.advance());
+            } else {
+                break;
+            }
+        }
+        name
+    }
+
+    fn lex_interpolated_suffix(
+        &mut self,
+        name: String,
+        span: Span,
+    ) -> CompileResult<InterpolatedStringPart> {
+        if self.peek() == Some('[') {
+            let key = self.lex_interpolated_array_key(span)?;
+            return Ok(InterpolatedStringPart::ArrayOffset {
+                variable: name,
+                key,
+            });
+        }
+
+        if self.starts_with("->") {
+            self.advance();
+            self.advance();
+            let Some(first) = self.peek() else {
+                return Err(self.error_at(span, "unterminated string literal"));
+            };
+            if !is_identifier_start(first) {
+                return Err(self.error_at(span, unsupported_string_interpolation_message()));
+            }
+            let property = self.lex_identifier_name();
+            return Ok(InterpolatedStringPart::ObjectProperty {
+                variable: name,
+                property,
+            });
+        }
+
+        Ok(InterpolatedStringPart::Variable(name))
+    }
+
+    fn lex_interpolated_array_key(&mut self, span: Span) -> CompileResult<InterpolatedArrayKey> {
+        self.advance();
+        let key = match self.peek() {
+            Some('\'') | Some('"') => {
+                let quote = self.advance();
+                let mut value = String::new();
+                while let Some(ch) = self.peek() {
+                    if ch == quote {
+                        self.advance();
+                        break;
+                    }
+                    if ch == '\\' {
+                        self.advance();
+                        let Some(escaped) = self.peek() else {
+                            return Err(self.error_at(span, "unterminated string literal"));
+                        };
+                        value.push(self.advance_escaped_string_char(escaped));
+                    } else {
+                        value.push(self.advance());
+                    }
+                }
+                InterpolatedArrayKey::String(value)
+            }
+            Some('$') => {
+                self.advance();
+                let Some(first) = self.peek() else {
+                    return Err(self.error_at(span, "unterminated string literal"));
+                };
+                if !is_identifier_start(first) {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+                InterpolatedArrayKey::Variable(self.lex_identifier_name())
+            }
+            Some(ch) if ch.is_ascii_digit() => {
+                let mut value = String::new();
+                value.push(self.advance());
+                while let Some(next) = self.peek() {
+                    if next.is_ascii_digit() {
+                        value.push(self.advance());
+                    } else {
+                        break;
+                    }
+                }
+                let value = value
+                    .parse::<i64>()
+                    .map_err(|_| self.error_at(span, unsupported_string_interpolation_message()))?;
+                InterpolatedArrayKey::Int(value)
+            }
+            Some(ch) if is_identifier_start(ch) => {
+                InterpolatedArrayKey::String(self.lex_identifier_name())
+            }
+            _ => return Err(self.error_at(span, unsupported_string_interpolation_message())),
+        };
+
+        if self.peek() != Some(']') {
+            return Err(self.error_at(span, unsupported_string_interpolation_message()));
+        }
+        self.advance();
+        Ok(key)
+    }
+
+    fn advance_escaped_string_char(&mut self, escaped: char) -> char {
+        match escaped {
+            'n' => {
+                self.advance();
+                '\n'
+            }
+            'r' => {
+                self.advance();
+                '\r'
+            }
+            't' => {
+                self.advance();
+                '\t'
+            }
+            other => {
+                self.advance();
+                other
+            }
+        }
     }
 
     fn lex_number(&mut self, first: char, span: Span) -> CompileResult<TokenKind> {
@@ -715,5 +828,5 @@ fn is_identifier_part(ch: char) -> bool {
 }
 
 fn unsupported_string_interpolation_message() -> &'static str {
-    "unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented"
+    "unsupported string interpolation: only simple $name, {$name}, direct array offsets, and direct object properties in double-quoted strings are implemented; ${...}, nested offsets, dynamic properties, static properties, and complex interpolation are not implemented"
 }

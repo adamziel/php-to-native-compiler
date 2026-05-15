@@ -670,11 +670,14 @@
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
-- explicit lex diagnostics for unsupported complex double-quoted string
-  interpolation such as `"APP_{$items['name']}"` or `"APP_${name}"`. Only
-  simple `$name` and `{$name}` interpolation is implemented; array offsets,
-  object/static properties, variable variables, `${...}`, heredoc, and nowdoc
-  remain unsupported.
+- double-quoted string interpolation for simple `$name`, braced `{$name}`,
+  direct array offsets such as `{$items['name']}`, `{$items[$key]}`, and
+  `$items[name]`, and direct object properties such as `{$partial->id}`. Array
+  keys may currently be string literals, integer literals, bare string keys, or
+  variable keys that coerce through the current array-key rules. Nested
+  offsets, dynamic property names, static properties, `${...}`, variable
+  variables, arbitrary expression interpolation, heredoc, nowdoc, exact
+  diagnostics, and native lowering remain unsupported.
 - syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
   before functions, classes, class members, and parameters. Attribute metadata,
   reflection visibility, target validation, namespace-aware attribute names,

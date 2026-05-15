@@ -6754,17 +6754,27 @@ handled.
   callable table, keeps direct native calls behind the function-call boundary,
   and advances the real bootstrap-shim probe to
   `lex error at <bootstrap-shim>:3891:12: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented`.
-- [ ] Parser/string lane: implement or explicitly bound the next WordPress
+- [x] Parser/string lane: implement or explicitly bound the next WordPress
   6.9.4 bootstrap-shim complex interpolation blocker at `<bootstrap-shim>:3891:12`,
   with tests, CLI coverage, docs, and named unsupported edges for array-offset
   interpolation, object/static property interpolation, `${...}` forms,
   variable variables, expression interpolation, escaping/source spans, PHP
-  diagnostic fidelity, and native lowering.
+  diagnostic fidelity, and native lowering. The Milestone 735 slice supports
+  direct array-offset interpolation for string, integer, bare-string, and
+  variable keys plus direct object-property interpolation, keeps nested offsets,
+  dynamic/static properties, `${...}`, arbitrary expressions, heredoc/nowdoc,
+  and native lowering unsupported, and advances the real bootstrap-shim probe to
+  `lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
+- [ ] Parser/string lane: implement or explicitly bound the next WordPress
+  6.9.4 bootstrap-shim heredoc/nowdoc blocker at `<bootstrap-shim>:4225:9`,
+  with tests, CLI coverage, docs, and named unsupported edges for label parsing,
+  indentation stripping, interpolation, nowdoc non-interpolation, source spans,
+  exact diagnostics, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 734 checkpoint, the latest committed checkpoint
-  is `cb8974e runtime: add bounded extension registry`, covering Milestone 733.
+- Before the current Milestone 735 checkpoint, the latest committed checkpoint
+  is `75fb2e4 runtime: add bounded file_exists`, covering Milestone 734.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

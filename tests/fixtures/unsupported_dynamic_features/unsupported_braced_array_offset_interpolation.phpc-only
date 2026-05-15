@@ -1,1 +1,1 @@
-Documents the current boundary for array-offset double-quoted string interpolation; host PHP accepts this syntax.
+Documents the current boundary for nested array-offset double-quoted string interpolation; host PHP accepts this syntax.

@@ -26,6 +26,42 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T11:05:00Z
+
+- Checkpoint before this task: `75fb2e4 runtime: add bounded file_exists`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 735, bounded direct array-offset and object-property
+  double-quoted string interpolation for the real WordPress 6.9.4
+  bootstrap-shim blocker at `<bootstrap-shim>:3891:12`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/lexer.rs`,
+  `compiler/src/interpreter.rs`, `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/interpolated_string_cli.rs`,
+  `tests/fixtures/milestone735/*`,
+  `tests/fixtures/unsupported_dynamic_features/*`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features -- --test-threads=1`,
+  `cargo test -p phpc --test interpolated_string_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone735`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: nested offsets, dynamic property names, static
+  properties, `${...}`, variable variables, arbitrary expression
+  interpolation, heredoc/nowdoc, exact diagnostics, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe now reaches
+  `lex error at <bootstrap-shim>:4225:9: unsupported heredoc/nowdoc string syntax: multiline string literals are not implemented`.
+- Next concrete task: implement or explicitly bound heredoc/nowdoc syntax for
+  the bootstrap shim, including label parsing, indentation stripping,
+  interpolation policy, source spans, and native lowering boundaries.
+
 ## Loop Event 2026-05-15T10:05:00Z
 
 - Checkpoint before this task: `cb8974e runtime: add bounded extension registry`,

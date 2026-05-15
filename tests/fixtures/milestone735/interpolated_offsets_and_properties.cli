@@ -1,0 +1,5 @@
+exit: 0
+stdout:
+has-text-align-center|has-text-align-center|has-text-align-center|offset-zero|customize_partial_render_header--- stdout end ---
+stderr:
+--- stderr end ---
