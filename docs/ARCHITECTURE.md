@@ -918,6 +918,11 @@ current scalar/null string-convertible values. The first slice implements the
 default PHP whitespace mask for represented runtime strings so WordPress can
 parse shorthand INI values, while custom masks, binary/null-byte edge cases,
 and native lowering remain out of scope.
+`ltrim()` and `rtrim()` are interpreter-only bounded one-sided string
+normalization builtins for the same scalar/null string-convertible values.
+They support the default PHP whitespace mask and reached literal masks such as
+`/`, while character-mask ranges, broad binary edge cases, object/resource
+operands, exact diagnostics, and native lowering remain out of scope.
 `str_contains()` is an interpreter-only bounded string-search builtin for
 current scalar/null string-convertible haystack and needle values. It uses the
 current UTF-8 runtime string representation, keeps PHP's empty-needle `true`

@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 839, bounded `rtrim()` support for the reached WordPress
+  `wp_guess_url()` path normalization. The interpreter now exposes `rtrim`
+  through direct calls, string-valued dynamic calls, `function_exists`, and
+  `is_callable`, supporting the current scalar/null string-convertible input
+  subset, PHP's default right-trim whitespace mask, and non-empty literal
+  character masks such as `/`. Character mask ranges, empty masks,
+  array/object/resource operands, binary/null-byte edge cases beyond
+  represented runtime strings, exact PHP diagnostics, and native lowering
+  remain unsupported; native function-table introspection recognizes the name
+  while direct native calls still reject under the generic function-call
+  boundary. The real WordPress 6.9.4 bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:958:2: undefined function wp_redirect()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test string_trim_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone839`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 838, a bounded `$_SERVER['HTTP_HOST']` CLI startup seed for
   the reached WordPress `wp_guess_url()` host path. The runtime now seeds
   `HTTP_HOST` as `localhost` alongside the existing deterministic `$_SERVER`

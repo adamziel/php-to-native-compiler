@@ -481,7 +481,7 @@
   stable runtime diagnostics instead of materializing objects or dynamic
   properties
 - builtins for the documented subset: `strlen`, `strtolower`, `trim`, `ltrim`,
-  `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
+  `rtrim`, `strcasecmp`, `str_contains`, `str_ends_with`, `strpos`, `substr`,
   `preg_match`, `preg_replace`, `str_replace`, `substr_count`,
   `error_reporting`, `sprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `dirname`, `file_exists`,
@@ -585,6 +585,12 @@
   edge cases beyond the current represented runtime-string subset,
   array/object/resource coercions, exact PHP diagnostics, and native lowering
   remain unsupported.
+  `rtrim($value)` supports the same default whitespace mask on the right side.
+  `rtrim($value, $mask)` also supports non-empty literal character masks
+  without range syntax, including the reached WordPress `'/'` mask.
+  Character-mask ranges, empty masks, binary/null-byte edge cases beyond the
+  current represented runtime-string subset, array/object/resource coercions,
+  exact PHP diagnostics, and native lowering remain unsupported.
   `array_unshift($array, ...$values)` supports direct calls and string-valued
   direct dynamic calls when the first argument is a direct variable containing
   a current ordered array. It evaluates prepended values left to right, writes
@@ -2228,7 +2234,7 @@
   Direct `function_exists($name)` calls fold in native output when `$name` is
   an already-lowerable string value with a uniform known answer in the current
   documented builtin table: documented callable builtins, including
-  `strtolower`, `trim`, `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`,
+  `strtolower`, `trim`, `ltrim`, `rtrim`, `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`,
   `error_reporting`, `min`, `rand`, `uniqid`, `hash_hmac`, `dirname`, `file_exists`,
   `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`,
   `mysqli_connect`, `mysqli_real_connect`, `mysqli_get_server_info`,
@@ -2529,7 +2535,7 @@
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
-  one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`,
+  one of the documented callable builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`,
   `str_contains`, `str_ends_with`, `strpos`, `substr`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
@@ -2667,7 +2673,7 @@
   first-class callable syntax, namespace-qualified callable
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
-- Builtins: `strlen`, `strtolower`, `trim`, `strcasecmp`, `str_contains`,
+- Builtins: `strlen`, `strtolower`, `trim`, `ltrim`, `rtrim`, `strcasecmp`, `str_contains`,
   `str_ends_with`, `strpos`, `substr`, `substr_count`, `str_replace`, `sprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `is_readable`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
@@ -2802,6 +2808,10 @@
   `ltrim` accepts the same current default-mask and literal-character-mask
   scalar/null string-convertible subset as the builtin section above; direct
   native `ltrim(...)` calls still reject under the function-call boundary,
+  while native function-table introspection recognizes the name.
+  `rtrim` accepts the same current default-mask and literal-character-mask
+  scalar/null string-convertible subset as the builtin section above; direct
+  native `rtrim(...)` calls still reject under the function-call boundary,
   while native function-table introspection recognizes the name.
   `array_unshift` accepts the same direct-variable ordered-array mutation
   subset as the builtin section above; direct native `array_unshift(...)`
@@ -4436,6 +4446,11 @@
   array/object/resource coercions, exact PHP diagnostics, and native lowering
   beyond function-table introspection
 - `ltrim()` outside the current scalar/null string-convertible default-mask and
+  non-empty literal-character-mask subset: character-mask ranges,
+  binary/null-byte string edge cases beyond the current represented
+  runtime-string subset, array/object/resource coercions, exact PHP
+  diagnostics, and native lowering beyond function-table introspection
+- `rtrim()` outside the current scalar/null string-convertible default-mask and
   non-empty literal-character-mask subset: character-mask ranges,
   binary/null-byte string edge cases beyond the current represented
   runtime-string subset, array/object/resource coercions, exact PHP

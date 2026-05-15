@@ -1204,6 +1204,11 @@ The first bootstrap probe is expected to fail. Known blockers include:
   handling, exact warnings, or native lowering. The real bootstrap-shim probe
   now advances to
   `runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
+  Milestone 839 implements bounded `rtrim()` for the reached `wp_guess_url()`
+  path normalization. This is not full PHP charlist range behavior,
+  binary/null-byte edge cases, object/resource operands, exact diagnostics, or
+  native lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:958:2: undefined function wp_redirect()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

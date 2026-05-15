@@ -29,6 +29,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `7c58ddb runtime: seed http host server default`, pushed to `origin/master`.
+- Task attempted: Milestone 839, bounded `rtrim()` support for the reached
+  WordPress `wp_guess_url()` path normalization.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/string_trim_builtin.rs`,
+  `tests/fixtures/milestone839/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test string_trim_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone839`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: character-mask ranges, empty masks,
+  binary/null-byte edge cases beyond represented runtime strings,
+  object/resource operands, exact PHP diagnostics, and native `rtrim()`
+  lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:958:2: undefined function wp_redirect()`.
+- Next concrete task: run the full checkpoint gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded rtrim"` if the full gate passes.
+  Milestone 840 should inspect whether `wp_redirect()` should already be
+  declared by the current include path before adding any runtime shim.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `37056a1 runtime: add wordpress preg replace path tail`, pushed to
   `origin/master`.
 - Task attempted: Milestone 838, bounded deterministic

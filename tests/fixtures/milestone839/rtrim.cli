@@ -1,0 +1,6 @@
+exit: 0
+stdout:
+localhost|/wp-admin|example.test
+--- stdout end ---
+stderr:
+--- stderr end ---

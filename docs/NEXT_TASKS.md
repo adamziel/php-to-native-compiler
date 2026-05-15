@@ -7693,16 +7693,23 @@ handled.
   Milestone 838 seeds `HTTP_HOST` as `localhost` in the deterministic CLI
   `$_SERVER` placeholder. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:6347:9: undefined function rtrim()`.
-- [ ] Runtime/string lane: implement the next bounded `rtrim()` path reached
+- [x] Runtime/string lane: implement the next bounded `rtrim()` path reached
   by the WordPress bootstrap shim. Keep broad charlist range behavior,
   binary/null-byte edge cases, object/resource operands, exact diagnostics, and
   native lowering named unless implemented.
+  Milestone 839 covers scalar/null string-convertible `rtrim()` with the
+  default PHP whitespace mask and non-empty literal character masks such as
+  `/`. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:958:2: undefined function wp_redirect()`.
+- [ ] Runtime/WordPress bootstrap lane: decide the smallest honest boundary for
+  the reached `wp_redirect()` call. Inspect whether the function should have
+  been declared by the current include path before adding any runtime shim; do
+  not mask an include/declaration registration bug with a broad builtin stub.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 838 checkpoint, the latest committed checkpoint
-  is `37056a1 runtime: add wordpress preg replace path tail`, covering
-  Milestone 837.
+- Before the current Milestone 839 checkpoint, the latest committed checkpoint
+  is `7c58ddb runtime: seed http host server default`, covering Milestone 838.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
