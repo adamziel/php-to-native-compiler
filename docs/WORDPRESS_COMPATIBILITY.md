@@ -1237,6 +1237,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   limit/count output, full PHP string escape behavior, exact diagnostics, or
   native lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
+  Milestone 844 adds bounded direct-variable count-output support for the
+  reached `str_replace($search, '', $subject, $count)` call in
+  `wp-includes/formatting.php:4440`. This is not array search/replacement
+  support, broad by-reference output semantics, indirect callable count output,
+  exact warnings, binary string edge cases, or native lowering. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): search argument arrays are not implemented in the current subset`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

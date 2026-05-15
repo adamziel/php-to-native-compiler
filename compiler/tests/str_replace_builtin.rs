@@ -44,6 +44,39 @@ echo "|", $call(" ", "_", "hello world");
 }
 
 #[test]
+fn str_replace_writes_count_to_direct_variable() {
+    let execution = run_source(
+        r#"<?php
+$count = 99;
+echo str_replace("na", "", "banana", $count), "|", $count, "\n";
+$count = 99;
+echo str_replace("z", "x", "banana", $count), "|", $count, "\n";
+$count = 99;
+echo str_replace("", "x", "banana", $count), "|", $count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ba|2\nbanana|0\nbanana|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn string_valued_str_replace_writes_count_to_direct_variable() {
+    let execution = run_source(
+        r#"<?php
+$call = "str_replace";
+$count = 0;
+echo $call("a", "b", "a-a", $count), "|", $count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "b-b|2");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_replace_rejects_forms_outside_current_subset() {
     let missing = runtime_error(
         r#"<?php
@@ -57,17 +90,29 @@ echo str_replace("a", "b");
         "arity mismatch for str_replace(): expected 3 to 4 argument(s), got 2"
     );
 
-    let count = runtime_error(
+    let count_target = runtime_error(
         r#"<?php
-$count = 0;
-echo str_replace("a", "b", "abc", $count);
+$counts = ["n" => 0];
+echo str_replace("a", "b", "abc", $counts["n"]);
 "#,
     );
-    assert_eq!(count.line, 3);
-    assert_eq!(count.column, 6);
+    assert_eq!(count_target.line, 3);
+    assert_eq!(count_target.column, 6);
     assert_eq!(
-        count.message,
-        "unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset"
+        count_target.message,
+        "unsupported call str_replace(): count output must be a direct variable in the current subset"
+    );
+
+    let indirect_count = runtime_error(
+        r#"<?php
+echo call_user_func("str_replace", "a", "b", "abc", 0);
+"#,
+    );
+    assert_eq!(indirect_count.line, 2);
+    assert_eq!(indirect_count.column, 6);
+    assert_eq!(
+        indirect_count.message,
+        "unsupported call str_replace(): count output requires a direct str_replace() call with a direct variable in the current subset"
     );
 
     let array_search = runtime_error(

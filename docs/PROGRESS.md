@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 844, bounded `str_replace()` count-output support for the
+  reached WordPress `_deep_replace()` path in `wp-includes/formatting.php:4440`.
+  Direct `str_replace($search, $replace, $subject, $count)` calls and
+  string-valued dynamic calls now support the existing scalar/null
+  string-convertible search, replacement, and subject subset when the fourth
+  argument is a direct variable. The interpreter writes the non-overlapping
+  replacement count as an integer and returns the replaced string, including
+  count `0` for empty search strings or no matches. This is a bounded
+  output-parameter path, not true PHP references. Search/replacement/subject
+  arrays, non-variable count targets, indirect `call_user_func()` count output,
+  object/resource coercions, exact PHP warning behavior, binary string edge
+  cases, and native lowering remain unsupported. The real WordPress 6.9.4
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): search argument arrays are not implemented in the current subset`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test str_replace_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone844`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 843, bounded `preg_replace()` cleanup patterns reached by
   WordPress `pluggable.php` and KSES bootstrap paths. The interpreter now
   accepts the exact `#^www\.#` empty-replacement mail-host cleanup used by

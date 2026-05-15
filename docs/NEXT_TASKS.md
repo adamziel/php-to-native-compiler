@@ -7742,17 +7742,29 @@ handled.
   pattern, and the previously reached `pluggable.php` mail-host cleanup
   pattern. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): count output arguments are not implemented; pass exactly three arguments in the current subset`.
-- [ ] Runtime/string lane: implement the reached `str_replace()` count-output
+- [x] Runtime/string lane: implement the reached `str_replace()` count-output
   argument shape without claiming broad by-reference output semantics. Inspect
   the originating WordPress source, support only direct-variable count outputs
   if appropriate, and keep array/object operands, broad references, exact PHP
   warning behavior, and native lowering named unless implemented.
+  Milestone 844 traces this to `wp-includes/formatting.php:4440` in
+  `_deep_replace()` and covers direct-variable count output for the existing
+  scalar/null string-convertible `str_replace()` subset. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:4440:14: unsupported call str_replace(): search argument arrays are not implemented in the current subset`.
+- [ ] Runtime/string lane: implement the reached `_deep_replace()` array-search
+  shape for `str_replace($search, '', $subject, $count)` without claiming broad
+  PHP array replacement behavior. Inspect WordPress' caller shapes, support
+  only scalar/null subject and array search values if appropriate, update count
+  aggregation, and keep replacement arrays, subject arrays, nested arrays,
+  object/resource coercions, exact warnings, binary string edge cases, and
+  native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 843 checkpoint, the latest committed checkpoint
-  is `a26a7a1 runtime: add wordpress preg replace sanitizer`, covering
-  Milestone 842.
+- Before the current Milestone 844 checkpoint, the latest committed checkpoint
+  is `8fc1b73 runtime: add wordpress preg replace cleanups`, covering
+  Milestone 843.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

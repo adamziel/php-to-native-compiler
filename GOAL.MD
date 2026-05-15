@@ -665,10 +665,12 @@ The repository already has a working Rust workspace with:
   bounded `preg_replace_callback()` covers the reached
   `wp_sanitize_redirect()` UTF-8 sanitizer callback, and bounded
   `preg_replace()` covers the reached redirect sanitizer cleanup pattern,
-  mail-host cleanup, and KSES null cleanup patterns. The next bottleneck is a
-  reached `str_replace()` count-output argument shape in the WordPress
-  bootstrap shim, which needs a bounded direct-variable output path rather than
-  broad PHP reference semantics.
+  mail-host cleanup, and KSES null cleanup patterns, and bounded
+  `str_replace()` direct-variable count output covers the reached
+  `_deep_replace()` loop in `wp-includes/formatting.php:4440`. The next
+  bottleneck is the same WordPress path passing an array `$search` into
+  `str_replace()`, which needs a bounded array-search replacement/count path
+  before any broad PHP replacement-array or reference semantics are claimed.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
@@ -990,12 +992,12 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestone 843 is the active checkpoint candidate: bounded `preg_replace()`
-  mail-host and KSES null cleanup support advanced the real WordPress
-  bootstrap shim to a reached `str_replace()` count-output argument shape.
+- Milestone 844 is the active checkpoint candidate: bounded `str_replace()`
+  direct-variable count-output support advanced the real WordPress bootstrap
+  shim to the reached `_deep_replace()` array-search argument shape.
 - The next immediate WordPress-directed lane is to inspect and implement that
-  `str_replace()` count-output path without claiming broad reference/output
-  parameter semantics.
+  `str_replace()` array-search path without claiming broad replacement-array,
+  subject-array, or PHP reference semantics.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

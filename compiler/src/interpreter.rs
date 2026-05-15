@@ -6271,6 +6271,9 @@ impl Interpreter {
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
+                if key == "str_replace" {
+                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
@@ -6323,6 +6326,9 @@ impl Interpreter {
                         values.push(self.evaluate(arg, caller_scope)?);
                     }
                     return self.call_preg_replace_callback(values, span);
+                }
+                if key == "str_replace" {
+                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
                 }
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
@@ -6479,6 +6485,44 @@ impl Interpreter {
             caller_scope.write_static(matches_name, Value::Array(PhpArray::new()));
             Ok(Value::Int(0))
         }
+    }
+
+    fn call_str_replace_with_optional_count(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(3..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "str_replace()",
+                    ArityExpectation::Between { min: 3, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let search = self.evaluate(&args[0], caller_scope)?;
+        let replace = self.evaluate(&args[1], caller_scope)?;
+        let subject = self.evaluate(&args[2], caller_scope)?;
+        let (result, count) = str_replace_scalar_result(&search, &replace, &subject, span)?;
+
+        if args.len() == 4 {
+            let Expr::Variable(count_name, _) = &args[3] else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "str_replace()",
+                        "count output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(count_name, Value::Int(count));
+        }
+
+        Ok(Value::String(result))
     }
 
     fn call_compact(
@@ -12945,20 +12989,32 @@ fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
             span,
             RuntimeError::unsupported_call(
                 "str_replace()",
-                "count output arguments are not implemented; pass exactly three arguments in the current subset",
+                "count output requires a direct str_replace() call with a direct variable in the current subset",
             ),
         ));
     }
 
-    let search = string_replace_argument("str_replace()", "search", &args[0], span)?;
-    let replace = string_replace_argument("str_replace()", "replace", &args[1], span)?;
-    let subject = string_replace_argument("str_replace()", "subject", &args[2], span)?;
+    let (result, _) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
 
+    Ok(Value::String(result))
+}
+
+fn str_replace_scalar_result(
+    search: &Value,
+    replace: &Value,
+    subject: &Value,
+    span: Span,
+) -> CompileResult<(String, i64)> {
+    let search = string_replace_argument("str_replace()", "search", search, span)?;
+    let replace = string_replace_argument("str_replace()", "replace", replace, span)?;
+    let subject = string_replace_argument("str_replace()", "subject", subject, span)?;
     if search.is_empty() {
-        return Ok(Value::String(subject));
+        return Ok((subject, 0));
     }
 
-    Ok(Value::String(subject.replace(&search, &replace)))
+    let count = subject.matches(&search).count() as i64;
+    let result = subject.replace(&search, &replace);
+    Ok((result, count))
 }
 
 fn string_replace_argument(

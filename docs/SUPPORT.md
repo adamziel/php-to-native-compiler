@@ -715,11 +715,16 @@
   PHP's warning/notice/deprecation filtering, ini integration,
   disabled-function policy, non-integer coercions, exact diagnostics, and
   native lowering remain unsupported.
-  `str_replace($search, $replace, $subject)` supports the current scalar/null
-  string-convertible subset for all three arguments and returns the subject
-  unchanged for an empty search string. Array search/replace/subject forms,
-  the fourth `$count` output argument, object/resource coercions, exact warning
-  behavior, binary string edge cases, and native lowering remain unsupported.
+  `str_replace($search, $replace, $subject, $count = null)` supports the
+  current scalar/null string-convertible subset for the first three arguments
+  and returns the subject unchanged for an empty search string. Direct calls
+  and string-valued dynamic calls may pass a direct variable as the fourth
+  `$count` output argument; the interpreter writes the non-overlapping
+  replacement count as an integer. This is a bounded output-parameter path, not
+  true PHP references. Array search/replace/subject forms, non-variable count
+  targets, indirect `call_user_func()` count output, object/resource coercions,
+  exact warning behavior, binary string edge cases, and native lowering remain
+  unsupported.
   `min($value, ...$values)` supports two or more integer arguments and returns
   the smallest integer. Array-form `min([..])`, mixed-type comparison rules,
   float/string/bool/null/object/resource operands, exact PHP diagnostics, and
@@ -2890,10 +2895,10 @@
   as the builtin section above; direct native `strcasecmp(...)` calls still
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
-  `str_replace` accepts the same current scalar/null string-convertible subset
-  as the builtin section above; direct native `str_replace(...)` calls still
-  reject under the function-call boundary, while native function-table
-  introspection recognizes the name.
+  `str_replace` accepts the same current scalar/null string-convertible and
+  direct-variable count-output subset as the builtin section above; direct
+  native `str_replace(...)` calls still reject under the function-call
+  boundary, while native function-table introspection recognizes the name.
   `call_user_func` accepts the same current string-callable subset as the
   builtin section above; direct native `call_user_func(...)` calls still reject
   under the function-call boundary, while native function-table introspection
