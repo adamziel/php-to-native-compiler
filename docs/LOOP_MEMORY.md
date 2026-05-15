@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T14:35:00Z
+
+- Checkpoint before this task:
+  `a6fc7b3 runtime: add bounded ascii preg_match`, pushed to `origin/master`.
+- Task attempted: Milestone 825, bounded direct-variable `array_unshift()`
+  support for the reached WordPress bootstrap path.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/array_unshift_builtin.rs`,
+  `tests/fixtures/milestone825/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime array_unshift -- --nocapture`,
+  `cargo test -p phpc --test array_unshift_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone825`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:328:48: undefined function current()`.
+- Remaining semantic gaps: broad by-reference array argument handling,
+  non-variable first arguments, value-only dynamic calls such as
+  `call_user_func("array_unshift", ...)`, references/copy-on-write, exact
+  warning behavior, native lowering, and real WordPress bootstrap support
+  remain unsupported.
+- Next concrete task: implement the reached bounded `current()` behavior for
+  ordered arrays while keeping broad internal array-pointer semantics,
+  references/copy-on-write, exact warnings/errors, interaction with
+  `next()`/`reset()`, and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T14:05:00Z
 
 - Checkpoint before this task:

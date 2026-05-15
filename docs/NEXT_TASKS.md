@@ -7558,18 +7558,26 @@ handled.
   Milestone 824 covers the exact WordPress non-ASCII detector and advances the
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
-- [ ] Runtime/array lane: implement the reached bounded `array_unshift()`
+- [x] Runtime/array lane: implement the reached bounded `array_unshift()`
   behavior for direct variable arrays in the WordPress bootstrap path. Keep
   broad by-reference argument handling, non-variable array targets, mixed
   key-preservation edge cases beyond PHP's documented integer reindexing,
   references/copy-on-write, exact warnings/errors, and native lowering named
   unless implemented.
+  Milestone 825 covers direct-variable ordered-array mutation, string-key
+  preservation, integer-key reindexing, return count, and string-valued direct
+  dynamic calls, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:328:48: undefined function current()`.
+- [ ] Runtime/array lane: implement the reached bounded `current()` behavior
+  for current ordered arrays in the WordPress bootstrap path. Keep internal
+  array pointer semantics beyond the reached shape, references/copy-on-write,
+  non-array diagnostics, exact warnings, interaction with `next()`/`reset()`,
+  and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 824 checkpoint, the latest committed checkpoint
-  is `a81fa78 runtime: add bounded safe-collation regex`, covering Milestone
-  823.
+- Before the current Milestone 825 checkpoint, the latest committed checkpoint
+  is `a6fc7b3 runtime: add bounded ascii preg_match`, covering Milestone 824.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

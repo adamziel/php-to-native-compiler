@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone825/array_unshift_direct.php"
+  ],
+  "stdin": "",
+  "stdout": "5|new|first|two|Ada|five|6|zero|new|five",
+  "stderr": "",
+  "exit": 0
+}

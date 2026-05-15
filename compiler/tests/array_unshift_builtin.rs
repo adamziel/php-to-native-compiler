@@ -1,0 +1,101 @@
+use php_compiler::emit_ir_source;
+use php_compiler::error::Phase;
+use php_compiler::run_source;
+
+const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
+
+#[test]
+fn array_unshift_mutates_direct_variable_arrays_and_reindexes_integer_keys() {
+    let execution = run_source(
+        r#"<?php
+$items = array(2 => "two", "name" => "Ada", 5 => "five");
+$count = array_unshift($items, "new", "first");
+echo $count, "|";
+echo $items[0], "|", $items[1], "|", $items[2], "|", $items["name"], "|", $items[3], "|";
+$items[] = "tail";
+echo $items[4];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "5|new|first|two|Ada|five|tail");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_unshift_is_available_through_string_valued_direct_calls() {
+    let execution = run_source(
+        r#"<?php
+$call = "array_unshift";
+$items = array("tail");
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+echo "|";
+echo $call($items, "head");
+echo "|";
+echo $items[0], "|", $items[1];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|callable|2|head|tail");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_unshift_rejects_forms_outside_current_subset() {
+    let non_variable = run_source("<?php\narray_unshift(['tail'], 'head');\n").unwrap_err();
+    assert_eq!(non_variable.phase, Phase::Runtime);
+    assert_eq!(non_variable.line, 2);
+    assert_eq!(non_variable.column, 1);
+    assert_eq!(
+        non_variable.message,
+        "unsupported call array_unshift(): first argument must be a direct variable array in the current subset"
+    );
+
+    let non_array = run_source("<?php\n$value = 1;\narray_unshift($value, 'head');\n").unwrap_err();
+    assert_eq!(non_array.phase, Phase::Runtime);
+    assert_eq!(non_array.line, 3);
+    assert_eq!(non_array.column, 1);
+    assert_eq!(
+        non_array.message,
+        "unsupported call array_unshift(): first argument must be array, got int"
+    );
+
+    let value_call = run_source(
+        r#"<?php
+$items = array("tail");
+call_user_func("array_unshift", $items, "head");
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(value_call.phase, Phase::Runtime);
+    assert_eq!(value_call.line, 3);
+    assert_eq!(value_call.column, 1);
+    assert_eq!(
+        value_call.message,
+        "unsupported call array_unshift(): by-reference array arguments require a direct call target in the current subset"
+    );
+}
+
+#[test]
+fn emit_ir_folds_array_unshift_metadata_but_rejects_direct_calls() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo function_exists("array_unshift") ? "1" : "0";
+echo is_callable("array_unshift") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert!(!ir.contains("function_exists"), "{ir}");
+    assert!(!ir.contains("is_callable"), "{ir}");
+
+    let error = emit_ir_source("<?php\n$items = 1;\narray_unshift($items, 'head');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_ARRAY_REJECTION);
+}

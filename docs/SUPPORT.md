@@ -489,7 +489,8 @@
   `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_change_key_case`, `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
-  `array_product`, `array_reduce`, `array_filter`, `array_map`, `ksort`,
+  `array_product`, `array_reduce`, `array_filter`, `array_map`,
+  `array_unshift`, `ksort`,
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
@@ -577,6 +578,15 @@
   `"\r\n\t ("` masks. Character-mask ranges, empty masks, binary/null-byte
   edge cases beyond the current represented runtime-string subset,
   array/object/resource coercions, exact PHP diagnostics, and native lowering
+  remain unsupported.
+  `array_unshift($array, ...$values)` supports direct calls and string-valued
+  direct dynamic calls when the first argument is a direct variable containing
+  a current ordered array. It evaluates prepended values left to right, writes
+  the mutated array back to that variable, reindexes integer keys, preserves
+  string keys, and returns the new count. Non-variable array targets, non-array
+  first arguments, value-only dynamic calls such as
+  `call_user_func("array_unshift", ...)`, broad by-reference argument
+  handling, references/copy-on-write, exact warnings, and native lowering
   remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
   string-convertible arguments, compares with ASCII case folding, and returns
@@ -2597,7 +2607,8 @@
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `ksort`, `in_array`, `array_search`, `gettype`,
+  `array_filter`, `array_map`, `array_unshift`, `ksort`, `in_array`,
+  `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
   `is_countable`, `is_iterable`, `is_callable`, `function_exists`, `rand`,
@@ -2719,6 +2730,10 @@
   scalar/null string-convertible subset as the builtin section above; direct
   native `ltrim(...)` calls still reject under the function-call boundary,
   while native function-table introspection recognizes the name.
+  `array_unshift` accepts the same direct-variable ordered-array mutation
+  subset as the builtin section above; direct native `array_unshift(...)`
+  calls still reject under the function-call boundary, while native
+  function-table introspection recognizes the name.
   `str_contains` accepts the same current scalar/null string-convertible
   haystack and needle subset as the builtin section above; direct native
   `str_contains(...)` calls still reject under the function-call boundary,
@@ -4321,6 +4336,11 @@
   binary/null-byte string edge cases beyond the current represented
   runtime-string subset, array/object/resource coercions, exact PHP
   diagnostics, and native lowering beyond function-table introspection
+- `array_unshift()` outside the current direct-variable ordered-array mutation
+  subset: non-variable first arguments, value-only dynamic calls such as
+  `call_user_func("array_unshift", ...)`, broad by-reference argument
+  handling, references/copy-on-write, exact warnings/errors, and native
+  lowering beyond function-table introspection
 - `str_contains()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and

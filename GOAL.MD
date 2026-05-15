@@ -415,10 +415,12 @@ reached empty-array/list-shape comparisons. Milestone 822 covers bounded
 `ltrim()` for the reached `wpdb::check_safe_collation()` query trim. The
 Milestone 823 covers the exact case-insensitive `preg_match()` read-query
 classifier in that same WordPress path. Milestone 824 covers the adjacent
-`wpdb::check_ascii()` regex byte-range pattern. The current frontier is now a
-reached `array_unshift()` call in the WordPress bootstrap path, reported by the
-bootstrap shim as
-`runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
+`wpdb::check_ascii()` regex byte-range pattern. Milestone 825 covers the
+reached direct-variable `array_unshift()` bootstrap call, including integer-key
+reindexing, string-key preservation, caller-variable mutation, and return
+count. The current frontier is now a reached `current()` call in the WordPress
+bootstrap path, reported by the bootstrap shim as
+`runtime error at <bootstrap-shim>:328:48: undefined function current()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -598,8 +600,12 @@ The repository already has a working Rust workspace with:
   option lookup path over the placeholder MySQLi handle. Bounded deterministic
   `rand()` covers the reached `wpdb::placeholder_escape()` salt path. Bounded
   `uniqid()` plus HMAC-SHA256 `hash_hmac()` covers the reached placeholder
-  hash path. The next bottleneck is missing strict identity support for current
-  arrays.
+  hash path. Strict identity for current arrays covers the reached
+  empty-array/list-shape comparisons. Bounded `ltrim()` and two exact
+  WordPress `preg_match()` slices cover the reached safe-collation classifier
+  and ASCII check. Bounded direct-variable `array_unshift()` covers the reached
+  bootstrap array prepend path. The next bottleneck is missing `current()`
+  support for the reached ordered-array access shape.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

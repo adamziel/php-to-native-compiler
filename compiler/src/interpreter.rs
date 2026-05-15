@@ -6138,6 +6138,9 @@ impl Interpreter {
                 if key == "ksort" {
                     return self.call_ksort(args, span, caller_scope);
                 }
+                if key == "array_unshift" {
+                    return self.call_array_unshift(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -6174,6 +6177,9 @@ impl Interpreter {
                 }
                 if key == "ksort" {
                     return self.call_ksort(args, span, caller_scope);
+                }
+                if key == "array_unshift" {
+                    return self.call_array_unshift(args, span, caller_scope);
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
@@ -6473,6 +6479,59 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn call_array_unshift(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_unshift()",
+                    ArityExpectation::AtLeast(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Expr::Variable(array_name, _) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_unshift()",
+                    "first argument must be a direct variable array in the current subset",
+                ),
+            ));
+        };
+
+        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
+        for arg in &args[1..] {
+            values.push(self.evaluate(arg, caller_scope)?);
+        }
+
+        let mut array_value = caller_scope.read_static(array_name, span)?;
+        let Value::Array(array) = &mut array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_unshift()",
+                    format!(
+                        "first argument must be array, got {}",
+                        array_value.type_name()
+                    ),
+                ),
+            ));
+        };
+
+        let len = array
+            .unshift_values(&values)
+            .map_err(|error| runtime_error(span, error))?;
+        caller_scope.write_static(array_name, array_value);
+        Ok(Value::Int(len))
     }
 
     fn call_exit_construct(
@@ -7911,6 +7970,13 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "ksort()",
+                    "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
+            "array_unshift" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_unshift()",
                     "by-reference array arguments require a direct call target in the current subset",
                 ),
             )),
@@ -10779,6 +10845,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_filter"
             | "array_map"
             | "ksort"
+            | "array_unshift"
             | "in_array"
             | "array_search"
             | "gettype"

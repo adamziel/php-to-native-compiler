@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 825, bounded direct-variable `array_unshift()` support for
+  the reached WordPress bootstrap path. The interpreter now recognizes direct
+  calls and string-valued direct dynamic calls to `array_unshift($array, ...$values)`
+  when the first argument is a direct variable containing an array, prepends the
+  new values, reindexes integer keys, preserves string keys, writes the mutated
+  array back to the caller variable, and returns the new count. Value-only
+  dynamic calls such as `call_user_func("array_unshift", ...)`, non-variable
+  first arguments, non-array first arguments, broad by-reference argument
+  handling, references/copy-on-write, exact warning behavior, and native
+  lowering remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe
+  now advances past the reached `array_unshift()` call to
+  `runtime error at <bootstrap-shim>:328:48: undefined function current()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime array_unshift -- --nocapture`,
+  `cargo test -p phpc --test array_unshift_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone825`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 824, a bounded `preg_match()` slice for WordPress'
   `wpdb::check_ascii()` non-ASCII detector. The runtime now recognizes the
   exact `/[^\x00-\x7F]/` pattern, including the current parser's single-quoted

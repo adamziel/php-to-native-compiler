@@ -665,6 +665,27 @@ impl PhpArray {
         array
     }
 
+    pub fn unshift_values(&mut self, values: &[Value]) -> RuntimeResult<i64> {
+        let mut array = Self::new();
+        for value in values {
+            array.append(value.clone())?;
+        }
+        for entry in &self.entries {
+            match &entry.key {
+                ArrayKey::Int(_) => {
+                    array.append(entry.value.clone())?;
+                }
+                ArrayKey::String(key) => {
+                    array.insert(key.clone(), entry.value.clone());
+                }
+            }
+        }
+
+        let len = i64::try_from(array.entries.len()).expect("array length fits in i64");
+        *self = array;
+        Ok(len)
+    }
+
     pub fn keys_reindexed(&self) -> Self {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
@@ -4135,6 +4156,37 @@ mod tests {
             Some(&Value::String("Ada".to_string())),
             "array_values must not mutate the original array"
         );
+    }
+
+    #[test]
+    fn array_unshift_prepends_values_and_reindexes_integer_keys() {
+        let mut array = PhpArray::new();
+        array.insert(2, Value::String("two".to_string()));
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(5, Value::String("five".to_string()));
+
+        let len = array
+            .unshift_values(&[
+                Value::String("new".to_string()),
+                Value::String("first".to_string()),
+            ])
+            .unwrap();
+
+        assert_eq!(len, 5);
+        let entries = array.entries();
+        assert_eq!(entries[0].key, ArrayKey::Int(0));
+        assert_eq!(entries[0].value, Value::String("new".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(1));
+        assert_eq!(entries[1].value, Value::String("first".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(2));
+        assert_eq!(entries[2].value, Value::String("two".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[3].value, Value::String("Ada".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::Int(3));
+        assert_eq!(entries[4].value, Value::String("five".to_string()));
+
+        array.append(Value::String("tail".to_string())).unwrap();
+        assert_eq!(array.entries()[5].key, ArrayKey::Int(4));
     }
 
     #[test]

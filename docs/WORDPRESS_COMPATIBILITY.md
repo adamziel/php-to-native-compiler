@@ -1092,6 +1092,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   multi-byte characters, binary/invalid UTF-8 behavior, exact PCRE diagnostics,
   or native lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:203:2: undefined function array_unshift()`.
+  Milestone 825 implements bounded direct-variable `array_unshift()` for the
+  reached bootstrap path: prepended values are evaluated left to right, integer
+  keys are reindexed, string keys are preserved, the caller variable is
+  mutated, and the new count is returned. This is not broad by-reference
+  argument handling, non-variable array targets, value-only dynamic
+  invocation, references/copy-on-write, exact warning behavior, or native
+  lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:328:48: undefined function current()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
