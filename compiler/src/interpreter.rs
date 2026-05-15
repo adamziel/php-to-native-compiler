@@ -7322,6 +7322,7 @@ impl Interpreter {
             "ltrim" => call_ltrim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_contains" => call_str_contains(&args, span),
+            "str_ends_with" => call_str_ends_with(&args, span),
             "strpos" => call_strpos(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
@@ -11371,6 +11372,7 @@ fn is_builtin(name: &str) -> bool {
             | "ltrim"
             | "strcasecmp"
             | "str_contains"
+            | "str_ends_with"
             | "strpos"
             | "substr_count"
             | "str_replace"
@@ -11902,6 +11904,15 @@ fn call_str_contains(args: &[Value], span: Span) -> CompileResult<Value> {
     let needle = string_contains_argument("str_contains()", "needle", &args[1], span)?;
 
     Ok(Value::Bool(haystack.contains(&needle)))
+}
+
+fn call_str_ends_with(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_ends_with", args, 2, span)?;
+
+    let haystack = string_contains_argument("str_ends_with()", "haystack", &args[0], span)?;
+    let needle = string_contains_argument("str_ends_with()", "needle", &args[1], span)?;
+
+    Ok(Value::Bool(haystack.ends_with(&needle)))
 }
 
 fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {

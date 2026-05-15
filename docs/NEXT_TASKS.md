@@ -7658,17 +7658,26 @@ handled.
   Milestone 834 seeds `SCRIPT_FILENAME` as `/index.php` in the deterministic
   CLI `$_SERVER` placeholder. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
-- [ ] Runtime/string lane: implement the reached bounded
+- [x] Runtime/string lane: implement the reached bounded
   `str_ends_with($_SERVER['SCRIPT_FILENAME'], 'php.cgi')` path from
   `wp-includes/load.php:78`. Keep broad string coercions, binary/invalid UTF-8
   behavior, array/object/resource operands, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 835 covers two-argument scalar/null string-convertible
+  `str_ends_with()` for direct calls, string-valued dynamic calls,
+  `function_exists`, and `is_callable`. The real bootstrap-shim probe now
+  advances to
+  `runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
+- [ ] Runtime/string lane: implement the next bounded `substr()` path reached
+  by the WordPress bootstrap shim. Keep negative offset/length edge behavior,
+  byte-vs-character semantics, broad scalar coercions, array/object/resource
+  operands, exact diagnostics, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 834 checkpoint, the latest committed checkpoint
-  is `b0e289f runtime: add bounded object static properties`, covering
-  Milestone 833.
+- Before the current Milestone 835 checkpoint, the latest committed checkpoint
+  is `9671480 runtime: seed script filename server default`, covering
+  Milestone 834.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

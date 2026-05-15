@@ -922,6 +922,11 @@ and native lowering remain out of scope.
 current scalar/null string-convertible haystack and needle values. It uses the
 current UTF-8 runtime string representation, keeps PHP's empty-needle `true`
 result, and leaves binary string edge cases and native lowering out of scope.
+`str_ends_with()` is an interpreter-only bounded string-suffix builtin for the
+same scalar/null string-convertible haystack and needle subset. It keeps PHP's
+empty-needle `true` result for represented runtime strings, and leaves binary
+string edge cases, object/resource coercions, exact diagnostics, and native
+lowering out of scope.
 `min()` is an interpreter-only bounded integer helper for the current WordPress
 memory-limit clamp. It accepts two or more integer arguments and returns the
 smallest integer, while array-form calls, mixed-type comparison rules, and

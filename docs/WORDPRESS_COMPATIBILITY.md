@@ -1181,6 +1181,12 @@ The first bootstrap probe is expected to fail. Known blockers include:
   document-root mapping, exact warnings, or native lowering. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
+  Milestone 835 implements bounded `str_ends_with()` for the reached
+  `wp_fix_server_vars()` guard over `$_SERVER['SCRIPT_FILENAME']`. This is not
+  broad string coercion, object/resource operands, binary/invalid UTF-8 edge
+  behavior, exact diagnostics, or native lowering. The real bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

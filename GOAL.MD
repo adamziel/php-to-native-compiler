@@ -87,8 +87,7 @@ currently evaluate the referenced value without aliasing, and bounded
 object-property reference-assignment sources that copy current array/object
 values without aliasing, and bounded direct/dynamic object-property
 `unset(...)` operands that currently null visible property slots instead of
-modeling true property uninitialization. The
-current shim frontier
+modeling true property uninitialization. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
@@ -123,7 +122,15 @@ cache-miss path; bounded `mysqli_real_escape_string()` now covers the reached
 `wpdb::_real_escape()` option lookup path; bounded deterministic `rand()` now
 covers the reached `wpdb::placeholder_escape()` salt path; bounded
 `uniqid()` plus HMAC-SHA256 `hash_hmac()` now cover the reached placeholder
-hash path; it now stops at missing strict identity support for current arrays.
+hash path.
+Subsequent bounded milestones advanced the same shim through nested
+`empty(...)` paths and deterministic MySQLi metadata placeholders, dynamic
+object/class-string static property access for the PHPMailer validator
+assignment, deterministic CLI `$_SERVER['SCRIPT_FILENAME']` startup state, and
+the reached `str_ends_with($_SERVER['SCRIPT_FILENAME'], 'php.cgi')` guard. As
+of Milestone 835, direct `wp-settings.php` still stops at missing `ABSPATH`,
+while the bootstrap shim now stops at
+`runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -435,11 +442,11 @@ MySQLi metadata-query placeholders for `SHOW FULL COLUMNS FROM ...` and
 `DESCRIBE ...`. Milestone 833 covers the reached dynamic static-receiver
 property assignment shape `$phpmailer::$validator = static function (...)`
 through bounded `$object::$property` and `$className::$property` reads/direct
-writes. The current frontier is now missing `$_SERVER['SCRIPT_FILENAME']`
-startup state. Milestone 834 seeds that deterministic CLI `$_SERVER` key, and
-the current frontier is now the reached `str_ends_with()` CGI guard, reported
-by the bootstrap shim as
-`runtime error at <bootstrap-shim>:78:47: undefined function str_ends_with()`.
+writes. Milestone 834 seeds the deterministic CLI
+`$_SERVER['SCRIPT_FILENAME']` startup key, and
+Milestone 835 covers the reached `str_ends_with()` CGI guard. The current
+bootstrap-shim frontier is now
+`runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -637,8 +644,9 @@ The repository already has a working Rust workspace with:
   empty MySQLi metadata-query placeholders cover reached `SHOW FULL COLUMNS`
   and `DESCRIBE` probes. Bounded dynamic static-receiver property reads/direct
   writes cover the reached PHPMailer validator assignment. A bounded
-  `SCRIPT_FILENAME` CLI seed covers the reached URL-guessing read. The next
-  bottleneck is `str_ends_with()` in the WordPress bootstrap shim.
+  `SCRIPT_FILENAME` CLI seed covers the reached URL-guessing read, and a
+  bounded `str_ends_with()` slice covers the following CGI guard. The next
+  bottleneck is `substr()` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 
@@ -960,23 +968,19 @@ Exit criteria:
 Start from `docs/NEXT_TASKS.md`; it is the source of truth for checked and
 unchecked work. Current state:
 
-- Milestones 615-624 are closed and checkpointed.
-- Milestone 625: compiler-output lane, choose the next deterministic CLI
-  artifact or backend contract coverage target from existing native output
-  behavior.
-- Milestone 626: IR/lowering lane, choose the next narrow native IR or lowering
-  refinement, or a precise rejection boundary, from already documented
-  interpreter behavior.
-- Milestone 627: parser lane, choose the next small syntax or parse-diagnostic
-  boundary without widening runtime or native support claims.
-- Milestone 628: runtime lane, choose the next small array/object builtin
-  refinement from documented unsupported gaps.
-- Milestone 629: tests/docs lane, keep the lane queue, focused-test policy,
-  support matrix, and progress records current after the active implementation
-  batch.
-- Milestones 630-634 should begin the compatibility-harness turn: convert the
-  full-PHP/WordPress north star into manifests, smoke fixtures, and explicit
-  pass/fail/skipped reporting instead of more prose-only planning.
+- Milestone 835 is the active checkpoint candidate: bounded
+  `str_ends_with()` support advanced the real WordPress bootstrap shim to
+  missing `substr()`.
+- The next immediate WordPress-directed runtime lane is a bounded `substr()`
+  slice for the reached bootstrap path, with broader string semantics and
+  native lowering named unless implemented.
+- The hard compatibility lanes remain open in parallel: PHP value semantics
+  (`references` and copy-on-write), object semantics, error/exception behavior,
+  standard-library and extension services, WordPress harness breadth, and
+  native runtime integration.
+- Older lane placeholders remain historical planning data; the live queue is
+  the checked/unchecked work in `docs/NEXT_TASKS.md`, reconciled after each
+  checkpoint.
 
 Prefer depth in one documented subset over breadth across unimplemented PHP
 features.

@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
+  `9671480 runtime: seed script filename server default`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 835, bounded `str_ends_with()` support for the
+  reached WordPress `wp_fix_server_vars()` startup guard.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/str_ends_with_builtin.rs`,
+  `tests/fixtures/milestone835/*`, `docs/PROGRESS.md`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test str_ends_with_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone835`,
+  `cargo build -p phpc`,
+  `git diff --check`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: broad string coercions, binary/invalid UTF-8 edge
+  cases beyond represented runtime strings, object/resource operands, exact PHP
+  diagnostics, and native `str_ends_with()` lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:6335:21: undefined function substr()`.
+- Next concrete task: run the full checkpoint gate, then checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded str ends with"` if the full gate
+  passes. Milestone 836 should bound the reached `substr()` path without
+  claiming broad string builtin coverage.
+
 ## Loop Event 2026-05-15T17:45:00Z
 
 - Checkpoint before this task:
