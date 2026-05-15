@@ -6214,6 +6214,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "call_user_func"
             | "implode"
             | "dirname"
+            | "abs"
             | "version_compare"
             | "count"
             | "constant"

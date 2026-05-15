@@ -5991,6 +5991,7 @@ impl Interpreter {
 
                 Ok(Value::String(dirname_path(path, levels)))
             }
+            "abs" => call_abs(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
@@ -9239,6 +9240,7 @@ fn is_builtin(name: &str) -> bool {
             | "call_user_func"
             | "implode"
             | "dirname"
+            | "abs"
             | "version_compare"
             | "count"
             | "constant"
@@ -9809,6 +9811,40 @@ fn call_headers_sent(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::Bool(false))
+}
+
+fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("abs", args, 1, span)?;
+
+    match &args[0] {
+        Value::Int(value) => value.checked_abs().map(Value::Int).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "abs()",
+                    "integer minimum overflow is not implemented in the current subset",
+                ),
+            )
+        }),
+        Value::Float(value) if value.is_finite() => Ok(Value::Float(value.abs())),
+        Value::Float(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "abs()",
+                "NaN and infinity handling is not implemented in the current subset",
+            ),
+        )),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "abs()",
+                format!(
+                    "argument must be int or finite float in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
 }
 
 fn call_version_compare(args: &[Value], span: Span) -> CompileResult<Value> {

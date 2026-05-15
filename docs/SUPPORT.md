@@ -426,8 +426,8 @@
   `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
-  `function_exists`, `extension_loaded`, `header`, `headers_sent`, `assert`,
-  `get_class`, `is_object`, `get_debug_type`,
+  `function_exists`, `extension_loaded`, `header`, `headers_sent`, `abs`,
+  `assert`, `get_class`, `is_object`, `get_debug_type`,
   `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`,
   `property_exists`, `method_exists`, `is_a`, `get_class_methods`, `get_class_vars`,
   `get_object_vars`, `get_mangled_object_vars`, `is_subclass_of`, `get_parent_class`,
@@ -540,6 +540,11 @@
   no-header-state runtime shim. Filename/line output arguments, output-started
   tracking, header storage, output buffers, SAPI differences, exact warnings,
   and native lowering remain unsupported.
+  `abs($value)` accepts current integer and finite-float runtime values,
+  returning an integer for integer input and a float for finite-float input.
+  Integer-minimum overflow, numeric string coercion, bool/null coercion,
+  array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
+  native lowering remain unsupported.
   `extension_loaded($name)` accepts string extension names and currently
   answers from a deterministic bounded compiler/runtime compatibility registry.
   It returns `true` for `json` and `hash`, and `false` for other names,
@@ -2150,7 +2155,7 @@
   Dynamic function calls are supported only when the callee expression evaluates
   to a string that case-insensitively resolves exactly to a user-defined function or to
   one of the documented callable builtins: `strlen`, `strcasecmp`,
-  `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `count`,
+  `str_replace`, `sprintf`, `call_user_func`, `implode`, `file_exists`, `abs`, `count`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -2275,7 +2280,7 @@
   resolution, autoload interaction, and native lowering for type declarations
   are unsupported.
 - Builtins: `strlen`, `strcasecmp`, `str_replace`, `sprintf`,
-  `call_user_func`, `implode`, `file_exists`, `isset`, `empty`, `count`,
+  `call_user_func`, `implode`, `file_exists`, `abs`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -2355,6 +2360,10 @@
   builtin section above; direct native `headers_sent(...)` calls still reject
   under the function-call boundary, while native function-table introspection
   recognizes the name.
+  `abs` accepts the same current integer and finite-float subset as the builtin
+  section above; direct native `abs(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `sprintf` accepts the same current string-format subset as the builtin
   section above; direct native `sprintf(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
@@ -3910,6 +3919,10 @@
   shim: filename/line output arguments, output-started tracking, header
   storage, output buffers, SAPI differences, exact warnings, and native
   lowering beyond function-table introspection
+- `abs()` behavior beyond the current integer and finite-float subset:
+  integer-minimum overflow, numeric string coercion, bool/null coercion,
+  array/object/resource operands, NaN/infinity behavior, exact diagnostics, and
+  native lowering beyond function-table introspection
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,

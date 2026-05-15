@@ -7025,16 +7025,25 @@ handled.
   current no-header-state shim and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:1469:9: undefined function abs()`,
   corresponding to `wp-includes/load.php:1469`.
-- [ ] Numeric builtin lane: implement a bounded `abs()` slice for the next real
+- [x] Numeric builtin lane: implement a bounded `abs()` slice for the next real
   WordPress bootstrap-shim blocker, covering the reached integer-cast
   `absint()` path while documenting unsupported float overflow/NaN/infinity
   behavior, non-scalar operands, exact diagnostics, and native lowering unless
   implemented.
+  Milestone 768 implements integer and finite-float `abs()` and advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1547:2: undefined function header_remove()`,
+  corresponding to `wp-includes/functions.php:1547`.
+- [ ] Web/SAPI runtime lane: implement a bounded `header_remove()` slice for
+  the next real WordPress bootstrap-shim blocker, likely as a no-op for current
+  string header names while documenting all-header removal, header storage,
+  output-sent warnings, SAPI behavior, exact diagnostics, and native lowering
+  unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 767 checkpoint, the latest committed checkpoint
-  is `d990214 runtime: add bounded strcasecmp`, covering Milestone 766.
+- Before the current Milestone 768 checkpoint, the latest committed checkpoint
+  is `78af560 runtime: add bounded headers_sent`, covering Milestone 767.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

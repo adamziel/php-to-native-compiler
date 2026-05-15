@@ -922,6 +922,10 @@ runtime model.
 current no-argument slice returns `false` so reached WordPress guard branches
 can continue, but filename/line output arguments, output-started tracking,
 output buffers, SAPI differences, and native lowering are not modeled.
+`abs()` is an interpreter-only bounded numeric builtin for current integer and
+finite-float values. It is intentionally narrower than PHP coercion until
+numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
+numeric diagnostics are modeled.
 `spl_autoload_register()` is currently an interpreter-only no-op registration
 boundary: it accepts closure expressions or string callback names with optional
 boolean flags and returns true, but does not store or invoke an autoload stack.

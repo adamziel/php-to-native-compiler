@@ -634,6 +634,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   output arguments, output-started tracking, header storage, output buffers,
   SAPI differences, exact warnings, native lowering, or WordPress bootstrap
   support.
+  Milestone 768 implements bounded `abs()` for current integer and finite-float
+  values, covering the reached `absint()` path after its explicit `(int)` cast.
+  It advances the real bootstrap-shim probe past `wp-includes/load.php:1469`
+  to
+  `runtime error at <bootstrap-shim>:1547:2: undefined function header_remove()`,
+  corresponding to `wp-includes/functions.php:1547`. This is not
+  integer-minimum overflow, numeric string coercion, bool/null coercion,
+  array/object/resource operands, NaN/infinity behavior, exact diagnostics,
+  native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

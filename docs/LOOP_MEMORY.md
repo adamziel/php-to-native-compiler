@@ -227,6 +227,33 @@ injects this file into every prompt. Each Codex pass should update it with:
   non-scalar operands, exact diagnostics, and native lowering named unless
   implemented.
 
+## Loop Event 2026-05-15T08:29:00Z
+
+- Checkpoint before this task:
+  `78af560 runtime: add bounded headers_sent`, pushed to `origin/master`.
+- Task attempted: Milestone 768, bounded `abs()` for the WordPress `absint()`
+  blocker.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/abs_builtin.rs`,
+  `tests/fixtures/milestone768/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test abs_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone768`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: integer-minimum overflow, numeric string coercion,
+  bool/null coercion, array/object/resource operands, NaN/infinity behavior,
+  exact diagnostics, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:1547:2: undefined function header_remove()`,
+  corresponding to `wp-includes/functions.php:1547`.
+- Next concrete task: implement a bounded `header_remove()` web/SAPI slice for
+  the reached path while keeping all-header removal, header storage,
+  output-sent warnings, SAPI behavior, exact diagnostics, and native lowering
+  named unless implemented.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

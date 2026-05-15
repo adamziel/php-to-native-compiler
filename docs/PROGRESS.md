@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 768, bounded `abs()` for the current integer and finite-float
+  runtime values. This covers the reached WordPress `absint()` path after its
+  explicit `(int)` cast, returns an integer for integer input and a float for
+  finite-float input, and exposes the builtin through function/callability
+  metadata and dynamic string-valued calls. Integer-minimum overflow, numeric
+  string coercion, bool/null coercion, array/object/resource operands,
+  NaN/infinity behavior, exact PHP diagnostics, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  `abs( (int) $maybeint )` in `wp-includes/load.php:1469` to
+  `runtime error at <bootstrap-shim>:1547:2: undefined function header_remove()`,
+  corresponding to `wp-includes/functions.php:1547`. Direct `wp-settings.php`
+  still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test abs_builtin`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone768`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 767, bounded no-argument `headers_sent()` for the current
   no-header-state CLI/runtime shim. The builtin now returns `false` when called
   without arguments and is visible through function/callability metadata and
