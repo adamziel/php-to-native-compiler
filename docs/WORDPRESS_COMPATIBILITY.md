@@ -1316,10 +1316,11 @@ historical blockers and remaining full-support gaps include:
   fetch cursor, and Milestone 868 adds a synthetic `wpdb` smoke that records
   that placeholder row count through `$this->num_rows`. Milestone 869 adds
   bounded clean-state `mysqli_affected_rows()` and `mysqli_insert_id()` zero
-  metadata for placeholder handles. These are still deterministic harness
-  milestones, not SQL execution, real database state, duplicate-column or
-  warning/error fidelity, real `wpdb` output-mode fidelity, real
-  affected-row/insert-id state,
+  metadata for placeholder handles, and Milestone 870 adds a synthetic `wpdb`
+  smoke that records that zero metadata through query bookkeeping. These are
+  still deterministic harness milestones, not SQL execution, real database
+  state, duplicate-column or warning/error fidelity, real `wpdb` output-mode
+  fidelity, real affected-row/insert-id state,
   plugin/theme/admin/REST, SAPI, rendered request, or native WordPress support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;

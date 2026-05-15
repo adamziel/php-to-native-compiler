@@ -8012,16 +8012,26 @@ handled.
   runtime and native metadata lookup. This is not mutation SQL execution, real
   affected-row/insert-id state, transactions, warnings/errors, host database
   integration, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_affected_rows()`/`mysqli_insert_id()` clean state through
   WordPress-shaped query bookkeeping without claiming real mutation query
   behavior.
+  Milestone 870 adds a `phpc-only` synthetic `wpdb::query()` fixture that
+  records `$this->rows_affected = 0` and `$this->insert_id = 0` from
+  `mysqli_affected_rows()`/`mysqli_insert_id()` after the exact charset setup
+  no-result query. It is not real WordPress mutation query behavior, SQL
+  execution, database state, transactions, warnings/errors, real
+  affected-row/insert-id state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next database boundary after clean
+  mutation metadata and choose a small tested slice, such as an explicit
+  `mysqli_set_charset()` placeholder boundary or a named unsupported diagnostic
+  for mutation SQL before broadening query execution.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `0957c43 tests: add wordpress wpdb num rows smoke`, covering Milestone 868
-  before the current Milestone 869 candidate.
+  `adb33c6 runtime: add mysqli clean mutation metadata`, covering Milestone 869
+  before the current Milestone 870 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

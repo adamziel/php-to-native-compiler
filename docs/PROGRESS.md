@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 870, a synthetic WordPress-shaped `wpdb::query()` smoke that
+  records the bounded clean-state `mysqli_affected_rows($this->dbh)` and
+  `mysqli_insert_id($this->dbh)` values after the exact charset setup
+  no-result query. The fixture verifies that the query method returns `0`,
+  stores `$this->rows_affected = 0`, stores `$this->insert_id = 0`, and drains
+  placeholder multi-result state. This is a harness smoke only; it does not add
+  real WordPress mutation query behavior, SQL execution, database state,
+  transaction behavior, real affected-row/insert-id state, warnings/errors, or
+  native lowering. Focused verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone870`.
+
 - Added Milestone 869, bounded clean-state MySQLi mutation metadata for
   placeholder handles. The runtime now accepts
   `mysqli_affected_rows($handle)` and `mysqli_insert_id($handle)` for current

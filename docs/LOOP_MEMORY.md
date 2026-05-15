@@ -29,6 +29,28 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `adb33c6 runtime: add mysqli clean mutation metadata`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 870, a synthetic WordPress-shaped `wpdb::query()`
+  smoke that records clean affected-row and insert-id placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone870/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone870`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a synthetic `wpdb::query()` path can record
+  deterministic zero rows-affected and insert-id values after the exact
+  charset setup no-result query.
+- Remaining semantic gaps: real WordPress mutation query behavior, SQL
+  execution, database state, transactions, real affected-row and insert-id
+  state, warnings/errors, and native database lowering remain missing.
+- Next concrete task: run focused fixture verification, then whitespace checks
+  and the serialized checkpoint gate.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `0957c43 tests: add wordpress wpdb num rows smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 869, bounded clean-state

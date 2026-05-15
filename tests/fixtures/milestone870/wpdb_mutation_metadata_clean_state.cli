@@ -1,0 +1,4 @@
+$ phpc run tests/fixtures/milestone870/wpdb_mutation_metadata_clean_state.php
+0
+0
+0
