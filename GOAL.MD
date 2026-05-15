@@ -413,10 +413,11 @@ bounded `uniqid($salt, true)` and `hash_hmac('sha256', ..., $salt)` path.
 Milestone 821 covers strict identity for current ordered arrays, including the
 reached empty-array/list-shape comparisons. Milestone 822 covers bounded
 `ltrim()` for the reached `wpdb::check_safe_collation()` query trim. The
-current frontier is now the reached case-insensitive `preg_match()` modifier in
-that same WordPress query-classification path, reported by the bootstrap shim
-as
-`runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`.
+Milestone 823 covers the exact case-insensitive `preg_match()` read-query
+classifier in that same WordPress path. The current frontier is now the
+adjacent `wpdb::check_ascii()` regex byte-range pattern, reported by the
+bootstrap shim as
+`runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.

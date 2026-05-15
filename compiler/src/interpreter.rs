@@ -11457,6 +11457,7 @@ enum BoundedPregPattern {
     WordPressDbHostIpv4,
     WordPressDbHostIpv6,
     WordPressTablePrefixInvalidChar,
+    WordPressSafeCollationReadQuery,
 }
 
 impl BoundedPregPattern {
@@ -11473,6 +11474,11 @@ impl BoundedPregPattern {
         }
         if pattern == "|[^a-z0-9_]|i" {
             return Ok(Self::WordPressTablePrefixInvalidChar);
+        }
+        if pattern == "/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\\s/i"
+            || pattern == "/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)s/i"
+        {
+            return Ok(Self::WordPressSafeCollationReadQuery);
         }
 
         let Some(body_and_modifiers) = pattern.strip_prefix('/') else {
@@ -11513,7 +11519,8 @@ impl BoundedPregPattern {
             Self::Exact(literal) => subject == literal,
             Self::WordPressDbHostIpv4
             | Self::WordPressDbHostIpv6
-            | Self::WordPressTablePrefixInvalidChar => self.captures(subject).is_some(),
+            | Self::WordPressTablePrefixInvalidChar
+            | Self::WordPressSafeCollationReadQuery => self.captures(subject).is_some(),
         }
     }
 
@@ -11532,6 +11539,7 @@ impl BoundedPregPattern {
             Self::WordPressDbHostIpv4 => wordpress_db_host_ipv4_captures(subject),
             Self::WordPressDbHostIpv6 => wordpress_db_host_ipv6_captures(subject),
             Self::WordPressTablePrefixInvalidChar => wordpress_table_prefix_invalid_char(subject),
+            Self::WordPressSafeCollationReadQuery => wordpress_safe_collation_read_query(subject),
             _ => None,
         }
     }
@@ -11560,6 +11568,29 @@ fn wordpress_table_prefix_invalid_char(subject: &str) -> Option<PhpArray> {
         .chars()
         .find(|ch| !matches!(ch, '_' | '0'..='9' | 'a'..='z' | 'A'..='Z'))?;
     Some(preg_match_single_capture(&invalid.to_string()))
+}
+
+fn wordpress_safe_collation_read_query(subject: &str) -> Option<PhpArray> {
+    for keyword in ["SHOW", "DESCRIBE", "DESC", "EXPLAIN", "CREATE"] {
+        let Some(candidate) = subject.get(..keyword.len()) else {
+            continue;
+        };
+        if !candidate.eq_ignore_ascii_case(keyword) {
+            continue;
+        }
+        let Some(rest) = subject.get(keyword.len()..) else {
+            continue;
+        };
+        let Some(whitespace) = rest.chars().next() else {
+            continue;
+        };
+        if whitespace.is_ascii_whitespace() {
+            let end = keyword.len() + whitespace.len_utf8();
+            return Some(preg_match_single_capture(&subject[..end]));
+        }
+    }
+
+    None
 }
 
 fn wordpress_db_host_ipv4_captures(subject: &str) -> Option<PhpArray> {

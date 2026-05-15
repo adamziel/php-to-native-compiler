@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T13:45:00Z
+
+- Checkpoint before this task:
+  `732f75d runtime: add bounded ltrim`, pushed to `origin/master`.
+- Task attempted: Milestone 823, bounded `preg_match()` support for the reached
+  WordPress safe-collation read-query classifier
+  `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i`.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/preg_match_builtin.rs`, `tests/fixtures/milestone823/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test preg_match_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone823`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:3474`.
+- Remaining semantic gaps: broad PCRE alternation/grouping, general `i`
+  modifier support, broad `\s` semantics, capture-group fidelity, exact
+  diagnostics, native lowering, and real WordPress bootstrap support remain
+  unsupported.
+- Next concrete task: implement the reached bounded ASCII-check
+  `preg_match('/[^\x00-\x7F]/', $input_string)` path while keeping broad
+  bracket classes, ranges beyond this exact byte range, binary/invalid UTF-8
+  behavior, exact PCRE diagnostics, and native lowering named unless
+  implemented.
+
 ## Loop Event 2026-05-15T13:15:00Z
 
 - Checkpoint before this task:

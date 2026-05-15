@@ -135,6 +135,28 @@ echo $matches[0];
 }
 
 #[test]
+fn preg_match_handles_wordpress_safe_collation_query_guard() {
+    let execution = run_source(
+        r#"<?php
+$pattern = '/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i';
+echo preg_match($pattern, "SHOW TABLES", $matches);
+echo "|";
+echo $matches[0];
+echo "|";
+echo preg_match($pattern, "select * from wp_options");
+echo "|";
+echo preg_match($pattern, "create\tTABLE wp_posts", $matches);
+echo "|";
+echo $matches[0];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|SHOW |0|1|create\t");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn preg_match_rejects_forms_outside_current_subset() {
     let output_args = runtime_error(
         r#"<?php

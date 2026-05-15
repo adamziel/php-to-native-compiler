@@ -621,11 +621,14 @@
   IPv4-ish and bracketed IPv6-ish startup paths. The exact WordPress table
   prefix validation pattern `|[^a-z0-9_]|i` is also supported, returning a
   match for the first non-alphanumeric/non-underscore character and no match
-  for conventional prefixes such as `wp_`. Non-direct matches outputs,
-  flags, offsets, optional unmatched-group fidelity, broad named-capture
-  support, full PCRE syntax, modifiers other than `u`, invalid-pattern
-  warnings, byte/Unicode edge cases, broad coercions, exact diagnostics, and
-  native lowering remain unsupported.
+  for conventional prefixes such as `wp_`. The exact WordPress safe-collation
+  query classifier `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i` is supported
+  with ASCII-case-insensitive keyword matching and one following ASCII
+  whitespace character. Non-direct matches outputs, flags, offsets, optional
+  unmatched-group fidelity, broad named-capture support, full PCRE syntax,
+  modifiers other than the documented exact WordPress `i` patterns and `u`,
+  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
+  diagnostics, and native lowering remain unsupported.
   `preg_replace($pattern, $replacement, $subject)` supports exactly the
   WordPress database-version cleanup pattern `/[^0-9.].*/`, an empty
   replacement string, and a scalar/null string-convertible subject. It returns
@@ -4331,10 +4334,11 @@
   diagnostics, and native lowering beyond function-table introspection
 - `preg_match()` outside the current slash-delimited literal
   contains/prefix/suffix/exact pattern subset, the two exact WordPress db-host
-  named-capture patterns, and the exact WordPress table-prefix validation
-  pattern `|[^a-z0-9_]|i`: non-direct matches outputs, flags, offsets,
-  optional unmatched-group fidelity, broad capture-group behavior, full PCRE
-  syntax, modifiers other than `u` outside the table-prefix guard,
+  named-capture patterns, the exact WordPress table-prefix validation pattern
+  `|[^a-z0-9_]|i`, and the exact WordPress safe-collation query classifier:
+  non-direct matches outputs, flags, offsets, optional unmatched-group
+  fidelity, broad capture-group behavior, full PCRE syntax, modifiers other
+  than the documented exact WordPress `i` patterns and `u`,
   invalid-pattern warnings, byte/Unicode behavior beyond the current valid
   UTF-8 string model, broad coercions, exact diagnostics, and native lowering
   beyond function-table introspection

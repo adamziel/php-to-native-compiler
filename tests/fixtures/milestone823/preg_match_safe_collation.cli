@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone823/preg_match_safe_collation.php"
+  ],
+  "stdin": "",
+  "stdout": "1|SHOW |0|1|create\t",
+  "stderr": "",
+  "exit": 0
+}

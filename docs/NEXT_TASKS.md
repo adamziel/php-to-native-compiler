@@ -7541,17 +7541,25 @@ handled.
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`,
   corresponding to `wp-includes/class-wpdb.php:3496`.
-- [ ] Runtime/regex lane: extend the bounded `preg_match()` subset for the
+- [x] Runtime/regex lane: extend the bounded `preg_match()` subset for the
   reached case-insensitive `i` modifier in
   `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i`. Keep broad PCRE syntax,
   modifier combinations, captures beyond the current subset, warnings/errors,
   Unicode/locale details, and native lowering named unless implemented.
+  Milestone 823 covers the exact WordPress safe-collation read-query
+  classifier and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`,
+  corresponding to `wp-includes/class-wpdb.php:3474`.
+- [ ] Runtime/regex lane: implement the reached bounded ASCII-check
+  `preg_match('/[^\x00-\x7F]/', $input_string)` path in
+  `wpdb::check_ascii()`. Keep broad bracket classes, ranges beyond this exact
+  byte range, binary/invalid UTF-8 behavior, exact PCRE diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 822 checkpoint, the latest committed checkpoint
-  is `f447ce0 runtime: add ordered array strict identity`, covering Milestone
-  821.
+- Before the current Milestone 823 checkpoint, the latest committed checkpoint
+  is `732f75d runtime: add bounded ltrim`, covering Milestone 822.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

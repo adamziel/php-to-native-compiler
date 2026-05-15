@@ -1076,6 +1076,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   exact diagnostics, or native lowering. The real bootstrap-shim probe now
   advances to
   `runtime error at <bootstrap-shim>:3496:8: unsupported call preg_match(): only the u pattern modifier is implemented in the current subset`.
+  Milestone 823 implements a bounded `preg_match()` slice for that exact
+  safe-collation read-query classifier,
+  `/^(?:SHOW|DESCRIBE|DESC|EXPLAIN|CREATE)\s/i`, with ASCII-case-insensitive
+  keyword matching and one following ASCII whitespace character. This is not
+  broad PCRE alternation/grouping, general `i` modifier support, broad `\s`
+  semantics, capture-group fidelity, exact diagnostics, or native lowering.
+  The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:3474:16: unsupported call preg_match(): regex metacharacter [ is not implemented in the current subset`,
+  corresponding to the adjacent ASCII-check pattern
+  `/[^\x00-\x7F]/` in `wp-includes/class-wpdb.php:3474`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
