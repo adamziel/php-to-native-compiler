@@ -29,6 +29,31 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `a5bd135 runtime: add mysqli client version metadata`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 892, a synthetic WordPress-shaped `wpdb`
+  connection-metadata bookkeeping smoke over deterministic
+  `mysqli_get_client_version()` placeholder metadata.
+- Files changed so far: `tests/fixtures/milestone892/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone892`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection-metadata
+  bookkeeping path can record deterministic placeholder client-library version
+  metadata.
+- Remaining semantic gaps: real WordPress database client-version fidelity,
+  client-library version detection, host database integration, extension
+  configuration fidelity, database state mutation, and native database lowering
+  remain missing.
+- Next concrete task: run focused fixture verification, whitespace checks, and
+  the serialized checkpoint gate under `umask 0022`; after checkpoint, inspect
+  the next MySQLi metadata or diagnostic boundary.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `3504d11 tests: add wordpress wpdb client protocol smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 891, bounded deterministic

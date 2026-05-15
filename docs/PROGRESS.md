@@ -4,6 +4,16 @@
 
 Implemented:
 
+- Added Milestone 892, a synthetic WordPress-shaped `wpdb` connection-metadata
+  bookkeeping smoke that calls the bounded `mysqli_get_client_version()`
+  placeholder path, records deterministic local client-version metadata, and
+  verifies that the metadata boundary ran. This is a harness smoke only; it
+  does not add real WordPress database client-version fidelity,
+  client-library version detection, host database integration, PHP extension
+  configuration fidelity, or native database lowering. Focused verification so
+  far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone892`.
+
 - Added Milestone 891, bounded `mysqli_get_client_version()` support for
   deterministic placeholder MySQLi client-library version metadata. The runtime
   accepts the no-argument call, returns deterministic integer version `80000`,

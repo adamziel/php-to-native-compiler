@@ -1,0 +1,4 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_get_client_version()` metadata through a WordPress-shaped `wpdb`
+connection-metadata bookkeeping path. System PHP depends on the installed
+mysqli extension and reports the actual client-library version.

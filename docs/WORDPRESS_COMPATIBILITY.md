@@ -1379,6 +1379,9 @@ historical blockers and remaining full-support gaps include:
   Milestone 891 adds deterministic `mysqli_get_client_version()` placeholder
   metadata without real client-library version detection, host database
   integration, extension configuration fidelity, or native database lowering.
+  Milestone 892 wires that placeholder through a synthetic WordPress-shaped
+  `wpdb` client-version bookkeeping smoke without claiming real database
+  client-version fidelity.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
