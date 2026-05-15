@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use php_runtime::{
     ArityExpectation, ArrayColumnKey, ArrayKey, ArrayKeyCase, ClassId, Comparison, ObjectProperty,
@@ -5998,6 +5999,7 @@ impl Interpreter {
             }
             "abs" => call_abs(&args, span),
             "version_compare" => call_version_compare(&args, span),
+            "microtime" => call_microtime(&args, span),
             "count" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -9255,6 +9257,7 @@ fn is_builtin(name: &str) -> bool {
             | "dirname"
             | "abs"
             | "version_compare"
+            | "microtime"
             | "count"
             | "constant"
             | "defined"
@@ -9886,6 +9889,53 @@ fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
                 "abs()",
                 format!(
                     "argument must be int or finite float in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "microtime()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    match args.first() {
+        Some(Value::Bool(true)) => {
+            let duration = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "microtime()",
+                            format!("system clock is before the Unix epoch: {error}"),
+                        ),
+                    )
+                })?;
+            Ok(Value::Float(duration.as_secs_f64()))
+        }
+        Some(Value::Bool(false)) | None => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "microtime()",
+                "string return format is not implemented; pass true for float seconds in the current subset",
+            ),
+        )),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "microtime()",
+                format!(
+                    "as_float argument must be bool in the current subset, got {}",
                     other.type_name()
                 ),
             ),

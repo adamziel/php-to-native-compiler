@@ -670,6 +670,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not full PHP warning/notice behavior, general undefined-variable
   recovery, variable variables, references, superglobals, native lowering, or
   WordPress bootstrap support.
+  Milestone 772 implements bounded `microtime(true)` as a finite host-clock
+  float seconds value and exposes the name through function/callability
+  metadata. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:42:23: undefined function ini_get()`.
+  This is not the no-argument/string-return `microtime()` format, deterministic
+  time virtualization, precision/monotonicity guarantees, INI/timezone policy,
+  exact diagnostics, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

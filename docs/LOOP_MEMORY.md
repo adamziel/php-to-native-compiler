@@ -333,6 +333,30 @@ injects this file into every prompt. Each Codex pass should update it with:
   the reached WordPress bootstrap path while documenting nondeterminism,
   precision, string-return format, time source policy, and native lowering.
 
+## Loop Event 2026-05-15T10:02:00Z
+
+- Checkpoint before this task:
+  `6f628da runtime: materialize top-level globals`, pushed to `origin/master`.
+- Task attempted: Milestone 772, bounded `microtime(true)` for the WordPress
+  bootstrap timing path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/time_builtins.rs`,
+  `tests/fixtures/milestone772/*`, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test time_builtins`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone772`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: no-argument and `false` string-return
+  `microtime()` forms, exact formatting, precision guarantees, monotonicity,
+  deterministic virtual time, broad coercions, exact diagnostics, and native
+  lowering remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `runtime error at <bootstrap-shim>:42:23: undefined function ini_get()`.
+- Next concrete task: implement a bounded `ini_get()` configuration slice for
+  the reached WordPress bootstrap path with deterministic values and named
+  unsupported host php.ini/SAPI/mutation behavior.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

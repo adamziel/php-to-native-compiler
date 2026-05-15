@@ -7068,16 +7068,25 @@ handled.
   undefined variable reads still fail with the stable runtime diagnostic. It
   advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:39:33: undefined function microtime()`.
-- [ ] Time builtin lane: implement a bounded `microtime()` slice for the next
+- [x] Time builtin lane: implement a bounded `microtime()` slice for the next
   WordPress bootstrap blocker, likely covering `microtime(true)` as a finite
   float timestamp while documenting nondeterminism, precision, string-return
   format, time source policy, monotonicity, tests, and native lowering unless
   implemented.
+  Milestone 772 implements `microtime(true)` as a host-clock finite float
+  seconds value and keeps the string-return forms unsupported. It advances the
+  real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:42:23: undefined function ini_get()`.
+- [ ] INI/config lane: implement a bounded `ini_get()` slice for the next
+  WordPress bootstrap blocker, starting with the reached option name and a
+  deterministic runtime configuration policy. Keep host php.ini discovery,
+  mutable ini state, value typing/stringification, SAPI differences, exact
+  false-vs-string behavior, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 771 checkpoint, the latest committed checkpoint
-  is `15a39bd runtime: add mysqli_connect boundary`, covering Milestone 770.
+- Before the current Milestone 772 checkpoint, the latest committed checkpoint
+  is `6f628da runtime: materialize top-level globals`, covering Milestone 771.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

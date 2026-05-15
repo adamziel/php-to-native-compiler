@@ -68,11 +68,12 @@ return values, skipped positional `list(...)` destructuring, class
 `str_replace()`, bounded `call_user_func()`, a bounded direct-variable
 array `=&` path for `wp_parse_args()`, bounded `strcasecmp()`, bounded
 no-argument `headers_sent()`, bounded `abs()`, bounded `header_remove()`, and
-a bounded `mysqli_connect` function-table boundary. The current shim frontier
+a bounded `mysqli_connect` function-table boundary, top-level `global`
+null-materialization, and bounded `microtime(true)`. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it now stops at an undefined
-`microtime()` call on the bootstrap path.
+`ini_get()` call on the bootstrap path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -288,9 +289,11 @@ variable sources into direct array-offset targets, advancing past
 array `=&` path for `$parsed_args =& $args;` in
 `wp-includes/functions.php:4955`. Milestone 766 added bounded `strcasecmp()`.
 Milestone 767 added bounded no-argument `headers_sent()`. Milestone 768 added
-bounded `abs()`. Milestone 769 added bounded `header_remove()`; the current
-bootstrap-shim frontier is now WordPress' missing-MySQL-extension guard at
-`wp-includes/load.php:202`.
+bounded `abs()`. Milestone 769 added bounded `header_remove()`. Milestone 770
+added a `mysqli_connect` function-table boundary. Milestone 771 added
+top-level `global` null-materialization. Milestone 772 added bounded
+`microtime(true)`; the current bootstrap-shim frontier is now an undefined
+`ini_get()` call on the WordPress bootstrap path.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -426,9 +429,10 @@ The repository already has a working Rust workspace with:
   `abstract`/`final`/`readonly` class modifiers and `abstract`/`final` method
   modifiers as metadata, and `new self`/`new parent`/`new static` magic
   class-name instantiation in active class/method contexts, and bounded
-  `strcasecmp()`, bounded no-argument `headers_sent()`, bounded `abs()`, and
-  bounded `header_remove()`. The next bottleneck is the missing MySQL/mysqli
-  extension guard in the WordPress bootstrap shim.
+  `strcasecmp()`, bounded no-argument `headers_sent()`, bounded `abs()`,
+  bounded `header_remove()`, a `mysqli_connect` boundary, top-level `global`
+  null-materialization, and bounded `microtime(true)`. The next bottleneck is
+  an undefined `ini_get()` call in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

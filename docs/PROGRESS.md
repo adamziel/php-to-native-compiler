@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added Milestone 772, bounded `microtime(true)` for the current WordPress
+  bootstrap timing path. The runtime returns a finite float seconds value from
+  the host system clock when the sole argument is `true`, exposes the builtin
+  through function/callability metadata and dynamic string-valued calls, and
+  keeps direct native calls behind the generic function-call lowering
+  boundary. The no-argument and `false` string-return forms, exact formatting,
+  precision guarantees, monotonicity, test-time determinism, timezone/INI
+  interactions, broad coercions, exact PHP diagnostics, and native lowering
+  remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe now
+  advances past the reached `microtime( true )` call to
+  `runtime error at <bootstrap-shim>:42:23: undefined function ini_get()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test time_builtins`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone772`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 771, top-level `global` declarations now materialize missing
   named symbols as `null` while preserving existing values. This covers the
   reached WordPress `global $wp_filter; if ( $wp_filter )` initialization path

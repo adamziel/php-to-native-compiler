@@ -931,6 +931,11 @@ output buffers, SAPI differences, and native lowering are not modeled.
 finite-float values. It is intentionally narrower than PHP coercion until
 numeric string, bool/null coercion, overflow, NaN/infinity, and native runtime
 numeric diagnostics are modeled.
+`microtime(true)` is an interpreter-only host-clock boundary for bootstrap
+timing checks. It returns a finite float seconds value from `SystemTime`, while
+the string-return forms stay unsupported until time virtualization, formatting,
+precision, monotonicity, INI/timezone policy, and native runtime calls are
+designed.
 `mysqli_connect()` is a database-extension boundary, not database support. The
 runtime and native function tables expose the name so early application
 extension guards can move to the next compatibility blocker, but direct or
