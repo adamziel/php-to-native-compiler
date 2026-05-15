@@ -7639,18 +7639,28 @@ handled.
   `DESCRIBE ...` metadata probes. The real bootstrap-shim probe now advances
   to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
-- [ ] Parser/object lane: implement the next bounded object-receiver static
-  property/class-constant parsing and runtime diagnostic slice for the reached
-  WordPress bootstrap-shim blocker at `<bootstrap-shim>:283:14`. Keep broader
-  `static::` forms, dynamic receiver semantics, magic hooks,
+- [x] Parser/object lane: implement the next bounded object-receiver static
+  property parsing/runtime slice for the reached WordPress bootstrap-shim
+  blocker at `<bootstrap-shim>:283:14`. Keep object receiver class constants,
+  `$object::class`, broader `static::` forms, compound assignment,
+  increment/decrement, `isset`/`empty`/`??`/`??=`, magic hooks,
   references/copy-on-write, exact diagnostics, and native lowering named
   unless implemented.
+  Milestone 833 covers `$object::$property` and `$className::$property`
+  reads/direct writes for current object and declared class-name string
+  receivers. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
+- [ ] Runtime/superglobal lane: seed or otherwise bound the reached
+  `$_SERVER['SCRIPT_FILENAME']` startup path in the WordPress bootstrap shim
+  without claiming a full SAPI/request environment. Keep broader server
+  variables, web-server request state, path translation, CGI/FPM differences,
+  exact warning behavior, and native lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 832 checkpoint, the latest committed checkpoint
-  is `ef46f3d runtime: add bounded wordpress query classifiers`, covering
-  Milestone 831.
+- Before the current Milestone 833 checkpoint, the latest committed checkpoint
+  is `9d1be0e runtime: add bounded wordpress empty paths`, covering
+  Milestone 832.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

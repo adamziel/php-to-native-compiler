@@ -2100,6 +2100,7 @@ impl Parser {
                     | AssignTarget::ObjectPropertyArrayIndex { .. }
                     | AssignTarget::ObjectPropertyArrayAppend { .. }
                     | AssignTarget::DynamicProperty { .. }
+                    | AssignTarget::ObjectStaticProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
@@ -2326,6 +2327,7 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
@@ -2348,6 +2350,7 @@ impl Parser {
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayIndex { .. }
@@ -2564,6 +2567,15 @@ impl Parser {
                 }),
                 _ => Err(unsupported_assignment_expression_target_message()),
             },
+            Expr::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::ObjectStaticProperty {
+                target: *target,
+                property,
+                span,
+            }),
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -3534,11 +3546,15 @@ impl Parser {
                             "unsupported object static class constant access: object receiver class constants are not implemented",
                         ));
                     }
-                    TokenKind::Variable(_) => {
-                        return Err(self.error_at(
-                            operator_span,
-                            "unsupported object static property access: object receiver static properties are not implemented",
-                        ));
+                    TokenKind::Variable(property) => {
+                        self.advance();
+                        let span = expr.span();
+                        expr = Expr::ObjectStaticProperty {
+                            target: Box::new(expr),
+                            property,
+                            span,
+                        };
+                        continue;
                     }
                     _ => {
                         return Err(self.error_at(
@@ -4374,6 +4390,7 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::ObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
@@ -4456,6 +4473,7 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::ObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
@@ -4526,6 +4544,7 @@ impl Parser {
             Expr::DynamicProperty {
                 target, property, ..
             } => Self::expr_contains_assignment(target) || Self::expr_contains_assignment(property),
+            Expr::ObjectStaticProperty { target, .. } => Self::expr_contains_assignment(target),
             Expr::MethodCall { target, args, .. } => {
                 Self::expr_contains_assignment(target)
                     || args.iter().any(Self::expr_contains_assignment)
@@ -4660,6 +4679,9 @@ impl Parser {
                         .iter()
                         .any(Self::expr_contains_unsupported_assignment_rhs)
             }
+            Expr::ObjectStaticProperty { target, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(target)
+            }
             Expr::SelfMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -4768,6 +4790,7 @@ impl Parser {
                 Self::find_append_index_span(target)
                     .or_else(|| args.iter().find_map(Self::find_append_index_span))
             }
+            Expr::ObjectStaticProperty { target, .. } => Self::find_append_index_span(target),
             Expr::SelfMethodCall { args, .. } => args.iter().find_map(Self::find_append_index_span),
             Expr::LateStaticMethodCall { args, .. } => {
                 args.iter().find_map(Self::find_append_index_span)

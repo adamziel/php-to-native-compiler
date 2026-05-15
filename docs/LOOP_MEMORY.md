@@ -22355,6 +22355,41 @@ injects this file into every prompt. Each Codex pass should update it with:
   blocker.
 ## Loop Event 2026-05-15T00:00:00Z
 
+- Checkpoint before this task: `9d1be0e runtime: add bounded wordpress empty
+  paths`, pushed to `origin/master`.
+- Task attempted: Milestone 833, bounded dynamic static-receiver property
+  reads/direct writes for `$object::$property` and `$className::$property`,
+  covering the reached WordPress PHPMailer validator assignment.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone833/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far: `cargo fmt --check`,
+  `cargo test -p phpc --test object_model object_static_properties -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone833`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed.
+- Remaining semantic gaps: object receiver class constants, `$object::class`,
+  object/class-string receiver compound assignment, increment/decrement,
+  `isset`/`empty`/`??`/`??=`, unset, computed static property names beyond
+  direct `::$name` tokens, magic hooks, references/copy-on-write, autoload,
+  exact diagnostics, and native lowering remain explicit.
+- Current WordPress frontier: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`;
+  the bootstrap shim advances to
+  `runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
+- Next concrete task: run `git diff --check` and the full checkpoint gate, then
+  checkpoint with
+  `tools/checkpoint.sh "runtime: add bounded object static properties"` if the
+  full gate passes. Milestone 834 should bound the reached
+  `$_SERVER['SCRIPT_FILENAME']` startup path without claiming a full SAPI
+  environment.
+
+## Loop Event 2026-05-15T00:00:00Z
+
 - Checkpoint before this task: `ef46f3d runtime: add bounded wordpress query
   classifiers`, pushed to `origin/master`.
 - Task attempted: Milestone 832, bounded nested `empty(...)` paths for direct

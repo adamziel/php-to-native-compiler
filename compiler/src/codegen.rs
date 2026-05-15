@@ -450,6 +450,7 @@ impl LlvmGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
+            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
@@ -930,6 +931,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::ObjectStaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
             | AssignTarget::LateStaticProperty { span, .. } => {
@@ -3244,6 +3246,7 @@ impl CGenerator {
             | Expr::ParentClassConstant { span, .. }
             | Expr::LateStaticClassConstant { span, .. }
             | Expr::StaticProperty { span, .. }
+            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
@@ -3730,6 +3733,7 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_OBJECT_CLASS_REJECTION))
             }
             AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::ObjectStaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
             | AssignTarget::LateStaticProperty { span, .. } => {

@@ -432,9 +432,12 @@ regexes plus the reached empty option-name cache-priming and single-option
 MySQLi reads. Milestone 832 covers the reached direct nested array-offset and
 direct object-property array-offset `empty(...)` paths plus deterministic empty
 MySQLi metadata-query placeholders for `SHOW FULL COLUMNS FROM ...` and
-`DESCRIBE ...`. The current frontier is now object-receiver static property
-access, reported by the bootstrap shim as
-`parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
+`DESCRIBE ...`. Milestone 833 covers the reached dynamic static-receiver
+property assignment shape `$phpmailer::$validator = static function (...)`
+through bounded `$object::$property` and `$className::$property` reads/direct
+writes. The current frontier is now missing `$_SERVER['SCRIPT_FILENAME']`
+startup state, reported by the bootstrap shim as
+`runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -470,7 +473,7 @@ destructors/reuse, and exact PHP diagnostics.
   dispatch through `ClassName::method(...)`, `$object::method(...)`,
   `$className::method(...)`, `self::method(...)`, `parent::method(...)`, and
   late-bound `static::method(...)`, now execute through `phpc run`, but
-  interfaces, traits, enums, object-receiver static properties/constants,
+  interfaces, traits, enums, object-receiver class constants,
   non-static dynamic static dispatch, broader class constant semantics,
   clone behavior beyond the current shallow no-`__clone` slice, magic methods,
   dynamic method/property names, typed property compatibility, property
@@ -630,8 +633,10 @@ The repository already has a working Rust workspace with:
   direct nested array-offset and object-property array-offset `empty(...)`
   paths cover the reached `wpdb::load_col_info()` shape, and deterministic
   empty MySQLi metadata-query placeholders cover reached `SHOW FULL COLUMNS`
-  and `DESCRIBE` probes. The next bottleneck is object-receiver static
-  property access in the WordPress bootstrap shim.
+  and `DESCRIBE` probes. Bounded dynamic static-receiver property reads/direct
+  writes cover the reached PHPMailer validator assignment. The next bottleneck
+  is missing `$_SERVER['SCRIPT_FILENAME']` startup state in the WordPress
+  bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

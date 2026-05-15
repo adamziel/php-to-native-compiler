@@ -1956,6 +1956,11 @@ impl Interpreter {
                 property,
                 span,
             } => self.evaluate_named_static_property(class_name, property, *span),
+            Expr::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => self.evaluate_object_static_property(target, property, *span, scope),
             Expr::SelfStaticProperty { property, span } => {
                 self.evaluate_self_static_property(property, *span)
             }
@@ -2797,6 +2802,14 @@ impl Interpreter {
                     )),
                 }
             }
+            AssignTarget::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => {
+                let value = self.evaluate(expr, scope)?;
+                self.write_object_static_property(target, property, value, *span, scope)
+            }
             AssignTarget::StaticProperty {
                 class_name,
                 property,
@@ -3321,6 +3334,13 @@ impl Interpreter {
                     "dynamic property targets are not implemented",
                 ),
             )),
+            AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "dynamic static property targets are not implemented",
+                ),
+            )),
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -3602,6 +3622,13 @@ impl Interpreter {
                     "dynamic property targets are not implemented",
                 ),
             )),
+            AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "dynamic static property targets are not implemented",
+                ),
+            )),
             AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -3793,6 +3820,13 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "??=",
                     "dynamic property targets are not implemented",
+                ),
+            )),
+            AssignTarget::ObjectStaticProperty { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "??=",
+                    "dynamic static property targets are not implemented",
                 ),
             )),
             AssignTarget::StaticProperty { span, .. }
@@ -5112,6 +5146,18 @@ impl Interpreter {
         self.read_resolved_static_property(class_id, class_name, property, span)
     }
 
+    fn evaluate_object_static_property(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (class_id, class_name) =
+            self.resolve_dynamic_static_receiver(target, property, span, scope)?;
+        self.read_resolved_static_property(class_id, &class_name, property, span)
+    }
+
     fn evaluate_self_static_property(&self, property: &str, span: Span) -> CompileResult<Value> {
         let Some(current_class_id) = self.class_context.last().copied() else {
             return Err(runtime_error(
@@ -5156,6 +5202,19 @@ impl Interpreter {
             .lookup_class_id(class_name)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
         self.write_resolved_static_property(class_id, class_name, property, value, span)
+    }
+
+    fn write_object_static_property(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (class_id, class_name) =
+            self.resolve_dynamic_static_receiver(target, property, span, scope)?;
+        self.write_resolved_static_property(class_id, &class_name, property, value, span)
     }
 
     fn write_self_static_property(
@@ -5273,6 +5332,44 @@ impl Interpreter {
             .unwrap_or(Value::Null);
 
         Ok((declaring_class_id, property, value))
+    }
+
+    fn resolve_dynamic_static_receiver(
+        &mut self,
+        target: &Expr,
+        member_name: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(ClassId, String)> {
+        let target_value = self.evaluate(target, scope)?;
+        match target_value {
+            Value::Object(object) => {
+                let class_id = object.class_id();
+                let class_name = self
+                    .classes
+                    .get(class_id)
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                Ok((class_id, class_name))
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(&class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(&class_name))
+                })?;
+                Ok((class_id, class_name))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("::${member_name}"),
+                    format!(
+                        "dynamic static property receiver must be object or class string, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn resolve_parent_static_property_context(

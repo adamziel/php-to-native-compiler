@@ -307,6 +307,11 @@ pub enum AssignTarget {
         property: Expr,
         span: Span,
     },
+    ObjectStaticProperty {
+        target: Expr,
+        property: String,
+        span: Span,
+    },
     StaticProperty {
         class_name: String,
         property: String,
@@ -467,6 +472,7 @@ impl AssignTarget {
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
             | AssignTarget::ObjectPropertyArrayAppend { span, .. }
             | AssignTarget::DynamicProperty { span, .. }
+            | AssignTarget::ObjectStaticProperty { span, .. }
             | AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
@@ -693,6 +699,11 @@ pub enum Expr {
         property: String,
         span: Span,
     },
+    ObjectStaticProperty {
+        target: Box<Expr>,
+        property: String,
+        span: Span,
+    },
     SelfStaticProperty {
         property: String,
         span: Span,
@@ -905,6 +916,7 @@ impl Expr {
             | Expr::Property { span, .. }
             | Expr::DynamicProperty { span, .. }
             | Expr::StaticProperty { span, .. }
+            | Expr::ObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. }

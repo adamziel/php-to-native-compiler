@@ -1166,6 +1166,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   database contents, exact warnings/errors, or native lowering. The real
   bootstrap-shim probe now advances to
   `parse error at <bootstrap-shim>:283:14: unsupported object static property access: object receiver static properties are not implemented`.
+  Milestone 833 implements bounded dynamic static-receiver property reads and
+  direct writes for `$object::$property` and `$className::$property`, covering
+  the reached `$phpmailer::$validator = static function (...) { ... };` shape
+  in `wp-includes/pluggable.php:283`. This is not object receiver class
+  constants, `$object::class`, compound assignment, increment/decrement,
+  `isset`/`empty`/`??`/`??=`, unset, references/copy-on-write, magic hooks,
+  autoload, exact diagnostics, or native lowering. The real bootstrap-shim
+  probe now advances to
+  `runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

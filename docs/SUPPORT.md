@@ -1368,9 +1368,14 @@
   `static::$prop` in active called-class context use class-level
   storage initialized from the current constant-expression default subset or
   `null`, resolve inherited properties case-sensitively, and enforce current
-  visibility checks; typed properties, dynamic names, storage-removing
-  static-property unset, and `static::$prop` outside method/static class
-  context remain unsupported.
+  visibility checks. Dynamic receiver static property reads and direct writes
+  through `$object::$prop` and `$className::$prop` are supported for receivers
+  that evaluate to current objects or declared class-name strings, using the
+  same storage, inherited-property lookup, and visibility rules. Typed
+  properties, computed static property names beyond direct `::$name` tokens,
+  storage-removing static-property unset, object/class-string receiver
+  compound assignment, increment/decrement, `isset`, `empty`, `??`, `??=`,
+  and `static::$prop` outside method/static class context remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices for visible non-static or static method dispatch from active
   class context; non-static methods still require current `$this`.
@@ -1387,8 +1392,9 @@
   `$object->$name` and braced `$object->{$expr}` forms in the current read and
   direct-variable-root write subset. Keyword-named direct properties are
   accepted after `->`; keyword method calls are still rejected with an explicit
-  parse diagnostic. Dynamic methods, dynamic static property names, non-public
-  dynamic property access, magic property hooks, dynamic property-name
+  parse diagnostic. Dynamic methods, computed dynamic static property names
+  beyond direct `::$name` tokens, non-public dynamic property access, magic
+  property hooks, dynamic property-name
   `isset`/`empty`/`??`/`??=`, compound assignment,
   increment/decrement, string interpolation, missing-property creation outside
   `stdClass` and the bounded `wpdb` compatibility class, `#[AllowDynamicProperties]`
@@ -3622,7 +3628,7 @@
   typed/static/multi-declarator class constants, typed static properties,
   storage-removing static-property unset,
   and anonymous classes
-- object receiver static properties/class constants and broader `static::`
+- object receiver class constants, `$object::class`, and broader `static::`
   member forms through `::`
 - variable variables; `$$name` and `${...}` are rejected with a stable lex
   diagnostic rather than executed

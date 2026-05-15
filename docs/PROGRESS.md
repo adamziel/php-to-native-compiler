@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added Milestone 833, bounded dynamic static-receiver property support for
+  the reached WordPress PHPMailer validator assignment. The parser and
+  interpreter now accept `$object::$property` and `$className::$property`
+  reads/direct writes when the receiver evaluates to a current object or
+  declared class-name string and the property resolves to a visible declared
+  static property on that class or its parent chain. The implementation reuses
+  the existing static-property storage, inheritance lookup, and visibility
+  checks, and supports the already-existing inert `static function (...) { ... }`
+  closure value on the right-hand side. Object receiver class constants,
+  `$object::class`, compound assignment, increment/decrement, `isset`,
+  `empty`, `??`, `??=`, unset, references/copy-on-write, magic hooks,
+  autoload, exact diagnostics, and native lowering remain unsupported. The
+  real WordPress 6.9.4 bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:6316:35: undefined array key "SCRIPT_FILENAME"`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test object_model object_static_properties -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone833`,
+  `cargo build -p phpc`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 832, bounded nested `empty(...)` paths and WordPress
   metadata-query placeholders. `empty(...)` now supports direct nested
   array-offset paths such as `empty($items[$outer][$inner])` and direct

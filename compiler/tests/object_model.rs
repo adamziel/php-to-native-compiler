@@ -3158,6 +3158,25 @@ fn emit_ir_rejects_object_static_method_calls_until_native_object_lowering_exist
 }
 
 #[test]
+fn emit_ir_rejects_object_static_properties_until_native_object_lowering_exists() {
+    let read_error = php_compiler::emit_ir_source("<?php\n$box::$value;\n").unwrap_err();
+    assert_eq!(read_error.phase, Phase::Codegen);
+    assert!(
+        read_error.message.contains("object/class lowering rejects"),
+        "{}",
+        read_error.message
+    );
+
+    let write_error = php_compiler::emit_ir_source("<?php\n$box::$value = 1;\n").unwrap_err();
+    assert_eq!(write_error.phase, Phase::Codegen);
+    assert!(
+        write_error.message.contains("mutation lowering rejects"),
+        "{}",
+        write_error.message
+    );
+}
+
+#[test]
 fn class_name_constants_execute_current_subset() {
     let execution = run_source(
         r#"<?php
@@ -3535,6 +3554,80 @@ echo Root::$missing;
     assert_eq!(
         undefined_property.message,
         "undefined property Root::$missing"
+    );
+}
+
+#[test]
+fn object_static_properties_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Mailer {
+    public static $validator;
+    protected static $secret;
+
+    public function seedSecret($value) {
+        $this::$secret = $value;
+    }
+
+    public static function readSecret() {
+        return static::$secret;
+    }
+}
+
+class ChildMailer extends Mailer {}
+
+$mailer = new Mailer();
+$mailer::$validator = "object";
+echo Mailer::$validator, "\n";
+
+$class = "ChildMailer";
+$class::$validator = "class-string";
+echo ChildMailer::$validator, "\n";
+
+$child = new ChildMailer();
+$child->seedSecret("hidden");
+echo ChildMailer::readSecret(), "\n";
+
+function install_validator($phpmailer) {
+    $phpmailer::$validator = static function ($email) {
+        return true;
+    };
+}
+
+echo "closure-assignment-parsed";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "object\nclass-string\nhidden\nclosure-assignment-parsed"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let non_object = runtime_error(
+        r#"<?php
+$value = 12;
+$value::$name;
+"#,
+    );
+    assert_eq!(
+        non_object.message,
+        "unsupported call ::$name: dynamic static property receiver must be object or class string, got int"
+    );
+
+    let private_error = runtime_error(
+        r#"<?php
+class Mailer {
+    private static $validator;
+}
+$mailer = new Mailer();
+echo $mailer::$validator;
+"#,
+    );
+    assert_eq!(
+        private_error.message,
+        "unsupported call Mailer::$validator: private static property is not visible from the current class context"
     );
 }
 
@@ -4819,14 +4912,6 @@ $box::NAME;
             2,
             5,
             "unsupported object static class constant access: object receiver class constants are not implemented",
-        ),
-        (
-            r#"<?php
-$box::$value;
-"#,
-            2,
-            5,
-            "unsupported object static property access: object receiver static properties are not implemented",
         ),
         (
             r#"<?php
