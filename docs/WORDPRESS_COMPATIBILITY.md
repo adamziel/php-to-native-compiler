@@ -188,7 +188,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   reaches
   `lex error at <bootstrap-shim>:665:56: unexpected character '@'`,
   corresponding to `wp-includes/sodium_compat/src/Core/Util.php:605` and
-  `$c = (int) @($c & -1);`.
+  `$c = (int) @($c & -1);`. That previous error-control syntax blocker is
+  covered by Milestone 720 as a transparent runtime wrapper only. This is not
+  actual PHP warning/notice/deprecation suppression, recoverable diagnostic
+  severity, expression recovery values, `error_reporting()` mask behavior,
+  exact PHP warning/fatal behavior, partial-output behavior, or native
+  lowering. The bootstrap-shim probe now reaches
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), and (bool) casts are implemented`,
+  likely corresponding to the sodium compatibility `(float)` cast at
+  `wp-includes/sodium_compat/src/Core/Util.php:255`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

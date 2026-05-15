@@ -86,7 +86,9 @@ incorrect native code.
   coalescing forms
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
   operators, shifts, `(string)`, `(int)`, and `(bool)` casts over documented
-  current value boundaries, ternaries, and increments/decrements
+  current value boundaries, ternaries, increments/decrements, and PHP
+  error-control syntax `@expr` as a transparent runtime wrapper without
+  warning/notice suppression
 - `if`, loops, `switch`, `break`, `continue`, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
   `static` variables, defaults, returns, dynamic string-valued calls,
@@ -173,6 +175,7 @@ include/require breadth beyond the current narrow local
 generators, closure invocation, explicit and implicit capture binding,
 callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, and `(bool)` slices,
+actual PHP warning/notice suppression for `@expr`,
 interface inheritance/implementation enforcement, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,

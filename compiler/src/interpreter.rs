@@ -1389,6 +1389,7 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_unary(*op, value, *span)
             }
+            Expr::ErrorControl { expr, .. } => self.evaluate(expr, scope),
             Expr::Cast { kind, expr, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.apply_cast(*kind, value, *span)

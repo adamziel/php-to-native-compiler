@@ -610,6 +610,10 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    ErrorControl {
+        expr: Box<Expr>,
+        span: Span,
+    },
     Cast {
         kind: CastKind,
         expr: Box<Expr>,
@@ -700,6 +704,7 @@ impl Expr {
             | Expr::New { span, .. }
             | Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
+            | Expr::ErrorControl { span, .. }
             | Expr::Cast { span, .. }
             | Expr::Ternary { span, .. }
             | Expr::ShortTernary { span, .. }

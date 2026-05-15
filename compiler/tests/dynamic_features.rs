@@ -828,6 +828,32 @@ echo constant("Box::MISSING");
 }
 
 #[test]
+fn error_control_operator_evaluates_operand_without_suppression() {
+    let execution = run_source(
+        r#"<?php
+$c = 5;
+echo @($c & -1), "\n";
+echo (int) @($c & -1), "\n";
+echo @"ok", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "5\n5\nok\n");
+    assert_eq!(execution.exit_code, 0);
+
+    let error = runtime_error(
+        r#"<?php
+echo @$missing;
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(error.message, "undefined variable '$missing'");
+}
+
+#[test]
 fn constant_builtin_requires_string_names() {
     let error = runtime_error(
         r#"<?php

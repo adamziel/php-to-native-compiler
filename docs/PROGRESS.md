@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added Milestone 720, a bounded PHP error-control syntax slice for the real
+  WordPress 6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:665:56`,
+  corresponding to `wp-includes/sodium_compat/src/Core/Util.php:605` and
+  `$c = (int) @($c & -1);`. The lexer now tokenizes `@`, the parser records
+  an explicit error-control AST wrapper, and `phpc run` evaluates the wrapped
+  expression normally. This intentionally does not suppress warnings, notices,
+  deprecations, undefined-variable diagnostics, unsupported-call diagnostics,
+  invalid arithmetic, or any other fatal project boundary; native lowering
+  rejects `@expr` until generated code has a real diagnostic severity and
+  suppression model. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe advances to
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), and (bool) casts are implemented`,
+  likely corresponding to the sodium compatibility `(float)` cast at
+  `wp-includes/sodium_compat/src/Core/Util.php:255`. Focused verification so
+  far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features error_control -- --test-threads=1`,
+  `cargo test -p phpc --test native_unary_boundary error_control -- --test-threads=1`,
+  `cargo test -p phpc --test error_control_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone720`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone720`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+
 - Added Milestone 719, a bounded runtime class-constant string lookup slice for
   the real WordPress 6.9.4 bootstrap-shim sodium compatibility guard at
   `<bootstrap-shim>:106:41`, corresponding to

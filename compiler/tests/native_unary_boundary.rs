@@ -45,6 +45,7 @@ fn emit_ir_rejects_unary_forms_before_lowering_operands() {
         "<?php\necho -\"5\";\n",
         "<?php\necho (string) 5;\n",
         "<?php\necho (bool) 5;\n",
+        "<?php\necho @5;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0.0 : 2.5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? \"\" : \"php\";\necho !$value;\n",
@@ -57,13 +58,35 @@ fn emit_ir_rejects_unary_forms_before_lowering_operands() {
 }
 
 #[test]
-fn emit_asm_rejects_unary_forms_before_backend_execution() {
-    let error = emit_asm_source(
-        "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
-    )
-    .unwrap_err();
+fn emit_ir_rejects_error_control_before_native_diagnostics_exist() {
+    let error = emit_ir_source("<?php\necho @5;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_UNARY_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_unary_forms_before_backend_execution() {
+    for source in [
+        "<?php\necho @5;\n",
+        "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
+    ] {
+        let error = emit_asm_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_UNARY_REJECTION);
+    }
+}
+
+#[test]
+fn emit_asm_rejects_error_control_before_backend_execution() {
+    let error = emit_asm_source("<?php\necho @5;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
     assert_eq!(error.message, LLVM_UNARY_REJECTION);
 }
 

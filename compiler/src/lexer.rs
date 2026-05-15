@@ -91,6 +91,7 @@ pub enum TokenKind {
     PipePipe,
     Caret,
     Tilde,
+    At,
     Colon,
     Bang,
     Equal,
@@ -213,6 +214,7 @@ impl<'a> Lexer<'a> {
                 }
                 '^' => TokenKind::Caret,
                 '~' => TokenKind::Tilde,
+                '@' => TokenKind::At,
                 ':' => {
                     if self.match_char(':') {
                         TokenKind::DoubleColon

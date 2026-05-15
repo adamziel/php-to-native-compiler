@@ -6597,20 +6597,31 @@ handled.
   declarators, exact PHP diagnostics, partial-output behavior, and native
   lowering unsupported, and advances the bootstrap-shim probe to
   `lex error at <bootstrap-shim>:665:56: unexpected character '@'`.
-- [ ] Parser/runtime lane: implement or explicitly bound PHP error-control
+- [x] Parser/runtime lane: implemented bounded PHP error-control
   syntax `@expr` for the real WordPress 6.9.4 bootstrap-shim blocker at
   `<bootstrap-shim>:665:56`, corresponding to
   `wp-includes/sodium_compat/src/Core/Util.php:605` and
-  `$c = (int) @($c & -1);`, with tests, CLI coverage, docs, and named
-  unsupported edges for actual warning/notice suppression, recoverable
-  diagnostics, expression-specific recovery values, exact PHP warning/fatal
-  behavior, partial-output behavior, and native lowering.
+  `$c = (int) @($c & -1);`. The Milestone 720 slice tokenizes and parses
+  `@expr` as an explicit AST wrapper, evaluates the operand normally through
+  `phpc run`, keeps actual warning/notice/deprecation suppression,
+  recoverable diagnostics, expression-specific recovery values, exact PHP
+  warning/fatal behavior, partial-output behavior, and native lowering
+  unsupported, and advances the bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), and (bool) casts are implemented`.
+- [ ] Parser/runtime lane: implement or explicitly bound `(float)`/`(double)`
+  casts for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:1015:20`, likely corresponding to
+  `wp-includes/sodium_compat/src/Core/Util.php:255` and
+  `$mixedVar = (float) $mixedVar;`, with tests, CLI coverage, docs, and named
+  unsupported edges for array/object/resource casts, leading-numeric warning
+  behavior, non-finite values, exact PHP diagnostics, partial-output behavior,
+  and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 719 checkpoint, the latest committed checkpoint
-  is `e448452 runtime: add braced string interpolation`, covering Milestone
-  718.
+- Before the current Milestone 720 checkpoint, the latest committed checkpoint
+  is `b166056 runtime: add class constant string lookup`, covering Milestone
+  719.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

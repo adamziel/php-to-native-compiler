@@ -543,6 +543,7 @@ impl LlvmGenerator {
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
             }
+            Expr::ErrorControl { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
             Expr::Cast { span, .. } => Err(self.unsupported(*span, LLVM_UNARY_REJECTION)),
             Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
@@ -3315,6 +3316,9 @@ impl CGenerator {
                 }
                 let value = self.emit_expr(expr)?;
                 self.emit_unary(*op, value, *span)
+            }
+            Expr::ErrorControl { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION))
             }
             Expr::Cast { span, .. } => Err(self.unsupported(*span, ASSEMBLY_UNARY_REJECTION)),
             Expr::Assign { span, .. }

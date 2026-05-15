@@ -122,6 +122,9 @@
   lazy branch/fallback evaluation, condition-value reuse for short ternary,
   parenthesized nested ternaries, mixes with `??`, and assignment-expression
   branches over the documented direct-target subset
+- PHP error-control syntax `@expr` as a transparent runtime wrapper. The
+  operand evaluates normally and existing runtime diagnostics are still
+  reported; warning/notice/deprecation suppression is not implemented.
 - `if` / `elseif` / `else`, including alternate
   `if (...) : ... elseif (...) : ... else: ... endif;` syntax
 - `while`
@@ -3648,6 +3651,9 @@
 - PHP's warning-and-continue behavior for undefined variables; plain reads fail
   with a runtime error in the current subset, while `isset($name)` remains the
   supported presence check
+- actual PHP error-control behavior for `@expr`, including suppressing
+  warnings/notices/deprecations, recoverable diagnostic severity, expression
+  recovery values, and `error_reporting()` mask interactions
 - PHP `Throwable`/`Error` objects, stack traces, recoverable warnings, notices,
   and user error handlers
 - Preserving partial stdout emitted before a runtime failure; the current

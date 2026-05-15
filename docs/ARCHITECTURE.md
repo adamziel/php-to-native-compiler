@@ -52,6 +52,14 @@ lowering rejects the interpolated form, including
 `defined("SODIUM_$constant")`, until native constant tables and runtime string
 lookup semantics exist. Complex braced expressions remain lexer boundaries.
 
+PHP error-control syntax is represented as an explicit AST wrapper for
+`@expr`. The interpreter currently evaluates the wrapped expression normally
+and deliberately does not suppress diagnostics, because the runtime still
+models undefined variables, unsupported calls, invalid arithmetic, and other
+conditions as fatal project diagnostics rather than recoverable PHP
+warnings/notices. Native lowering rejects the wrapper until generated code has
+a real diagnostic severity and suppression model.
+
 ## Runtime Crate
 
 `runtime/` contains the PHP-shaped boxed value model used by the interpreter and

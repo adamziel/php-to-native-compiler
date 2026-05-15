@@ -2843,6 +2843,15 @@ impl Parser {
             });
         }
 
+        if self.match_token(|kind| matches!(kind, TokenKind::At)) {
+            let span = self.previous().span;
+            let expr = self.parse_unary()?;
+            return Ok(Expr::ErrorControl {
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
         self.parse_postfix()
     }
 
@@ -3736,6 +3745,10 @@ impl Parser {
                 Ok(())
             }
             Expr::Unary { expr, .. } => self.ensure_supported_default_expr(expr),
+            Expr::ErrorControl { .. } => Err(self.error_at(
+                expr.span(),
+                "default parameter values only support constant expressions in the current subset",
+            )),
             Expr::Binary {
                 left, op, right, ..
             } => {
@@ -3809,6 +3822,10 @@ impl Parser {
                 Ok(())
             }
             Expr::Unary { expr, .. } => self.ensure_supported_const_declaration_expr(expr),
+            Expr::ErrorControl { .. } => Err(self.error_at(
+                expr.span(),
+                "const declaration values only support constant expressions in the current subset",
+            )),
             Expr::Binary {
                 left, op, right, ..
             } => {
@@ -3938,9 +3955,9 @@ impl Parser {
                 Self::expr_contains_assignment(condition)
                     || Self::expr_contains_assignment(if_false)
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
-                Self::expr_contains_assignment(expr)
-            }
+            Expr::Unary { expr, .. }
+            | Expr::ErrorControl { expr, .. }
+            | Expr::Cast { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -4054,9 +4071,9 @@ impl Parser {
                 Self::expr_contains_unsupported_assignment_rhs(condition)
                     || Self::expr_contains_unsupported_assignment_rhs(if_false)
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
-                Self::expr_contains_unsupported_assignment_rhs(expr)
-            }
+            Expr::Unary { expr, .. }
+            | Expr::ErrorControl { expr, .. }
+            | Expr::Cast { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Null(_)
             | Expr::Bool(_, _)
             | Expr::Int(_, _)
@@ -4141,9 +4158,9 @@ impl Parser {
                 ..
             } => Self::find_append_index_span(condition)
                 .or_else(|| Self::find_append_index_span(if_false)),
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
-                Self::find_append_index_span(expr)
-            }
+            Expr::Unary { expr, .. }
+            | Expr::ErrorControl { expr, .. }
+            | Expr::Cast { expr, .. } => Self::find_append_index_span(expr),
             Expr::Assign { expr, .. }
             | Expr::CompoundAssign { expr, .. }
             | Expr::NullCoalesceAssign { expr, .. } => Self::find_append_index_span(expr),
@@ -4677,6 +4694,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::PipePipe => "||",
         TokenKind::Caret => "^",
         TokenKind::Tilde => "~",
+        TokenKind::At => "@",
         TokenKind::Colon => ":",
         TokenKind::Bang => "!",
         TokenKind::Equal => "=",

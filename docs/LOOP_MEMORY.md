@@ -26,6 +26,46 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T00:43:00Z
+
+- Checkpoint before this task: `b166056 runtime: add class constant string
+  lookup`, pushed to `origin/master`.
+- Task attempted: Milestone 720, bounded PHP error-control syntax `@expr` for
+  the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:665:56`, corresponding to
+  `wp-includes/sodium_compat/src/Core/Util.php:605` and
+  `$c = (int) @($c & -1);`.
+- Files changed so far: `compiler/src/lexer.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/native_unary_boundary.rs`,
+  `compiler/tests/error_control_cli.rs`, `tests/fixtures/milestone720/*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features error_control -- --test-threads=1`,
+  `cargo test -p phpc --test native_unary_boundary error_control -- --test-threads=1`,
+  `cargo test -p phpc --test error_control_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone720`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone720`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+- Remaining semantic gaps: actual PHP warning/notice/deprecation suppression,
+  recoverable diagnostic severity, expression-specific recovery values,
+  `error_reporting()` mask behavior, exact PHP warning/fatal behavior,
+  partial-output behavior, and native lowering remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `parse error at <bootstrap-shim>:1015:20: unsupported cast expression: only (string), (int), and (bool) casts are implemented`.
+- Next concrete task: implement or explicitly bound `(float)`/`(double)` casts,
+  likely for `wp-includes/sodium_compat/src/Core/Util.php:255` and
+  `$mixedVar = (float) $mixedVar;`.
+
 ## Loop Event 2026-05-15T00:22:05Z
 
 - Checkpoint before this task: `e448452 runtime: add braced string
