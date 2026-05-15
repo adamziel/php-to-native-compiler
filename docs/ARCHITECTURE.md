@@ -1030,11 +1030,12 @@ namespace declarations/imports before scalar folding or backend execution.
 First-class callable syntax such as `strlen(...)` and `$callback(...)` also
 stops at a stable parse diagnostic until Closure creation and callable object
 semantics exist.
-No-capture anonymous closure expressions and arrow function expressions
-allocate inert runtime closure values in `phpc run`, which can be assigned,
-read, and truth-tested but not invoked. Arrow values do not bind implicit
-captures or execute their synthetic return bodies; invocation and callable
-integration remain explicit runtime boundaries.
+No-capture anonymous closure expressions, static anonymous closure expressions,
+and arrow function expressions allocate inert runtime closure values in
+`phpc run`, which can be assigned, read, and truth-tested but not invoked.
+Static closure binding semantics are not represented yet. Arrow values do not
+bind implicit captures or execute their synthetic return bodies; invocation and
+callable integration remain explicit runtime boundaries.
 Magic class names in `new` expressions, including `new self()`,
 `new parent()`, and `new static()`, stop at a stable parse diagnostic until
 class context tracking, parent resolution, and late static binding exist.

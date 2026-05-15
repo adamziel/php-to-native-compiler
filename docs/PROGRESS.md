@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added Milestone 738, bounded `static function (...) { ... }` anonymous
+  closure syntax through `phpc run` for the real WordPress 6.9.4
+  bootstrap-shim blocker at `<bootstrap-shim>:856:4`. The parser now accepts
+  `static function` expressions by reusing the current inert anonymous-closure
+  runtime value path; no-capture static closures can be assigned, read, and
+  truth-tested without executing their bodies. Closure `use (...)` capture
+  binding, static closure binding semantics, invocation, callback integration,
+  exact PHP `Closure` behavior, type enforcement, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe no longer reports the previous `expected
+  expression, found static` parse error, but it ran for more than a minute
+  without a new diagnostic and was stopped manually; the next task is a
+  timeout-bounded/instrumented shim probe to identify the new runtime path or
+  loop before claiming a new blocker. Focused verification so far:
+  `cargo fmt`,
+  `cargo test -p phpc --test functions_and_scopes static_anonymous_closure -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_declaration_boundary static_anonymous_closure -- --test-threads=1`,
+  `cargo test -p phpc --test static_closure_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  reported the direct `ABSPATH` blocker and then required manual termination
+  during the bootstrap-shim probe.
+
 - Added Milestone 737, bounded chained property/array-offset double-quoted
   string interpolation through `phpc run` for the real WordPress 6.9.4
   bootstrap-shim blocker at `<bootstrap-shim>:7267:17`. The lexer/AST now

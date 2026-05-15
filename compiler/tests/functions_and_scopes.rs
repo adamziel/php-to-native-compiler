@@ -795,11 +795,49 @@ echo "after";
 }
 
 #[test]
+fn static_anonymous_closure_values_can_be_assigned_without_invocation() {
+    let execution = run_source(
+        r#"<?php
+$fn = static function ($value) {
+    echo "body";
+    return $value;
+};
+if ($fn) {
+    echo "truthy";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "truthy");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn anonymous_closure_capture_binding_has_stable_runtime_boundary() {
     let error = runtime_error(
         r#"<?php
 $value = 1;
 $fn = function () use ($value) {
+    return $value;
+};
+"#,
+    );
+
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "unsupported call closure: closure capture binding is not implemented"
+    );
+}
+
+#[test]
+fn static_anonymous_closure_capture_binding_has_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$value = 1;
+$fn = static function () use ($value) {
     return $value;
 };
 "#,
@@ -830,6 +868,41 @@ echo $fn();
         error.message,
         "unsupported call closure: closure invocation is not implemented"
     );
+}
+
+#[test]
+fn static_anonymous_closure_invocation_has_stable_runtime_boundary() {
+    let error = runtime_error(
+        r#"<?php
+$fn = static function () {
+    return 1;
+};
+echo $fn();
+"#,
+    );
+
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call closure: closure invocation is not implemented"
+    );
+}
+
+#[test]
+fn static_anonymous_closure_is_not_callable_in_current_runtime_subset() {
+    let execution = run_source(
+        r#"<?php
+$fn = static function () {
+    return 1;
+};
+echo is_callable($fn) ? "callable" : "not-callable";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "not-callable");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

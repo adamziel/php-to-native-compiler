@@ -318,6 +318,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   arbitrary expression interpolation, exact diagnostics, or native lowering.
   The bootstrap-shim probe now reaches
   `parse error at <bootstrap-shim>:856:4: expected expression, found static`.
+  Milestone 738 adds bounded `static function (...) { ... }` parsing by
+  reusing the current inert anonymous-closure value path. This is not static
+  closure binding semantics, capture binding, invocation, callback
+  integration, exact PHP `Closure` behavior, type enforcement, or native
+  lowering. After this slice, the bootstrap-shim probe no longer reports the
+  previous static-closure parse error, but it ran for more than a minute
+  without a new diagnostic and was stopped manually; the next compatibility
+  task is a timeout-bounded/instrumented shim probe to identify the new runtime
+  path or loop.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

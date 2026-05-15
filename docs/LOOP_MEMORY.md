@@ -26,6 +26,39 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T14:10:00Z
+
+- Checkpoint before this task:
+  `89b360a parser: add bounded nested interpolation`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 738, bounded `static function (...)` anonymous
+  closure parsing for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:856:4`.
+- Files changed so far: `compiler/src/parser.rs`,
+  `compiler/tests/functions_and_scopes.rs`,
+  `compiler/tests/native_function_declaration_boundary.rs`,
+  `compiler/tests/static_closure_cli.rs`, `tests/fixtures/milestone738/*`,
+  `GOAL.MD`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt`,
+  `cargo test -p phpc --test functions_and_scopes static_anonymous_closure -- --test-threads=1`,
+  `cargo test -p phpc --test native_function_declaration_boundary static_anonymous_closure -- --test-threads=1`,
+  `cargo test -p phpc --test static_closure_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: static closure binding semantics, `use (...)`
+  capture binding, invocation, callback integration, exact PHP `Closure`
+  behavior, type enforcement, and native lowering remain unsupported. The
+  direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe no longer reports the previous static-closure parse
+  error, but it ran for more than a minute without a new diagnostic and was
+  stopped manually.
+- Next concrete task: add a timeout-bounded or instrumented bootstrap-shim
+  probe to identify the new runtime path or loop after static-closure parsing.
+
 ## Loop Event 2026-05-15T13:05:00Z
 
 - Checkpoint before this task:

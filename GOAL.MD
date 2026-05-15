@@ -214,9 +214,12 @@ direct array-offset and object-property interpolation. Milestone 736 then
 advanced past the first heredoc/nowdoc blocker with bounded unindented
 identifier-label heredoc/nowdoc syntax. Milestone 737 then advanced past the
 first nested interpolation blocker with bounded chained property/array-offset
-interpolation. The next visible bootstrap-shim blocker is now `static
-function` closure syntax:
-`parse error at <bootstrap-shim>:856:4: expected expression, found static`.
+interpolation. Milestone 738 then advanced past the first `static function`
+closure parse blocker by treating static anonymous closures as inert closure
+values. The bootstrap-shim probe no longer reports the previous `expected
+expression, found static` error, but it ran for more than a minute without a
+new diagnostic and now needs a timeout-bounded or instrumented runtime probe to
+identify the next concrete path or loop.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -227,7 +230,8 @@ destructors/reuse, and exact PHP diagnostics.
 - The interpreter is missing large parts of PHP syntax and semantics:
   namespaces, include/require breadth beyond the first local
   `require`/`require_once`/`include`/`include_once` slice, autoload, references,
-  copy-on-write, closures, generators, exceptions, type declarations,
+  copy-on-write, closures with real binding/invocation, generators,
+  exceptions, type declarations,
   attributes, destructuring, spreads, resources, and exact warning/recovery
   behavior.
 - Arrays are interpreter-supported for a growing subset but still lack full PHP
@@ -331,8 +335,10 @@ The repository already has a working Rust workspace with:
   the first bounded `version_compare()` slice, and the first bounded
   `sprintf()`, `header()`, `implode()`, `exit()`, `extension_loaded()`, and
   `file_exists()` slices, plus bounded direct array-offset/object-property
-  string interpolation, bounded heredoc/nowdoc syntax, and bounded chained
-  interpolation, then stops at unsupported `static function` closure syntax.
+  string interpolation, bounded heredoc/nowdoc syntax, bounded chained
+  interpolation, and bounded static-closure parsing. It still lacks a
+  timeout-bounded diagnosis of the post-static-closure bootstrap-shim runtime
+  path.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

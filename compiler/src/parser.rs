@@ -3298,6 +3298,10 @@ impl Parser {
                     unsupported_namespace_qualified_function_name_message(),
                 ))
             }
+            TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Function)) => {
+                self.advance();
+                self.parse_closure_expression(token.span)
+            }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
                 self.reject_unsupported_static_member_access(Some("static"))
             }

@@ -122,6 +122,17 @@ fn emit_ir_rejects_anonymous_closure_values_with_specific_boundary() {
 }
 
 #[test]
+fn emit_ir_rejects_static_anonymous_closure_values_with_specific_boundary() {
+    let error =
+        emit_ir_source("<?php\n$fn = static function ($value) { return $value; };\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 7);
+    assert_eq!(error.message, LLVM_CLOSURE_REJECTION);
+}
+
+#[test]
 fn emit_asm_rejects_arrow_function_values_before_backend_execution() {
     let error = emit_asm_source("<?php\n$fn = fn ($value) => $value;\n").unwrap_err();
 

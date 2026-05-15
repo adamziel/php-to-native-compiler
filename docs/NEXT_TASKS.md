@@ -6786,16 +6786,26 @@ handled.
   interpolation, exact diagnostics, and native lowering unsupported, and
   advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:856:4: expected expression, found static`.
-- [ ] Parser/function lane: implement or explicitly bound the next WordPress
+- [x] Parser/function lane: implement or explicitly bound the next WordPress
   6.9.4 bootstrap-shim `static function (...)` closure blocker at
   `<bootstrap-shim>:856:4`, with tests, CLI coverage, docs, and named
   unsupported edges for static closure binding, capture semantics, invocation,
-  type declarations, callbacks, and native lowering.
+  type declarations, callbacks, and native lowering. Milestone 738 parses
+  static anonymous closures as inert closure values, keeps binding/capture/
+  invocation/callback/native behavior unsupported, and removes the previous
+  `expected expression, found static` parser blocker.
+- [ ] WordPress runtime lane: add a timeout-bounded or instrumented
+  bootstrap-shim probe after Milestone 738, because the normalized shim no
+  longer reports a quick parse error and instead ran for more than a minute
+  before manual termination. Use the narrowed probe to identify the next
+  concrete runtime blocker or loop without claiming WordPress bootstrap
+  success.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 737 checkpoint, the latest committed checkpoint
-  is `e810d72 parser: add bounded heredoc strings`, covering Milestone 736.
+- Before the current Milestone 738 checkpoint, the latest committed checkpoint
+  is `89b360a parser: add bounded nested interpolation`, covering Milestone
+  737.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
