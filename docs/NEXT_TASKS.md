@@ -7321,16 +7321,26 @@ handled.
   and `connect_error = null`, exposes `mysqli_init` through dynamic lookup and
   native function metadata, and advances the real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:2082:17: undefined function strpos()`.
-- [ ] Runtime/string lane: add a bounded `strpos()` implementation for the
+- [x] Runtime/string lane: add a bounded `strpos()` implementation for the
   reached WordPress `parse_db_host()` path. Preserve exact PHP behavior for
   empty needles, offsets, false-vs-zero return checks, binary string matching,
   invalid argument diagnostics, array/object arguments, and native lowering
   unless those slices are implemented and tested.
+  Milestone 800 implements scalar/null string-convertible haystack and needle
+  arguments, optional integer offsets, empty-needle/effective-offset behavior,
+  negative offsets, byte-position matching, and `false` for no match,
+  advancing the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:2092:8: undefined function substr_count()`.
+- [ ] Runtime/string lane: add a bounded `substr_count()` implementation for
+  the reached WordPress `parse_db_host()` path. Preserve PHP-exact offset and
+  length behavior, empty-needle diagnostics, overlap behavior, scalar
+  coercions, array/object arguments, and native lowering unless those slices
+  are implemented and tested.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 799 checkpoint, the latest committed checkpoint
-  is `35d5135 runtime: add bounded mysqli report`, covering Milestone 798.
+- Before the current Milestone 800 checkpoint, the latest committed checkpoint
+  is `27ed08e runtime: add bounded mysqli init`, covering Milestone 799.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

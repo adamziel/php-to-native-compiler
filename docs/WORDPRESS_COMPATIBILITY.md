@@ -880,6 +880,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   resources, query/result behavior, escaping, charset handling,
   warning/error routing, exact diagnostics, native lowering, or WordPress
   bootstrap support.
+  Milestone 800 implements a bounded `strpos()` runtime slice for the reached
+  `parse_db_host()` path. It supports scalar/null string-convertible haystack
+  and needle arguments, optional integer offsets, empty needles, negative
+  offsets, byte-position matching, and `false` for no match. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:2092:8: undefined function substr_count()`.
+  This is not full PHP string/encoding/coercion diagnostics, native lowering,
+  or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

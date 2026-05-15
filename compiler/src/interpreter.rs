@@ -6108,6 +6108,7 @@ impl Interpreter {
             "trim" => call_trim(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "str_contains" => call_str_contains(&args, span),
+            "strpos" => call_strpos(&args, span),
             "str_replace" => call_str_replace(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "error_reporting" => self.call_error_reporting(args, span),
@@ -9786,6 +9787,7 @@ fn is_builtin(name: &str) -> bool {
             | "trim"
             | "strcasecmp"
             | "str_contains"
+            | "strpos"
             | "str_replace"
             | "preg_match"
             | "error_reporting"
@@ -10116,6 +10118,67 @@ fn call_str_contains(args: &[Value], span: Span) -> CompileResult<Value> {
     let needle = string_contains_argument("str_contains()", "needle", &args[1], span)?;
 
     Ok(Value::Bool(haystack.contains(&needle)))
+}
+
+fn call_strpos(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "strpos()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_contains_argument("strpos()", "haystack", &args[0], span)?;
+    let needle = string_contains_argument("strpos()", "needle", &args[1], span)?;
+    let offset = match args.get(2) {
+        Some(Value::Int(offset)) => *offset,
+        Some(other) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "strpos()",
+                    format!(
+                        "offset argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            ));
+        }
+        None => 0,
+    };
+
+    let haystack_len = haystack.len() as i64;
+    let start = if offset >= 0 {
+        offset
+    } else {
+        haystack_len + offset
+    };
+
+    if start < 0 || start > haystack_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "strpos()",
+                "offset must be within the haystack bounds in the current subset",
+            ),
+        ));
+    }
+    let start = start as usize;
+
+    if needle.is_empty() {
+        return Ok(Value::Int(start as i64));
+    }
+
+    let needle = needle.as_bytes();
+    Ok(haystack.as_bytes()[start..]
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|index| Value::Int((start + index) as i64))
+        .unwrap_or(Value::Bool(false)))
 }
 
 fn call_preg_match(args: &[Value], span: Span) -> CompileResult<Value> {

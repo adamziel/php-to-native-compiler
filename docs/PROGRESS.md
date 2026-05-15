@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added Milestone 800, a bounded `strpos()` implementation for the current
+  WordPress `parse_db_host()` startup path after `mysqli_init()`. The runtime
+  now exposes `strpos` through function/callability metadata and dynamic
+  string-valued calls, supports scalar/null string conversion for haystack and
+  needle arguments, optional integer offsets, empty needles returning the
+  effective offset, negative offsets measured from the end of the haystack,
+  byte-position matching, and `false` for no match. PHP-exact offset coercions
+  and `ValueError` diagnostics, array/object/resource coercions,
+  encoding-sensitive edge cases beyond represented runtime strings, and native
+  lowering remain unsupported. The real WordPress 6.9.4 bootstrap-shim probe
+  now advances past the reached `strpos()` call to
+  `runtime error at <bootstrap-shim>:2092:8: undefined function substr_count()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test strpos_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone800`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 799, a bounded `mysqli_init()` placeholder handle for the
   current WordPress `wpdb::db_connect()` startup path immediately after
   `mysqli_report( MYSQLI_REPORT_OFF )`. The runtime now exposes
