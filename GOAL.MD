@@ -421,10 +421,12 @@ reindexing, string-key preservation, caller-variable mutation, and return
 count. Milestone 826 covers the reached ordered-array `current()` first-value
 path. Milestone 827 covers the reached bounded `call_user_func_array()`
 dispatch shape for string callbacks, public method array callables, and
-integer-keyed positional argument arrays. The current frontier is now a
-reached `next()` call in the WordPress bootstrap path, reported by the
-bootstrap shim as
-`runtime error at <bootstrap-shim>:346:23: undefined function next()`.
+integer-keyed positional argument arrays. Milestone 828 covers the reached
+bounded `next()` cursor-advance path for direct arrays and
+`$this->iterations[$level]`. The current frontier is now a reached
+`array_pop()` call in the WordPress bootstrap path, reported by the bootstrap
+shim as
+`runtime error at <bootstrap-shim>:207:2: undefined function array_pop()`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -610,8 +612,9 @@ The repository already has a working Rust workspace with:
   and ASCII check. Bounded direct-variable `array_unshift()` covers the reached
   bootstrap array prepend path. Bounded `current()` covers the reached
   ordered-array first-value shape. Bounded `call_user_func_array()` covers the
-  reached hook-dispatch callable shape. The next bottleneck is missing
-  `next()` support for the reached array-pointer iteration shape.
+  reached hook-dispatch callable shape. Bounded `next()` covers the reached
+  array-pointer iteration shape. The next bottleneck is missing `array_pop()`
+  support for the reached hook cleanup shape.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

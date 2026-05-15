@@ -6079,6 +6079,7 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_map"
             | "ksort"
             | "array_unshift"
+            | "next"
             | "in_array"
             | "array_search"
     )
@@ -6304,6 +6305,7 @@ fn is_native_known_function_name(name: &str) -> bool {
             | "array_map"
             | "ksort"
             | "array_unshift"
+            | "next"
             | "in_array"
             | "array_search"
             | "gettype"

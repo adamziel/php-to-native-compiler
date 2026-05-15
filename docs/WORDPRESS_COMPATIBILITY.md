@@ -1115,6 +1115,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   propagation, string-keyed named arguments, exact warning behavior, or native
   lowering. The real bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:346:23: undefined function next()`.
+  Milestone 828 implements bounded `next()` over the current ordered-array
+  cursor model for direct variable arrays and the reached direct
+  object-property array-offset shape, covering
+  `next( $this->iterations[ $nesting_level ] )` in `WP_Hook::apply_filters()`.
+  This is not full PHP internal array-pointer semantics, broad lvalue targets,
+  value-only dynamic calls, object operands, `reset()`/`end()`/`prev()`
+  interaction, references/copy-on-write, exact warning behavior, or native
+  lowering. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:207:2: undefined function array_pop()`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

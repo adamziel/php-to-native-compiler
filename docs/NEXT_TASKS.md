@@ -7586,16 +7586,27 @@ handled.
   `[class, method]` array callable shapes and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:346:23: undefined function next()`.
-- [ ] Runtime/array lane: implement the reached bounded `next()` behavior for
+- [x] Runtime/array lane: implement the reached bounded `next()` behavior for
   current ordered arrays in the WordPress hook iteration path. Keep full
   internal array-pointer semantics, object operands, interaction with
   `current()`/`reset()`/`end()`/`prev()`, references/copy-on-write, exact
   warnings, and native lowering named unless implemented.
+  Milestone 828 covers direct variable arrays and the reached
+  `$this->iterations[$level]` object-property array-offset shape, and advances
+  the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:207:2: undefined function array_pop()`.
+- [ ] Runtime/array lane: implement the reached bounded `array_pop()` behavior
+  for direct variable arrays in the WordPress hook cleanup path. Keep broad
+  by-reference argument handling, non-variable array targets, object-property
+  array targets unless reached and implemented, internal pointer side effects,
+  references/copy-on-write, exact warnings, and native lowering named unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 827 checkpoint, the latest committed checkpoint
-  is `d72de2e runtime: add bounded current`, covering Milestone 826.
+- Before the current Milestone 828 checkpoint, the latest committed checkpoint
+  is `14dac92 runtime: add bounded call_user_func_array`, covering Milestone
+  827.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

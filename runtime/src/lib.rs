@@ -564,6 +564,7 @@ pub struct PhpArray {
     entries: Vec<ArrayEntry>,
     next_auto_index: i64,
     auto_index_exhausted: bool,
+    cursor: usize,
 }
 
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
@@ -574,6 +575,7 @@ impl PhpArray {
             entries: Vec::new(),
             next_auto_index: 0,
             auto_index_exhausted: false,
+            cursor: 0,
         }
     }
 
@@ -711,9 +713,18 @@ impl PhpArray {
 
     pub fn current_value(&self) -> Value {
         self.entries
-            .first()
+            .get(self.cursor)
             .map(|entry| entry.value.clone())
             .unwrap_or(Value::Bool(false))
+    }
+
+    pub fn next_value(&mut self) -> Value {
+        if self.entries.is_empty() {
+            return Value::Bool(false);
+        }
+
+        self.cursor = self.cursor.saturating_add(1);
+        self.current_value()
     }
 
     pub fn is_list(&self) -> bool {
@@ -4305,6 +4316,19 @@ mod tests {
             Value::String("Grace".to_string()),
             "updating the first key keeps its insertion position"
         );
+    }
+
+    #[test]
+    fn array_next_value_advances_current_pointer_until_false() {
+        let mut array = PhpArray::new();
+        array.insert(10, Value::String("first".to_string()));
+        array.insert(20, Value::String("second".to_string()));
+
+        assert_eq!(array.current_value(), Value::String("first".to_string()));
+        assert_eq!(array.next_value(), Value::String("second".to_string()));
+        assert_eq!(array.current_value(), Value::String("second".to_string()));
+        assert_eq!(array.next_value(), Value::Bool(false));
+        assert_eq!(array.current_value(), Value::Bool(false));
     }
 
     #[test]

@@ -40,6 +40,52 @@ echo $call($items);
 }
 
 #[test]
+fn next_advances_direct_variable_array_pointers() {
+    let execution = run_source(
+        r#"<?php
+$items = array("first", "second");
+echo current($items), "|";
+echo next($items), "|";
+echo current($items), "|";
+var_dump(next($items));
+$call = "next";
+$more = array("a", "b");
+echo $call($more);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "first|second|second|bool(false)\nb");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn next_advances_direct_object_property_array_offsets() {
+    let execution = run_source(
+        r#"<?php
+class HookLike {
+    public $iterations = array();
+
+    public function run() {
+        $level = 0;
+        $this->iterations[$level] = array(10, 20);
+        echo current($this->iterations[$level]), "|";
+        echo next($this->iterations[$level]), "|";
+        echo current($this->iterations[$level]);
+    }
+}
+
+$hook = new HookLike();
+$hook->run();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "10|20|20");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn current_rejects_forms_outside_current_subset() {
     let error = run_source("<?php\necho current(42);\n").unwrap_err();
 
@@ -50,6 +96,30 @@ fn current_rejects_forms_outside_current_subset() {
         error.message,
         "unsupported call current(): argument must be array, got int"
     );
+
+    let next_non_array = run_source("<?php\n$value = 42;\necho next($value);\n").unwrap_err();
+    assert_eq!(next_non_array.phase, Phase::Runtime);
+    assert_eq!(next_non_array.line, 3);
+    assert_eq!(next_non_array.column, 6);
+    assert_eq!(
+        next_non_array.message,
+        "unsupported call next(): argument must be array, got int"
+    );
+
+    let value_call = run_source(
+        r#"<?php
+$items = array("a", "b");
+call_user_func("next", $items);
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(value_call.phase, Phase::Runtime);
+    assert_eq!(value_call.line, 3);
+    assert_eq!(value_call.column, 1);
+    assert_eq!(
+        value_call.message,
+        "unsupported call next(): array pointer mutation requires a direct call target in the current subset"
+    );
 }
 
 #[test]
@@ -58,15 +128,23 @@ fn emit_ir_folds_current_metadata_but_rejects_direct_calls() {
         r#"<?php
 echo function_exists("current") ? "1" : "0";
 echo is_callable("current") ? "1" : "0";
+echo function_exists("next") ? "1" : "0";
+echo is_callable("next") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
     let error = emit_ir_source("<?php\necho current([1]);\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_ARRAY_REJECTION);
+
+    let error = emit_ir_source("<?php\necho next([1, 2]);\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);

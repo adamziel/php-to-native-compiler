@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 828, bounded `next()` support for the reached WordPress hook
+  iteration path. `PhpArray` now tracks a current cursor for the implemented
+  value model; `current()` reads that cursor, and direct `next($array)`
+  advances direct variable arrays and returns the new current value or `false`
+  past the last element. The interpreter also supports the reached direct
+  object-property array-offset mutation shape such as
+  `next($this->iterations[$level])`. Value-only calls such as
+  `call_user_func("next", ...)`, broad lvalue targets, full PHP internal
+  pointer semantics, `reset()`/`end()`/`prev()` interaction, object operands,
+  references/copy-on-write, exact warning behavior, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  the reached `next()` call to
+  `runtime error at <bootstrap-shim>:207:2: undefined function array_pop()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime next_value -- --nocapture`,
+  `cargo test -p phpc --test current_builtin -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone828`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 827, bounded `call_user_func_array()` support for the
   reached WordPress hook-dispatch path. The interpreter now exposes
   `call_user_func_array` through function/callability metadata and dynamic

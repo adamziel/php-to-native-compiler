@@ -491,7 +491,7 @@
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`,
   `array_flip`, `array_change_key_case`, `array_column`, `array_fill_keys`, `array_count_values`, `array_sum`,
   `array_product`, `array_reduce`, `array_filter`, `array_map`,
-  `array_unshift`, `ksort`,
+  `array_unshift`, `next`, `ksort`,
   `in_array`, `array_search`, `gettype`, `is_null`, `is_bool`, `is_int`, `is_integer`,
   `is_long`, `is_float`, `is_double`, `is_string`, `is_array`, `is_scalar`,
   `is_numeric`, `is_countable`, `is_iterable`, `is_callable`,
@@ -1419,10 +1419,17 @@
   `array_key_last($array)` returns the last
   inserted integer or string key. Both return `null` for an empty array and are
   available through string-valued dynamic function calls. `current($array)`
-  returns the first inserted value for the current ordered array model and
-  returns `false` for empty arrays. This is a bounded first-value slice, not
-  PHP's mutable internal array-pointer model or `next()`/`reset()` interaction.
-  It is available through string-valued dynamic function calls. `array_is_list($array)`
+  returns the value at the current cursor for the current ordered array model,
+  initially the first inserted value, and returns `false` for empty or
+  exhausted arrays. It is available through string-valued dynamic function
+  calls.
+  `next($array)` advances the current array cursor and returns the next value
+  or `false` past the last element for direct variable arrays and the reached
+  direct object-property array-offset shape. Full PHP internal pointer
+  semantics, `reset()`/`end()`/`prev()` interaction, object operands,
+  value-only dynamic calls, broad lvalue targets, references/copy-on-write,
+  exact warnings, and native lowering remain unsupported.
+  `array_is_list($array)`
   returns true for empty arrays and arrays whose entries are ordered with exact
   integer keys `0..n-1`; numeric string keys such as `"0"` participate through
   the current array-key normalization, while string keys such as `"01"`, gaps,
@@ -1609,7 +1616,7 @@
   aliases, mutate array slots by reference, or model copy-on-write. Missing key reads
   still fail with a stable runtime error instead of PHP's
   warning-and-`null` recovery. Array truthiness, `count`, `array_key_exists`,
-  `array_key_first`, `array_key_last`, `current`, `array_is_list`, `array_values`,
+  `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`,
@@ -2475,7 +2482,7 @@
   `str_contains`, `strpos`, `substr_count`, `preg_match`, `preg_replace`, `str_replace`, `error_reporting`,
   `sprintf`, `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `is_dir`, `abs`,
   `microtime`, `ini_get`, `min`, `count`, `compact`,
-  `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `array_is_list`,
+  `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
   `constant`, `defined`,
@@ -2619,7 +2626,7 @@
   `array_combine`, `array_intersect_key`, `array_diff_key`, `array_diff`,
   `array_intersect`, `array_unique`, `array_flip`, `array_fill_keys`,
   `array_count_values`, `array_sum`, `array_product`, `array_reduce`,
-  `array_filter`, `array_map`, `array_unshift`, `ksort`, `in_array`,
+  `array_filter`, `array_map`, `array_unshift`, `next`, `ksort`, `in_array`,
   `array_search`, `gettype`,
   `is_null`, `is_bool`, `is_int`, `is_integer`, `is_long`, `is_float`,
   `is_double`, `is_string`, `is_array`, `is_scalar`, `is_numeric`,
@@ -2746,6 +2753,10 @@
   subset as the builtin section above; direct native `array_unshift(...)`
   calls still reject under the function-call boundary, while native
   function-table introspection recognizes the name.
+  `next` accepts the same direct array-pointer mutation subset as the builtin
+  section above; direct native `next(...)` calls still reject under the
+  function-call boundary, while native function-table introspection recognizes
+  the name.
   `current` accepts the same current ordered-array first-value subset as the
   builtin section above; direct native `current(...)` calls still reject under
   the function-call boundary, while native function-table introspection
@@ -3317,7 +3328,7 @@
   outside the current private/protected method context, append offset operands, complex lvalues,
   general expression operands, magic methods, and unsupported array-key
   coercions remain unsupported.
-  `array_key_first`, `array_key_last`, `current`, `array_is_list`, `array_values`,
+  `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`, `array_values`,
   `array_keys`, `array_reverse`, `array_slice`, `array_chunk`, `array_pad`,
   `array_merge`, `array_replace`, `array_combine`, `array_intersect_key`,
   `array_diff_key`, `array_diff`, `array_intersect`, `array_unique`, `array_flip`,
@@ -4369,6 +4380,11 @@
   mutable internal array-pointer model, interaction with `next()`/`reset()`,
   object operands, references/copy-on-write, exact warnings/errors, and native
   lowering beyond function-table introspection
+- `next()` outside the current direct variable and direct object-property
+  array-offset pointer-mutation subset: broad lvalue targets, value-only
+  dynamic calls, full internal array-pointer semantics, object operands,
+  `reset()`/`end()`/`prev()` interaction, references/copy-on-write, exact
+  warnings/errors, and native lowering beyond function-table introspection
 - `str_contains()` outside the current exact-two-argument scalar/null
   string-convertible subset: binary string edge cases beyond valid UTF-8
   runtime strings, array/object/resource coercions, exact PHP diagnostics, and

@@ -6141,6 +6141,9 @@ impl Interpreter {
                 if key == "array_unshift" {
                     return self.call_array_unshift(args, span, caller_scope);
                 }
+                if key == "next" {
+                    return self.call_next(args, span, caller_scope);
+                }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
                     values.push(self.evaluate(arg, caller_scope)?);
@@ -6180,6 +6183,9 @@ impl Interpreter {
                 }
                 if key == "array_unshift" {
                     return self.call_array_unshift(args, span, caller_scope);
+                }
+                if key == "next" {
+                    return self.call_next(args, span, caller_scope);
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
@@ -6532,6 +6538,144 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))?;
         caller_scope.write_static(array_name, array_value);
         Ok(Value::Int(len))
+    }
+
+    fn call_next(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("next()", ArityExpectation::Exactly(1), args.len()),
+            ));
+        }
+
+        match &args[0] {
+            Expr::Variable(array_name, _) => {
+                let mut array_value = caller_scope.read_static(array_name, span)?;
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "next()",
+                            format!("argument must be array, got {}", array_value.type_name()),
+                        ),
+                    ));
+                };
+                let value = array.next_value();
+                caller_scope.write_static(array_name, array_value);
+                Ok(value)
+            }
+            Expr::Index {
+                target,
+                index,
+                span: index_span,
+            } => self.call_next_object_property_array_index(
+                target,
+                index,
+                *index_span,
+                span,
+                caller_scope,
+            ),
+            other => Err(runtime_error(
+                other.span(),
+                RuntimeError::unsupported_call(
+                    "next()",
+                    "argument must be a direct variable array or direct object-property array offset in the current subset",
+                ),
+            )),
+        }
+    }
+
+    fn call_next_object_property_array_index(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        index_span: Span,
+        call_span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let Expr::Property {
+            target: object,
+            property,
+            span: property_span,
+        } = target
+        else {
+            return Err(runtime_error(
+                target.span(),
+                RuntimeError::unsupported_call(
+                    "next()",
+                    "only direct object-property array offsets are implemented in the current subset",
+                ),
+            ));
+        };
+        let Expr::Variable(object_name, _) = object.as_ref() else {
+            return Err(runtime_error(
+                object.span(),
+                RuntimeError::unsupported_call(
+                    "next()",
+                    "only direct object-property array offsets are implemented in the current subset",
+                ),
+            ));
+        };
+
+        let key = self.evaluate_array_key(index, caller_scope)?;
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let object = match caller_scope.read_static(object_name, *property_span)? {
+            Value::Object(object) => object,
+            other => {
+                return Err(runtime_error(
+                    *property_span,
+                    RuntimeError::invalid_property_access(format!(
+                        "cannot read property ${property} from {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        let mut property_value = object
+            .read_property_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(*property_span, error))?;
+        let Value::Array(property_array) = &mut property_value else {
+            return Err(runtime_error(
+                call_span,
+                RuntimeError::unsupported_call(
+                    "next()",
+                    format!("argument must be array, got {}", property_value.type_name()),
+                ),
+            ));
+        };
+        let Some(slot) = property_array.get(key.clone()).cloned() else {
+            return Err(runtime_error(
+                index_span,
+                RuntimeError::undefined_array_key(key.diagnostic_key()),
+            ));
+        };
+        let mut slot = slot;
+        let Value::Array(array) = &mut slot else {
+            return Err(runtime_error(
+                call_span,
+                RuntimeError::unsupported_call(
+                    "next()",
+                    format!("argument must be array, got {}", slot.type_name()),
+                ),
+            ));
+        };
+        let value = array.next_value();
+        property_array.insert(key, slot);
+        object
+            .write_property_from_context(
+                property,
+                property_value,
+                current_class_id,
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(*property_span, error))?;
+        Ok(value)
     }
 
     fn call_exit_construct(
@@ -7992,6 +8136,13 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "array_unshift()",
                     "by-reference array arguments require a direct call target in the current subset",
+                ),
+            )),
+            "next" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "next()",
+                    "array pointer mutation requires a direct call target in the current subset",
                 ),
             )),
             "in_array" => match args.as_slice() {
@@ -11064,6 +11215,7 @@ fn is_builtin(name: &str) -> bool {
             | "array_map"
             | "ksort"
             | "array_unshift"
+            | "next"
             | "in_array"
             | "array_search"
             | "gettype"
