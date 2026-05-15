@@ -334,8 +334,8 @@ object handle hash behavior has native support.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, interface implementation/inheritance, trait
-members, trait use inside classes, backed enum declarations, enum case
+conditional class declarations, interface inheritance, interface enforcement,
+trait members, trait use inside classes, backed enum declarations, enum case
 objects, enum methods/constants/properties, enum interface implementation,
 abstract/final/readonly modifiers, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed

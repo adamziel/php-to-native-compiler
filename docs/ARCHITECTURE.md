@@ -1200,15 +1200,19 @@ Dynamic properties, non-constant or typed property defaults, trait/interface pro
 non-public property visibility-context behavior beyond same-declaring-class
 private access and class/ancestor protected access remain outside the current
 object model.
-`is_a($object_or_class, $class_name[, $allow_string])` checks exact-class and
-single-parent ancestor relationships against the current metadata table.
+`is_a($object_or_class, $class_name[, $allow_string])` checks exact-class,
+single-parent ancestor, and recorded `implements` metadata relationships
+against the current metadata table.
 `is_subclass_of(...)` shares the same argument boundary and walks the current
-single-parent chain while keeping exact-class and missing-class cases false.
-`$value instanceof Name` uses the same current object class metadata and
-single-parent chain for object values. Non-object values and unknown
-class/interface names return false. Declared interface names are currently
-tracked for metadata builtins, but interface implementation relationships are
-not modeled yet.
+single-parent chain plus inherited `implements` metadata while keeping
+exact-class and missing-class cases false.
+`$value instanceof Name` uses the same current object class metadata,
+single-parent chain, and recorded `implements` metadata for object values.
+Non-object values return false. `implements` names are recorded as metadata
+without enforcing interface methods or requiring the interface to be declared,
+so internal names such as `Iterator` can participate in relationships while
+`interface_exists("Iterator")` remains false until a built-in interface catalog
+exists.
 `get_parent_class($object_or_class)` accepts current object values or declared
 string class names and returns the immediate parent class name when one is
 recorded, otherwise false.

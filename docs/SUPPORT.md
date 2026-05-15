@@ -711,7 +711,7 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent `extends`, interface inheritance/constants/non-public or
-  static interface methods, interface implementation, trait members,
+  static interface methods, trait members,
   trait use inside classes, backed enum declarations and enum members beyond
   bare cases,
   `abstract`/`final`/`readonly` class
@@ -946,20 +946,28 @@
   non-public visibility-context behavior beyond the current declaring-class
   method context are not represented yet. It is available through
   string-valued dynamic function calls.
+  Class `implements` clauses accept comma-separated class-like names and record
+  them as class metadata. This metadata participates in relationship checks,
+  including through parent classes, without enforcing interface methods,
+  requiring the interface to be declared, or seeding built-in/internal
+  interfaces such as `Iterator` for `interface_exists()`.
   `is_a($object_or_class, $class_name)` accepts current object values and
-  checks exact class identity or a single-parent ancestor relationship against
-  the current declared class metadata using case-insensitive class-name lookup.
+  checks exact class identity, a single-parent ancestor relationship, or a
+  recorded `implements` relationship against the current declared class
+  metadata using case-insensitive name lookup.
   `is_a($object_or_class, $class_name, true)` also accepts a string first
-  argument and checks the same relationship. A false or omitted `allow_string`
-  flag makes string first arguments return false. Missing source or target
-  class names return false, and string-valued dynamic calls to `is_a` use the
-  same path.
+  argument and checks the same relationships. A false or omitted
+  `allow_string` flag makes string first arguments return false. Missing
+  source class names return false; missing target class names can still match
+  recorded `implements` metadata, which is how unresolved internal interface
+  names are represented in the current slice. String-valued dynamic calls to
+  `is_a` use the same path.
   `is_subclass_of($object_or_class, $class_name[, $allow_string])` accepts the
   current object/string first-argument subset and string class names, considers
   two-argument string first arguments and three-argument string first arguments
-  only when `allow_string` is true, returns false for exact-class,
-  missing-class, and no-parent cases, and is available through string-valued
-  dynamic calls.
+  only when `allow_string` is true, checks parent and recorded `implements`
+  metadata relationships, returns false for exact-class and no-relationship
+  cases, and is available through string-valued dynamic calls.
   `get_parent_class($object_or_class)` accepts current object values or
   declared string class names, returns the immediate parent class name when
   one is recorded and false otherwise, and is available through string-valued
@@ -993,9 +1001,10 @@
   copy-on-write, and native lowering remain unsupported.
   `$value instanceof Name` executes for the current bounded runtime slice:
   non-object left operands return `false`, object operands check declared class
-  metadata plus the current single-parent chain, unknown class/interface names
-  return `false`, and bare internal interface/class names such as `Countable`
-  are accepted as names without implying interface metadata support.
+  metadata, the current single-parent chain, and recorded `implements`
+  metadata, including unresolved internal interface names recorded on class
+  declarations. Unknown names without a matching class or recorded
+  `implements` entry return `false`.
   Dynamic right-hand class operands, namespace-qualified names, `self`/`parent`/`static`
   targets, autoload side effects, exact PHP diagnostics, and native lowering
   remain unsupported.
@@ -2889,8 +2898,8 @@
   instance `__construct` and explicit parent calls,
   typed/default property compatibility,
   broader `parent::`/`self::`/`static::`, broader inheritance rules,
-  `implements` clauses, interface constants, interface implementation
-  enforcement, interface inheritance, built-in/internal interfaces,
+  interface constants, interface implementation enforcement, interface
+  inheritance, built-in/internal interface catalogs,
   trait members, trait use inside classes,
   trait methods/properties/constants, trait conflict resolution, aliases,
   visibility changes, namespace-aware traits,
@@ -3074,8 +3083,8 @@
   diagnostics
 - unsupported class forms including nested/conditional declarations, broader
   inheritance rules beyond the current single-parent metadata chain, interface
-  declarations and `implements` clauses, interface constants, interface method
-  signatures, interface inheritance, trait
+  method enforcement, interface constants, interface inheritance,
+  built-in/internal interface catalogs, trait
   declarations, enum declarations, enum cases/backing values/methods/interface
   implementation,
   autoload-triggered parent class resolution,
@@ -3762,8 +3771,8 @@
   aliases, exact native `TypeError` behavior, and native lowering beyond
   direct string-name false folding
 - `interface_exists` built-in/internal interface entries, autoloading, exact
-  native `TypeError` behavior, interface implementation relationships, and
-  native lowering beyond direct string-name false folding
+  native `TypeError` behavior, and native lowering beyond direct string-name
+  false folding
 - `trait_exists` built-in/internal trait entries, autoloading,
   namespaces/import aliases beyond parsed declarations, exact native
   `TypeError` behavior, and native lowering beyond direct string-name false

@@ -1,0 +1,7 @@
+exit: 0
+stdout:
+service:logger
+service:hookable
+child:logger--- stdout end ---
+stderr:
+--- stderr end ---

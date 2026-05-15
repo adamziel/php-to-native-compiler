@@ -371,12 +371,11 @@ impl Parser {
         } else {
             None
         };
-        if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_interface_implementation_message(),
-            ));
-        }
+        let interfaces = if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
+            self.parse_class_implements_list()?
+        } else {
+            Vec::new()
+        };
 
         self.consume_keyword(TokenKind::LBrace, "expected class body")?;
         let mut members = Vec::new();
@@ -389,6 +388,7 @@ impl Parser {
         Ok(Stmt::Class(ClassDecl {
             name,
             parent,
+            interfaces,
             members,
             is_abstract,
             is_final,
@@ -396,6 +396,24 @@ impl Parser {
             is_nested,
             span,
         }))
+    }
+
+    fn parse_class_implements_list(&mut self) -> CompileResult<Vec<String>> {
+        let mut interfaces = Vec::new();
+        loop {
+            interfaces
+                .push(self.consume_class_like_name("expected interface name after 'implements'")?);
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| matches!(kind, TokenKind::LBrace | TokenKind::Eof)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    "expected interface name after ',' in implements clause",
+                ));
+            }
+        }
+        Ok(interfaces)
     }
 
     fn parse_trait(&mut self) -> CompileResult<Stmt> {
@@ -5555,10 +5573,6 @@ fn unsupported_nested_interface_declaration_message() -> &'static str {
 
 fn unsupported_interface_inheritance_message() -> &'static str {
     "unsupported interface inheritance: interface extends clauses are not implemented"
-}
-
-fn unsupported_interface_implementation_message() -> &'static str {
-    "unsupported interface implementation: implements clauses are not implemented"
 }
 
 fn unsupported_interface_constant_message() -> &'static str {

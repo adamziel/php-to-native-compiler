@@ -1758,6 +1758,18 @@ impl PhpClassTable {
         Ok(())
     }
 
+    pub fn set_interfaces(
+        &mut self,
+        class_id: ClassId,
+        interfaces: Vec<String>,
+    ) -> RuntimeResult<()> {
+        let class = self
+            .get_mut(class_id)
+            .expect("declared class id should resolve to metadata");
+        class.interfaces = interfaces;
+        Ok(())
+    }
+
     pub fn is_subclass_of(&self, child_id: ClassId, ancestor_id: ClassId) -> bool {
         let mut current = self.get(child_id).and_then(|class| class.parent_id());
         let mut visited = HashSet::new();
@@ -1772,6 +1784,29 @@ impl PhpClassTable {
         }
         false
     }
+
+    pub fn implements_interface(&self, class_id: ClassId, interface_name: &str) -> bool {
+        let interface_name = normalize_class_lookup_name(interface_name);
+        let mut current = Some(class_id);
+        let mut visited = HashSet::new();
+        while let Some(class_id) = current {
+            if !visited.insert(class_id) {
+                return false;
+            }
+            let Some(class) = self.get(class_id) else {
+                return false;
+            };
+            if class
+                .interfaces
+                .iter()
+                .any(|name| normalize_class_lookup_name(name) == interface_name)
+            {
+                return true;
+            }
+            current = class.parent_id();
+        }
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1781,6 +1816,7 @@ pub struct PhpClassMetadata {
     parent_id: Option<ClassId>,
     properties: Vec<PhpPropertyMetadata>,
     property_lookup: HashMap<String, usize>,
+    interfaces: Vec<String>,
     constants: Vec<PhpClassConstantMetadata>,
     constant_lookup: HashMap<String, usize>,
     methods: Vec<PhpMethodMetadata>,
@@ -1795,6 +1831,7 @@ impl PhpClassMetadata {
             parent_id: None,
             properties: Vec::new(),
             property_lookup: HashMap::new(),
+            interfaces: Vec::new(),
             constants: Vec::new(),
             constant_lookup: HashMap::new(),
             methods: Vec::new(),
@@ -1816,6 +1853,10 @@ impl PhpClassMetadata {
 
     pub fn properties(&self) -> &[PhpPropertyMetadata] {
         &self.properties
+    }
+
+    pub fn interfaces(&self) -> &[String] {
+        &self.interfaces
     }
 
     pub fn constants(&self) -> &[PhpClassConstantMetadata] {

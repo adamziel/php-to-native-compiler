@@ -1004,6 +1004,49 @@ if ($call("APP\\LOGGER", true)) {
 }
 
 #[test]
+fn classes_record_interface_implementation_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface Logger {}
+interface Hookable {}
+class Service implements Logger, Hookable {}
+class ChildService extends Service {}
+
+$service = new Service();
+$child = new ChildService();
+if (is_a($service, "Logger")) {
+    echo "service:logger\n";
+}
+if (is_subclass_of($service, "Hookable")) {
+    echo "service:hookable\n";
+}
+if (is_a($child, "Logger")) {
+    echo "child:inherits-interface\n";
+}
+if (is_a("ChildService", "Hookable", true)) {
+    echo "string:inherits-interface\n";
+}
+
+final class WP_Hook implements Iterator, ArrayAccess {}
+$hook = new WP_Hook();
+if (is_a($hook, "Iterator")) {
+    echo "unresolved-builtin:iterator\n";
+}
+if (!interface_exists("Iterator")) {
+    echo "unresolved-builtin:not-declared\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "service:logger\nservice:hookable\nchild:inherits-interface\nstring:inherits-interface\nunresolved-builtin:iterator\nunresolved-builtin:not-declared\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
     let name_error = runtime_error("<?php\nvar_dump(interface_exists(42));\n");
 
@@ -4701,14 +4744,6 @@ if (true) {
             3,
             5,
             "unsupported enum declaration: only top-level enum declarations are implemented",
-        ),
-        (
-            r#"<?php
-class Service implements Logger {}
-"#,
-            2,
-            15,
-            "unsupported interface implementation: implements clauses are not implemented",
         ),
         (
             r#"<?php

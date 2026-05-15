@@ -26,6 +26,38 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T06:18:00Z
+
+- Checkpoint before this task:
+  `5c154e8 parser: add skipped list destructuring slots`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 761, class `implements` metadata for the
+  WordPress `final class WP_Hook implements Iterator, ArrayAccess` blocker.
+- Files changed so far: `runtime/src/lib.rs`, `compiler/src/ast.rs`,
+  `compiler/src/parser.rs`, `compiler/src/interpreter.rs`,
+  `compiler/tests/object_model.rs`, `tests/fixtures/milestone761/*`,
+  removed stale unsupported-interface-implementation fixtures, and docs.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model classes_record_interface_implementation_metadata -- --exact`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone761`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: interface method enforcement, interface constants,
+  interface inheritance, built-in/internal interface catalogs,
+  variance/signature checks, autoload-triggered interface discovery, exact PHP
+  fatal behavior, and native lowering remain unsupported. Direct
+  `wp-settings.php` still stops on undefined `ABSPATH`; the bootstrap shim now
+  reaches
+  `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$l10n[ $domain ] = &$noop_translations;` in
+  `wp-includes/l10n.php:1428`.
+- Next concrete task: implement real PHP reference assignment for the reached
+  `wp-includes/l10n.php:1428` path, including alias containers,
+  symbol-table/array-slot binding, copy-on-write interaction, mutation
+  ordering, and exact unsupported edge-case docs.
+
 ## Loop Event 2026-05-15T05:55:00Z
 
 - Checkpoint before this task:

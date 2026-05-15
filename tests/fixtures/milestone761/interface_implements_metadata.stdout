@@ -1,0 +1,3 @@
+service:logger
+service:hookable
+child:logger

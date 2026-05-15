@@ -5662,10 +5662,15 @@ impl Interpreter {
     }
 
     fn value_is_a(&self, object_or_class: &Value, class_name: &str, allow_string: bool) -> bool {
-        let Some(target_class) = self.classes.lookup_class(class_name) else {
+        let Some(candidate_id) = self.value_class_id(object_or_class, allow_string) else {
             return false;
         };
-        let Some(candidate_id) = self.value_class_id(object_or_class, allow_string) else {
+
+        if self.classes.implements_interface(candidate_id, class_name) {
+            return true;
+        }
+
+        let Some(target_class) = self.classes.lookup_class(class_name) else {
             return false;
         };
 
@@ -5677,6 +5682,12 @@ impl Interpreter {
         let Value::Object(object) = value else {
             return false;
         };
+        if self
+            .classes
+            .implements_interface(object.class_id(), class_name)
+        {
+            return true;
+        }
         let Some(target_class) = self.classes.lookup_class(class_name) else {
             return false;
         };
@@ -5693,10 +5704,15 @@ impl Interpreter {
         class_name: &str,
         allow_string: bool,
     ) -> bool {
-        let Some(target_class) = self.classes.lookup_class(class_name) else {
+        let Some(candidate_id) = self.value_class_id(object_or_class, allow_string) else {
             return false;
         };
-        let Some(candidate_id) = self.value_class_id(object_or_class, allow_string) else {
+
+        if self.classes.implements_interface(candidate_id, class_name) {
+            return true;
+        }
+
+        let Some(target_class) = self.classes.lookup_class(class_name) else {
             return false;
         };
 
@@ -8800,6 +8816,9 @@ fn register_class_members(
             .set_parent(id, parent_id)
             .map_err(|error| runtime_error(class.span, error))?;
     }
+    classes
+        .set_interfaces(id, class.interfaces.clone())
+        .map_err(|error| runtime_error(class.span, error))?;
 
     for member in &class.members {
         match member {

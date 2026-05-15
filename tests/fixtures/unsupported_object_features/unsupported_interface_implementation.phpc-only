@@ -1,1 +1,0 @@
-phpc intentionally rejects interface implementation before interface metadata and relationship checks exist.

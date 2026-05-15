@@ -453,6 +453,7 @@ impl AssignTarget {
 pub struct ClassDecl {
     pub name: String,
     pub parent: Option<String>,
+    pub interfaces: Vec<String>,
     pub members: Vec<ClassMember>,
     pub is_abstract: bool,
     pub is_final: bool,

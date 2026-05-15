@@ -141,7 +141,11 @@ incorrect native code.
 - declared interface metadata: top-level `interface Name {}` declarations and
   public method signatures parse, register class-like interface names, power
   `interface_exists()` and `get_declared_interfaces()`, and otherwise execute
-  as declaration metadata only
+  as declaration metadata only; class `implements` clauses record
+  comma-separated interface names as relationship metadata for `is_a`,
+  `is_subclass_of`, and `instanceof`, including inherited metadata and
+  unresolved built-in/internal interface names without seeding
+  `interface_exists()`
 - a minimal object/class slice: class metadata, `new ClassName(...)` with
   public and inherited public instance `__construct`, public instance
   property reads/writes, inherited instance property slots with
@@ -195,7 +199,8 @@ callback integration, type declaration enforcement, cast
 behavior outside the current `(string)`, `(int)`, `(bool)`, and
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 actual PHP warning/notice suppression for `@expr`,
-interface inheritance/implementation enforcement, trait members and trait
+interface inheritance/implementation enforcement, built-in/internal interface
+catalogs, trait members and trait
 composition, enum case objects/backed values/methods/interfaces,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery,

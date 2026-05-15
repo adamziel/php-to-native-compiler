@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 761, class `implements` metadata for the current object
+  relationship slice. The parser now accepts comma-separated `implements`
+  clauses on class declarations, stores the spelled interface/class-like names
+  in class metadata, and the runtime checks those names through `is_a(...)`,
+  `is_subclass_of(...)`, and `instanceof`, including inherited interface
+  metadata from parent classes. The slice deliberately records unresolved
+  built-in/internal interface names such as `Iterator` and `ArrayAccess` as
+  relationship metadata without declaring them for `interface_exists()` or
+  `get_declared_interfaces()`. Interface method enforcement, interface
+  constants, interface inheritance, built-in/internal interface catalogs,
+  variance/signature checks, autoload-triggered interface discovery, exact PHP
+  fatal behavior, and native lowering remain unsupported. The real WordPress
+  6.9.4 bootstrap-shim probe now advances past the previous
+  `final class WP_Hook implements Iterator, ArrayAccess` blocker in
+  `wp-includes/class-wp-hook.php` to
+  `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$l10n[ $domain ] = &$noop_translations;` in
+  `wp-includes/l10n.php:1428`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test object_model classes_record_interface_implementation_metadata -- --exact`,
+  `cargo test -p phpc --test object_model unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone761`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 760, skipped positional slots in statement-form
   `list(...) = expr;` destructuring. The parser now accepts forms such as
   `list( , $textdomain, $language ) = $match;`, stores skipped positions in the

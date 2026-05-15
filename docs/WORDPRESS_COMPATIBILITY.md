@@ -567,6 +567,19 @@ The first bootstrap probe is expected to fail. Known blockers include:
   This is not short `[...]` destructuring, keyed/nested/reference
   destructuring, exact missing-offset warning behavior, native array
   destructuring lowering, or WordPress bootstrap support.
+  Milestone 761 implements class `implements` metadata for comma-separated
+  interface names and relationship checks through `is_a`, `is_subclass_of`,
+  and `instanceof`, including inherited metadata and unresolved
+  built-in/internal interface names as metadata-only relationships. It advances
+  the real bootstrap-shim probe past
+  `final class WP_Hook implements Iterator, ArrayAccess` in
+  `wp-includes/class-wp-hook.php` to
+  `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$l10n[ $domain ] = &$noop_translations;` in
+  `wp-includes/l10n.php:1428`. This is not interface method enforcement,
+  interface constants, interface inheritance, built-in/internal interface
+  catalogs, variance/signature checks, autoload-triggered interface discovery,
+  exact PHP fatal behavior, native lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

@@ -6951,16 +6951,32 @@ handled.
   `list(...) = expr;`, covering `list( , $textdomain, $language ) = $match;`
   in `wp-includes/l10n.php`, and advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:19:21: unsupported interface implementation: implements clauses are not implemented`.
-- [ ] Parser/object lane: implement or explicitly bound interface
+- [x] Parser/object lane: implement or explicitly bound interface
   implementation metadata for the next real WordPress bootstrap-shim blocker at
   `<bootstrap-shim>:19:21`, while keeping interface method enforcement,
   inheritance, constants, variance checks, autoload, and native lowering named
   as unsupported unless implemented.
+  Milestone 761 implements class `implements` metadata for comma-separated
+  interface names and relationship checks through `is_a`,
+  `is_subclass_of`, and `instanceof`, including inherited metadata and
+  unresolved built-in/internal interface names as metadata-only relationships.
+  It advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:1428:2: unsupported call reference assignment: references and aliasing are not implemented`,
+  corresponding to `$l10n[ $domain ] = &$noop_translations;` in
+  `wp-includes/l10n.php:1428`.
+- [ ] Runtime/value-model lane: implement real PHP reference assignment for
+  the next real WordPress bootstrap-shim blocker at
+  `wp-includes/l10n.php:1428`, or explicitly widen the existing runtime
+  boundary only if the reached code can continue honestly without references.
+  This must address alias containers, symbol-table/array-slot binding,
+  copy-on-write interaction, mutation ordering, and exact unsupported
+  edge-case docs before claiming support.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 760 checkpoint, the latest committed checkpoint
-  is `b3e1eb1 runtime: add include expression returns`, covering Milestone 759.
+- Before the current Milestone 761 checkpoint, the latest committed checkpoint
+  is `5c154e8 parser: add skipped list destructuring slots`, covering
+  Milestone 760.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

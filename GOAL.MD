@@ -63,8 +63,9 @@ Recent WordPress-directed milestones have been walking the real WordPress
 runtime boundaries, class modifiers, magic `new self`/`parent`/`static`
 instantiation, direct-object-property nested array assignment, nested
 object-property array-offset `unset(...)`, expression-form `include`/`require`
-return values, and skipped positional `list(...)` destructuring. The current
-shim frontier is interface `implements` clauses at `<bootstrap-shim>:19:21`.
+return values, skipped positional `list(...)` destructuring, and class
+`implements` relationship metadata. The current shim frontier is real
+reference assignment at `wp-includes/l10n.php:1428`.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -269,9 +270,11 @@ assignment and append-at-depth assignment. Milestone 758 added nested
 object-property array-offset `unset(...)`. Milestone 759 then added
 expression-form `include`, `include_once`, `require`, and `require_once` return
 values for the current local-file subset. Milestone 760 added skipped
-positional slots in statement-form `list(...) = expr;`; the current
-bootstrap-shim blocker is now unsupported interface implementation at
-`<bootstrap-shim>:19:21`.
+positional slots in statement-form `list(...) = expr;`. Milestone 761 then
+recorded class `implements` metadata for relationship checks while leaving
+interface enforcement and built-in/internal interface catalogs explicit future
+work; the current bootstrap-shim blocker is now reference assignment at
+`wp-includes/l10n.php:1428`, `$l10n[ $domain ] = &$noop_translations;`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
