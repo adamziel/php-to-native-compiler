@@ -29,6 +29,29 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `d8df507 runtime: clarify mysqli non-empty result boundary`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 855, the first deterministic row-backed
+  placeholder `mysqli_result` shape for a WordPress posts query.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone855/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far: not yet run after this edit.
+- Current WordPress frontier: the current WIP should let the exact query
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1` return one deterministic
+  placeholder row through `mysqli_fetch_object()` and two field names through
+  `mysqli_fetch_field()`.
+- Remaining semantic gaps: SQL parsing/execution, real database state,
+  host-backed connections, general row schemas, WordPress query-state
+  fidelity, real field metadata, errors/warnings, and native database lowering
+  remain missing.
+- Next concrete task: run focused MySQLi and milestone855 fixture tests, fix
+  failures, then run the full serialized checkpoint gate before committing.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `f4b7243 tests: add wordpress wpdb empty query smoke`, pushed to
   `origin/master`.
 - Task attempted: reconcile the full PHP/WordPress compatibility objective

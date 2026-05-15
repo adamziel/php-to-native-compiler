@@ -101,6 +101,7 @@ struct Interpreter {
     error_handler: Option<Value>,
     error_handler_mask: Option<i64>,
     mysqli_report_mode: i64,
+    mysqli_results: HashMap<i64, MysqliResultState>,
     source_file: Option<String>,
     max_execution_steps: Option<usize>,
     trace_includes: bool,
@@ -113,6 +114,14 @@ struct Interpreter {
     called_class_context: Vec<ClassId>,
     stdout: String,
     exit_signal: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct MysqliResultState {
+    fields: Vec<String>,
+    rows: Vec<Vec<(String, Value)>>,
+    row_cursor: usize,
+    field_cursor: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -500,6 +509,7 @@ impl Interpreter {
             error_handler: None,
             error_handler_mask: None,
             mysqli_report_mode: PHP_MYSQLI_REPORT_ERROR | PHP_MYSQLI_REPORT_STRICT,
+            mysqli_results: HashMap::new(),
             source_file,
             max_execution_steps: options.max_execution_steps,
             trace_includes: options.trace_includes,
@@ -3969,7 +3979,12 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
-    fn create_mysqli_result_placeholder(&mut self, span: Span) -> CompileResult<Value> {
+    fn create_mysqli_result_placeholder(
+        &mut self,
+        span: Span,
+        fields: Vec<String>,
+        rows: Vec<Vec<(String, Value)>>,
+    ) -> CompileResult<Value> {
         let class_id = self
             .classes
             .lookup_class_id("mysqli_result")
@@ -3984,9 +3999,43 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core mysqli_result class id should resolve");
+        self.mysqli_results.insert(
+            object_id,
+            MysqliResultState {
+                fields,
+                rows,
+                row_cursor: 0,
+                field_cursor: 0,
+            },
+        );
         Ok(Value::Object(PhpObject::from_class_with_id(
             class, object_id,
         )))
+    }
+
+    fn create_stdclass_with_properties(
+        &mut self,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self.classes.lookup_class_id("stdClass").ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class("stdClass core placeholder"),
+            )
+        })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core stdClass class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        for (name, value) in properties {
+            object
+                .write_dynamic_public_property(&name, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Object(object))
     }
 
     fn call_mysqli_real_connect(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -4195,7 +4244,21 @@ impl Interpreter {
         }
 
         if is_wordpress_empty_result_query(query) {
-            return self.create_mysqli_result_placeholder(span);
+            return self.create_mysqli_result_placeholder(span, Vec::new(), Vec::new());
+        }
+
+        if is_wordpress_seed_post_query(query) {
+            return self.create_mysqli_result_placeholder(
+                span,
+                vec!["ID".to_string(), "post_title".to_string()],
+                vec![vec![
+                    ("ID".to_string(), Value::Int(1)),
+                    (
+                        "post_title".to_string(),
+                        Value::String("Hello world placeholder".to_string()),
+                    ),
+                ]],
+            );
         }
 
         if query == "SELECT @@SESSION.sql_mode" || is_wordpress_empty_options_query(query) {
@@ -4323,27 +4386,47 @@ impl Interpreter {
         Ok(Value::String(mysql_escape_string(&value)))
     }
 
-    fn call_mysqli_fetch_object(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_fetch_object(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_fetch_object", args, 1, span)?;
-        expect_mysqli_result_handle("mysqli_fetch_object()", &args[0], span)?;
-        Ok(Value::Bool(false))
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_object()", &args[0], span)?;
+        let row = {
+            let state = self.mysqli_result_state_mut("mysqli_fetch_object()", result_id, span)?;
+            if state.row_cursor >= state.rows.len() {
+                return Ok(Value::Bool(false));
+            }
+            let row = state.rows[state.row_cursor].clone();
+            state.row_cursor += 1;
+            row
+        };
+        self.create_stdclass_with_properties(row, span)
     }
 
-    fn call_mysqli_fetch_field(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_fetch_field(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_fetch_field", args, 1, span)?;
-        expect_mysqli_result_handle("mysqli_fetch_field()", &args[0], span)?;
-        Ok(Value::Bool(false))
+        let result_id = expect_mysqli_result_handle("mysqli_fetch_field()", &args[0], span)?;
+        let field = {
+            let state = self.mysqli_result_state_mut("mysqli_fetch_field()", result_id, span)?;
+            if state.field_cursor >= state.fields.len() {
+                return Ok(Value::Bool(false));
+            }
+            let field = state.fields[state.field_cursor].clone();
+            state.field_cursor += 1;
+            field
+        };
+        self.create_stdclass_with_properties(vec![("name".to_string(), Value::String(field))], span)
     }
 
     fn call_mysqli_num_fields(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_num_fields", args, 1, span)?;
-        expect_mysqli_result_handle("mysqli_num_fields()", &args[0], span)?;
-        Ok(Value::Int(0))
+        let result_id = expect_mysqli_result_handle("mysqli_num_fields()", &args[0], span)?;
+        let state = self.mysqli_result_state("mysqli_num_fields()", result_id, span)?;
+        Ok(Value::Int(state.fields.len() as i64))
     }
 
-    fn call_mysqli_free_result(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_mysqli_free_result(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("mysqli_free_result", args, 1, span)?;
-        expect_mysqli_result_handle("mysqli_free_result()", &args[0], span)?;
+        let result_id = expect_mysqli_result_handle("mysqli_free_result()", &args[0], span)?;
+        self.mysqli_results.remove(&result_id);
         Ok(Value::Null)
     }
 
@@ -4357,6 +4440,40 @@ impl Interpreter {
         expect_arity("mysqli_next_result", args, 1, span)?;
         expect_mysqli_handle("mysqli_next_result()", &args[0], span)?;
         Ok(Value::Bool(false))
+    }
+
+    fn mysqli_result_state(
+        &self,
+        function: &str,
+        result_id: i64,
+        span: Span,
+    ) -> CompileResult<&MysqliResultState> {
+        self.mysqli_results.get(&result_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "placeholder result state is not available in the current subset",
+                ),
+            )
+        })
+    }
+
+    fn mysqli_result_state_mut(
+        &mut self,
+        function: &str,
+        result_id: i64,
+        span: Span,
+    ) -> CompileResult<&mut MysqliResultState> {
+        self.mysqli_results.get_mut(&result_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "placeholder result state is not available in the current subset",
+                ),
+            )
+        })
     }
 
     fn evaluate_array_index(
@@ -11889,6 +12006,10 @@ fn is_wordpress_empty_result_query(query: &str) -> bool {
     query == "SELECT * FROM wp_posts WHERE 1 = 0"
 }
 
+fn is_wordpress_seed_post_query(query: &str) -> bool {
+    query == "SELECT ID, post_title FROM wp_posts WHERE ID = 1"
+}
+
 fn is_mysqli_select_query(query: &str) -> bool {
     query
         .trim_start()
@@ -11925,7 +12046,7 @@ fn expect_mysqli_handle(function: &str, value: &Value, span: Span) -> CompileRes
     Ok(())
 }
 
-fn expect_mysqli_result_handle(function: &str, value: &Value, span: Span) -> CompileResult<()> {
+fn expect_mysqli_result_handle(function: &str, value: &Value, span: Span) -> CompileResult<i64> {
     let Value::Object(handle) = value else {
         return Err(runtime_error(
             span,
@@ -11951,7 +12072,7 @@ fn expect_mysqli_result_handle(function: &str, value: &Value, span: Span) -> Com
         ));
     }
 
-    Ok(())
+    Ok(handle.id())
 }
 
 fn string_builtin_argument(

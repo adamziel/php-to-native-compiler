@@ -832,7 +832,16 @@
   `mysqli_result` object. `mysqli_num_fields($result)` returns `0`,
   `mysqli_fetch_field($result)` and `mysqli_fetch_object($result)` return
   `false`, and `mysqli_free_result($result)` returns `null` for that
-  placeholder empty result. `mysqli_more_results($handle)` and
+  placeholder empty result. For the exact deterministic seed-post query
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1`, `mysqli_query()` returns
+  a placeholder `mysqli_result` with two fields, `ID` and `post_title`, and
+  one row. `mysqli_num_fields($result)` returns `2`,
+  `mysqli_fetch_field($result)` returns `stdClass` objects whose `name`
+  properties are `ID` and `post_title` before returning `false`, and
+  `mysqli_fetch_object($result)` returns one `stdClass` row with `ID = 1` and
+  `post_title = "Hello world placeholder"` before returning `false`.
+  `mysqli_free_result($result)` releases that interpreter-owned placeholder
+  result state and returns `null`. `mysqli_more_results($handle)` and
   `mysqli_next_result($handle)` return `false` for the placeholder connection.
   Other `SELECT` statements fail with an explicit unsupported diagnostic that
   non-empty `mysqli` result sets are not implemented in the current subset.
@@ -847,7 +856,7 @@
   quote, double quote, and Ctrl-Z characters for the reached
   `wpdb::_real_escape()` option lookup path.
   Host connections, real mysqli resources/objects, real query execution,
-  non-empty result sets, real row/field metadata, result cursors,
+  general non-empty result sets, real row/field metadata,
   affected-row/insert-id state, connection charset state, binary or
   invalid-string behavior, exact escaping edge cases, errors/warnings,
   transactions, configuration beyond the report-mode flag, PDO behavior, and

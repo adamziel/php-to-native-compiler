@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added Milestone 855, the first deterministic non-empty placeholder
+  `mysqli_result` row shape. The exact query
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1` now returns a
+  placeholder `mysqli_result` backed by interpreter-owned field and row cursor
+  state; `mysqli_num_fields()` returns `2`, `mysqli_fetch_field()` returns
+  `stdClass` objects with `name` values `ID` and `post_title`, and
+  `mysqli_fetch_object()` returns one `stdClass` row with `ID = 1` and
+  `post_title = "Hello world placeholder"` before returning `false`. Added a
+  `phpc-only` CLI fixture for the deterministic row. This is a row-shape and
+  cursor milestone only: it does not implement SQL parsing/execution, real
+  database state, host connections, general result schemas, WordPress query
+  fidelity, error/warning behavior, or native database lowering. Focused
+  verification so far:
+  `cargo test -p phpc --test mysqli_extension -- --nocapture` and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone855`.
+
 - Added Milestone 854, a sharper deterministic MySQLi boundary for non-empty
   `SELECT` queries. After the documented WordPress SQL-mode, charset setup,
   empty options/metadata, and exact empty-result placeholders are checked,

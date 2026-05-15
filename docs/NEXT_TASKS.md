@@ -7856,16 +7856,27 @@ handled.
   non-empty-result-set diagnostic. A `phpc-only` fixture covers
   `SELECT * FROM wp_posts WHERE ID = 1`; real row hydration, field metadata,
   result resources, SQL execution, and database state remain unsupported.
-- [ ] Runtime/mysqli lane: design the first real row-shape representation for
+- [x] Runtime/mysqli lane: design and implement the first placeholder
+  row-shape representation for
   deterministic `mysqli_fetch_object()` results, including how rows, fields,
   result cursors, object hydration, and error state will be represented before
   implementing any non-empty query.
+  Milestone 855 adds interpreter-owned placeholder result state for the exact
+  query `SELECT ID, post_title FROM wp_posts WHERE ID = 1`, exposing two
+  deterministic field names and one `stdClass` row through
+  `mysqli_num_fields()`, `mysqli_fetch_field()`, `mysqli_fetch_object()`, and
+  `mysqli_free_result()`. It is still not SQL execution, real database state,
+  WordPress content fidelity, real metadata, or native database lowering.
+- [ ] WordPress harness lane: add a synthetic `wpdb::get_results()` or
+  equivalent one-row smoke that consumes the Milestone 855 deterministic
+  row-backed result through WordPress-shaped query state without claiming real
+  database support.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `f4b7243 tests: add wordpress wpdb empty query smoke`, covering Milestone
-  853.
+  `d8df507 runtime: clarify mysqli non-empty result boundary`, covering
+  Milestone 854 before the current Milestone 855 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

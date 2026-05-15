@@ -1073,12 +1073,13 @@ unchecked work. Current state:
   lifecycle boundary for WordPress-style result consumption.
 - Milestone 853 is committed: a synthetic `wpdb::query()`-style smoke consumes
   the placeholder empty result through WordPress-shaped object state.
-- Milestone 854 is the active checkpoint candidate: remaining `SELECT`
+- Milestone 854 is committed: remaining `SELECT`
   statements after the deterministic placeholder cases fail with a specific
   non-empty `mysqli` result-set diagnostic.
-- The next runtime lane after Milestone 854 is to design the first
-  deterministic non-empty result row shape before implementing row-returning
-  queries.
+- Milestone 855 is the active checkpoint candidate: the exact deterministic
+  query `SELECT ID, post_title FROM wp_posts WHERE ID = 1` returns a
+  placeholder row-backed `mysqli_result` with two fields and one `stdClass`
+  row, while all general SQL/database behavior remains unsupported.
 - The hard compatibility lanes remain open in parallel: PHP value semantics
   (`references` and copy-on-write), object semantics, error/exception behavior,
   standard-library and extension services, WordPress harness breadth, and

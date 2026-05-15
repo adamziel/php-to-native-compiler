@@ -45,11 +45,21 @@ connection, `mysqli_more_results($handle)` and `mysqli_next_result($handle)`
 return `false`. This does not execute SQL, store rows, expose real field
 metadata, or model real result resources.
 
+`mysqli_query($handle, 'SELECT ID, post_title FROM wp_posts WHERE ID = 1')`
+returns a placeholder `mysqli_result` object with deterministic interpreter
+state: fields `ID` and `post_title`, plus one row where `ID` is `1` and
+`post_title` is `Hello world placeholder`. `mysqli_num_fields()` returns `2`,
+`mysqli_fetch_field()` returns `stdClass` objects with a `name` property for
+those two fields and then `false`, and `mysqli_fetch_object()` returns one
+`stdClass` row object and then `false`. This is a fixed row-shape and cursor
+boundary, not SQL execution, database storage, WordPress content fidelity, or
+real mysqli metadata.
+
 Other `SELECT` statements are rejected with a specific non-empty-result-set
-diagnostic. For example, `SELECT * FROM wp_posts WHERE ID = 1` reports that
+diagnostic. For example, `SELECT 1` reports that
 non-empty `mysqli` result sets are not implemented. This is an explicit
-compatibility boundary before row storage, cursors, field metadata, object
-hydration, and database-backed WordPress queries exist.
+compatibility boundary before general row storage, SQL parsing/execution,
+database-backed WordPress queries, and real metadata exist.
 
 `mysqli_select_db($handle, $database)` accepts the placeholder object and a
 string or null database name, returning deterministic `true`. It does not
@@ -64,7 +74,7 @@ unsupported call mysqli_connect(): mysqli/database connections are not implement
 No real mysqli extension behavior is implemented yet: no host connections, no
 real resources or connected objects beyond the placeholder shapes, no real
 server metadata, no query execution beyond the documented deterministic
-queries, no real database selection beyond deterministic success, no non-empty
-result sets, no real row/field metadata, no charset handling, no
+queries, no real database selection beyond deterministic success, no general
+non-empty result sets, no real row/field metadata, no charset handling, no
 errors/warnings, no transactions, no configuration beyond the current
 report-mode flag, no PDO bridge, and no native database lowering.
