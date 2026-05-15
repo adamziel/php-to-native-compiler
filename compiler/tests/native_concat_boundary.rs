@@ -47,6 +47,38 @@ fn emit_asm_rejects_concatenation_before_backend_execution() {
 }
 
 #[test]
+fn emit_ir_rejects_braced_interpolated_strings_until_native_string_runtime_exists() {
+    let error = emit_ir_source(
+        r#"<?php
+$constant = "RUNTIME";
+echo "APP_{$constant}";
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_CONCAT_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_braced_interpolated_strings_before_backend_execution() {
+    let error = emit_asm_source(
+        r#"<?php
+$constant = "RUNTIME";
+echo "APP_{$constant}";
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_CONCAT_REJECTION);
+}
+
+#[test]
 fn emit_ir_lowers_static_string_concatenation() {
     let ir = emit_ir_source(
         r#"<?php

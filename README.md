@@ -184,7 +184,8 @@ exact PHP nested class declaration timing and fatal behavior, real
 throw/catch execution,
 bare namespace constant fallback reads, class-constant lookup through
 `defined()`/`constant()`, full extension constant catalogs,
-braced/complex double-quoted string interpolation, heredoc/nowdoc,
+complex double-quoted string interpolation such as array offsets or object
+properties, heredoc/nowdoc,
 visibility enforcement beyond the current public and
 same-declaring-class private-property, protected-property, protected-method,
 constructor, and class-constant slice, typed property compatibility and

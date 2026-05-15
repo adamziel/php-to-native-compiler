@@ -186,6 +186,38 @@ echo defined("SODIUM_$constant");
 }
 
 #[test]
+fn emit_ir_rejects_braced_interpolated_defined_names_until_native_constant_tables_exist() {
+    let error = emit_ir_source(
+        r#"<?php
+$constant = "CRYPTO_AUTH_BYTES";
+echo defined("SODIUM_{$constant}");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+}
+
+#[test]
+fn emit_asm_rejects_braced_interpolated_defined_names_before_backend_execution() {
+    let error = emit_asm_source(
+        r#"<?php
+$constant = "CRYPTO_AUTH_BYTES";
+echo defined("SODIUM_{$constant}");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
+}
+
+#[test]
 fn emit_ir_rejects_dynamic_defined_calls_until_native_runtime_lookup_exists() {
     let error = emit_ir_source(
         r#"<?php

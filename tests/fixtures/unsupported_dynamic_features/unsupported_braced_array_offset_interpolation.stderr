@@ -1,0 +1,2 @@
+lex error at 3:6: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented
+

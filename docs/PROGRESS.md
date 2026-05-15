@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 718, a bounded simple braced variable interpolation slice
+  through `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:468:12`, corresponding to
+  `wp-includes/compat-utf8.php:468` and `$utf8 .= "{$byte1}{$byte2}";`.
+  Double-quoted strings now accept both `$name` and `{$name}` as the same
+  interpolated variable part, preserving the distinct interpolated-string AST
+  so native lowering still rejects runtime string construction before folding.
+  Complex braced interpolation remains a lex boundary for array offsets,
+  object/static properties, `${...}`, variable variables, heredoc/nowdoc,
+  exact PHP diagnostics, partial-output behavior, and native lowering. The real
+  WordPress 6.9.4 inventory now reports direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe advances to
+  `runtime error at <bootstrap-shim>:106:41: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test dynamic_features braced -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary braced -- --test-threads=1`,
+  `cargo test -p phpc --test native_concat_boundary braced -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone718`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone718`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
 - Added Milestone 717, a bounded simple double-quoted string interpolation
   slice through `phpc run` for the real WordPress 6.9.4 bootstrap-shim blocker
   `defined("SODIUM_$constant")` at `<bootstrap-shim>:106:10`. The lexer now

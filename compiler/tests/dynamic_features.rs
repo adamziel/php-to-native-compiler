@@ -876,18 +876,39 @@ echo "literal:\$constant", "\n";
 }
 
 #[test]
-fn braced_string_interpolation_remains_a_named_boundary() {
+fn double_quoted_strings_interpolate_simple_braced_variables() {
+    let execution = run_source(
+        r#"<?php
+$name = "Ada";
+$suffix = "RUNTIME";
+$term_count = 7;
+define("APP_RUNTIME", "ok");
+echo "hello {$name}", "\n";
+echo defined("APP_{$suffix}") ? "1" : "0";
+echo "|", constant("APP_{$suffix}"), "\n";
+echo "{{$term_count}}", "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello Ada\n1|ok\n{7}\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn complex_braced_string_interpolation_remains_a_named_boundary() {
     let error = lex_error(
         r#"<?php
-echo "APP_{$constant}";
+$attributes = ["textAlign" => "center"];
+echo "has-text-align-{$attributes['textAlign']}";
 "#,
     );
 
-    assert_eq!(error.line, 2);
+    assert_eq!(error.line, 3);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented"
+        "unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented"
     );
 }
 
@@ -896,6 +917,19 @@ fn undefined_variables_in_string_interpolation_use_current_runtime_error() {
     let error = runtime_error(
         r#"<?php
 echo "APP_$constant";
+"#,
+    );
+
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(error.message, "undefined variable '$constant'");
+}
+
+#[test]
+fn undefined_variables_in_braced_string_interpolation_use_current_runtime_error() {
+    let error = runtime_error(
+        r#"<?php
+echo "APP_{$constant}";
 "#,
     );
 

@@ -8,8 +8,8 @@
 - decimal and hexadecimal integer literals in the current signed 64-bit subset
 - float literals
 - single-quoted and double-quoted string literals with basic escapes; double
-  quoted strings additionally support simple `$name` interpolation over the
-  current variable table
+  quoted strings additionally support simple `$name` and `{$name}`
+  interpolation over the current variable table
 - `null`, `true`, and `false`
 - magic constants `__LINE__`, evaluated from the expression token's source
   line, `__FILE__`, evaluated from the current `phpc run` input path when one
@@ -601,10 +601,11 @@
   and broader late-bound `static::` member forms
 - explicit lex diagnostics for unsupported variable-variable syntax such as
   `$$name` and `${...}`
-- explicit lex diagnostics for unsupported braced or complex double-quoted
-  string interpolation such as `"APP_{$constant}"`. Only simple `$name`
-  interpolation is implemented; array offsets, object/static properties,
-  variable variables, `${...}`, heredoc, and nowdoc remain unsupported.
+- explicit lex diagnostics for unsupported complex double-quoted string
+  interpolation such as `"APP_{$items['name']}"` or `"APP_${name}"`. Only
+  simple `$name` and `{$name}` interpolation is implemented; array offsets,
+  object/static properties, variable variables, `${...}`, heredoc, and nowdoc
+  remain unsupported.
 - syntax-only PHP attributes beginning with `#[...]` are accepted and ignored
   before functions, classes, class members, and parameters. Attribute metadata,
   reflection visibility, target validation, namespace-aware attribute names,

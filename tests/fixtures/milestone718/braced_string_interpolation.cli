@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+user:Ada|count:3
+Lin:suffix
+{3}
+--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+lex error at tests/fixtures/unsupported_dynamic_features/unsupported_dollar_brace_string_interpolation.php:2:6: unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented
+--- stderr end ---

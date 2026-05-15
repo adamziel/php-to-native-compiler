@@ -170,8 +170,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   catalog support, class-constant string lookup, or native lowering. The real
   inventory now reports direct `wp-settings.php` still stops at
   `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
-  while the bootstrap-shim probe reaches
+  while the bootstrap-shim probe then reached
   `lex error at <bootstrap-shim>:468:12: unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented`.
+  That previous braced simple-variable interpolation blocker, corresponding to
+  `wp-includes/compat-utf8.php:468` and `$utf8 .= "{$byte1}{$byte2}";`, is
+  covered by Milestone 718 for simple `{$name}` parts only. This is not full
+  complex interpolation, array-offset/object/static-property interpolation,
+  `${...}`, heredoc/nowdoc, or native lowering. The bootstrap-shim probe now
+  reaches
+  `runtime error at <bootstrap-shim>:106:41: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

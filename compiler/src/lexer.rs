@@ -503,18 +503,40 @@ impl<'a> Lexer<'a> {
                 }
 
                 if matches!(self.peek_next(), Some('$' | '{')) {
-                    return Err(self.error_at(
-                        span,
-                        "unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented",
-                    ));
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
             }
 
             if interpolate && ch == '{' && self.peek_next() == Some('$') {
-                return Err(self.error_at(
-                    span,
-                    "unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented",
-                ));
+                self.advance();
+                self.advance();
+                if !value.is_empty() {
+                    parts.push(InterpolatedStringPart::Literal(value));
+                    value = String::new();
+                }
+
+                let Some(first) = self.peek() else {
+                    return Err(self.error_at(span, "unterminated string literal"));
+                };
+                if !is_identifier_start(first) {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+
+                let mut name = String::new();
+                name.push(self.advance());
+                while let Some(next) = self.peek() {
+                    if is_identifier_part(next) {
+                        name.push(self.advance());
+                    } else {
+                        break;
+                    }
+                }
+                if self.peek() != Some('}') {
+                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                }
+                self.advance();
+                parts.push(InterpolatedStringPart::Variable(name));
+                continue;
             }
 
             value.push(self.advance());
@@ -688,4 +710,8 @@ fn is_identifier_start(ch: char) -> bool {
 
 fn is_identifier_part(ch: char) -> bool {
     is_identifier_start(ch) || ch.is_ascii_digit()
+}
+
+fn unsupported_string_interpolation_message() -> &'static str {
+    "unsupported string interpolation: only simple $name and {$name} interpolation in double-quoted strings is implemented; array offsets, object/static properties, and complex interpolation are not implemented"
 }

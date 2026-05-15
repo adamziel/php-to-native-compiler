@@ -6574,17 +6574,29 @@ handled.
   exact PHP diagnostics, partial-output behavior, and native lowering
   unsupported, and advances the real bootstrap-shim probe to
   `lex error at <bootstrap-shim>:468:12: unsupported string interpolation: only simple $name interpolation in double-quoted strings is implemented; braced/complex interpolation is not implemented`.
-- [ ] Parser/runtime lane: implement or explicitly bound the real WordPress
-  6.9.4 bootstrap-shim braced/complex string interpolation blocker at
-  `<bootstrap-shim>:468:12`, with tests, CLI coverage, docs, and named
-  unsupported edges for array-offset interpolation, object/static properties,
-  variable variables, heredoc/nowdoc, exact PHP diagnostics, partial-output
+- [x] Parser/runtime lane: implemented the real WordPress 6.9.4
+  bootstrap-shim braced simple-variable interpolation blocker at
+  `<bootstrap-shim>:468:12`, corresponding to
+  `wp-includes/compat-utf8.php:468` and `$utf8 .= "{$byte1}{$byte2}";`. The
+  Milestone 718 slice supports simple `{$name}` parts through the existing
+  interpolated-string AST/runtime path, keeps complex braced interpolation,
+  array offsets, object/static properties, variable variables, `${...}`,
+  heredoc/nowdoc, exact PHP diagnostics, partial-output behavior, and native
+  lowering unsupported, and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:106:41: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`.
+- [ ] Runtime/constants lane: implement or explicitly bound class-constant
+  string names for `defined($name)`/`constant($name)` in the real WordPress
+  6.9.4 bootstrap-shim sodium compatibility guard, starting with
+  `ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR` at
+  `<bootstrap-shim>:106:41`, with tests, CLI coverage, docs, and named
+  unsupported edges for broader dynamic class-constant lookup, autoload,
+  visibility, extension constants, exact PHP diagnostics, partial-output
   behavior, and native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 717 work, the latest committed checkpoint is
-  `6bb2775 runtime: add bounded assert builtin`, covering Milestone 716.
+- Before the current Milestone 718 work, the latest committed checkpoint is
+  `5bd9d3e runtime: add simple string interpolation`, covering Milestone 717.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

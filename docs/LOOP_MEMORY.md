@@ -26,6 +26,49 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T00:13:11Z
+
+- Checkpoint before this task: `5bd9d3e runtime: add simple string
+  interpolation`, pushed to `origin/master`.
+- Task attempted: Milestone 718, bounded simple `{$name}` interpolation for
+  the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:468:12`, corresponding to
+  `wp-includes/compat-utf8.php:468` and `$utf8 .= "{$byte1}{$byte2}";`.
+- Files changed so far: `compiler/src/lexer.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `compiler/tests/native_concat_boundary.rs`,
+  `compiler/tests/user_constants_cli.rs`, `tests/fixtures/milestone718/*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_dollar_brace_string_interpolation.*`,
+  `tests/fixtures/unsupported_dynamic_features/unsupported_braced_array_offset_interpolation.*`,
+  `README.md`, `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test dynamic_features braced -- --test-threads=1`,
+  `cargo test -p phpc --test native_global_constant_boundary braced -- --test-threads=1`,
+  `cargo test -p phpc --test native_concat_boundary braced -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone718`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone718`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_dynamic_features`,
+  `cargo test -p phpc --test user_constants_cli -- --test-threads=1`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blockers.
+- Remaining semantic gaps: complex braced interpolation, `${...}`, variable
+  variables, array-offset/object/static-property interpolation, heredoc/nowdoc,
+  class constants through `defined()`/`constant()`, full extension constant
+  catalogs, exact PHP diagnostics, partial-output behavior, and native lowering
+  remain unsupported. The real inventory now reports direct `wp-settings.php`
+  still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `runtime error at <bootstrap-shim>:106:41: unsupported call defined(): constant name must be a non-empty supported identifier or qualified name in the current subset, got ParagonIE_Sodium_Compat::LIBRARY_VERSION_MAJOR`.
+- Next concrete task: implement or explicitly bound class-constant string names
+  for `defined($name)`/`constant($name)` in the WordPress sodium compatibility
+  guard.
+
 ## Loop Event 2026-05-15T00:07:23Z
 
 - Checkpoint before this task: `6bb2775 runtime: add bounded assert builtin`,
