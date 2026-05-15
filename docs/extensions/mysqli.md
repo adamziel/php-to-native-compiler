@@ -55,12 +55,15 @@ those two fields and then `false`, and `mysqli_fetch_object()` returns one
 `stdClass` row object and then `false`. `mysqli_fetch_assoc()` uses the same
 row cursor and returns one associative PHP array with keys `ID` and
 `post_title` and then `false`. `mysqli_fetch_array($result, MYSQLI_ASSOC)`
-returns the same associative row shape and then `false`. The `MYSQLI_ASSOC`,
-`MYSQLI_NUM`, and `MYSQLI_BOTH` constants are exposed, but omitted-mode
-default `MYSQLI_BOTH`, numeric rows, and mixed rows are explicit unsupported
-boundaries. This is a fixed row-shape and cursor boundary, not SQL execution,
-database storage, WordPress content fidelity, broad fetch mode support, or
-real mysqli metadata.
+returns the same associative row shape and then `false`;
+`mysqli_fetch_array($result, MYSQLI_NUM)` returns numeric keys `0` and `1`;
+`mysqli_fetch_array($result, MYSQLI_BOTH)` and omitted mode/default
+`MYSQLI_BOTH` return both numeric and associative keys. The `MYSQLI_ASSOC`,
+`MYSQLI_NUM`, and `MYSQLI_BOTH` constants are exposed. Unsupported mode values
+remain explicit boundaries. This is a fixed row-shape and cursor boundary, not
+SQL execution, database storage, WordPress content fidelity, broad query/result
+support, duplicate-column fidelity, warning/error fidelity, or real mysqli
+metadata.
 
 Other `SELECT` statements are rejected with a specific non-empty-result-set
 diagnostic. For example, `SELECT 1` reports that

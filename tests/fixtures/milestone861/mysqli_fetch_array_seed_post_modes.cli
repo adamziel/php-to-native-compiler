@@ -1,0 +1,9 @@
+$ phpc run tests/fixtures/milestone861/mysqli_fetch_array_seed_post_modes.php
+1
+Hello world placeholder
+no-assoc
+1|1
+Hello world placeholder|Hello world placeholder
+no-row
+1|1
+Hello world placeholder|Hello world placeholder

@@ -844,10 +844,11 @@
   associative PHP array with `ID = 1` and
   `post_title = "Hello world placeholder"` before returning `false`.
   `mysqli_fetch_array($result, MYSQLI_ASSOC)` returns the same associative
-  array shape and shares that row cursor; omitted mode/default `MYSQLI_BOTH`,
-  `MYSQLI_NUM`, and `MYSQLI_BOTH` row shapes are explicit unsupported
-  boundaries. The `MYSQLI_ASSOC`, `MYSQLI_NUM`, and `MYSQLI_BOTH` constants
-  are exposed with their PHP integer values.
+  array shape, `mysqli_fetch_array($result, MYSQLI_NUM)` returns numeric keys
+  `0` and `1`, and `mysqli_fetch_array($result, MYSQLI_BOTH)` plus omitted
+  mode/default `MYSQLI_BOTH` returns both numeric and associative keys. All
+  fetch-array modes share that row cursor. The `MYSQLI_ASSOC`, `MYSQLI_NUM`,
+  and `MYSQLI_BOTH` constants are exposed with their PHP integer values.
   `mysqli_free_result($result)` releases that interpreter-owned placeholder
   result state and returns `null`. `mysqli_more_results($handle)` and
   `mysqli_next_result($handle)` return `false` for the placeholder connection.

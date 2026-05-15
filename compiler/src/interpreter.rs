@@ -4419,28 +4419,23 @@ impl Interpreter {
             ));
         }
         let result_id = expect_mysqli_result_handle("mysqli_fetch_array()", &args[0], span)?;
-        let Some(mode) = args.get(1) else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_fetch_array()",
-                    "default MYSQLI_BOTH mode is not implemented in the current subset; pass MYSQLI_ASSOC for the deterministic associative placeholder row",
-                ),
-            ));
-        };
-        if *mode != Value::Int(PHP_MYSQLI_ASSOC) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "mysqli_fetch_array()",
-                    format!(
-                        "only MYSQLI_ASSOC mode is implemented in the current subset, got {}",
-                        mode.type_name()
+        let mode = match args.get(1) {
+            Some(Value::Int(mode @ (PHP_MYSQLI_ASSOC | PHP_MYSQLI_NUM | PHP_MYSQLI_BOTH))) => *mode,
+            Some(mode) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mysqli_fetch_array()",
+                        format!(
+                            "mode must be MYSQLI_ASSOC, MYSQLI_NUM, or MYSQLI_BOTH in the current subset, got {}",
+                            mode.type_name()
+                        ),
                     ),
-                ),
-            ));
-        }
-        self.fetch_mysqli_assoc_row("mysqli_fetch_array()", result_id, span)
+                ));
+            }
+            None => PHP_MYSQLI_BOTH,
+        };
+        self.fetch_mysqli_array_row("mysqli_fetch_array()", result_id, mode, span)
     }
 
     fn fetch_mysqli_assoc_row(
@@ -4462,6 +4457,35 @@ impl Interpreter {
         let mut array = PhpArray::new();
         for (name, value) in row {
             array.insert(name, value);
+        }
+        Ok(Value::Array(array))
+    }
+
+    fn fetch_mysqli_array_row(
+        &mut self,
+        function: &str,
+        result_id: i64,
+        mode: i64,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let row = {
+            let state = self.mysqli_result_state_mut(function, result_id, span)?;
+            if state.row_cursor >= state.rows.len() {
+                return Ok(Value::Bool(false));
+            }
+            let row = state.rows[state.row_cursor].clone();
+            state.row_cursor += 1;
+            row
+        };
+
+        let mut array = PhpArray::new();
+        for (index, (name, value)) in row.into_iter().enumerate() {
+            if mode == PHP_MYSQLI_NUM || mode == PHP_MYSQLI_BOTH {
+                array.insert(index as i64, value.clone());
+            }
+            if mode == PHP_MYSQLI_ASSOC || mode == PHP_MYSQLI_BOTH {
+                array.insert(name, value);
+            }
         }
         Ok(Value::Array(array))
     }

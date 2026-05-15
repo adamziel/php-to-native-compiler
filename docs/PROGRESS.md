@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added Milestone 861, deterministic `mysqli_fetch_array()` numeric and mixed
+  row hydration for the seed-post placeholder result. The runtime now accepts
+  `mysqli_fetch_array($result, MYSQLI_NUM)`,
+  `mysqli_fetch_array($result, MYSQLI_BOTH)`, and omitted mode defaulting to
+  `MYSQLI_BOTH`, returning numeric and/or associative keys for the exact
+  `SELECT ID, post_title FROM wp_posts WHERE ID = 1` row and sharing the same
+  one-row cursor semantics. Invalid mode values remain a named unsupported
+  boundary. This is not broad fetch-mode support, arbitrary SQL row hydration,
+  real database state, real MySQLi warning/error behavior, duplicate-column
+  fidelity, or native database lowering. Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone861`.
+
 - Added Milestone 860, a synthetic WordPress-shaped `wpdb::get_results()`
   smoke that consumes the deterministic seed-post placeholder result through
   `mysqli_fetch_array($result, MYSQLI_ASSOC)`. The fixture stores the

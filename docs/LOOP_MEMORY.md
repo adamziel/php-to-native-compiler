@@ -29,6 +29,32 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-15T00:00:00Z
 
 - Checkpoint before this task:
+  `4a1658e tests: add wordpress wpdb fetch array smoke`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 861, deterministic `mysqli_fetch_array()` numeric
+  and mixed row hydration for the seed-post placeholder result.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/tests/mysqli_extension.rs`, `tests/fixtures/milestone861/*`,
+  `docs/PROGRESS.md`, `docs/SUPPORT.md`, `docs/extensions/mysqli.md`,
+  `docs/NEXT_TASKS.md`, `GOAL.MD`, `docs/WORDPRESS_COMPATIBILITY.md`, and
+  `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test mysqli_extension -- --nocapture`, and
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone861`
+  passed.
+- Current WordPress frontier: the exact seed-post placeholder result can now be
+  consumed through `mysqli_fetch_array()` with `MYSQLI_ASSOC`, `MYSQLI_NUM`,
+  explicit `MYSQLI_BOTH`, or omitted mode/default `MYSQLI_BOTH`.
+- Remaining semantic gaps: arbitrary result schemas, real SQL execution,
+  database state, query parsing, duplicate-column fidelity, MySQLi
+  warnings/errors, real WordPress `wpdb` fidelity, and native database lowering
+  remain missing.
+- Next concrete task: run diff checks and the full serialized checkpoint gate.
+
+## Loop Event 2026-05-15T00:00:00Z
+
+- Checkpoint before this task:
   `d6dc445 runtime: add wordpress mysqli fetch array assoc`, pushed to
   `origin/master`.
 - Task attempted: Milestone 860, a synthetic WordPress-shaped
