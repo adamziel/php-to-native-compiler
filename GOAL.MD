@@ -188,11 +188,12 @@ For full PHP and WordPress compatibility, the highest-risk missing systems are:
    heap/lifetime management, helper calls, and native diagnostics.
 
 For WordPress specifically, the next visible bootstrap-shim blocker after the
-Milestone 722 `(array)` cast slice is nested assignment targets:
-`parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
-That opens a broader lvalue lane: multi-level array offsets, append-at-depth,
-missing-container materialization, evaluation order, references/copy-on-write,
-and object/ArrayAccess boundaries.
+Milestone 723 nested assignment slice is `clone`:
+`parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
+That opens an object-lifecycle lane: cloned object handles, shallow property
+copying under the current value model, `__clone` dispatch, visibility around
+clone methods, nested object/reference properties, references/copy-on-write,
+and exact PHP diagnostics.
 
 - Native execution is missing linked binaries, runtime ABI, boxed values in
   generated code, stack frames, heap management, runtime helper calls,
@@ -251,9 +252,9 @@ Full WordPress support is still missing at several layers:
 1. Bootstrap correctness: direct `wp-settings.php` still needs a faithful
    entrypoint/environment policy for `ABSPATH`, include path, configuration,
    source mapping, and autoload behavior.
-2. PHP language semantics: nested assignment targets, references,
-   copy-on-write, by-reference calls/returns, closures with capture and
-   invocation, generators, `match`, named arguments, spread/unpack, full
+2. PHP language semantics: references, copy-on-write, by-reference
+   calls/returns, closures with capture and invocation, generators, `match`,
+   named arguments, spread/unpack, full
    namespace/import forms, and version-specific parse/runtime behavior.
 3. Object model: full constructors/inheritance, interfaces, traits, enums,
    magic methods, dynamic properties/methods, typed/default properties,
@@ -296,10 +297,10 @@ The repository already has a working Rust workspace with:
 - fixture coverage under `tests/fixtures`, optional system PHP comparison, and
   operational automation under `tools/` and `docs/OPERATIONS.md`.
 - a repeatable external WordPress 6.9.4 inventory flow whose bootstrap-shim
-  probe currently advances through the bounded `(array)` cast slice and then
-  stops at nested assignment targets. The direct `wp-settings.php` probe still
-  stops at undefined `ABSPATH`, which is an entrypoint/environment issue rather
-  than proof of core bootstrap support.
+  probe currently advances through the bounded nested assignment slice and then
+  stops at `clone`. The direct `wp-settings.php` probe still stops at undefined
+  `ABSPATH`, which is an entrypoint/environment issue rather than proof of core
+  bootstrap support.
 
 Read these before changing behavior: `AGENTS.md`, `docs/PROGRESS.md`,
 `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`, `docs/COMPATIBILITY.md`,

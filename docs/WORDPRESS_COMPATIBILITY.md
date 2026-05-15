@@ -212,6 +212,13 @@ The first bootstrap probe is expected to fail. Known blockers include:
   references/copy-on-write, exact PHP diagnostics, partial-output behavior, or
   native lowering. The bootstrap-shim probe now reaches
   `parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
+  Milestone 723 covers direct-variable nested array-offset assignment
+  expressions for the sodium compatibility context-array paths. This is not
+  append-at-depth, nested compound assignment, nested `??=`, nested
+  increment/decrement, mixed object/property/ArrayAccess targets,
+  references/copy-on-write, exact PHP warning behavior, partial-output
+  behavior, or native lowering. The bootstrap-shim probe now reaches
+  `parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

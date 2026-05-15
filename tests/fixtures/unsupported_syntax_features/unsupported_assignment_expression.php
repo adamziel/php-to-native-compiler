@@ -1,3 +1,3 @@
 <?php
 $items = [];
-echo ($items["outer"]["inner"] = "value");
+echo ($items[]["inner"] = "value");

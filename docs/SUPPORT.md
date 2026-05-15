@@ -28,14 +28,19 @@
   `$array[] = expr` is supported as a standalone assignment expression with an
   assignment result value. Direct array-offset
   assignment expressions evaluate the key before the right-hand expression and
-  materialize undefined or `null` target variables as arrays. Direct
-  append-offset assignment expressions evaluate the right-hand expression,
-  append to direct array variables, materialize undefined or `null` target
-  variables as arrays, and return the appended value. Direct object-property
-  assignment expressions evaluate the right-hand expression, then write
-  existing declared public property slots on direct object variables.
-  Append-offset chained assignment expressions, nested-offset assignment
-  expressions, dynamic property names, missing property materialization,
+  materialize undefined or `null` target variables as arrays. Nested
+  direct-variable array-offset assignment expressions such as
+  `$array[$outer][$inner] = expr` evaluate all index expressions left to right
+  before the right-hand expression, materialize undefined, missing, or `null`
+  array containers under the current no-reference/no-copy-on-write model, and
+  return the assigned value. Direct append-offset assignment expressions
+  evaluate the right-hand expression, append to direct array variables,
+  materialize undefined or `null` target variables as arrays, and return the
+  appended value. Direct object-property assignment expressions evaluate the
+  right-hand expression, then write existing declared public property slots on
+  direct object variables. Append-at-depth, nested compound assignment,
+  nested `??=`, nested increment/decrement, mixed object/property/ArrayAccess
+  targets, dynamic property names, missing property materialization,
   references/copy-on-write, and native lowering remain unsupported. Simple
   positional statement-form array destructuring `list($a, $b) = expr;` is
   supported for direct variable targets when the right-hand side evaluates to a

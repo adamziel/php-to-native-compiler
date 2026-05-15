@@ -67,6 +67,81 @@ echo ($nullable["slot"] = "materialized"), ":", $nullable["slot"], "\n";
 }
 
 #[test]
+fn nested_array_offset_assignment_expressions_return_assigned_values() {
+    let execution = run_source(
+        r#"<?php
+$items = [];
+echo ($items["outer"]["inner"] = "Ada"), ":", $items["outer"]["inner"], "\n";
+
+$created["a"]["b"] = "made";
+echo $created["a"]["b"], "\n";
+
+$nullable = null;
+echo ($nullable["x"]["y"] = 7), ":", $nullable["x"]["y"], "\n";
+
+$deep = [];
+echo ($deep["a"]["b"]["c"] = "deep"), ":", $deep["a"]["b"]["c"], "\n";
+
+$existing = ["outer" => ["keep" => "yes"]];
+echo ($existing["outer"]["new"] = "new"), ":", $existing["outer"]["keep"], ":", $existing["outer"]["new"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Ada:Ada\nmade\n7:7\ndeep:deep\nnew:yes:new\n"
+    );
+}
+
+#[test]
+fn nested_array_offset_assignment_evaluates_keys_before_rhs() {
+    let execution = run_source(
+        r#"<?php
+function first_key() {
+    echo "first-key\n";
+    return "outer";
+}
+function second_key() {
+    echo "second-key\n";
+    return "inner";
+}
+function next_value() {
+    echo "rhs\n";
+    return "value";
+}
+$items = [];
+echo ($items[first_key()][second_key()] = next_value()), ":", $items["outer"]["inner"], "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first-key\nsecond-key\nrhs\nvalue:value\n"
+    );
+}
+
+#[test]
+fn nested_array_offset_assignment_rejects_non_array_intermediate_values() {
+    let error = run_source(
+        r#"<?php
+$items = ["outer" => 1];
+echo ($items["outer"]["inner"] = "x");
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(
+        error.message,
+        "invalid array access: cannot write offset on int"
+    );
+}
+
+#[test]
 fn direct_append_offset_assignment_expressions_return_assigned_values() {
     let execution = run_source(
         r#"<?php
@@ -350,11 +425,6 @@ fn chained_assignment_rejects_append_offset_targets() {
 fn assignment_expression_rejects_complex_targets() {
     let cases = [
         (
-            "<?php\n$items = [];\necho ($items['outer']['inner'] = 'value');\n",
-            3,
-            32,
-        ),
-        (
             "<?php\nclass Box { public $value; }\n$box = new Box();\necho (($box->value)->nested = 2);\n",
             4,
             29,
@@ -395,6 +465,14 @@ fn append_offsets_remain_unsupported_as_reads() {
 #[test]
 fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$value = 1;\necho ($value = 2);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 7);
+    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+
+    let error = emit_ir_source("<?php\n$items = 1;\necho ($items['outer']['inner'] = 'value');\n")
+        .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 3);

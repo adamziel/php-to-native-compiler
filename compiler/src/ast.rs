@@ -202,6 +202,11 @@ pub enum AssignTarget {
         index: Option<Expr>,
         span: Span,
     },
+    NestedArrayIndex {
+        name: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     Property {
         object: String,
         property: String,
@@ -319,6 +324,7 @@ impl AssignTarget {
             AssignTarget::Variable { span, .. }
             | AssignTarget::List { span, .. }
             | AssignTarget::ArrayIndex { span, .. }
+            | AssignTarget::NestedArrayIndex { span, .. }
             | AssignTarget::Property { span, .. }
             | AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }

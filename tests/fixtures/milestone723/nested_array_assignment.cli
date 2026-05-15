@@ -1,0 +1,8 @@
+exit: 0
+stdout:
+Ada
+made
+deep:deep
+done--- stdout end ---
+stderr:
+--- stderr end ---

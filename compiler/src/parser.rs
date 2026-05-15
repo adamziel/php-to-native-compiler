@@ -1804,7 +1804,8 @@ impl Parser {
                     | AssignTarget::SelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. } => {}
-                    AssignTarget::ArrayIndex { index: None, .. } => {
+                    AssignTarget::NestedArrayIndex { .. }
+                    | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
                             unsupported_null_coalescing_assignment_message(),
@@ -1931,8 +1932,9 @@ impl Parser {
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
-            AssignTarget::List { .. } => Err(unsupported_compound_assignment_target_message()),
-            AssignTarget::ArrayIndex { index: None, .. } => {
+            AssignTarget::List { .. }
+            | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_compound_assignment_target_message())
             }
         }
@@ -1949,8 +1951,9 @@ impl Parser {
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(()),
-            AssignTarget::List { .. } => Err(unsupported_increment_decrement_target_message()),
-            AssignTarget::ArrayIndex { index: None, .. } => {
+            AssignTarget::List { .. }
+            | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::ArrayIndex { index: None, .. } => {
                 Err(unsupported_increment_decrement_target_message())
             }
         }
@@ -2067,18 +2070,23 @@ impl Parser {
     ) -> Result<AssignTarget, &'static str> {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
-            Expr::Index {
-                target,
-                index,
-                span,
-            } => match *target {
-                Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
-                    name,
-                    index: Some(*index),
-                    span,
-                }),
-                _ => Err(unsupported_assignment_expression_target_message()),
-            },
+            Expr::Index { .. } => {
+                let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
+                    .ok_or(unsupported_assignment_expression_target_message())?;
+                if indices.len() == 1 {
+                    Ok(AssignTarget::ArrayIndex {
+                        name,
+                        index: Some(indices.remove(0)),
+                        span,
+                    })
+                } else {
+                    Ok(AssignTarget::NestedArrayIndex {
+                        name,
+                        indices,
+                        span,
+                    })
+                }
+            }
             Expr::AppendIndex { target, span } => match *target {
                 Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
                     name,
@@ -2119,6 +2127,25 @@ impl Parser {
             }
             Expr::Array { .. } => Err(unsupported_array_destructuring_assignment_message()),
             _ => Err(unsupported_assignment_expression_target_message()),
+        }
+    }
+
+    fn array_index_path_from_expr(expr: Expr) -> Option<(String, Vec<Expr>, Span)> {
+        match expr {
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => match *target {
+                Expr::Variable(name, _) => Some((name, vec![*index], span)),
+                nested @ Expr::Index { .. } => {
+                    let (name, mut indices, span) = Self::array_index_path_from_expr(nested)?;
+                    indices.push(*index);
+                    Some((name, indices, span))
+                }
+                _ => None,
+            },
+            _ => None,
         }
     }
 

@@ -26,6 +26,44 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T02:35:00Z
+
+- Checkpoint before this task: `7c76fba runtime: add bounded array casts`,
+  pushed to `origin/master`.
+- Task attempted: Milestone 723, bounded direct-variable nested array-offset
+  assignment expressions for the real WordPress 6.9.4 bootstrap-shim blocker
+  at `<bootstrap-shim>:1075:43`.
+- Files changed so far: `compiler/src/ast.rs`, `compiler/src/parser.rs`,
+  `compiler/src/interpreter.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/assignment_expression.rs`,
+  `compiler/tests/assignment_expression_cli.rs`,
+  `tests/fixtures/milestone723/*`, `README.md`, `GOAL.MD`,
+  `docs/SUPPORT.md`, `docs/ARCHITECTURE.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test assignment_expression nested_array -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_expression_position_assignment_forms_have_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test assignment_expression_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone723`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone723`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+- Remaining semantic gaps: append-at-depth, nested compound assignment,
+  nested `??=`, nested increment/decrement, mixed object/property/ArrayAccess
+  targets, references/copy-on-write, exact PHP warning behavior,
+  partial-output behavior, and native lowering remain unsupported. The direct
+  WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`,
+  while the bootstrap-shim probe reaches
+  `parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
+- Next concrete task: implement or explicitly bound `clone` expressions while
+  keeping `__clone`, references/copy-on-write, and native lowering explicit.
+
 ## Loop Event 2026-05-15T02:10:00Z
 
 - Checkpoint before this task: `a15e8a2 runtime: add bounded float casts`,

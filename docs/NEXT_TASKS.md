@@ -6629,18 +6629,29 @@ handled.
   slice supports null/scalar/array casts, keeps object/Closure/resource-heavy
   behavior explicit, and advances the real bootstrap-shim probe to
   `parse error at <bootstrap-shim>:1075:43: unsupported assignment expression target: only direct static variables, direct array offsets, direct append offsets, and direct object properties are implemented; nested targets are not implemented`.
-- [ ] Parser/runtime lane: implement or explicitly bound nested assignment
+- [x] Parser/runtime lane: implement or explicitly bound nested assignment
   expression targets such as multi-level array offsets for the real WordPress
   6.9.4 bootstrap-shim blocker at `<bootstrap-shim>:1075:43`, with tests,
   CLI coverage, docs, and named unsupported edges for references,
   copy-on-write, append-at-depth, missing-container materialization, evaluation
   order, object/ArrayAccess targets, exact PHP diagnostics, partial-output
-  behavior, and native lowering.
+  behavior, and native lowering. The Milestone 723 slice supports
+  direct-variable nested array-offset assignment expressions, keeps
+  append-at-depth and nested read-modify-write forms explicit, and advances the
+  real bootstrap-shim probe to
+  `parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
+- [ ] Parser/runtime lane: implement or explicitly bound `clone` expressions
+  for the real WordPress 6.9.4 bootstrap-shim blocker at
+  `<bootstrap-shim>:1324:9`, with tests, CLI coverage, docs, and named
+  unsupported edges for `__clone` dispatch, private/protected clone methods,
+  object handle identity, nested object/reference properties,
+  references/copy-on-write, exact PHP diagnostics, partial-output behavior, and
+  native lowering.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 722 checkpoint, the latest committed checkpoint
-  is `a15e8a2 runtime: add bounded float casts`, covering Milestone 721.
+- Before the current Milestone 723 checkpoint, the latest committed checkpoint
+  is `7c76fba runtime: add bounded array casts`, covering Milestone 722.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added Milestone 723, a bounded nested array-offset assignment slice through
+  `phpc run`. Assignment expressions with a direct variable root and multiple
+  explicit array indices, such as `$ctx[0][$i] = $value`, now flatten into a
+  nested array assignment target. The interpreter evaluates index expressions
+  left to right before the right-hand side, materializes undefined, missing, or
+  `null` containers as arrays under the current no-reference/no-copy-on-write
+  value model, writes the final offset, and returns the assigned value.
+  Append-at-depth, compound assignment, `??=`, increment/decrement, mixed
+  object/property/ArrayAccess targets, references/copy-on-write, exact PHP
+  warning behavior, partial-output behavior, and native lowering remain
+  unsupported. The direct WordPress probe still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap-shim probe advances past the nested sodium compatibility
+  context assignments and now stops at
+  `parse error at <bootstrap-shim>:1324:9: unsupported clone expression: object handle copying and __clone dispatch are not implemented`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test assignment_expression nested_array -- --test-threads=1`,
+  `cargo test -p phpc --test syntax_boundaries unsupported_expression_position_assignment_forms_have_stable_parse_errors -- --test-threads=1`,
+  `cargo test -p phpc --test assignment_expression_cli -- --test-threads=1`,
+  `cargo run -p phpc -- test tests/fixtures/milestone723`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone723`,
+  `cargo run -p phpc -- test tests/fixtures/unsupported_syntax_features`,
+  and
+  `tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed/reported the next blocker.
+
 - Added Milestone 722, a bounded `(array)` cast expression slice through
   `phpc run`. The parser now accepts `(array)`, and the interpreter converts
   `null` to an empty array, current scalar values to a one-element array at key

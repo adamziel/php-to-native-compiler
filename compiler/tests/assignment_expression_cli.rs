@@ -18,6 +18,7 @@ fn assignment_expression_cli_snapshots_match_committed_outputs() {
         "tests/fixtures/milestone147",
         "tests/fixtures/milestone148",
         "tests/fixtures/milestone149",
+        "tests/fixtures/milestone723",
     ] {
         fixtures.extend(cli_snapshot_fixtures(&workspace_root.join(fixture_dir)));
     }

@@ -1678,6 +1678,19 @@ impl Interpreter {
 
                 Ok(value)
             }
+            AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let value = self.evaluate(expr, scope)?;
+                Self::write_nested_array_assignment(name, &keys, value.clone(), *span, scope)?;
+                Ok(value)
+            }
             AssignTarget::Property {
                 object,
                 property,
@@ -1728,6 +1741,71 @@ impl Interpreter {
                 self.write_late_static_property(property, value, *span)
             }
         }
+    }
+
+    fn write_nested_array_assignment(
+        name: &str,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let slot = scope.array_slot_for_static_write(name);
+
+        if matches!(slot, Value::Null) {
+            *slot = Value::Array(PhpArray::new());
+        }
+
+        match slot {
+            Value::Array(array) => Self::write_nested_array_value(array, keys, value, span),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn write_nested_array_value(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some((key, rest)) = keys.split_first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array assignment",
+                    "nested array assignment requires at least one key",
+                ),
+            ));
+        };
+
+        if rest.is_empty() {
+            array.insert(key.clone(), value);
+            return Ok(());
+        }
+
+        let mut child = match array.get(key.clone()).cloned() {
+            Some(Value::Array(child)) => child,
+            Some(Value::Null) | None => PhpArray::new(),
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot write offset on {}",
+                        other.type_name()
+                    )),
+                ));
+            }
+        };
+
+        Self::write_nested_array_value(&mut child, rest, value, span)?;
+        array.insert(key.clone(), Value::Array(child));
+        Ok(())
     }
 
     fn evaluate_list_assignment(
@@ -1847,6 +1925,13 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
+            AssignTarget::NestedArrayIndex { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "compound assignment",
+                    "nested array targets are not implemented",
+                ),
+            )),
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -2071,6 +2156,13 @@ impl Interpreter {
                     None => Err(runtime_error(span, RuntimeError::undefined_variable(name))),
                 }
             }
+            AssignTarget::NestedArrayIndex { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "increment/decrement",
+                    "nested array targets are not implemented",
+                ),
+            )),
             AssignTarget::ArrayIndex { index: None, .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -2236,6 +2328,10 @@ impl Interpreter {
             } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call("??=", "append-offset targets are not implemented"),
+            )),
+            AssignTarget::NestedArrayIndex { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call("??=", "nested array targets are not implemented"),
             )),
             AssignTarget::Property {
                 object,
