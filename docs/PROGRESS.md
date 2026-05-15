@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added Milestone 821, strict identity for current ordered arrays. The runtime
+  now lets `===` and `!==` compare arrays by length, identical normalized
+  integer/string keys in the same insertion order, and recursive strict value
+  identity over the implemented value model. This covers the reached WordPress
+  empty-array/list-shape comparisons such as `array() === $value` and
+  `array_values($arr) === $arr`. This is not reference identity,
+  copy-on-write semantics, recursive-array cycle handling, resource support,
+  Closure object identity, exact PHP diagnostics, or native lowering. The real
+  WordPress 6.9.4 bootstrap-shim probe now advances past the strict array
+  identity comparison to
+  `runtime error at <bootstrap-shim>:3495:12: undefined function ltrim()`,
+  with the reached source likely in the localization path such as
+  `wp-includes/l10n.php:1051`. Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime strict_identity -- --nocapture`,
+  `cargo test -p phpc --test strict_identity -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone821`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 820, bounded deterministic `uniqid()` and HMAC-SHA256
   `hash_hmac()` support for the reached WordPress `wpdb::placeholder_escape()`
   hash expression. The runtime now exposes `uniqid` and `hash_hmac` through
@@ -5838,10 +5860,9 @@ Tested:
   fixture.
 - `cargo run -p phpc -- test --compare-php tests/fixtures/milestone48` passes
   with 1 system PHP comparison.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented`.
-- `cargo run -p phpc -- run tests/fixtures/runtime_errors/strict_identity_object.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/strict_identity_object.php:5:6: unsupported comparison: strict identity for objects is not implemented`.
+- Earlier runtime-error fixtures for array/object strict identity were
+  superseded by later supported strict identity tests for current arrays and
+  object handles.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/break_while.php`
   prints `0,1,2,after:2`.
 - `cargo run -p phpc -- run tests/fixtures/milestone6/continue_while.php`

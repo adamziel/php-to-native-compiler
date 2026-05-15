@@ -137,7 +137,8 @@ Implemented now:
 - `Float`
 - `String`
 - ordered PHP arrays with integer/string keys, including a bounded numeric
-  key-sort helper for the reached `ksort(..., SORT_NUMERIC)` path
+  key-sort helper for the reached `ksort(..., SORT_NUMERIC)` path and ordered
+  strict identity comparison over the current key/value model
 - class metadata, object-shape descriptors, and minimal object values for
   `new ClassName(...)` over declared classes, process-local object handles,
   public instance properties including inherited public slots, inherited

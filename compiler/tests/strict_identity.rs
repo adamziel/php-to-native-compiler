@@ -1,4 +1,3 @@
-use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
 #[test]
@@ -51,19 +50,6 @@ str1|str1:10
 }
 
 #[test]
-fn strict_identity_rejects_arrays_until_array_identity_exists() {
-    let error = run_source("<?php\necho [] === [];\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported comparison: strict identity for arrays is not implemented"
-    );
-}
-
-#[test]
 fn strict_identity_checks_object_handle_identity() {
     let execution = run_source(
         r#"<?php
@@ -82,6 +68,36 @@ if ($left !== $right) {
     .unwrap();
 
     assert_eq!(execution.stdout, "same\ndifferent\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strict_identity_executes_for_current_ordered_array_subset() {
+    let execution = run_source(
+        r#"<?php
+function bit($value) {
+    return $value ? "1" : "0";
+}
+
+$list = array(1, "2", null);
+$same = array_values($list);
+$reordered = array(1 => "2", 0 => 1, 2 => null);
+$different_type = array(1, 2, null);
+$nested = array("items" => $list);
+$nested_same = array("items" => $same);
+
+echo bit(array() === array()), "\n";
+echo bit($list === $same), "\n";
+echo bit($list === $reordered), "\n";
+echo bit($list !== $reordered), "\n";
+echo bit($list === $different_type), "\n";
+echo bit($nested === $nested_same), "\n";
+echo bit($list === null), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\n1\n0\n1\n0\n1\n0\n");
     assert_eq!(execution.exit_code, 0);
 }
 

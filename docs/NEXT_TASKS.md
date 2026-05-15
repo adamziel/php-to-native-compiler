@@ -7522,17 +7522,25 @@ handled.
   Milestone 820 uses the Rust `hmac` and `sha2` crates and advances the real
   bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:241:8: unsupported comparison: strict identity for arrays is not implemented`.
-- [ ] Runtime/comparison lane: implement strict identity for current arrays
+- [x] Runtime/comparison lane: implement strict identity for current arrays
   over the ordered array value model, enough for reached WordPress empty-array
   comparison shapes such as `array() === $value` and
   `array_values($arr) === $arr`. Keep references, recursive arrays,
   object/resource values, copy-on-write identity, exact diagnostics, and native
   lowering named unless implemented.
+  Milestone 821 advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:3495:12: undefined function ltrim()`,
+  likely in the localization path around `wp-includes/l10n.php:1051`.
+- [ ] Runtime/string lane: implement the reached bounded `ltrim($value, '/')`
+  behavior for WordPress localization/plugin-path handling. Keep broad
+  character-mask range semantics, binary/invalid UTF-8 behavior, array/object
+  coercions, exact warnings/errors, locale-sensitive assumptions, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 820 checkpoint, the latest committed checkpoint
-  is `450e435 runtime: add bounded rand`, covering Milestone 819.
+- Before the current Milestone 821 checkpoint, the latest committed checkpoint
+  is `f0d13dc runtime: add bounded hmac hashing`, covering Milestone 820.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

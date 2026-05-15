@@ -26,6 +26,40 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T12:45:00Z
+
+- Checkpoint before this task:
+  `f0d13dc runtime: add bounded hmac hashing`, pushed to `origin/master`.
+- Task attempted: Milestone 821, strict identity for current ordered arrays to
+  cover the reached WordPress empty-array/list-shape comparisons.
+- Files changed so far: `runtime/src/lib.rs`,
+  `compiler/tests/strict_identity.rs`, `tests/fixtures/milestone821/*`,
+  removed obsolete `tests/fixtures/runtime_errors/strict_identity_array.*`,
+  `GOAL.MD`, `docs/ARCHITECTURE.md`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p php_runtime strict_identity -- --nocapture`,
+  `cargo test -p phpc --test strict_identity -- --nocapture`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone821`,
+  `cargo run -p phpc -- test tests/fixtures/runtime_errors`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- WordPress probe: direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  The bootstrap shim now advances to
+  `runtime error at <bootstrap-shim>:3495:12: undefined function ltrim()`,
+  likely in the localization path around `wp-includes/l10n.php:1051`.
+- Remaining semantic gaps: references, copy-on-write identity, recursive-array
+  cycle handling, resources, Closure object identity, exact PHP diagnostics,
+  native lowering, and real WordPress bootstrap support remain unsupported.
+- Next concrete task: implement the reached bounded `ltrim($value, '/')`
+  string builtin behavior while keeping broad character-mask range semantics,
+  binary/invalid UTF-8 behavior, array/object coercions, exact warnings/errors,
+  and native lowering named unless implemented.
+
 ## Loop Event 2026-05-15T12:15:00Z
 
 - Checkpoint before this task:

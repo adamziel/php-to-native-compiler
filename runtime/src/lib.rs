@@ -695,6 +695,23 @@ impl PhpArray {
             .all(|(index, entry)| entry.key == ArrayKey::Int(index as i64))
     }
 
+    pub fn is_identical_to(&self, other: &Self) -> RuntimeResult<bool> {
+        if self.entries.len() != other.entries.len() {
+            return Ok(false);
+        }
+
+        for (left, right) in self.entries.iter().zip(other.entries.iter()) {
+            if left.key != right.key {
+                return Ok(false);
+            }
+            if !left.value.php_identical_checked(&right.value)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -3012,11 +3029,8 @@ impl Value {
 
     pub fn php_identical_checked(&self, other: &Value) -> RuntimeResult<bool> {
         match (self, other) {
-            (Value::Array(_), _) | (_, Value::Array(_)) => {
-                Err(RuntimeError::unsupported_comparison(
-                    "strict identity for arrays is not implemented",
-                ))
-            }
+            (Value::Array(left), Value::Array(right)) => left.is_identical_to(right),
+            (Value::Array(_), _) | (_, Value::Array(_)) => Ok(false),
             (Value::Object(left), Value::Object(right)) => Ok(left.id() == right.id()),
             (Value::Object(_), _) | (_, Value::Object(_)) => Ok(false),
             _ => Ok(self.php_identical_scalar(other)),
@@ -3869,22 +3883,51 @@ mod tests {
     }
 
     #[test]
-    fn strict_identity_rejects_arrays_and_checks_object_handles() {
-        let error = Value::Array(PhpArray::new())
+    fn strict_identity_matches_php_array_ordered_key_value_subset() {
+        assert!(Value::Array(PhpArray::new())
             .php_identical_checked(&Value::Array(PhpArray::new()))
-            .unwrap_err();
+            .unwrap());
 
-        assert_eq!(
-            error.kind(),
-            &RuntimeErrorKind::UnsupportedComparison {
-                reason: "strict identity for arrays is not implemented".to_string(),
-            }
-        );
-        assert_eq!(
-            error.message(),
-            "unsupported comparison: strict identity for arrays is not implemented"
-        );
+        let mut left = PhpArray::new();
+        left.insert(0, Value::String("first".to_string()));
+        left.insert(1, Value::Int(2));
 
+        let mut same = PhpArray::new();
+        same.insert(0, Value::String("first".to_string()));
+        same.insert(1, Value::Int(2));
+
+        let mut different_order = PhpArray::new();
+        different_order.insert(1, Value::Int(2));
+        different_order.insert(0, Value::String("first".to_string()));
+
+        let mut different_value_type = PhpArray::new();
+        different_value_type.insert(0, Value::String("first".to_string()));
+        different_value_type.insert(1, Value::String("2".to_string()));
+
+        let mut nested_left = PhpArray::new();
+        nested_left.insert("items", Value::Array(left.clone()));
+        let mut nested_same = PhpArray::new();
+        nested_same.insert("items", Value::Array(same.clone()));
+
+        assert!(Value::Array(left.clone())
+            .php_identical_checked(&Value::Array(same))
+            .unwrap());
+        assert!(!Value::Array(left.clone())
+            .php_identical_checked(&Value::Array(different_order))
+            .unwrap());
+        assert!(!Value::Array(left.clone())
+            .php_identical_checked(&Value::Array(different_value_type))
+            .unwrap());
+        assert!(Value::Array(nested_left)
+            .php_identical_checked(&Value::Array(nested_same))
+            .unwrap());
+        assert!(!Value::Array(left)
+            .php_identical_checked(&Value::Null)
+            .unwrap());
+    }
+
+    #[test]
+    fn strict_identity_checks_object_handles() {
         let mut classes = PhpClassTable::new();
         let class_id = classes.declare_class("Box").unwrap();
         let class = classes.get(class_id).unwrap();

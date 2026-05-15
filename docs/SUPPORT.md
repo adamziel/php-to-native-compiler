@@ -173,7 +173,9 @@
 - loose comparisons: `==`, `!=`, `<`, `<=`, `>`, `>=` across the current
   scalar values (`null`, booleans, integers, floats, and strings)
 - strict identity comparisons: `===` and `!==` across the current scalar
-  values only (`null`, booleans, integers, floats, and strings)
+  values (`null`, booleans, integers, floats, and strings), object handles,
+  and ordered arrays with current integer/string keys and recursive strict
+  value comparison over implemented values
 - logical operators `&&`, `||`, `and`, `xor`, and `or` over the current value
   model: operands use PHP-style truthiness, results are booleans, `&&`, `||`,
   `and`, and `or` evaluate right operands lazily, `xor` evaluates both
@@ -1626,12 +1628,15 @@
   for the current scalar values using PHP 8-style behavior for booleans,
   numeric strings, non-numeric strings, empty strings, `null`, integers, and
   floats. Strict identity operators `===` and `!==` execute for the current
-  scalar values with type-and-value semantics and no numeric/string coercion.
-  This is not PHP's full comparison matrix: strict identity for arrays,
-  objects, resources, references, object handle identity, and edge cases around
+  scalar values with type-and-value semantics and no numeric/string coercion,
+  for object values by current object handle identity, and for arrays by
+  comparing the same ordered key/value pairs recursively with strict value
+  semantics. This is not PHP's full comparison matrix: resources, references,
+  copy-on-write identity, recursive arrays, Closure object identity, exact PHP
+  object comparison behavior beyond handle identity, and edge cases around
   `NAN`/`INF` and PHP-version-specific float string precision are not covered.
-  Object loose comparisons and strict identity involving array/object operands
-  in `phpc run` fail with explicit unsupported-comparison runtime errors.
+  Object loose comparisons in `phpc run` fail with explicit
+  unsupported-comparison runtime errors.
 - Conditionals: statement-form `if` supports zero or more `elseif` clauses and
   an optional `else` clause over the current expression and truthiness subset.
   Branch bodies may be brace blocks or single statements. Alternate

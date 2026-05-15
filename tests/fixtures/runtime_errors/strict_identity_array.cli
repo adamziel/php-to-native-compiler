@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-runtime error at tests/fixtures/runtime_errors/strict_identity_array.php:2:6: unsupported comparison: strict identity for arrays is not implemented
---- stderr end ---

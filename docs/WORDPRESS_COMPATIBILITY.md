@@ -1056,6 +1056,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   generated IDs, exact diagnostics, or native lowering. The real
   bootstrap-shim probe now advances to
   `runtime error at <bootstrap-shim>:241:8: unsupported comparison: strict identity for arrays is not implemented`.
+  Milestone 821 implements strict identity for current ordered arrays by
+  comparing identical keys in insertion order and recursively comparing values
+  with strict identity over the implemented value model. This covers the
+  reached empty-array/list-shape comparison paths such as
+  `array() === $value` and `array_values($arr) === $arr`. This is not reference
+  identity, copy-on-write semantics, recursive-array cycle handling, resource
+  support, Closure object identity, exact PHP diagnostics, or native lowering.
+  The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:3495:12: undefined function ltrim()`,
+  likely in the localization path around `wp-includes/l10n.php:1051`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

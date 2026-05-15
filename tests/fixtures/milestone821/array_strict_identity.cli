@@ -1,0 +1,10 @@
+{
+  "args": [
+    "run",
+    "tests/fixtures/milestone821/array_strict_identity.php"
+  ],
+  "stdin": "",
+  "stdout": "empty-same\nlist-same\norder-different\nnot-order-same\ntype-different\nnested-same\narray-null-different",
+  "stderr": "",
+  "exit": 0
+}
