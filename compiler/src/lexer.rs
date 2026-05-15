@@ -116,6 +116,7 @@ struct Lexer<'a> {
     source: &'a str,
     chars: Vec<char>,
     index: usize,
+    byte_index: usize,
     line: usize,
     column: usize,
 }
@@ -126,6 +127,7 @@ impl<'a> Lexer<'a> {
             source,
             chars: source.chars().collect(),
             index: 0,
+            byte_index: 0,
             line: 1,
             column: 1,
         }
@@ -932,6 +934,7 @@ impl<'a> Lexer<'a> {
     fn advance(&mut self) -> char {
         let ch = self.chars[self.index];
         self.index += 1;
+        self.byte_index += ch.len_utf8();
         if ch == '\n' {
             self.line += 1;
             self.column = 1;
@@ -955,10 +958,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn byte_index(&self) -> usize {
-        self.chars[..self.index]
-            .iter()
-            .map(|ch| ch.len_utf8())
-            .sum()
+        self.byte_index
     }
 
     fn peek(&self) -> Option<char> {

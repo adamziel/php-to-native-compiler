@@ -93,7 +93,8 @@ incorrect native code.
 - `if`, loops, `switch`, `break`/`continue` including positive integer literal
   loop-depth arguments, bounded `goto`/label execution,
   `foreach`, and user functions with local scopes, bounded function-local
-  `static` variables, defaults, returns, dynamic string-valued calls,
+  `static` variables, defaults, trailing variadic parameters, returns,
+  dynamic string-valued calls,
   bounded function-scope `global $name, ...;` imports for direct variables,
   bounded namespace-scoped function declarations and unqualified same-namespace
   calls with global fallback lookup,

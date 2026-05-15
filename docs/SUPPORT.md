@@ -149,8 +149,10 @@
 - `break;` for the innermost currently executing `while`, `for`,
   `do ... while`, `foreach`, or `switch`; `continue;` for the innermost
   currently executing loop
-- function declarations with optional trailing commas in parameter lists and
-  syntax-only parameter/return type annotations for the current metadata slice
+- function declarations with optional trailing commas in parameter lists,
+  trailing variadic parameters such as `...$items` that collect extra
+  positional arguments into a current ordered array, and syntax-only
+  parameter/return type annotations for the current metadata slice
 - positional function calls with optional trailing commas in argument lists
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions, with optional
@@ -573,11 +575,11 @@
   unsupported strict identity array/object operands, invalid `foreach`
   iterables, invalid `break`/`continue` outside a loop, unsupported `continue;`
   inside `switch`, and runaway user-function recursion
-- explicit parse diagnostics for unsupported function syntax: variadic
-  parameters, variadic argument unpacking, reference expressions,
-  function-scope reference parameter invocation, reference returns, type
-  declaration enforcement, named arguments, first-class callable syntax such as
-  `strlen(...)` and `$callback(...)`, and `declare(strict_types=1)`
+- explicit parse diagnostics for unsupported function syntax: variadic argument
+  unpacking, reference expressions, function-scope reference parameter
+  invocation, reference returns, type declaration enforcement, named arguments,
+  first-class callable syntax such as `strlen(...)` and `$callback(...)`, and
+  `declare(strict_types=1)`
 - explicit parse diagnostics for unsupported magic constants such as
   `__CLASS__`, `__TRAIT__`, `__METHOD__`, and `__NAMESPACE__`
 - narrow `require`, `require_once`, `include`, and `include_once` statement
@@ -1284,6 +1286,9 @@
   `PHPC_TRACE_INCLUDES=1` emits include/require target paths to stderr before
   each target is parsed and executed; this is an operational trace facility,
   not PHP-visible output.
+  `PHPC_TRACE_PARSE=1` emits parser frontier lines for top-level statements,
+  class/interface/enum members, and block statements; this is also an
+  operational trace facility and not PHP-visible output.
   Exception syntax is rejected separately at parse time, and native lowering is
   not implemented.
 - Switch: statement-form brace `switch` and alternate
@@ -3015,7 +3020,8 @@
 - default parameter values outside the documented constant-expression,
   unqualified constant-reference, and class-method `self::CONST` subset
 - required parameters after default parameters
-- variadic parameters and variadic argument unpacking
+- variadic parameters outside the bounded final-parameter by-value slice, and
+  variadic argument unpacking
 - reference parameter invocation, reference returns, reference assignments, and
   by-reference calls
 - parameter/return type enforcement, coercion, exact `TypeError` behavior,

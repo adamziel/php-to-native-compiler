@@ -46,6 +46,11 @@ while short `[...]` destructuring, expression-position `list(...)`,
 nested/keyed/skipped/reference targets, and non-variable targets remain parser
 boundaries.
 
+The lexer maintains both character and byte offsets as it advances. Prefix
+checks for PHP tags, heredoc terminators, and other byte-slice comparisons use
+the maintained byte offset so large real-world files do not repeatedly rescan
+the already-consumed character prefix.
+
 Assignment targets are intentionally narrower than expression reads. Direct
 variables, direct array offsets, direct append offsets, direct object
 properties, selected static properties, and direct-variable nested array offset
@@ -1043,6 +1048,9 @@ count parser work, declaration registration, or native lowering.
 `PHPC_TRACE_INCLUDES=1` writes include/require target paths to process stderr
 before each target is parsed/executed so external timeout probes can retain the
 last include frontier.
+`PHPC_TRACE_PARSE=1` writes parser frontier lines for top-level statements,
+class/interface/enum members, and block statements. It is an operational trace,
+not PHP-visible output, and is intended for external timeout diagnosis.
 Magic class names in `new` expressions, including `new self()`,
 `new parent()`, and `new static()`, stop at a stable parse diagnostic until
 class context tracking, parent resolution, and late static binding exist.

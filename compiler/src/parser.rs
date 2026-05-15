@@ -22,6 +22,7 @@ struct Parser {
     current_namespace: String,
     class_imports: Vec<(String, String)>,
     namespace_declared: bool,
+    trace_parse: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -40,12 +41,14 @@ impl Parser {
             current_namespace: String::new(),
             class_imports: Vec::new(),
             namespace_declared: false,
+            trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
         }
     }
 
     fn parse_program(mut self) -> CompileResult<Program> {
         let mut statements = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::Eof)) {
+            self.trace_parse("top-level");
             statements.push(self.parse_statement()?);
         }
         Ok(Program { statements })
@@ -193,27 +196,27 @@ impl Parser {
         let mut saw_default = false;
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
-                if self.check(|kind| matches!(kind, TokenKind::Ellipsis)) {
-                    let span = self.advance().span;
-                    return Err(self.error_at(
-                        span,
-                        "unsupported variadic parameter: variadics are not implemented",
-                    ));
-                }
                 let type_decl = if self.check(is_parameter_type_start) {
                     Some(self.parse_type_decl(unsupported_parameter_type_message())?)
                 } else {
                     None
                 };
                 let by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
+                let is_variadic = self.match_token(|kind| matches!(kind, TokenKind::Ellipsis));
                 let (name, span) = self.consume_variable_with_span("expected parameter name")?;
                 let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+                    if is_variadic {
+                        return Err(self.error_at(
+                            self.previous().span,
+                            "unsupported variadic parameter default: variadic parameters cannot declare default values",
+                        ));
+                    }
                     saw_default = true;
                     let expr = self.parse_expression()?;
                     self.ensure_supported_default_expr(&expr)?;
                     Some(expr)
                 } else {
-                    if saw_default {
+                    if saw_default && !is_variadic {
                         return Err(self.error_at(
                             span,
                             "required parameter cannot follow a default parameter in the current subset",
@@ -226,6 +229,7 @@ impl Parser {
                     name,
                     type_decl,
                     by_reference,
+                    is_variadic,
                     default,
                     span,
                 });
@@ -234,6 +238,12 @@ impl Parser {
                 }
                 if self.check(|kind| matches!(kind, TokenKind::RParen)) {
                     break;
+                }
+                if is_variadic {
+                    return Err(self.error_at(
+                        self.peek().span,
+                        "unsupported variadic parameter: variadic parameters must be the final parameter",
+                    ));
                 }
             }
         }
@@ -319,6 +329,7 @@ impl Parser {
         self.consume_keyword(TokenKind::LBrace, "expected class body")?;
         let mut members = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            self.trace_parse("class member");
             members.push(self.parse_class_member()?);
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after class body")?;
@@ -371,6 +382,7 @@ impl Parser {
         self.consume_keyword(TokenKind::LBrace, "expected interface body")?;
         let mut methods = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            self.trace_parse("interface member");
             methods.push(self.parse_interface_method()?);
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after interface body")?;
@@ -469,6 +481,7 @@ impl Parser {
         self.consume_keyword(TokenKind::LBrace, "expected enum body")?;
         let mut cases = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            self.trace_parse("enum member");
             cases.push(self.parse_enum_case()?);
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after enum body")?;
@@ -2265,6 +2278,7 @@ impl Parser {
         let result = (|| {
             let mut statements = Vec::new();
             while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+                self.trace_parse("block statement");
                 if self.check(|kind| matches!(kind, TokenKind::Interface)) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -4660,6 +4674,19 @@ impl Parser {
 
     fn error_at(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Parse, span.line, span.column, message)
+    }
+
+    fn trace_parse(&self, context: &str) {
+        if !self.trace_parse {
+            return;
+        }
+        let token = self.peek();
+        eprintln!(
+            "phpc trace parse: {context} at {}:{} token {}",
+            token.span.line,
+            token.span.column,
+            token_name(&token.kind)
+        );
     }
 }
 

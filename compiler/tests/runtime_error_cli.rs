@@ -114,6 +114,46 @@ fn cli_trace_includes_env_reports_required_paths() {
     );
 }
 
+#[test]
+fn cli_trace_parse_env_reports_parser_frontier() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    let fixture = std::env::temp_dir().join(format!(
+        "phpc-parse-trace-{}-{unique}.php",
+        std::process::id()
+    ));
+    fs::write(
+        &fixture,
+        "<?php\nclass Box {\n    public function go() {\n        echo \"inside\";\n    }\n}\necho \"ok\";\n",
+    )
+    .expect("write parse trace fixture");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PHPC_TRACE_PARSE", "1")
+        .args(["run", fixture.to_str().expect("fixture path is UTF-8")])
+        .output()
+        .expect("run phpc with parse tracing");
+
+    let _ = fs::remove_file(&fixture);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "phpc trace parse: top-level at 2:1 token class\n\
+phpc trace parse: class member at 3:5 token public\n\
+phpc trace parse: block statement at 4:9 token echo\n\
+phpc trace parse: top-level at 7:1 token echo\n"
+    );
+}
+
 fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
     fs::read_dir(fixture_dir)
         .expect("runtime error fixture directory is readable")

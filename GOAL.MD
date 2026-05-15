@@ -229,7 +229,13 @@ parser/include/declaration-registration tracing. Milestone 741 added
 `PHPC_TRACE_INCLUDES=1` and inventory `last_stderr_line` reporting; the current
 bootstrap-shim timeout frontier is
 `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`, and that file also
-times out when run directly under a 10s outer timeout with no stderr.
+timed out when run directly under a 10s outer timeout with no stderr.
+Milestone 742 added `PHPC_TRACE_PARSE=1`, fixed maintained lexer byte offsets
+so large files no longer repeatedly rescan consumed source for byte-prefix
+checks, and added bounded final-position variadic user-function parameters.
+The real bootstrap-shim probe now advances past the Sodium compatibility class
+and variadic parameter blocker to comma-separated `for` header expression lists
+at `<bootstrap-shim>:2099:16`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -346,12 +352,11 @@ The repository already has a working Rust workspace with:
   `sprintf()`, `header()`, `implode()`, `exit()`, `extension_loaded()`, and
   `file_exists()` slices, plus bounded direct array-offset/object-property
   string interpolation, bounded heredoc/nowdoc syntax, bounded chained
-  interpolation, bounded static-closure parsing, and timeout-bounded WordPress
-  inventory probes. It still lacks a runtime trace or execution budget for the
-  post-static-closure bootstrap-shim timeout that covers parser/include work;
-  the current execution-step budget only covers statement execution. The next
-  bottleneck is parser/declaration performance or budgeting for WordPress'
-  4530-line Sodium compatibility `Compat.php`.
+  interpolation, bounded static-closure parsing, timeout-bounded WordPress
+  inventory probes, include/parser tracing, maintained lexer byte offsets for
+  large source files, and bounded final-position variadic parameters. The next
+  bottleneck is comma-separated `for` header expression lists in the WordPress
+  bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

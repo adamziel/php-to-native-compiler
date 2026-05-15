@@ -4773,6 +4773,16 @@ impl Interpreter {
             local_scope.write_static("this", Value::Object(this_object));
         }
         for (index, param) in function.params.iter().enumerate() {
+            if param.is_variadic {
+                let mut rest = PhpArray::new();
+                for arg in args.iter().skip(index) {
+                    rest.append(arg.clone())
+                        .map_err(|error| runtime_error(param.span, error))?;
+                }
+                local_scope.write_static(&param.name, Value::Array(rest));
+                break;
+            }
+
             let value = if let Some(arg) = args.get(index) {
                 arg.clone()
             } else {
@@ -8843,12 +8853,13 @@ fn ensure_user_function_arity(
     span: Span,
 ) -> CompileResult<()> {
     let required = required_param_count(function);
-    if actual < required || actual > function.params.len() {
+    let variadic = function.params.iter().any(|param| param.is_variadic);
+    if actual < required || (!variadic && actual > function.params.len()) {
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
                 callable_name(&function.name),
-                arity_expectation(required, function.params.len()),
+                arity_expectation(required, function.params.len(), variadic),
                 actual,
             ),
         ));
@@ -8890,11 +8901,14 @@ fn required_param_count(function: &FunctionDecl) -> usize {
     function
         .params
         .iter()
-        .filter(|param| param.default.is_none())
+        .filter(|param| !param.is_variadic && param.default.is_none())
         .count()
 }
 
-fn arity_expectation(required: usize, total: usize) -> ArityExpectation {
+fn arity_expectation(required: usize, total: usize, variadic: bool) -> ArityExpectation {
+    if variadic {
+        return ArityExpectation::AtLeast(required);
+    }
     if required == total {
         ArityExpectation::Exactly(total)
     } else {

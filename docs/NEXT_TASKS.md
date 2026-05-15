@@ -6816,16 +6816,27 @@ handled.
   PHP feature. Milestone 741 adds `PHPC_TRACE_INCLUDES=1` and inventory
   `last_stderr_line`; the current timeout frontier is
   `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`.
-- [ ] Parser/performance diagnostics lane: profile or budget parsing and
+- [x] Parser/performance diagnostics lane: profile or budget parsing and
   declaration registration for
-  `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`, which is a
-  4530-line Sodium compatibility class and currently times out when run
-  directly under a 10s outer timeout with no stderr.
+  `<wordpress-root>/wp-includes/sodium_compat/src/Compat.php`. Milestone 742
+  adds `PHPC_TRACE_PARSE=1` parser frontier logging and fixes lexer byte-offset
+  tracking so the 4530-line Sodium compatibility class completes directly under
+  a 10s outer timeout instead of timing out before parser trace output.
+- [x] Runtime/parser lane: implement bounded final-position variadic
+  parameters for user functions so `...$items` collects extra positional
+  arguments into a current ordered array, with system-PHP comparison coverage.
+  Variadic argument unpacking, by-reference variadics, type enforcement, exact
+  diagnostics, and native lowering remain unsupported.
+- [ ] Parser/runtime lane: implement or explicitly bound comma-separated
+  `for` header expression lists. The real WordPress 6.9.4 bootstrap shim now
+  reaches `parse error at <bootstrap-shim>:2099:16: unsupported for:
+  comma-separated initializer, condition, or increment expression lists are not
+  implemented; use at most one assignment or expression per header slot`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 741 checkpoint, the latest committed checkpoint
-  is `b2f8c4d runtime: add execution step budget`, covering Milestone 740.
+- Before the current Milestone 742 checkpoint, the latest committed checkpoint
+  is `d767c07 tools: trace wordpress include frontier`, covering Milestone 741.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

@@ -393,20 +393,46 @@ function invalid($first = 1, $second) {
 }
 
 #[test]
-fn variadic_parameters_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn variadic_parameters_collect_extra_arguments() {
+    let execution = run_source(
         r#"<?php
-function collect(...$items) {
+function collect($first, ...$items) {
+    echo $first, ":", count($items), ":", $items[0], ":", $items[1], "\n";
+}
+collect("a", "b", "c");
+function empty_rest(...$items) {
+    echo count($items), "\n";
+}
+empty_rest();
+function optional_rest($first = "x", ...$items) {
+    echo $first, ":", count($items), "\n";
+}
+optional_rest();
+optional_rest("y", "z");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "a:2:b:c\n0\nx:0\ny:1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn variadic_parameters_still_require_non_variadic_arguments() {
+    let error = runtime_error(
+        r#"<?php
+function need_first($first, ...$items) {
     return count($items);
 }
+need_first();
 "#,
     );
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 18);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported variadic parameter: variadics are not implemented"
+        "arity mismatch for need_first(): expected at least 1 argument(s), got 0"
     );
 }
 

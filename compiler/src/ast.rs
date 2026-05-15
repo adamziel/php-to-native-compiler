@@ -476,6 +476,7 @@ pub struct FunctionParam {
     pub name: String,
     pub type_decl: Option<TypeDecl>,
     pub by_reference: bool,
+    pub is_variadic: bool,
     pub default: Option<Expr>,
     pub span: Span,
 }

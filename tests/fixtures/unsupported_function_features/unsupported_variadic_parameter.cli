@@ -1,6 +1,0 @@
-exit: 1
-stdout:
---- stdout end ---
-stderr:
-parse error at tests/fixtures/unsupported_function_features/unsupported_variadic_parameter.php:2:18: unsupported variadic parameter: variadics are not implemented
---- stderr end ---

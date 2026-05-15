@@ -347,6 +347,16 @@ The first bootstrap probe is expected to fail. Known blockers include:
   file directly also times out under a 10s outer timeout with no stderr. The
   next concrete compatibility lane is parser/declaration performance or
   budgeting for that large Sodium compatibility class.
+  Milestone 742 adds parser frontier tracing, fixes the lexer's maintained byte
+  offset so large files do not rescan already-consumed source for byte-prefix
+  checks, and adds bounded user-function variadic parameters. After that, the
+  real bootstrap-shim probe no longer times out in
+  `wp-includes/sodium_compat/src/Compat.php` and advances to
+  `parse error at <bootstrap-shim>:2099:16: unsupported for:
+  comma-separated initializer, condition, or increment expression lists are not
+  implemented; use at most one assignment or expression per header slot`.
+  Variadic argument unpacking, by-reference variadics, type enforcement, exact
+  PHP diagnostics, and native lowering remain unsupported.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;
