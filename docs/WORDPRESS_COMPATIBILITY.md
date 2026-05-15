@@ -661,6 +661,15 @@ The first bootstrap probe is expected to fail. Known blockers include:
   `wp-includes/plugin.php:39`. This is not mysqli extension support, database
   I/O, resources/objects, result sets, escaping, errors, PDO support, native
   lowering, or WordPress bootstrap support.
+  Milestone 771 implements the narrow top-level `global` materialization
+  behavior needed for that `$wp_filter` check: missing names declared by a
+  top-level `global` statement become `null` and falsey, while ordinary
+  undefined variable reads remain stable runtime errors. The real
+  bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:39:33: undefined function microtime()`.
+  This is not full PHP warning/notice behavior, general undefined-variable
+  recovery, variable variables, references, superglobals, native lowering, or
+  WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

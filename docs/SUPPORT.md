@@ -791,6 +791,10 @@
   symbol tables keyed by variable name. Current static variable reads, writes,
   direct `unset($name)`, `isset($name)`, parameter binding, default-parameter
   evaluation, and direct array writes route through that symbol table path.
+  Top-level `global $name, ...;` declarations preserve existing values and
+  materialize missing listed names as `null`; function-scope `global`
+  declarations import from the root symbol table through the existing
+  function/global sharing path.
   Direct `unset($name)` removes the current-scope symbol and treats missing
   names as no-ops; later plain reads use the existing undefined-variable
   diagnostic. Multiple supported `unset(...)` operands run left to right.

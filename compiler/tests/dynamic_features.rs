@@ -435,11 +435,13 @@ echo $count;
 }
 
 #[test]
-fn top_level_global_declarations_are_currently_noops() {
+fn top_level_global_declarations_materialize_missing_names_as_null() {
     let execution = run_source(
         r#"<?php
 $wp_version = "6.9.4";
 global $wp_version, $required_php_version;
+echo $required_php_version === null ? "null" : "not-null";
+echo "\n";
 $required_php_version = "8.3";
 echo $wp_version, "\n";
 echo $required_php_version, "\n";
@@ -452,7 +454,7 @@ if (isset($missing)) {
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "6.9.4\n8.3\nmissing-unset");
+    assert_eq!(execution.stdout, "null\n6.9.4\n8.3\nmissing-unset");
     assert_eq!(execution.exit_code, 0);
 }
 

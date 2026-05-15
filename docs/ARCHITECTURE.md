@@ -23,7 +23,8 @@ fresh local symbol table for each user-function call. Local scopes can import
 direct root variables through `global $name, ...;`; imported names route direct
 reads and writes through the shared root symbol table, while `unset($name)`
 drops the local import without deleting the root value. Top-level `global`
-declarations remain no-op/import-compatible statements. This is still a
+declarations preserve existing root values and materialize missing listed names
+as `null`, matching the reached WordPress bootstrap initialization shape. This is still a
 materialized-symbol-table model, not PHP's full reference-backed alias,
 `$GLOBALS`, copy-on-write, dynamic global-name, or included-file scope model.
 

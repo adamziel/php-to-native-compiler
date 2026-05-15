@@ -1114,6 +1114,11 @@ impl Interpreter {
             }),
             Stmt::Global { names, .. } => {
                 if self.function_context.is_empty() {
+                    for name in names {
+                        if scope.read_named(name).is_none() {
+                            scope.write_static(name, Value::Null);
+                        }
+                    }
                     Ok(Flow::Normal)
                 } else {
                     for name in names {

@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added Milestone 771, top-level `global` declarations now materialize missing
+  named symbols as `null` while preserving existing values. This covers the
+  reached WordPress `global $wp_filter; if ( $wp_filter )` initialization path
+  without changing ordinary undefined variable reads, which still use the
+  existing stable runtime diagnostic. Full PHP warning/notice behavior,
+  undefined-variable recovery outside top-level `global`, variable variables,
+  references/aliasing, superglobal behavior, and native lowering remain
+  unsupported. The real WordPress 6.9.4 bootstrap-shim probe now advances past
+  `wp-includes/plugin.php:39` to
+  `runtime error at <bootstrap-shim>:39:33: undefined function microtime()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test dynamic_features top_level_global_declarations_materialize_missing_names_as_null -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone771`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 770, a bounded `mysqli_connect` database-extension boundary.
   The runtime now exposes `mysqli_connect` through `function_exists()`,
   `is_callable()`, dynamic string-valued call lookup, and native function-table

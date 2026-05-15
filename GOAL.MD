@@ -70,9 +70,9 @@ array `=&` path for `wp_parse_args()`, bounded `strcasecmp()`, bounded
 no-argument `headers_sent()`, bounded `abs()`, bounded `header_remove()`, and
 a bounded `mysqli_connect` function-table boundary. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
-`wp-includes/load.php:202`; it now stops in `wp-includes/plugin.php:39` because
-the current runtime treats an early read of the global `$wp_filter` as an
-undefined-variable runtime error instead of PHP's warning-plus-`null` value.
+`wp-includes/load.php:202` and the early top-level `$wp_filter` global
+initialization in `wp-includes/plugin.php:39`; it now stops at an undefined
+`microtime()` call on the bootstrap path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 

@@ -7063,11 +7063,21 @@ handled.
   stable diagnostics and documenting unsupported warning reporting,
   partial-output behavior, native lowering, and cases where undefined reads
   must remain hard boundaries.
+  Milestone 771 implements the narrow top-level `global` materialization slice:
+  missing names declared by top-level `global` become `null`, while ordinary
+  undefined variable reads still fail with the stable runtime diagnostic. It
+  advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:39:33: undefined function microtime()`.
+- [ ] Time builtin lane: implement a bounded `microtime()` slice for the next
+  WordPress bootstrap blocker, likely covering `microtime(true)` as a finite
+  float timestamp while documenting nondeterminism, precision, string-return
+  format, time source policy, monotonicity, tests, and native lowering unless
+  implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 770 checkpoint, the latest committed checkpoint
-  is `74bd702 runtime: add bounded header_remove`, covering Milestone 769.
+- Before the current Milestone 771 checkpoint, the latest committed checkpoint
+  is `15a39bd runtime: add mysqli_connect boundary`, covering Milestone 770.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
