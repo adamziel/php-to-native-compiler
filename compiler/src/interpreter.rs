@@ -128,6 +128,10 @@ enum ArrayFilterMode {
     Key,
 }
 
+fn is_auto_global_name(name: &str) -> bool {
+    name == "_SERVER"
+}
+
 fn parse_array_filter_string_mode(value: &str) -> Option<i64> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -245,6 +249,12 @@ impl SymbolTable {
     }
 
     fn unset_static(&mut self, name: &str) {
+        if is_auto_global_name(name) {
+            if let Some(global_symbols) = &self.global_symbols {
+                global_symbols.borrow_mut().remove(name);
+                return;
+            }
+        }
         if self.imported_globals.contains(name) {
             self.imported_globals.remove(name);
             self.symbols.borrow_mut().remove(name);
@@ -254,7 +264,9 @@ impl SymbolTable {
     }
 
     fn read_named(&self, name: &str) -> Option<Value> {
-        if self.imported_globals.contains(name) {
+        if self.imported_globals.contains(name)
+            || (is_auto_global_name(name) && self.global_symbols.is_some())
+        {
             return self
                 .global_symbols
                 .as_ref()
@@ -264,7 +276,9 @@ impl SymbolTable {
     }
 
     fn write_named(&mut self, name: &str, value: Value) {
-        if self.imported_globals.contains(name) {
+        if self.imported_globals.contains(name)
+            || (is_auto_global_name(name) && self.global_symbols.is_some())
+        {
             if let Some(global_symbols) = &self.global_symbols {
                 global_symbols.borrow_mut().insert(name.to_string(), value);
                 return;
@@ -453,9 +467,23 @@ impl Interpreter {
             stdout: String::new(),
             exit_signal: None,
         };
+        interpreter.initialize_superglobals();
         interpreter.initialize_static_property_defaults(program)?;
         interpreter.initialize_instance_property_defaults(program)?;
         Ok(interpreter)
+    }
+
+    fn initialize_superglobals(&mut self) {
+        let mut server = PhpArray::new();
+        server.insert("SERVER_SOFTWARE", Value::String("phpc".to_string()));
+        server.insert("REQUEST_URI", Value::String("/".to_string()));
+        server.insert("PHP_SELF", Value::String("/index.php".to_string()));
+        server.insert("SCRIPT_NAME", Value::String("/index.php".to_string()));
+        server.insert("QUERY_STRING", Value::String(String::new()));
+
+        self.global_symbols
+            .borrow_mut()
+            .insert("_SERVER".to_string(), Value::Array(server));
     }
 
     fn initialize_static_property_defaults(&mut self, program: &Program) -> CompileResult<()> {
@@ -9581,6 +9609,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_VERSION" => Some(Value::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
+        "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "CASE_LOWER" => Some(Value::Int(0)),
         "CASE_UPPER" => Some(Value::Int(1)),
         "ARRAY_FILTER_USE_BOTH" => Some(Value::Int(1)),

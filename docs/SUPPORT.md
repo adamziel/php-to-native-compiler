@@ -247,6 +247,15 @@
   root global value. Reference-backed alias objects, `$GLOBALS`, dynamic global
   names, exact warning/notice behavior, included-file scope interactions,
   copy-on-write, and native lowering remain unsupported.
+- `$_SERVER` is seeded as a bounded root superglobal for `phpc run` with
+  deterministic CLI request defaults for `SERVER_SOFTWARE`, `REQUEST_URI`,
+  `PHP_SELF`, `SCRIPT_NAME`, and `QUERY_STRING`. Direct function-scope reads
+  and writes of `$_SERVER` route through the root symbol table without a
+  `global $_SERVER` declaration. Real SAPI request population, environment
+  imports, complete server key catalogs, `$GLOBALS` aliasing, references,
+  copy-on-write, mutation-ordering fidelity, `variables_order`, cookies,
+  uploads, sessions, other superglobals, exact warning behavior, and native
+  lowering remain unsupported.
 - class declarations registered into the runtime metadata table:
   `class Name { ... }`, `abstract class Name { ... }`, `final class Name { ... }`,
   `readonly class Name { ... }`, and `class Child extends Parent { ... }` with
@@ -339,11 +348,12 @@
 - exact uppercase built-in global constants `CASE_LOWER`, `CASE_UPPER`,
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
-  `PHP_INT_MAX`. The
-  integer constants evaluate to `0`, `1`, `2`, `1`, `0`, `1`, `2`, and the
-  current deterministic PHP 8.3 compatibility target `80300`; `PHP_VERSION`
-  evaluates to the deterministic compatibility string `8.3.0`, and
-  `PHP_INT_MAX` evaluates to the host-independent 64-bit integer maximum.
+  `PHP_INT_MAX`, and `PHP_SAPI`. The integer constants evaluate to `0`, `1`,
+  `2`, `1`, `0`, `1`, `2`, and the current deterministic PHP 8.3
+  compatibility target `80300`; `PHP_VERSION` evaluates to the deterministic
+  compatibility string `8.3.0`, `PHP_INT_MAX` evaluates to the
+  host-independent 64-bit integer maximum, and `PHP_SAPI` evaluates to the
+  current deterministic `cli` SAPI string.
 - runtime-defined constants through `define($name, $value)` over the current
   unqualified or qualified string-name and scalar/array value subset;
   `constant($name)` accepts unqualified names and qualified lookup names with
@@ -365,8 +375,8 @@
   supported keys, unary expressions, binary expressions over those values,
   and bare references to previously defined unqualified constants or the
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
-  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`, and
-  `PHP_INT_MAX`
+  `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
+  `PHP_INT_MAX`, and `PHP_SAPI`
   constants
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
@@ -3961,11 +3971,11 @@
 - bare global constant resolution outside exact uppercase
   `ARRAY_FILTER_USE_KEY`, `ARRAY_FILTER_USE_BOTH`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
-  `PHP_INT_MAX`, and runtime-defined unqualified constants in the current
-  name/value subset; PHP
+  `PHP_INT_MAX`, `PHP_SAPI`, and runtime-defined unqualified constants in the
+  current name/value subset; PHP
   version component constants such as `PHP_MAJOR_VERSION`, patch-level host
-  version coupling, SAPIs/build metadata, full extension constant catalogs,
-  unsupported `define(...)` names
+  version coupling, SAPI/build metadata beyond the deterministic `cli` string,
+  full extension constant catalogs, unsupported `define(...)` names
   or values, case-insensitive legacy constants, bare namespace constant
   fallback reads, nested `const` declarations, dynamic declaration values,
   broader `constant()`/`defined()` lookup for class constants, names lexed as
@@ -4079,6 +4089,13 @@
   SAPI differences, extension ownership/access metadata, exact option catalogs,
   coercions, exact diagnostics, and native lowering beyond function-table
   introspection
+- `$_SERVER` behavior beyond the current deterministic CLI seed and direct
+  root-symbol routing: real SAPI request population, environment imports,
+  complete server key catalogs, `$GLOBALS` aliasing, references/copy-on-write,
+  mutation-ordering fidelity, `variables_order`, exact warning behavior, and
+  native lowering
+- other superglobals such as `$_GET`, `$_POST`, `$_COOKIE`, `$_FILES`,
+  `$_REQUEST`, `$_ENV`, `$_SESSION`, and `$GLOBALS`
 - `exit()`/`die()` behavior beyond the current direct-call termination subset:
   callable/dynamic invocation, boolean/float/array/object argument handling,
   PHP's exact exit-status normalization, shutdown functions, destructors,

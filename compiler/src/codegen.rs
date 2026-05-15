@@ -6183,6 +6183,7 @@ fn builtin_global_constant_is_defined(name: &str) -> bool {
         "PHP_VERSION"
         | "PHP_VERSION_ID"
         | "PHP_INT_MAX"
+        | "PHP_SAPI"
         | "CASE_LOWER"
         | "CASE_UPPER"
         | "ARRAY_FILTER_USE_BOTH"

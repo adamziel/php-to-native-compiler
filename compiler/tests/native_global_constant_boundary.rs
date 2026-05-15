@@ -129,6 +129,7 @@ echo defined("ARRAY_FILTER_USE_BOTH") ? "1" : "0";
 echo defined("ARRAY_FILTER_USE_KEY") ? "1" : "0";
 echo defined("PHP_VERSION") ? "1" : "0";
 echo defined("PHP_VERSION_ID") ? "1" : "0";
+echo defined("PHP_SAPI") ? "1" : "0";
 echo defined("SORT_STRING") ? "1" : "0";
 echo defined("MISSING_CONST") ? "1" : "0";
 echo defined($mode) ? "1" : "0";

@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added Milestone 783, bounded request/SAPI startup state for the current
+  WordPress `wp_fix_server_vars()` path. The interpreter now seeds a root
+  `$_SERVER` superglobal with deterministic CLI defaults for
+  `SERVER_SOFTWARE`, `REQUEST_URI`, `PHP_SELF`, `SCRIPT_NAME`, and
+  `QUERY_STRING`, routes direct function-scope reads and writes of `$_SERVER`
+  through the root symbol table without requiring `global $_SERVER`, and
+  exposes `PHP_SAPI` as the honest current `cli` SAPI constant. Native
+  `defined("PHP_SAPI")` folding recognizes the constant, while native
+  lowering still rejects built-in constant values through the existing global
+  constant boundary. Real request population, environment import policy,
+  `$GLOBALS` aliasing, references/copy-on-write interactions, full key
+  completeness, other superglobals, real web SAPI behavior, header/cookie/upload
+  state, exact warning behavior, and native lowering remain unsupported. The
+  real WordPress 6.9.4 bootstrap-shim probe now advances past
+  `wp_fix_server_vars()` startup state to
+  `runtime error at <bootstrap-shim>:46:35: undefined function preg_match()`.
+  Direct `wp-settings.php` still stops at
+  `runtime error at <wordpress-root>/wp-settings.php:34:9: undefined constant ABSPATH`.
+  Focused verification so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals`,
+  `cargo test -p phpc --test native_global_constant_boundary emit_ir_folds_defined_for_static_builtin_and_missing_names -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone783`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 782, bounded `date_default_timezone_set()` for the current
   WordPress startup timezone initialization path. The runtime now accepts one
   string timezone identifier, returns `true` for the reached `UTC` identifier,

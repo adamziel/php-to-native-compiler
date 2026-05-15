@@ -73,14 +73,16 @@ null-materialization, bounded `microtime(true)`, and bounded deterministic
 `ini_get()` registry reads, bounded `strtolower()`, bounded `trim()`, a
 bounded leading-numeric `(int)` string-cast slice, bounded `str_contains()`,
 bounded integer `min()`, and bounded nested direct-variable array-offset
-`isset(...)`. The current shim frontier
+`isset(...)`, bounded local-path `is_readable()`, bounded shutdown
+registration, bounded `date_default_timezone_set('UTC')`, and bounded
+deterministic CLI `$_SERVER`/`PHP_SAPI` startup state. The current shim frontier
 has moved past WordPress' missing-MySQL-extension guard in
 `wp-includes/load.php:202` and the early top-level `$wp_filter` global
 initialization in `wp-includes/plugin.php:39`; it has moved past the missing
 `is_readable()` filesystem builtin in the fatal-error-handler override check
-and the fatal-error-handler `register_shutdown_function()` registration; it now
-stops at missing `$_SERVER` superglobal materialization in the
-`wp_fix_server_vars()` startup path.
+and the fatal-error-handler `register_shutdown_function()` registration, past
+timezone setup, and past the first request/SAPI startup state; it now stops at
+missing `preg_match()` in the `wp_fix_server_vars()` SAPI-name path.
 Each step is intentionally small because it only counts after parser/runtime
 code, tests, CLI fixtures, docs, and named unsupported edges are in place.
 
@@ -308,8 +310,10 @@ Milestone 776 added bounded leading-numeric `(int)` string casts. Milestone
 `min()`. Milestone 779 added bounded nested direct-variable array-offset
 `isset(...)`. Milestone 780 added bounded local-path `is_readable()`.
 Milestone 781 added bounded `register_shutdown_function()` registration, and
-Milestone 782 added bounded `date_default_timezone_set('UTC')`, and the
-current frontier is now `$_SERVER` in WordPress request/server startup state.
+Milestone 782 added bounded `date_default_timezone_set('UTC')`. Milestone 783
+added bounded deterministic CLI `$_SERVER` and `PHP_SAPI` startup state, and
+the current frontier is now missing `preg_match()` in WordPress
+request/server startup state.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -451,8 +455,10 @@ The repository already has a working Rust workspace with:
   `ini_get()` registry reads, bounded `strtolower()`, and bounded default-mask
   `trim()`, bounded leading-numeric `(int)` string casts, bounded
   `str_contains()`, bounded integer `min()`, bounded nested direct-variable
-  array-offset `isset(...)`, and bounded local-path `is_readable()`. The next
-  bottleneck is `$_SERVER` materialization in the WordPress bootstrap shim.
+  array-offset `isset(...)`, bounded local-path `is_readable()`, bounded
+  shutdown registration, bounded timezone setting, and bounded deterministic
+  CLI `$_SERVER`/`PHP_SAPI` startup state. The next bottleneck is
+  `preg_match()` in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

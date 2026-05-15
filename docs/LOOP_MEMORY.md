@@ -26,6 +26,35 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T07:57:43Z
+
+- Checkpoint before this task:
+  `2f5087f runtime: add bounded timezone setter`, pushed to `origin/master`.
+- Task attempted: Milestone 783, bounded request/SAPI startup state for the
+  WordPress `wp_fix_server_vars()` path.
+- Files changed so far: `compiler/src/interpreter.rs`,
+  `compiler/src/codegen.rs`, `compiler/tests/superglobals.rs`,
+  `compiler/tests/native_global_constant_boundary.rs`,
+  `tests/fixtures/milestone783/*`, `GOAL.MD`, `docs/SUPPORT.md`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, `docs/PROGRESS.md`,
+  `docs/NEXT_TASKS.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo test -p phpc --test superglobals`,
+  `cargo test -p phpc --test native_global_constant_boundary emit_ir_folds_defined_for_static_builtin_and_missing_names -- --exact`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone783`, and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`
+  passed or produced the expected measured frontier.
+- Remaining semantic gaps: real SAPI request population, environment import
+  policy, complete `$_SERVER` key catalogs, `$GLOBALS` aliasing, references,
+  copy-on-write, other superglobals, cookies/uploads/sessions, header state,
+  exact warning behavior, native lowering, and broad regex/PCRE support remain
+  unsupported.
+- Next concrete task: implement a bounded `preg_match()` slice for the reached
+  `wp_fix_server_vars()` SAPI-name path while documenting captures/matches
+  output, flags, offsets, invalid-pattern warnings, byte/Unicode behavior,
+  coercions, exact diagnostics, and native lowering unless implemented.
+
 ## Loop Event 2026-05-15T06:18:00Z
 
 - Checkpoint before this task:

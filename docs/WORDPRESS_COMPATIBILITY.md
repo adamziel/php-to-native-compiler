@@ -753,6 +753,14 @@ The first bootstrap probe is expected to fail. Known blockers include:
   date/timezone support, timezone database validation, global timezone state,
   warning behavior, native lowering, request/SAPI superglobals, or WordPress
   bootstrap support.
+  Milestone 783 implements bounded deterministic CLI request startup state:
+  a seeded root `$_SERVER` array for the reached `wp_fix_server_vars()` path
+  and `PHP_SAPI` as `cli`. The real bootstrap-shim probe now advances to
+  `runtime error at <bootstrap-shim>:46:35: undefined function preg_match()`.
+  This is not full regex support, full web/SAPI request state, environment
+  import policy, `$GLOBALS` aliasing, references/copy-on-write, cookies,
+  uploads, all superglobals, header state, exact warning behavior, native
+  lowering, or WordPress bootstrap support.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

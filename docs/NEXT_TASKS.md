@@ -7176,16 +7176,24 @@ handled.
   real bootstrap-shim probe to
   `runtime error at <bootstrap-shim>:42:50: undefined variable '$_SERVER'`,
   corresponding to the `wp_fix_server_vars()` startup path.
-- [ ] Runtime/request-state lane: materialize a bounded `$_SERVER` superglobal
+- [x] Runtime/request-state lane: materialize a bounded `$_SERVER` superglobal
   array for the reached WordPress `wp_fix_server_vars()` path. Keep broad SAPI
   request state, environment import policy, mutation/reference behavior,
   case/key completeness, exact warning behavior, native lowering, and other
   superglobals named unless implemented.
+  Milestone 783 implements deterministic CLI `$_SERVER` defaults plus
+  `PHP_SAPI = "cli"` and advances the real bootstrap-shim probe to
+  `runtime error at <bootstrap-shim>:46:35: undefined function preg_match()`.
+- [ ] Regex/runtime lane: implement a bounded `preg_match()` slice for the
+  reached WordPress `wp_fix_server_vars()` SAPI-name path. Keep full PCRE
+  behavior, captures/matches output, flags, offsets, invalid-pattern warnings,
+  byte/Unicode edge cases, subject coercions, exact diagnostics, and native
+  lowering named unless implemented.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 782 checkpoint, the latest committed checkpoint
-  is `b328113 runtime: add shutdown registration`, covering Milestone 781.
+- Before the current Milestone 783 checkpoint, the latest committed checkpoint
+  is `2f5087f runtime: add bounded timezone setter`, covering Milestone 782.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 
