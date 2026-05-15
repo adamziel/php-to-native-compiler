@@ -83,7 +83,7 @@ incorrect native code.
 `phpc run` currently supports the documented subset of:
 
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
-  coalescing forms
+  coalescing forms, plus bounded inline HTML output between PHP close/open tags
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
   operators, shifts, `(string)`, `(int)`, `(bool)`, `(float)`/`(double)`, and
   `(array)` casts over documented

@@ -6831,16 +6831,20 @@ handled.
   `for` header expression lists. The real WordPress 6.9.4 bootstrap shim now
   advances past the previous `parse error at <bootstrap-shim>:2099:16`
   blocker.
-- [ ] Parser/runtime lane: diagnose and implement or explicitly bound the next
+- [x] Parser/runtime lane: diagnose and implement or explicitly bound the next
   WordPress bootstrap-shim parse blocker. The real WordPress 6.9.4 bootstrap
-  shim now reaches `parse error at <bootstrap-shim>:3909:1: expected
-  expression, found <`, likely around PHP close/open tag or inline HTML
-  handling in the generated include path.
+  shim reached `parse error at <bootstrap-shim>:3909:1: expected expression,
+  found <`; Milestone 744 adds bounded inline HTML output between `?>` and the
+  next PHP open tag.
+- [ ] Object/runtime lane: implement or explicitly bound dynamic property
+  access. The real WordPress 6.9.4 bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:4451:14: unsupported dynamic property
+  access: dynamic property names are not implemented`.
 
 ## Latest Checkpoint
 
-- Before the current Milestone 743 checkpoint, the latest committed checkpoint
-  is `2ad1483 runtime: add bounded variadic params`, covering Milestone 742.
+- Before the current Milestone 744 checkpoint, the latest committed checkpoint
+  is `407c05d runtime: add for header lists`, covering Milestone 743.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

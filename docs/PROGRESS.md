@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added Milestone 744, bounded inline HTML output between PHP close/open tags
+  through `phpc run`. The lexer now emits text between `?>` and the next PHP
+  open tag as an inline HTML token, consumes one immediate newline after `?>`
+  for the covered PHP-compatible behavior, and the parser lowers that token to
+  an echo statement. Native lowering still rejects the resulting echo/string
+  paths according to the existing lowerable subset. The real WordPress 6.9.4
+  bootstrap-shim probe now advances past the previous
+  `<bootstrap-shim>:3909:1` `<` blocker to
+  `parse error at <bootstrap-shim>:4451:14: unsupported dynamic property
+  access: dynamic property names are not implemented`. Focused verification so
+  far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features inline_html -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone744`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+
 - Added Milestone 743, bounded comma-separated `for` header expression lists
   through `phpc run`. The AST now stores initializer, condition, and increment
   header slots as ordered lists. The interpreter executes initializer and

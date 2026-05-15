@@ -26,6 +26,36 @@ injects this file into every prompt. Each Codex pass should update it with:
 - Current rule: do not claim full PHP support; implement the next small tested
   behavior and checkpoint only when tests pass.
 
+## Loop Event 2026-05-15T18:45:00Z
+
+- Checkpoint before this task:
+  `407c05d runtime: add for header lists`, pushed to `origin/master`.
+- Task attempted: Milestone 744, bounded inline HTML output between PHP
+  close/open tags.
+- Files changed so far: `compiler/src/lexer.rs`, `compiler/src/parser.rs`,
+  `compiler/tests/dynamic_features.rs`,
+  `tests/fixtures/milestone744/inline_html.php`,
+  `tests/fixtures/milestone744/inline_html.stdout`, `docs/SUPPORT.md`,
+  `docs/ARCHITECTURE.md`, `docs/WORDPRESS_COMPATIBILITY.md`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/LOOP_MEMORY.md`, and
+  `GOAL.MD`.
+- Tests run so far:
+  `cargo fmt --check`,
+  `cargo check -p phpc`,
+  `cargo test -p phpc --test dynamic_features inline_html -- --test-threads=1`,
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone744`,
+  and
+  `WORDPRESS_PROBE_TIMEOUT=30s PHPC_MAX_EXECUTION_STEPS=100000 PHPC_TRACE_INCLUDES=1 tools/wordpress-inventory.sh --normalize /home/claude/.wordpress-playground/sites/5f6e21ff78b7d67b3527624255cb42e4381c0bcaa817e7d9d08c96e0077b81f1`.
+- Remaining semantic gaps: inline HTML native lowering remains bounded by the
+  existing echo/string native subset; short open tags, exact whitespace edge
+  cases beyond one immediate newline after `?>`, and SAPI output-buffer
+  behavior remain unsupported. Direct `wp-settings.php` still stops on
+  undefined `ABSPATH`; the bootstrap shim now reaches
+  `parse error at <bootstrap-shim>:4451:14: unsupported dynamic property
+  access: dynamic property names are not implemented`.
+- Next concrete task: implement or explicitly bound dynamic property access for
+  the current object/runtime subset, then rerun the WordPress bootstrap shim.
+
 ## Loop Event 2026-05-15T18:05:00Z
 
 - Checkpoint before this task:

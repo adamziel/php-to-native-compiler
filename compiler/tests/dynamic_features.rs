@@ -246,6 +246,23 @@ $ok = require_once 'bootstrap.php';
 }
 
 #[test]
+fn inline_html_between_php_tags_echoes_as_source_text() {
+    let execution = run_source(
+        r#"<?php
+echo "before";
+?>
+<div><?php echo "inside"; ?></div>
+<?php
+echo "after";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "before<div>inside</div>\nafter");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn require_executes_local_files_with_constant_concat_paths() {
     let root = std::env::temp_dir().join(format!(
         "phpc-require-{}-{}",

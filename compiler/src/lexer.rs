@@ -16,6 +16,7 @@ pub enum TokenKind {
     Float(f64),
     StringLiteral(String),
     InterpolatedString(Vec<InterpolatedStringPart>),
+    InlineHtml(String),
     Echo,
     Print,
     Function,
@@ -146,7 +147,11 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if self.matches_php_close_tag() {
+            if self.starts_with("?>") {
+                let span = self.span();
+                if let Some(kind) = self.lex_inline_html_after_close_tag() {
+                    tokens.push(Token { kind, span });
+                }
                 continue;
             }
 
@@ -391,14 +396,29 @@ impl<'a> Lexer<'a> {
         false
     }
 
-    fn matches_php_close_tag(&mut self) -> bool {
-        if !self.starts_with("?>") {
-            return false;
+    fn lex_inline_html_after_close_tag(&mut self) -> Option<TokenKind> {
+        self.advance();
+        self.advance();
+
+        if self.peek() == Some('\r') {
+            self.advance();
+            if self.peek() == Some('\n') {
+                self.advance();
+            }
+        } else if self.peek() == Some('\n') {
+            self.advance();
         }
 
-        self.advance();
-        self.advance();
-        true
+        let mut html = String::new();
+        while !self.is_at_end() && !self.starts_with("<?") {
+            html.push(self.advance());
+        }
+
+        if html.is_empty() {
+            None
+        } else {
+            Some(TokenKind::InlineHtml(html))
+        }
     }
 
     fn lex_variable(&mut self, span: Span) -> CompileResult<TokenKind> {

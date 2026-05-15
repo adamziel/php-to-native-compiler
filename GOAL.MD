@@ -237,6 +237,9 @@ The real bootstrap-shim probe now advances past the Sodium compatibility class
 and variadic parameter blocker. Milestone 743 added comma-separated `for`
 header expression lists, and the next bootstrap-shim blocker is
 `parse error at <bootstrap-shim>:3909:1: expected expression, found <`.
+Milestone 744 added bounded inline HTML output between `?>` and the next PHP
+open tag; the current bootstrap-shim blocker is dynamic property access at
+`<bootstrap-shim>:4451:14`.
 The object-lifecycle lane still includes `__clone` dispatch, visibility around
 clone methods, nested object/reference properties, references/copy-on-write,
 destructors/reuse, and exact PHP diagnostics.
@@ -356,8 +359,7 @@ The repository already has a working Rust workspace with:
   interpolation, bounded static-closure parsing, timeout-bounded WordPress
   inventory probes, include/parser tracing, maintained lexer byte offsets for
   large source files, and bounded final-position variadic parameters. The next
-  bottleneck is the `<bootstrap-shim>:3909:1` parse error on `<`, likely around
-  PHP close/open tag or inline HTML handling in the generated include path.
+  bottleneck is dynamic property access in the WordPress bootstrap shim.
   The direct `wp-settings.php` probe still stops at undefined `ABSPATH`, which is an
   entrypoint/environment issue rather than proof of core bootstrap support.
 

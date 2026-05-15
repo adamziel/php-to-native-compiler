@@ -50,6 +50,10 @@ The lexer maintains both character and byte offsets as it advances. Prefix
 checks for PHP tags, heredoc terminators, and other byte-slice comparisons use
 the maintained byte offset so large real-world files do not repeatedly rescan
 the already-consumed character prefix.
+When the lexer sees `?>`, it emits the intervening inline HTML up to the next
+PHP open tag as a token consumed by the parser into an echo statement. The
+current slice consumes one immediate newline after `?>`, matching PHP's common
+close-tag newline behavior for the covered fixtures.
 
 Assignment targets are intentionally narrower than expression reads. Direct
 variables, direct array offsets, direct append offsets, direct object

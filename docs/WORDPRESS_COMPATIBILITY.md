@@ -363,6 +363,11 @@ The first bootstrap probe is expected to fail. Known blockers include:
   advances to `parse error at <bootstrap-shim>:3909:1: expected expression,
   found <`, likely around PHP close/open tag or inline HTML handling in the
   generated include path.
+  Milestone 744 adds bounded inline HTML output between `?>` and the next PHP
+  open tag, including single-newline consumption after close tags. After that,
+  the bootstrap-shim probe advances to
+  `parse error at <bootstrap-shim>:4451:14: unsupported dynamic property
+  access: dynamic property names are not implemented`.
   Real bootstrap still needs a faithful entrypoint policy, include-path/autoload
   behavior, source mapping, and PHP's warning/fatal details;
 - namespace behavior beyond the current class-name/import slice;

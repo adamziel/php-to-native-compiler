@@ -70,6 +70,7 @@ impl Parser {
             TokenKind::Use => self.parse_use_declaration(),
             TokenKind::Declare => self.parse_unsupported_declare(),
             TokenKind::Eval => self.parse_unsupported_eval(),
+            TokenKind::InlineHtml(_) => self.parse_inline_html(),
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
@@ -941,6 +942,17 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after echo")?;
         Ok(Stmt::Echo { exprs, span })
+    }
+
+    fn parse_inline_html(&mut self) -> CompileResult<Stmt> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::InlineHtml(html) => Ok(Stmt::Echo {
+                exprs: vec![Expr::String(html, token.span)],
+                span: token.span,
+            }),
+            _ => unreachable!("caller checked inline HTML token"),
+        }
     }
 
     fn parse_print(&mut self) -> CompileResult<Stmt> {
@@ -4752,6 +4764,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Float(_) => "float literal",
         TokenKind::StringLiteral(_) => "string literal",
         TokenKind::InterpolatedString(_) => "interpolated string literal",
+        TokenKind::InlineHtml(_) => "inline HTML",
         TokenKind::Echo => "echo",
         TokenKind::Print => "print",
         TokenKind::Function => "function",

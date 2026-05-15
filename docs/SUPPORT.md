@@ -2,7 +2,9 @@
 
 ## Supported in `phpc run`
 
-- PHP opening tag `<?php`
+- PHP opening tag `<?php`; text between `?>` and the next PHP open tag is
+  treated as inline HTML output through the interpreter path, including the
+  current PHP-compatible single-newline consumption immediately after `?>`
 - `echo` statements with one or more comma-separated expressions
 - `print` statements
 - decimal and hexadecimal integer literals in the current signed 64-bit subset
