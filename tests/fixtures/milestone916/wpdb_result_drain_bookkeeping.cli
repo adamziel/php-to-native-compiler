@@ -1,0 +1,6 @@
+$ phpc run tests/fixtures/milestone916/wpdb_result_drain_bookkeeping.php
+0
+SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_520_ci'
+no-store
+no-use
+checked

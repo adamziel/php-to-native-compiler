@@ -8483,16 +8483,25 @@ handled.
   visible through runtime and native metadata lookup. This is not buffered or
   unbuffered result transfer, pending result tracking, warnings/errors, host
   database state, or native lowering.
-- [ ] WordPress harness lane: add a synthetic `wpdb` smoke that records the
+- [x] WordPress harness lane: add a synthetic `wpdb` smoke that records the
   bounded `mysqli_store_result()`/`mysqli_use_result()` placeholders through a
   WordPress-shaped connection result-drain method without claiming real result
   buffering or unbuffered result lifecycle fidelity.
+  Milestone 916 adds a `phpc-only` synthetic `wpdb` fixture that records clean
+  `mysqli_store_result()`/`mysqli_use_result()` placeholder metadata after a
+  placeholder charset setup query. It is not real result buffering,
+  unbuffered result lifecycle behavior, pending result tracking, warnings,
+  errors, host database state, or native lowering.
+- [ ] Runtime/mysqli lane: inspect the next MySQLi result cleanup or metadata
+  boundary used by WordPress after connection-level store/use result clean
+  state, such as `mysqli_kill()` or a sharper unsupported diagnostic, before
+  claiming broader connection result lifecycle fidelity.
 
 ## Latest Completed Checkpoint
 
 - The latest committed checkpoint is
-  `5e374f5 tests: add wordpress wpdb warnings smoke`, covering Milestone 914
-  before the current Milestone 915 candidate.
+  `5daf329 runtime: add mysqli store use result placeholders`, covering
+  Milestone 915 before the current Milestone 916 candidate.
 
 ## Tests/Docs Lane: Parallel Worker Operations
 

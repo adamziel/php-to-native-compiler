@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Added Milestone 916, a synthetic WordPress-shaped `wpdb` connection
+  result-drain bookkeeping smoke that calls the bounded
+  `mysqli_store_result($this->dbh)` and `mysqli_use_result($this->dbh)`
+  placeholders after the deterministic charset setup query, records clean local
+  no-pending-result metadata, and verifies that the result-drain boundary ran.
+  This is a harness smoke only; it does not add real WordPress buffered or
+  unbuffered result lifecycle behavior, pending result tracking, host database
+  state, PHP warning/error fidelity, or native database lowering. Focused
+  verification so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone916`.
+
 - Added Milestone 915, bounded `mysqli_store_result()` and
   `mysqli_use_result()` support for deterministic placeholder MySQLi clean
   connection-level no-pending-result metadata. The runtime accepts current

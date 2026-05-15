@@ -1,0 +1,6 @@
+This fixture exercises phpc's deterministic placeholder
+`mysqli_store_result()` and `mysqli_use_result()` clean no-pending-result state
+through a WordPress-shaped `wpdb` connection result-drain method after a
+placeholder charset setup query. System PHP needs a real mysqli connection and
+host extension result buffering state; phpc only records local `wpdb`
+bookkeeping around clean placeholder state.

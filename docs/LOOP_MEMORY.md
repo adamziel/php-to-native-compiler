@@ -29,6 +29,30 @@ injects this file into every prompt. Each Codex pass should update it with:
 ## Loop Event 2026-05-16T00:00:00Z
 
 - Checkpoint before this task:
+  `5daf329 runtime: add mysqli store use result placeholders`, pushed to
+  `origin/master`.
+- Task attempted: Milestone 916, a synthetic WordPress-shaped `wpdb`
+  connection result-drain bookkeeping smoke over deterministic
+  `mysqli_store_result()`/`mysqli_use_result()` placeholder support.
+- Files changed so far: `tests/fixtures/milestone916/*`,
+  `docs/PROGRESS.md`, `docs/NEXT_TASKS.md`, `GOAL.MD`,
+  `docs/WORDPRESS_COMPATIBILITY.md`, and `docs/LOOP_MEMORY.md`.
+- Tests run so far:
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone916`
+  passed with one `phpc-only` fixture skipped for system PHP comparison.
+- Current WordPress frontier: a WordPress-shaped connection result-drain
+  method is being extended to record deterministic clean no-pending-result
+  metadata after a placeholder query.
+- Remaining semantic gaps: real buffered and unbuffered result lifecycle
+  behavior, pending result tracking, warnings/errors, host database state, SQL
+  execution, and native database lowering remain missing.
+- Next concrete task: run whitespace checks and the serialized checkpoint gate
+  under `umask 0022`; after checkpoint, inspect the next MySQLi connection or
+  result metadata boundary such as `mysqli_kill()`.
+
+## Loop Event 2026-05-16T00:00:00Z
+
+- Checkpoint before this task:
   `5e374f5 tests: add wordpress wpdb warnings smoke`, pushed to
   `origin/master`.
 - Task attempted: Milestone 915, bounded deterministic
